@@ -17,6 +17,7 @@ import {TermDOM} from "../src/index.ts";
 import type {Exchange} from "../src/internal/exchange.ts";
 import {
 	beginFrame,
+	drawText,
 	endFrame,
 	Framebuffer,
 } from "../src/internal/framebuffer.ts";
@@ -138,7 +139,7 @@ function emit(
 	framebuffer.measurer = measurer;
 	const context = beginFrame(framebuffer, {offset: 0});
 	for (const [index, cluster] of cells) {
-		context.drawText(cluster, index % cols, Math.floor(index / cols));
+		drawText(context, cluster, index % cols, Math.floor(index / cols));
 	}
 	return endFrame(framebuffer);
 }

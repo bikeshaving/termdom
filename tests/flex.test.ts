@@ -1,6 +1,12 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 
-import {LayoutNode, toValue} from "../src/internal/layoutsolver.ts";
+import {
+	getComputedHeight,
+	getComputedWidth,
+	insertChild,
+	LayoutNode,
+	toValue,
+} from "../src/internal/layoutsolver.ts";
 
 /**
  * Spec tests for the layout engine, driven directly rather than through the
@@ -25,7 +31,7 @@ function node(): LayoutNode {
 
 function box(parent: LayoutNode, index = parent.children.length): LayoutNode {
 	const child = node();
-	parent.insertChild(child, index);
+	insertChild(parent, child, index);
 	return child;
 }
 
@@ -38,8 +44,8 @@ function rect(n: LayoutNode): {
 	return {
 		left: n.result.left,
 		top: n.result.top,
-		width: n.getComputedWidth(),
-		height: n.getComputedHeight(),
+		width: getComputedWidth(n),
+		height: getComputedHeight(n),
 	};
 }
 

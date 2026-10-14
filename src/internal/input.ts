@@ -445,115 +445,116 @@ export class Input {
 	}
 
 	dispose(): void {}
+}
 
-	dispatch(item: WireKey[] | WireMouse | WirePaste): void {
-		// Pseudo-state and the selection move with no mutation record.
-		invalidate(this.framebuffer);
-		if (Array.isArray(item)) {
-			deliverKeys(this, item);
-			return;
-		}
-		if (item.kind === "mouse") {
-			deliverMouseReport(this, item);
-			return;
-		}
-		deliverPaste(this, item.text);
+export function dispatchInput(
+	input: Input,
+	item: WireKey[] | WireMouse | WirePaste,
+): void {
+	// Pseudo-state and the selection move with no mutation record.
+	invalidate(input.framebuffer);
+	if (Array.isArray(item)) {
+		deliverKeys(input, item);
+		return;
 	}
+	if (item.kind === "mouse") {
+		deliverMouseReport(input, item);
+		return;
+	}
+	deliverPaste(input, item.text);
+}
 
-	/**
-	 * One hit-test at the last reported position, at the start of the frame.
-	 */
-	resolvePendingHover(): void {
-		const pending = this.pendingHover;
-		if (pending === null) {
-			return;
-		}
-		this.pendingHover = null;
-		const {x, y, shiftKey, altKey, ctrlKey} = pending;
-		processPendingPointerCapture(this);
-		const buttons = getPointerState(this.document).buttons;
-		const target =
-			getPointerState(this.document).active ??
-			(elementAtDocumentPoint(this.document, x, y, null) || this.document.body);
-		const previous = this.hoverElement;
-		const init = {
-			button: 0,
-			buttons,
-			...getClientPoint(this, x, y),
-			...getScreenPoint(this, x, y),
-			shiftKey,
-			altKey,
-			ctrlKey,
+/**
+ * One hit-test at the last reported position, at the start of the frame.
+ */
+export function resolvePendingHover(input: Input): void {
+	const pending = input.pendingHover;
+	if (pending === null) {
+		return;
+	}
+	input.pendingHover = null;
+	const {x, y, shiftKey, altKey, ctrlKey} = pending;
+	processPendingPointerCapture(input);
+	const buttons = getPointerState(input.document).buttons;
+	const target =
+		getPointerState(input.document).active ??
+		(elementAtDocumentPoint(input.document, x, y, null) || input.document.body);
+	const previous = input.hoverElement;
+	const init = {
+		button: 0,
+		buttons,
+		...getClientPoint(input, x, y),
+		...getScreenPoint(input, x, y),
+		shiftKey,
+		altKey,
+		ctrlKey,
+	};
+	if (target !== previous) {
+		input.hoverElement = target;
+		setHoveredElement(input.document, target);
+		handleHoverChange(input.cascade, previous, target);
+		const getChain = (element: Element | null): Element[] => {
+			const chain: Element[] = [];
+			for (
+				let node: Element | null = element; node; node = flatParentElement(node)
+			) {
+				chain.push(node);
+			}
+			return chain;
 		};
-		if (target !== previous) {
-			this.hoverElement = target;
-			setHoveredElement(this.document, target);
-			handleHoverChange(this.cascade, previous, target);
-			const getChain = (element: Element | null): Element[] => {
-				const chain: Element[] = [];
-				for (
-					let node: Element | null = element;
-					node;
-					node = flatParentElement(node)
-				) {
-					chain.push(node);
-				}
-				return chain;
+		const previousChain = getChain(previous);
+		const targetChain = getChain(target);
+		const previousSet = new Set(previousChain);
+		const targetSet = new Set(targetChain);
+		const leaving = previousChain.filter((node) => !targetSet.has(node));
+		const entering = targetChain.filter((node) => !previousSet.has(node));
+		// Pointer Events' order, then UI Events' compatibility mouse
+		// events in the same order: out, leave (exited element up), over,
+		// enter (outermost entered ancestor down), then the move.
+		for (const kind of ["pointer", "mouse"] as const) {
+			const fire = (type: string, node: Element, extra: object): void => {
+				dispatchMouseLike(input, kind, `${kind}${type}`, node, {
+					...init,
+					...extra,
+				});
 			};
-			const previousChain = getChain(previous);
-			const targetChain = getChain(target);
-			const previousSet = new Set(previousChain);
-			const targetSet = new Set(targetChain);
-			const leaving = previousChain.filter((node) => !targetSet.has(node));
-			const entering = targetChain.filter((node) => !previousSet.has(node));
-			// Pointer Events' order, then UI Events' compatibility mouse
-			// events in the same order: out, leave (exited element up), over,
-			// enter (outermost entered ancestor down), then the move.
-			for (const kind of ["pointer", "mouse"] as const) {
-				const fire = (type: string, node: Element, extra: object): void => {
-					dispatchMouseLike(this, kind, `${kind}${type}`, node, {
-						...init,
-						...extra,
-					});
-				};
-				if (previous !== null) {
-					fire("out", previous, {
-						bubbles: true,
-						cancelable: true,
-						composed: true,
-						relatedTarget: target,
-					});
-					for (const node of leaving) {
-						fire("leave", node, {relatedTarget: target});
-					}
-				}
-				fire("over", target, {
+			if (previous !== null) {
+				fire("out", previous, {
 					bubbles: true,
 					cancelable: true,
 					composed: true,
-					relatedTarget: previous,
+					relatedTarget: target,
 				});
-				for (let i = entering.length - 1; i >= 0; i--) {
-					fire("enter", entering[i], {relatedTarget: previous});
+				for (const node of leaving) {
+					fire("leave", node, {relatedTarget: target});
 				}
 			}
-		}
-		if (!pending.quiet) {
-			const last = this.lastMouse;
-			const moveInit = {
-				...init,
-				...getMovement(this, x, y, last),
+			fire("over", target, {
 				bubbles: true,
 				cancelable: true,
 				composed: true,
-			};
-			dispatchMouseLike(this, "pointer", "pointermove", target, {
-				...moveInit,
-				button: -1,
+				relatedTarget: previous,
 			});
-			dispatchMouseLike(this, "mouse", "mousemove", target, moveInit);
-			this.lastMouse = {x, y};
+			for (let i = entering.length - 1; i >= 0; i--) {
+				fire("enter", entering[i], {relatedTarget: previous});
+			}
 		}
+	}
+	if (!pending.quiet) {
+		const last = input.lastMouse;
+		const moveInit = {
+			...init,
+			...getMovement(input, x, y, last),
+			bubbles: true,
+			cancelable: true,
+			composed: true,
+		};
+		dispatchMouseLike(input, "pointer", "pointermove", target, {
+			...moveInit,
+			button: -1,
+		});
+		dispatchMouseLike(input, "mouse", "mousemove", target, moveInit);
+		input.lastMouse = {x, y};
 	}
 }
 

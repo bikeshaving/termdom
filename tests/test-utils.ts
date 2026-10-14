@@ -16,6 +16,7 @@ import {framePainted} from "../src/internal/dom.ts";
 import type {ColorDepth} from "../src/internal/exchange.ts";
 import {
 	beginFrame,
+	drawText,
 	endFrame,
 	Framebuffer,
 } from "../src/internal/framebuffer.ts";
@@ -378,7 +379,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 				// color modes carry over, so defaults stay the terminal's own.
 				const hasExplicitFg = cell.getFgColorMode() !== 0;
 				const hasExplicitBg = cell.getBgColorMode() !== 0;
-				context.drawText(chars, outputCol, row, {
+				drawText(context, chars, outputCol, row, {
 					fg: hasExplicitFg ? cell.getFgColor() : undefined,
 					bg: hasExplicitBg ? cell.getBgColor() : undefined,
 					bold: !!cell.isBold(),

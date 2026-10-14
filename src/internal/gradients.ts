@@ -11,7 +11,7 @@ import {
 	parseColor,
 	toCellColor,
 } from "./cssvalues.ts";
-import type {CellContext} from "./framebuffer.ts";
+import {type CellContext, drawRect} from "./framebuffer.ts";
 
 /**
  * Where a stop sits: CSS pixels, a percentage of the gradient line, a
@@ -430,14 +430,14 @@ export function renderGradient(
 		for (let col = 0; col < cols; col++) {
 			const color = colorAt(col + 0.5 - startX, 0);
 			if (color !== null) {
-				ctx.drawRect(left + col, top, 1, rows, color);
+				drawRect(ctx, left + col, top, 1, rows, color);
 			}
 		}
 	} else if (dx === 0) {
 		for (let row = 0; row < rows; row++) {
 			const color = colorAt(0, (row + 0.5) * aspect - startY);
 			if (color !== null) {
-				ctx.drawRect(left, top + row, cols, 1, color);
+				drawRect(ctx, left, top + row, cols, 1, color);
 			}
 		}
 	} else {
@@ -446,7 +446,7 @@ export function renderGradient(
 			for (let col = 0; col < cols; col++) {
 				const color = colorAt(col + 0.5 - startX, y);
 				if (color !== null) {
-					ctx.drawRect(left + col, top + row, 1, 1, color);
+					drawRect(ctx, left + col, top + row, 1, 1, color);
 				}
 			}
 		}

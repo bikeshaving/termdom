@@ -91,7 +91,7 @@ import {
 	retainDecoder,
 	setDecodeWorkerURL,
 } from "./internal/images.ts";
-import {Input} from "./internal/input.ts";
+import {Input, resolvePendingHover} from "./internal/input.ts";
 import {
 	framePainted,
 	invalidateTextMeasurement,
@@ -1581,7 +1581,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	}
 
 	// First, so a hover listener's mutations join the records taken below.
-	termDOMSlots.input.resolvePendingHover();
+	resolvePendingHover(termDOMSlots.input);
 
 	applyMutations(termDOM.document);
 	runFocusFixup(termDOM.document);

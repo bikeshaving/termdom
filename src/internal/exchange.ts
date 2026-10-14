@@ -19,7 +19,7 @@ import {
 	scrolled,
 	wrappedRowsAbovePark,
 } from "./framebuffer.ts";
-import type {Input} from "./input.ts";
+import {dispatchInput, type Input} from "./input.ts";
 import {
 	adoptTerminalReordering,
 	invalidateTextMeasurement,
@@ -2157,11 +2157,11 @@ function dispatchQueuedItems(session: Exchange): void {
 					}
 					break;
 				}
-				input.dispatch([item]);
+				dispatchInput(input, [item]);
 				break;
 			case "mouse":
 			case "paste":
-				input.dispatch(item);
+				dispatchInput(input, item);
 				break;
 			default:
 				dispatchReply(session, item);

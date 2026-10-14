@@ -754,60 +754,6 @@ export class CellGrid {
 		this.border = new Uint32Array(size);
 	}
 
-	clear(): void {
-		this.cluster.fill(0);
-		this.fg.fill(0);
-		this.bg.fill(0);
-		this.attrs.fill(0);
-		this.border.fill(0);
-	}
-
-	clearRange(start: number, end: number): void {
-		if (end <= start) {
-			return;
-		}
-		this.cluster.fill(0, start, end);
-		this.fg.fill(0, start, end);
-		this.bg.fill(0, start, end);
-		this.attrs.fill(0, start, end);
-		this.border.fill(0, start, end);
-	}
-
-	moveRange(dest: number, srcStart: number, srcEnd: number): void {
-		this.cluster.copyWithin(dest, srcStart, srcEnd);
-		this.fg.copyWithin(dest, srcStart, srcEnd);
-		this.bg.copyWithin(dest, srcStart, srcEnd);
-		this.attrs.copyWithin(dest, srcStart, srcEnd);
-		this.border.copyWithin(dest, srcStart, srcEnd);
-	}
-
-	copyFrom(
-		source: CellGrid,
-		{to, start, end}: {to: number; start: number; end: number},
-	): void {
-		this.cluster.set(source.cluster.subarray(start, end), to);
-		this.fg.set(source.fg.subarray(start, end), to);
-		this.bg.set(source.bg.subarray(start, end), to);
-		this.attrs.set(source.attrs.subarray(start, end), to);
-		this.border.set(source.border.subarray(start, end), to);
-	}
-
-	clone(): CellGrid {
-		const copy = new CellGrid(this.rows, this.cols);
-		copy.copyFrom(this, {to: 0, start: 0, end: this.rows * this.cols});
-		return copy;
-	}
-
-	bottomRows(rows: number): CellGrid {
-		const kept = new CellGrid(rows, this.cols);
-		kept.copyFrom(this, {
-			to: 0,
-			start: (this.rows - rows) * this.cols,
-			end: this.rows * this.cols,
-		});
-		return kept;
-	}
-
 	setCell(
 		index: number,
 		grapheme: string,
@@ -824,25 +770,7 @@ export class CellGrid {
 			((width < ATTR.WidthWide ? width : ATTR.WidthWide) << ATTR.WidthShift);
 		this.border[index] = 0;
 		if (width > 1) {
-			this.settleWide(index, width);
-		}
-	}
-
-	/**
-	 * A terminal draws a wide glyph over the columns after its own, so the
-	 * grid holds nothing there, as the screen does. A fill painted under the
-	 * glyph would otherwise stay in its second column, and when the glyph
-	 * goes, a frame painting the same fill there again skips a cell the
-	 * terminal blanked when the glyph was overwritten.
-	 */
-	settleWide(index: number, width: number): void {
-		const end = Math.min(
-			index + width,
-			index - (index % this.cols) + this.cols,
-		);
-		for (let covered = index + 1; covered < end; covered++) {
-			this.cluster[covered] = 0;
-			this.border[covered] = 0;
+			settleWide(this, index, width);
 		}
 	}
 
@@ -857,40 +785,125 @@ export class CellGrid {
 			(packAttrs(style) & ~ATTR.DoubleUnderline) | (1 << ATTR.WidthShift);
 		this.border[index] = border;
 	}
+}
 
-	setBlank(index: number): void {
-		this.cluster[index] = 0x20;
-		this.fg[index] = 0;
-		this.bg[index] = 0;
-		this.attrs[index] = 1 << ATTR.WidthShift;
-		this.border[index] = 0;
-	}
+export function clearGrid(grid: CellGrid): void {
+	grid.cluster.fill(0);
+	grid.fg.fill(0);
+	grid.bg.fill(0);
+	grid.attrs.fill(0);
+	grid.border.fill(0);
+}
 
-	setFrom(index: number, source: CellGrid, sourceIndex: number): void {
-		this.cluster[index] = source.cluster[sourceIndex];
-		this.fg[index] = source.fg[sourceIndex];
-		this.bg[index] = source.bg[sourceIndex];
-		this.attrs[index] = source.attrs[sourceIndex];
-		this.border[index] = source.border[sourceIndex];
+export function clearRange(grid: CellGrid, start: number, end: number): void {
+	if (end <= start) {
+		return;
 	}
+	grid.cluster.fill(0, start, end);
+	grid.fg.fill(0, start, end);
+	grid.bg.fill(0, start, end);
+	grid.attrs.fill(0, start, end);
+	grid.border.fill(0, start, end);
+}
 
-	widthAt(index: number): number {
-		const width = (this.attrs[index] & ATTR.WidthMask) >>> ATTR.WidthShift;
-		return width === ATTR.WidthWide
-			? getStringWidth(decodeGrapheme(this.cluster[index]))
-			: width;
-	}
+function moveRange(
+	grid: CellGrid,
+	dest: number,
+	srcStart: number,
+	srcEnd: number,
+): void {
+	grid.cluster.copyWithin(dest, srcStart, srcEnd);
+	grid.fg.copyWithin(dest, srcStart, srcEnd);
+	grid.bg.copyWithin(dest, srcStart, srcEnd);
+	grid.attrs.copyWithin(dest, srcStart, srcEnd);
+	grid.border.copyWithin(dest, srcStart, srcEnd);
+}
 
-	equalCells(index: number, other: CellGrid, otherIndex: number): boolean {
-		return (
-			this.cluster[index] === other.cluster[otherIndex] &&
-			this.fg[index] === other.fg[otherIndex] &&
-			this.bg[index] === other.bg[otherIndex] &&
-			(this.attrs[index] & ATTR.StyleMask) ===
-			(other.attrs[otherIndex] & ATTR.StyleMask) &&
-			this.border[index] === other.border[otherIndex]
-		);
+function copyGridFrom(
+	grid: CellGrid,
+	source: CellGrid,
+	{to, start, end}: {to: number; start: number; end: number},
+): void {
+	grid.cluster.set(source.cluster.subarray(start, end), to);
+	grid.fg.set(source.fg.subarray(start, end), to);
+	grid.bg.set(source.bg.subarray(start, end), to);
+	grid.attrs.set(source.attrs.subarray(start, end), to);
+	grid.border.set(source.border.subarray(start, end), to);
+}
+
+export function cloneGrid(grid: CellGrid): CellGrid {
+	const copy = new CellGrid(grid.rows, grid.cols);
+	copyGridFrom(copy, grid, {to: 0, start: 0, end: grid.rows * grid.cols});
+	return copy;
+}
+
+function bottomRows(grid: CellGrid, rows: number): CellGrid {
+	const kept = new CellGrid(rows, grid.cols);
+	copyGridFrom(kept, grid, {
+		to: 0,
+		start: (grid.rows - rows) * grid.cols,
+		end: grid.rows * grid.cols,
+	});
+	return kept;
+}
+
+/**
+ * A terminal draws a wide glyph over the columns after its own, so the
+ * grid holds nothing there, as the screen does. A fill painted under the
+ * glyph would otherwise stay in its second column, and when the glyph
+ * goes, a frame painting the same fill there again skips a cell the
+ * terminal blanked when the glyph was overwritten.
+ */
+function settleWide(grid: CellGrid, index: number, width: number): void {
+	const end = Math.min(index + width, index - (index % grid.cols) + grid.cols);
+	for (let covered = index + 1; covered < end; covered++) {
+		grid.cluster[covered] = 0;
+		grid.border[covered] = 0;
 	}
+}
+
+function setBlank(grid: CellGrid, index: number): void {
+	grid.cluster[index] = 0x20;
+	grid.fg[index] = 0;
+	grid.bg[index] = 0;
+	grid.attrs[index] = 1 << ATTR.WidthShift;
+	grid.border[index] = 0;
+}
+
+function setFrom(
+	grid: CellGrid,
+	index: number,
+	source: CellGrid,
+	sourceIndex: number,
+): void {
+	grid.cluster[index] = source.cluster[sourceIndex];
+	grid.fg[index] = source.fg[sourceIndex];
+	grid.bg[index] = source.bg[sourceIndex];
+	grid.attrs[index] = source.attrs[sourceIndex];
+	grid.border[index] = source.border[sourceIndex];
+}
+
+function widthAt(grid: CellGrid, index: number): number {
+	const width = (grid.attrs[index] & ATTR.WidthMask) >>> ATTR.WidthShift;
+	return width === ATTR.WidthWide
+		? getStringWidth(decodeGrapheme(grid.cluster[index]))
+		: width;
+}
+
+function equalCells(
+	grid: CellGrid,
+	index: number,
+	other: CellGrid,
+	otherIndex: number,
+): boolean {
+	return (
+		grid.cluster[index] === other.cluster[otherIndex] &&
+		grid.fg[index] === other.fg[otherIndex] &&
+		grid.bg[index] === other.bg[otherIndex] &&
+		(grid.attrs[index] & ATTR.StyleMask) ===
+		(other.attrs[otherIndex] & ATTR.StyleMask) &&
+		grid.border[index] === other.border[otherIndex]
+	);
 }
 
 function meetEdges(existing: number, incoming: number): number {
@@ -1053,7 +1066,7 @@ function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
 		// already covered by the glyph. Skip it, or the line grows a phantom
 		// space per wide character and shifts what follows.
 		if (encoding === 0) {
-			col += Math.max(1, grid.widthAt(index)) - 1;
+			col += Math.max(1, widthAt(grid, index)) - 1;
 		}
 	}
 
@@ -1068,7 +1081,7 @@ function getLineLength(grid: CellGrid, row: number): number {
 	for (let col = grid.cols - 1; col >= 0; col--) {
 		const index = rowStart + col;
 		if (grid.cluster[index] !== 0) {
-			return col + Math.max(1, grid.widthAt(index));
+			return col + Math.max(1, widthAt(grid, index));
 		}
 	}
 	return 0;
@@ -1129,73 +1142,6 @@ export class CellContext {
 		this.viewportOffset = viewportOffset;
 	}
 
-	setCaret(x: number, y: number): void {
-		this.caret = {col: x, row: y};
-	}
-
-	drawRect(
-		x: number,
-		y: number,
-		width: number,
-		height: number,
-		background: number | null | undefined | "default" | "inverse",
-	): void {
-		if (background == null) {
-			return;
-		}
-
-		// "default" clears the cells to the terminal's own background (CSS's
-		// Canvas system color), which still OVERWRITES whatever was painted
-		// underneath with an opaque box in the theme's color, whatever that
-		// theme is. "inverse" fills with SGR inverse instead. That is the
-		// Highlight/HighlightText system-color pair, swapping each cell's
-		// colors with no assumption about what they are.
-		// An opaque fill writes one cell everywhere it lands, so it is
-		// clipped once rather than cell by cell. A page's background fills
-		// the whole screen every frame.
-		if (
-			background !== "inverse" &&
-			(background === "default" || background < TRANSPARENCY_UNIT) &&
-			Number.isInteger(x) &&
-			Number.isInteger(y)
-		) {
-			const bg = background === "default" ? 0 : background & COLOR_MASK;
-			const clip = this.clipRect;
-			const offset = this.viewportOffset;
-			const top = Math.max(y, clip?.top ?? y, -offset);
-			const bottom = Math.min(
-				y + height,
-				clip?.bottom ?? y + height,
-				this.rows - offset,
-			);
-			const left = Math.max(x, clip?.left ?? x, 0);
-			const right = Math.min(x + width, clip?.right ?? x + width, this.cols);
-			const grid = this.grid;
-			const attrs = 1 << ATTR.WidthShift;
-			for (let row = top; row < bottom; row++) {
-				const start = (row + offset) * this.cols;
-				for (let index = start + left; index < start + right; index++) {
-					grid.cluster[index] = 0x20;
-					grid.fg[index] = 0;
-					grid.bg[index] = bg;
-					grid.attrs[index] = attrs;
-					grid.border[index] = 0;
-				}
-			}
-			return;
-		}
-
-		const style: CellStyle = background === "inverse"
-			? {inverse: true}
-			: {bg: background === "default" ? 0 : background};
-
-		for (let row = y; row < y + height; row++) {
-			for (let col = x; col < x + width; col++) {
-				setCell(this, row, col, " ", style);
-			}
-		}
-	}
-
 	measureText(text: string): TextMetrics {
 		if (PRINTABLE_ASCII.test(text)) {
 			return {width: text.length};
@@ -1206,256 +1152,344 @@ export class CellContext {
 		}
 		return {width};
 	}
+}
 
-	drawText(text: string, x: number, y: number, style?: CellStyle): void {
-		let currentX = x;
+export function setCaret(context: CellContext, x: number, y: number): void {
+	context.caret = {col: x, row: y};
+}
 
-		if (PRINTABLE_ASCII.test(text)) {
-			for (let i = 0; i < text.length; i++) {
-				if (currentX + 1 > this.cols) {
-					break;
-				}
-				setCell(this, y, currentX, text[i], style);
-				currentX++;
+export function drawRect(
+	context: CellContext,
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	background: number | null | undefined | "default" | "inverse",
+): void {
+	if (background == null) {
+		return;
+	}
+
+	// "default" clears the cells to the terminal's own background (CSS's
+	// Canvas system color), which still OVERWRITES whatever was painted
+	// underneath with an opaque box in the theme's color, whatever that
+	// theme is. "inverse" fills with SGR inverse instead. That is the
+	// Highlight/HighlightText system-color pair, swapping each cell's
+	// colors with no assumption about what they are.
+	// An opaque fill writes one cell everywhere it lands, so it is
+	// clipped once rather than cell by cell. A page's background fills
+	// the whole screen every frame.
+	if (
+		background !== "inverse" &&
+		(background === "default" || background < TRANSPARENCY_UNIT) &&
+		Number.isInteger(x) &&
+		Number.isInteger(y)
+	) {
+		const bg = background === "default" ? 0 : background & COLOR_MASK;
+		const clip = context.clipRect;
+		const offset = context.viewportOffset;
+		const top = Math.max(y, clip?.top ?? y, -offset);
+		const bottom = Math.min(
+			y + height,
+			clip?.bottom ?? y + height,
+			context.rows - offset,
+		);
+		const left = Math.max(x, clip?.left ?? x, 0);
+		const right = Math.min(x + width, clip?.right ?? x + width, context.cols);
+		const grid = context.grid;
+		const attrs = 1 << ATTR.WidthShift;
+		for (let row = top; row < bottom; row++) {
+			const start = (row + offset) * context.cols;
+			for (let index = start + left; index < start + right; index++) {
+				grid.cluster[index] = 0x20;
+				grid.fg[index] = 0;
+				grid.bg[index] = bg;
+				grid.attrs[index] = attrs;
+				grid.border[index] = 0;
 			}
-			return;
 		}
+		return;
+	}
 
-		for (const char of getGraphemes(text)) {
-			// Never write a control char to a cell. A cell is a column, and a
-			// control byte must be rejected before it takes one, or it survives
-			// to the output as a raw escape byte (injection from untrusted
-			// text).
-			if (isControlByte(char.codePointAt(0)!)) {
-				continue;
-			}
+	const style: CellStyle = background === "inverse"
+		? {inverse: true}
+		: {bg: background === "default" ? 0 : background};
 
-			const width = getStringWidth(char);
+	for (let row = y; row < y + height; row++) {
+		for (let col = x; col < x + width; col++) {
+			setCell(context, row, col, " ", style);
+		}
+	}
+}
 
-			// A soft hyphen or a lone format character has no width and takes
-			// no cell. A cell holding one would send every walk over the row
-			// backwards.
-			if (width === 0) {
-				continue;
-			}
-			if (currentX + width > this.cols) {
+export function drawText(
+	context: CellContext,
+	text: string,
+	x: number,
+	y: number,
+	style?: CellStyle,
+): void {
+	let currentX = x;
+
+	if (PRINTABLE_ASCII.test(text)) {
+		for (let i = 0; i < text.length; i++) {
+			if (currentX + 1 > context.cols) {
 				break;
 			}
-
-			setCell(
-				this,
-				y,
-				currentX,
-				char.length > 1 ? char.replace(INVISIBLE_IN_CLUSTER, "") : char,
-				style,
-			);
-			currentX += width;
+			setCell(context, y, currentX, text[i], style);
+			currentX++;
 		}
+		return;
 	}
 
-	/**
-	 * Another grid's cells with its top left at (x, y). An empty cell
-	 * leaves what is under it, one with no background takes the
-	 * background under it, and one in the default foreground takes
-	 * `fallback.fg`.
-	 */
-	drawGrid(source: CellGrid, x: number, y: number, fallback?: CellStyle): void {
-		const grid = this.grid;
-		const fg = (fallback?.fg ?? 0) & COLOR_MASK;
-		for (let row = 0; row < source.rows; row++) {
-			for (let col = 0; col < source.cols; col++) {
-				const from = row * source.cols + col;
-				if (source.cluster[from] === 0) {
-					continue;
-				}
-				const index = getGuardedWriteIndex(this, y + row, x + col);
-				if (index < 0) {
-					continue;
-				}
-				const under = grid.cluster[index] !== 0 ? grid.bg[index] : 0;
-				grid.setFrom(index, source, from);
-				grid.settleWide(index, grid.widthAt(index));
-				if (grid.fg[index] === 0) {
-					grid.fg[index] = fg;
-				}
-				if (grid.bg[index] === 0) {
-					grid.bg[index] = under;
-				}
+	for (const char of getGraphemes(text)) {
+		// Never write a control char to a cell. A cell is a column, and a
+		// control byte must be rejected before it takes one, or it survives
+		// to the output as a raw escape byte (injection from untrusted
+		// text).
+		if (isControlByte(char.codePointAt(0)!)) {
+			continue;
+		}
+
+		const width = getStringWidth(char);
+
+		// A soft hyphen or a lone format character has no width and takes
+		// no cell. A cell holding one would send every walk over the row
+		// backwards.
+		if (width === 0) {
+			continue;
+		}
+		if (currentX + width > context.cols) {
+			break;
+		}
+
+		setCell(
+			context,
+			y,
+			currentX,
+			char.length > 1 ? char.replace(INVISIBLE_IN_CLUSTER, "") : char,
+			style,
+		);
+		currentX += width;
+	}
+}
+
+/**
+ * Another grid's cells with its top left at (x, y). An empty cell
+ * leaves what is under it, one with no background takes the
+ * background under it, and one in the default foreground takes
+ * `fallback.fg`.
+ */
+export function drawGrid(
+	context: CellContext,
+	source: CellGrid,
+	x: number,
+	y: number,
+	fallback?: CellStyle,
+): void {
+	const grid = context.grid;
+	const fg = (fallback?.fg ?? 0) & COLOR_MASK;
+	for (let row = 0; row < source.rows; row++) {
+		for (let col = 0; col < source.cols; col++) {
+			const from = row * source.cols + col;
+			if (source.cluster[from] === 0) {
+				continue;
 			}
-		}
-	}
-
-	drawDecoration(x: number, y: number, width: number, style: CellStyle): void {
-		// An edge across existing glyphs, which drawText cannot draw because it
-		// overwrites. The style's fg is the row's default. A cell with its own
-		// (::selection, ::placeholder, an authored color) keeps it.
-		const grid = this.grid;
-		const edgeBit =
-			(style.underline ? ATTR.Underline : 0) |
-			(style.overline ? ATTR.Overline : 0);
-		if (edgeBit === 0) {
-			return;
-		}
-		for (let col = x; col < x + width; col++) {
-			const index = getGuardedWriteIndex(this, y, col);
+			const index = getGuardedWriteIndex(context, y + row, x + col);
 			if (index < 0) {
 				continue;
 			}
-			if (grid.cluster[index] !== 0) {
-				let attrs = grid.attrs[index] | edgeBit;
-				if (style.dim !== undefined) {
-					attrs = style.dim ? attrs | ATTR.Dim : attrs & ~ATTR.Dim;
-				}
-				grid.attrs[index] = attrs;
-			} else {
-				grid.cluster[index] = 0x20;
-				grid.fg[index] = (style.fg ?? 0) & COLOR_MASK;
-				grid.bg[index] = 0;
-				grid.attrs[index] =
-					edgeBit | (style.dim ? ATTR.Dim : 0) | (1 << ATTR.WidthShift);
+			const under = grid.cluster[index] !== 0 ? grid.bg[index] : 0;
+			setFrom(grid, index, source, from);
+			settleWide(grid, index, widthAt(grid, index));
+			if (grid.fg[index] === 0) {
+				grid.fg[index] = fg;
 			}
-			// The edge replaces a box-drawing glyph with the space that cell
-			// measures as. An outline is a line of its own, not a junction.
-			grid.border[index] = 0;
+			if (grid.bg[index] === 0) {
+				grid.bg[index] = under;
+			}
 		}
 	}
+}
 
-	drawLine(
-		x1: number,
-		y1: number,
-		x2: number,
-		y2: number,
-		line: LineStyle,
-	): void {
-		// Axis-aligned, half-open. The stroke runs from the start cell toward
-		// the end coordinate and stops short of it, so a one-cell vertical is
-		// (x, y, x, y + 1) and equal points stroke nothing. That is also what
-		// disambiguates the axis of a one-cell line.
-		if ((x1 !== x2 && y1 !== y2) || (x1 === x2 && y1 === y2)) {
-			return;
+export function drawDecoration(
+	context: CellContext,
+	x: number,
+	y: number,
+	width: number,
+	style: CellStyle,
+): void {
+	// An edge across existing glyphs, which drawText cannot draw because it
+	// overwrites. The style's fg is the row's default. A cell with its own
+	// (::selection, ::placeholder, an authored color) keeps it.
+	const grid = context.grid;
+	const edgeBit =
+		(style.underline ? ATTR.Underline : 0) |
+		(style.overline ? ATTR.Overline : 0);
+	if (edgeBit === 0) {
+		return;
+	}
+	for (let col = x; col < x + width; col++) {
+		const index = getGuardedWriteIndex(context, y, col);
+		if (index < 0) {
+			continue;
 		}
-		const bits = LINE_BITS[line.style];
-		if (bits === 0) {
-			return;
-		}
-		const style: CellStyle | undefined = line.color != null
-			? {fg: line.color}
-			: undefined;
-		const rounded = BORDER_EDGE_STYLE.Rounded;
-
-		// Each cell records which way the stroke LEAVES it, and an end cell
-		// keeps only its inward half. The stroke enters and stops at center.
-		// Two lines meeting in a cell then join into the corner, the tee or the
-		// cross without either knowing the other exists. A "square" cap
-		// projects through its cell instead, for a free end. A "round" cap is
-		// recorded on the half-stroke, which is how a corner cell learns it
-		// curves.
-		if (y1 === y2) {
-			const a = Math.min(x1, x2);
-			const b = Math.max(x1, x2) - 1;
-			const capA = x1 <= x2 ? line.startCap : line.endCap;
-			const capB = x1 <= x2 ? line.endCap : line.startCap;
-			for (let col = a; col <= b; col++) {
-				let toRight = col < b || capB === "square" ? bits : 0;
-				let toLeft = col > a || capA === "square" ? bits : 0;
-				if (col === a && capA === "round") {
-					toRight |= rounded;
-				}
-				if (col === b && capB === "round") {
-					toLeft |= rounded;
-				}
-				setBorderCell(
-					this,
-					col,
-					y1,
-					(toRight << BORDER_SHIFT.Right) | (toLeft << BORDER_SHIFT.Left),
-					style,
-				);
+		if (grid.cluster[index] !== 0) {
+			let attrs = grid.attrs[index] | edgeBit;
+			if (style.dim !== undefined) {
+				attrs = style.dim ? attrs | ATTR.Dim : attrs & ~ATTR.Dim;
 			}
+			grid.attrs[index] = attrs;
 		} else {
-			const a = Math.min(y1, y2);
-			const b = Math.max(y1, y2) - 1;
-			const capA = y1 <= y2 ? line.startCap : line.endCap;
-			const capB = y1 <= y2 ? line.endCap : line.startCap;
-			for (let row = a; row <= b; row++) {
-				let down = row < b || capB === "square" ? bits : 0;
-				let up = row > a || capA === "square" ? bits : 0;
-				if (row === a && capA === "round") {
-					down |= rounded;
-				}
-				if (row === b && capB === "round") {
-					up |= rounded;
-				}
-				setBorderCell(
-					this,
-					x1,
-					row,
-					(down << BORDER_SHIFT.Bottom) | (up << BORDER_SHIFT.Top),
-					style,
-				);
+			grid.cluster[index] = 0x20;
+			grid.fg[index] = (style.fg ?? 0) & COLOR_MASK;
+			grid.bg[index] = 0;
+			grid.attrs[index] =
+				edgeBit | (style.dim ? ATTR.Dim : 0) | (1 << ATTR.WidthShift);
+		}
+		// The edge replaces a box-drawing glyph with the space that cell
+		// measures as. An outline is a line of its own, not a junction.
+		grid.border[index] = 0;
+	}
+}
+
+export function drawLine(
+	context: CellContext,
+	x1: number,
+	y1: number,
+	x2: number,
+	y2: number,
+	line: LineStyle,
+): void {
+	// Axis-aligned, half-open. The stroke runs from the start cell toward
+	// the end coordinate and stops short of it, so a one-cell vertical is
+	// (x, y, x, y + 1) and equal points stroke nothing. That is also what
+	// disambiguates the axis of a one-cell line.
+	if ((x1 !== x2 && y1 !== y2) || (x1 === x2 && y1 === y2)) {
+		return;
+	}
+	const bits = LINE_BITS[line.style];
+	if (bits === 0) {
+		return;
+	}
+	const style: CellStyle | undefined = line.color != null
+		? {fg: line.color}
+		: undefined;
+	const rounded = BORDER_EDGE_STYLE.Rounded;
+
+	// Each cell records which way the stroke LEAVES it, and an end cell
+	// keeps only its inward half. The stroke enters and stops at center.
+	// Two lines meeting in a cell then join into the corner, the tee or the
+	// cross without either knowing the other exists. A "square" cap
+	// projects through its cell instead, for a free end. A "round" cap is
+	// recorded on the half-stroke, which is how a corner cell learns it
+	// curves.
+	if (y1 === y2) {
+		const a = Math.min(x1, x2);
+		const b = Math.max(x1, x2) - 1;
+		const capA = x1 <= x2 ? line.startCap : line.endCap;
+		const capB = x1 <= x2 ? line.endCap : line.startCap;
+		for (let col = a; col <= b; col++) {
+			let toRight = col < b || capB === "square" ? bits : 0;
+			let toLeft = col > a || capA === "square" ? bits : 0;
+			if (col === a && capA === "round") {
+				toRight |= rounded;
 			}
+			if (col === b && capB === "round") {
+				toLeft |= rounded;
+			}
+			setBorderCell(
+				context,
+				col,
+				y1,
+				(toRight << BORDER_SHIFT.Right) | (toLeft << BORDER_SHIFT.Left),
+				style,
+			);
+		}
+	} else {
+		const a = Math.min(y1, y2);
+		const b = Math.max(y1, y2) - 1;
+		const capA = y1 <= y2 ? line.startCap : line.endCap;
+		const capB = y1 <= y2 ? line.endCap : line.startCap;
+		for (let row = a; row <= b; row++) {
+			let down = row < b || capB === "square" ? bits : 0;
+			let up = row > a || capA === "square" ? bits : 0;
+			if (row === a && capA === "round") {
+				down |= rounded;
+			}
+			if (row === b && capB === "round") {
+				up |= rounded;
+			}
+			setBorderCell(
+				context,
+				x1,
+				row,
+				(down << BORDER_SHIFT.Bottom) | (up << BORDER_SHIFT.Top),
+				style,
+			);
 		}
 	}
+}
 
-	drawBox(
-		x: number,
-		y: number,
-		width: number,
-		height: number,
-		sides: {
-			top?: LineStyle;
-			right?: LineStyle;
-			bottom?: LineStyle;
-			left?: LineStyle;
-			topLeft?: "round";
-			topRight?: "round";
-			bottomRight?: "round";
-			bottomLeft?: "round";
-		},
-	): void {
-		if (width < 1 || height < 1) {
-			return;
-		}
-		const r = x + width - 1;
-		const b = y + height - 1;
-		const cap = (
-			adjacent: LineStyle | undefined,
-			corner: "round" | undefined,
-		): "round" | "square" | undefined => (adjacent ? corner : "square");
+export function drawBox(
+	context: CellContext,
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	sides: {
+		top?: LineStyle;
+		right?: LineStyle;
+		bottom?: LineStyle;
+		left?: LineStyle;
+		topLeft?: "round";
+		topRight?: "round";
+		bottomRight?: "round";
+		bottomLeft?: "round";
+	},
+): void {
+	if (width < 1 || height < 1) {
+		return;
+	}
+	const r = x + width - 1;
+	const b = y + height - 1;
+	const cap = (
+		adjacent: LineStyle | undefined,
+		corner: "round" | undefined,
+	): "round" | "square" | undefined => (adjacent ? corner : "square");
 
-		// Verticals first. A corner cell's glyph spans two sides but holds one
-		// color, and the horizontal side's wins, which is the closest a cell
-		// gets to the browser's diagonal miter.
-		if (sides.left) {
-			this.drawLine(x, y, x, b + 1, {
-				...sides.left,
-				startCap: cap(sides.top, sides.topLeft),
-				endCap: cap(sides.bottom, sides.bottomLeft),
-			});
-		}
-		if (sides.right) {
-			this.drawLine(r, y, r, b + 1, {
-				...sides.right,
-				startCap: cap(sides.top, sides.topRight),
-				endCap: cap(sides.bottom, sides.bottomRight),
-			});
-		}
-		if (sides.top) {
-			this.drawLine(x, y, r + 1, y, {
-				...sides.top,
-				startCap: cap(sides.left, sides.topLeft),
-				endCap: cap(sides.right, sides.topRight),
-			});
-		}
-		// A 1-row box's bottom shares the top's row, and the top already drew
-		// it.
-		if (sides.bottom && !(b === y && sides.top)) {
-			this.drawLine(x, b, r + 1, b, {
-				...sides.bottom,
-				startCap: cap(sides.left, sides.bottomLeft),
-				endCap: cap(sides.right, sides.bottomRight),
-			});
-		}
+	// Verticals first. A corner cell's glyph spans two sides but holds one
+	// color, and the horizontal side's wins, which is the closest a cell
+	// gets to the browser's diagonal miter.
+	if (sides.left) {
+		drawLine(context, x, y, x, b + 1, {
+			...sides.left,
+			startCap: cap(sides.top, sides.topLeft),
+			endCap: cap(sides.bottom, sides.bottomLeft),
+		});
+	}
+	if (sides.right) {
+		drawLine(context, r, y, r, b + 1, {
+			...sides.right,
+			startCap: cap(sides.top, sides.topRight),
+			endCap: cap(sides.bottom, sides.bottomRight),
+		});
+	}
+	if (sides.top) {
+		drawLine(context, x, y, r + 1, y, {
+			...sides.top,
+			startCap: cap(sides.left, sides.topLeft),
+			endCap: cap(sides.right, sides.topRight),
+		});
+	}
+	// A 1-row box's bottom shares the top's row, and the top already drew
+	// it.
+	if (sides.bottom && !(b === y && sides.top)) {
+		drawLine(context, x, b, r + 1, b, {
+			...sides.bottom,
+			startCap: cap(sides.left, sides.bottomLeft),
+			endCap: cap(sides.right, sides.bottomRight),
+		});
 	}
 }
 
@@ -1727,7 +1761,7 @@ function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
 			}
 			// A wide glyph covers its continuation column too, which the grid
 			// leaves empty. The span runs on across it.
-			col += border[index] > 0 ? 1 : Math.max(1, grid.widthAt(index));
+			col += border[index] > 0 ? 1 : Math.max(1, widthAt(grid, index));
 			if (
 				col - spanStart >= PROBE_RESIDUE_COLUMNS &&
 				spanStart + PROBE_RESIDUE_COLUMNS < cols
@@ -1877,7 +1911,7 @@ function generateANSI(
 				: decodeGrapheme(cluster[index]);
 			output += writer.text(glyph).take();
 
-			const width = grid.widthAt(index);
+			const width = widthAt(grid, index);
 
 			// Only clusters terminals disagree about are probed. The char test
 			// keeps ASCII from reaching isWidthUncertain, and a border glyph is
@@ -2153,11 +2187,11 @@ export function insetShiftPays(
 				if (
 					vacated
 						? prev.cluster[index] !== 0
-						: !prev.equalCells(index, prev, source)
+						: !equalCells(prev, index, prev, source)
 				) {
 					beside += cost(index, col);
 				}
-			} else if (!vacated && !prev.equalCells(index, prev, source)) {
+			} else if (!vacated && !equalCells(prev, index, prev, source)) {
 				inside += cost(source, col);
 			}
 		}
@@ -2284,13 +2318,13 @@ export function beginFrame(
 		const stop = bandEnd * cols;
 		const shift = Math.abs(delta) * cols;
 		if (shift >= stop - start) {
-			prev.clearRange(start, stop);
+			clearRange(prev, start, stop);
 		} else if (delta > 0) {
-			prev.moveRange(start, start + shift, stop);
-			prev.clearRange(stop - shift, stop);
+			moveRange(prev, start, start + shift, stop);
+			clearRange(prev, stop - shift, stop);
 		} else {
-			prev.moveRange(start + shift, start, stop - shift);
-			prev.clearRange(start, start + shift);
+			moveRange(prev, start + shift, start, stop - shift);
+			clearRange(prev, start, start + shift);
 		}
 		const shiftedLines = new Set<number>();
 		for (const row of framebuffer.renderedLines) {
@@ -2340,7 +2374,7 @@ export function beginFrame(
 			diff = new CellGrid(frameRows, cols);
 			framebuffer.diff = diff;
 		} else {
-			diff.clear();
+			clearGrid(diff);
 		}
 
 		const prev = framebuffer.prev;
@@ -2348,7 +2382,7 @@ export function beginFrame(
 			framebuffer.exchange !== null &&
 			!framebuffer.exchange.clusterWidthsNegotiated();
 		if (prev === null || overflowing) {
-			diff.copyFrom(next, {to: 0, start: 0, end: frameRows * cols});
+			copyGridFrom(diff, next, {to: 0, start: 0, end: frameRows * cols});
 		} else {
 			const prevRows = prev.rows;
 			const prevCols = prev.cols;
@@ -2395,12 +2429,12 @@ export function beginFrame(
 						let empty = true;
 						for (let c = 0; c < cols; c++) {
 							if (next.cluster[nextRow + c] !== 0) {
-								diff.setFrom(nextRow + c, next, nextRow + c);
+								setFrom(diff, nextRow + c, next, nextRow + c);
 								empty = false;
 							}
 						}
 						if (empty) {
-							diff.setBlank(nextRow);
+							setBlank(diff, nextRow);
 						}
 						continue;
 					}
@@ -2412,7 +2446,7 @@ export function beginFrame(
 
 					if (!rowInPrev || col >= prevCols) {
 						if (nextChar !== 0) {
-							diff.setFrom(n, next, n);
+							setFrom(diff, n, next, n);
 						}
 						continue;
 					}
@@ -2422,15 +2456,15 @@ export function beginFrame(
 
 					if (prevChar === 0) {
 						if (nextChar !== 0) {
-							diff.setFrom(n, next, n);
+							setFrom(diff, n, next, n);
 						}
 					} else if (nextChar === 0) {
 						// A cell the frame no longer paints has to be
 						// erased, not merely skipped. The terminal still
 						// shows the old glyph there.
-						diff.setBlank(n);
-					} else if (!next.equalCells(n, prev, p)) {
-						diff.setFrom(n, next, n);
+						setBlank(diff, n);
+					} else if (!equalCells(next, n, prev, p)) {
+						setFrom(diff, n, next, n);
 					}
 				}
 			}
@@ -2468,7 +2502,7 @@ export function beginFrame(
 					}
 				}
 				if (empty) {
-					diff.setBlank(rowStart);
+					setBlank(diff, rowStart);
 				}
 			}
 		}
@@ -2495,7 +2529,7 @@ export function beginFrame(
 					for (let col = 0; col < cols; col++) {
 						const index = rowStart + col;
 						if (next.cluster[index] !== 0) {
-							diff.setFrom(index, next, index);
+							setFrom(diff, index, next, index);
 							hasContent = true;
 						}
 					}
@@ -2621,7 +2655,7 @@ export function beginFrame(
 		// still on screen are kept. The rest scrolled into the scrollback.
 		const retired = framebuffer.prev;
 		if (overflowing) {
-			framebuffer.prev = next.bottomRows(framebuffer.rowCount);
+			framebuffer.prev = bottomRows(next, framebuffer.rowCount);
 			framebuffer.spare = next;
 		} else {
 			framebuffer.prev = next;
@@ -2709,7 +2743,7 @@ function hasDisputedCellBefore(
 	nextRow: number,
 ): boolean {
 	let last = cols - 1;
-	while (last >= 0 && next.equalCells(nextRow + last, prev, prevRow + last)) {
+	while (last >= 0 && equalCells(next, nextRow + last, prev, prevRow + last)) {
 		last--;
 	}
 	for (let col = 0; col <= last; col++) {
@@ -2727,7 +2761,7 @@ function takeGrid(screen: Framebuffer, rows: number, cols: number): CellGrid {
 	const spare = screen.spare;
 	if (spare !== null && spare.rows === rows && spare.cols === cols) {
 		screen.spare = null;
-		spare.clear();
+		clearGrid(spare);
 		return spare;
 	}
 	return new CellGrid(rows, cols);

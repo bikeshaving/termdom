@@ -26,6 +26,10 @@ import {
 	CellContext,
 	CellGrid,
 	type CellStyle,
+	cloneGrid,
+	drawBox,
+	drawGrid,
+	drawText,
 	settleBorders,
 } from "./framebuffer.ts";
 import {
@@ -458,7 +462,7 @@ function getBitmapCells(
 				under,
 			);
 			if (half !== null) {
-				cells.drawText(half.char, col, row, half.style);
+				drawText(cells, half.char, col, row, half.style);
 			}
 		}
 	}
@@ -478,7 +482,7 @@ function getSettledGrid(
 	if (cached?.version === content.version) {
 		return cached.grid;
 	}
-	const grid = source.clone();
+	const grid = cloneGrid(source);
 	settleBorders(grid);
 	settledGrids.set(source, {version: content.version, grid});
 	return grid;
@@ -545,7 +549,8 @@ export function renderReplaced(
 		if (content.kind === "text") {
 			drawPlaceholder(content.text, left, top, cols, rows, ctx, style);
 		} else if (content.kind === "grid") {
-			ctx.drawGrid(
+			drawGrid(
+				ctx,
 				getSettledGrid(content, content.fit(cols, rows)),
 				left,
 				top,
@@ -554,7 +559,8 @@ export function renderReplaced(
 		} else if (cols * rows * 2 <= MAX_IMAGE_PIXELS) {
 			// Past the limit the pixels a box samples are more than an image
 			// may hold, and like a canvas past it, the box shows nothing.
-			ctx.drawGrid(
+			drawGrid(
+				ctx,
 				getBitmapCells(element, content, cols, rows, under),
 				left,
 				top,
@@ -593,17 +599,17 @@ function drawPlaceholder(
 	style: CellStyle,
 ): void {
 	if (cols < 3 || rows < 3) {
-		ctx.drawText(fitText(text, cols), left, top, style);
+		drawText(ctx, fitText(text, cols), left, top, style);
 		return;
 	}
 	const side = {style: "solid" as const, color: style.fg};
-	ctx.drawBox(left, top, cols, rows, {
+	drawBox(ctx, left, top, cols, rows, {
 		top: side,
 		right: side,
 		bottom: side,
 		left: side,
 	});
-	ctx.drawText(fitText(text, cols - 2), left + 1, top + 1, style);
+	drawText(ctx, fitText(text, cols - 2), left + 1, top + 1, style);
 }
 
 // The text cut to `width` columns, with an ellipsis where it was cut.
@@ -674,7 +680,7 @@ function paintTextRuns(
 			continue;
 		}
 		const {r, g, b} = run.color;
-		ctx.drawText(run.text, left + col, top + row, {
+		drawText(ctx, run.text, left + col, top + row, {
 			fg: CSSValues.toCellColor(
 				(Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b),
 			),
