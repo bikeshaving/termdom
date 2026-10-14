@@ -114,9 +114,9 @@ export class ImageData {
 			width = Math.floor(dataOrWidth);
 			height = Math.floor(widthOrHeight);
 			if (!(width > 0) || !(height > 0)) {
-				throw domException(
-					"IndexSizeError",
+				throw new DOMException(
 					"The width and height must be positive",
+					"IndexSizeError",
 				);
 			}
 			if (width * height > MAX_IMAGE_PIXELS) {
@@ -131,16 +131,16 @@ export class ImageData {
 			if (
 				!(width > 0) || data.length === 0 || data.length % (4 * width) !== 0
 			) {
-				throw domException(
-					"IndexSizeError",
+				throw new DOMException(
 					"The data does not hold whole rows of that width",
+					"IndexSizeError",
 				);
 			}
 			const rows = data.length / (4 * width);
 			if (height !== undefined && Math.floor(height) !== rows) {
-				throw domException(
-					"IndexSizeError",
+				throw new DOMException(
 					"The data does not hold that many rows",
+					"IndexSizeError",
 				);
 			}
 			height = rows;
@@ -198,9 +198,9 @@ export function createImageBitmapFrom(
 ): ImageBitmap {
 	const bitmap = readDrawable(source);
 	if (bitmap === null) {
-		throw domException(
-			"InvalidStateError",
+		throw new DOMException(
 			"The image has nothing to copy yet",
+			"InvalidStateError",
 		);
 	}
 	const x = Math.floor(sx ?? 0);
@@ -208,7 +208,7 @@ export function createImageBitmapFrom(
 	const width = Math.floor(sw ?? naturalWidthOf(bitmap));
 	const height = Math.floor(sh ?? naturalHeightOf(bitmap));
 	if (width <= 0 || height <= 0) {
-		throw domException("IndexSizeError", "The crop rectangle is empty");
+		throw new DOMException("The crop rectangle is empty", "IndexSizeError");
 	}
 	if (bitmap.width === naturalWidthOf(bitmap)) {
 		const copy = createBitmap(width, height);
@@ -278,10 +278,6 @@ function copyRect(
 			to.data[d + 3] = from.data[s + 3];
 		}
 	}
-}
-
-function domException(name: string, message: string): Error {
-	return new DOMException(message, name);
 }
 
 // ---------------------------------------------------------------------------
@@ -550,7 +546,7 @@ class PathBuilder {
 			return;
 		}
 		if (rx < 0 || ry < 0) {
-			throw domException("IndexSizeError", "The radius is negative");
+			throw new DOMException("The radius is negative", "IndexSizeError");
 		}
 		// HTML's sweep rules: a full turn or more draws the whole ellipse,
 		// and otherwise the sweep is brought into (0, 2π) in its direction.
@@ -605,7 +601,7 @@ class PathBuilder {
 			return;
 		}
 		if (radius < 0) {
-			throw domException("IndexSizeError", "The radius is negative");
+			throw new DOMException("The radius is negative", "IndexSizeError");
 		}
 		this.ensure(x1, y1);
 		const [x0, y0] = this.last!;
@@ -1459,11 +1455,11 @@ export class CanvasGradient {
 
 	addColorStop(offset: number, color: string): void {
 		if (!Number.isFinite(offset) || offset < 0 || offset > 1) {
-			throw domException("IndexSizeError", "The offset is outside 0 to 1");
+			throw new DOMException("The offset is outside 0 to 1", "IndexSizeError");
 		}
 		const parsed = parseCanvasColor(String(color));
 		if (parsed === null) {
-			throw domException("SyntaxError", "The color does not parse");
+			throw new DOMException("The color does not parse", "SyntaxError");
 		}
 		// A stop at an equal offset goes after the ones there already.
 		const slots = _(this);
@@ -2179,7 +2175,7 @@ export class CanvasRenderingContext2D {
 			throw new TypeError("The gradient's circles must be finite");
 		}
 		if (r0 < 0 || r1 < 0) {
-			throw domException("IndexSizeError", "A radius is negative");
+			throw new DOMException("A radius is negative", "IndexSizeError");
 		}
 		// The largest t whose circle passes through the point (HTML's
 		// two-circle gradient), solved as a quadratic.
@@ -2231,7 +2227,10 @@ export class CanvasRenderingContext2D {
 		const bitmap = readDrawable(image);
 		const mode = repetition ?? "";
 		if (!["", "repeat", "repeat-x", "repeat-y", "no-repeat"].includes(mode)) {
-			throw domException("SyntaxError", "The repetition is not one HTML names");
+			throw new DOMException(
+				"The repetition is not one HTML names",
+				"SyntaxError",
+			);
 		}
 		if (bitmap === null || bitmap.width === 0 || bitmap.height === 0) {
 			return null;
@@ -2706,7 +2705,7 @@ export class CanvasRenderingContext2D {
 			throw new TypeError("The rectangle must be finite");
 		}
 		if (sw === 0 || sh === 0) {
-			throw domException("IndexSizeError", "The rectangle is empty");
+			throw new DOMException("The rectangle is empty", "IndexSizeError");
 		}
 		if (sw < 0) {
 			sx += sw;

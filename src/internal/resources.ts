@@ -25,7 +25,7 @@ export function isWindowFetch(value: unknown): boolean {
 	return typeof value === "function" && windowFetches.has(value);
 }
 
-export function networkFetch(request: Request): Promise<Response> {
+function networkFetch(request: Request): Promise<Response> {
 	const current = globalThis.fetch;
 	return isWindowFetch(current) ? runtimeFetch(request) : current(request);
 }

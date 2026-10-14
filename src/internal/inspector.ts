@@ -119,12 +119,10 @@ function inspectElement(
 		"track",
 		"wbr",
 	];
+	output += `${c.tag}>${c.reset}`;
 	if (selfClosing.includes(tagName)) {
-		output += `${c.tag}>${c.reset}`;
 		return output;
 	}
-
-	output += `${c.tag}>${c.reset}`;
 
 	if (currentDepth < maxDepth && element.childNodes.length > 0) {
 		const childrenStr = formatChildren(element, {

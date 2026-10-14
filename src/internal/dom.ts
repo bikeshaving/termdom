@@ -4438,7 +4438,7 @@ export class SealedAbortSignal extends EventTarget {
 }
 
 /** Whether `value` is one of this DOM's AbortSignals. */
-export function isAbortSignal(value: unknown): value is SealedAbortSignal {
+function isAbortSignal(value: unknown): value is SealedAbortSignal {
 	return (
 		typeof value === "object" &&
 		value !== null &&
@@ -4474,7 +4474,7 @@ function followRuntimeSignal(
 }
 
 /** Runs `algorithm` when `signal` aborts, as the DOM's specs do. */
-export function addAbortAlgorithm(
+function addAbortAlgorithm(
 	signal: SealedAbortSignal,
 	algorithm: () => void,
 ): void {
@@ -15847,7 +15847,9 @@ class HTMLCanvasElement extends HTMLElement {
 			const context = slots.extra.canvasContext;
 			if (context instanceof CanvasRenderingContext2D) {
 				clearCanvasText(context);
-				resetCanvasContext(context);
+				// A resize resets the context to its default state (HTML
+				// §4.12.5.1.1).
+				resetContextState(context);
 			}
 			slots.extra.canvasVersion++;
 			invalidateReplaced(ownerOf(this), true);
@@ -15921,12 +15923,6 @@ function fitCanvasGrid(
 	}
 	canvasSlots.extra.canvasGrid = cells;
 	return cells;
-}
-
-// Resizing a canvas resets its context to the default state (HTML
-// §4.12.5.1.1), which is what reset() does apart from clearing.
-function resetCanvasContext(context: CanvasRenderingContext2D): void {
-	resetContextState(context);
 }
 
 /**
@@ -25255,13 +25251,8 @@ function setCustomValidity(element: Element, error: string): void {
 function getValidityState(element: Element): ValidityState {
 	let state = validityStates.get(element);
 	if (state === undefined) {
-		const previous = internalConstruction;
-		internalConstruction = true;
-		try {
-			state = new ValidityState(() => getValidityFlags(element));
-		} finally {
-			internalConstruction = previous;
-		}
+		state = constructInternal(() =>
+			new ValidityState(() => getValidityFlags(element)));
 		validityStates.set(element, state);
 	}
 	return state;
@@ -32183,11 +32174,6 @@ function getSelectionLine(lines: SelectionLine[], index: number): number {
 	return lines.length - 1;
 }
 
-function getCaretColumn(layout: Layout, point: [Node, number]): number | null {
-	const rect = layout.getCaretRect(point[0], point[1]);
-	return rect === null ? null : rect.x;
-}
-
 // Moving up from the first line or down from the last line goes to that
 // line's end, as a browser's arrow key does. The column is a screen
 // column and the target is a screen row, so the landing offset comes
@@ -32212,7 +32198,7 @@ function selectionLineMove(
 	if (target >= lines.length) {
 		return getSelectionPoint(run, lines[lines.length - 1].end);
 	}
-	const column = getCaretColumn(layout, from);
+	const column = layout.getCaretRect(from[0], from[1])?.x ?? null;
 	// Within the target line's own block. Scrolled out of its box, the
 	// line shares its rows with whatever covers them there, and a search of
 	// the whole document landed in that instead.
@@ -38426,7 +38412,7 @@ export class Window extends EventTarget {
 		if (attached === undefined) {
 			return;
 		}
-		const event = createBeforeUnloadEvent();
+		const event = constructInternal(() => new BeforeUnloadEvent());
 		dispatchAsUserAgent(this, event);
 		if (event.defaultPrevented || event.returnValue !== "") {
 			return;
@@ -38586,10 +38572,6 @@ export class Window extends EventTarget {
 	resizeTo(_width: number, _height: number): void {}
 
 	stop(): void {}
-}
-
-function createBeforeUnloadEvent(): BeforeUnloadEvent {
-	return constructInternal(() => new BeforeUnloadEvent());
 }
 
 // A window has both event handler mixins the HTML Standard gives it:
@@ -39208,7 +39190,7 @@ export function insertBeforeOf<T extends globalThis.Node>(
 }
 
 /** Node's removeChild, for the engine's own calls. */
-export function removeChildOf<T extends globalThis.Node>(
+function removeChildOf<T extends globalThis.Node>(
 	parent: globalThis.Node,
 	child: T,
 ): T {
@@ -39253,7 +39235,7 @@ export function setAttributeOf(
 }
 
 /** Element's removeAttribute, for the engine's own calls. */
-export function removeAttributeOf(
+function removeAttributeOf(
 	element: globalThis.Element,
 	qualifiedName: string,
 ): void {
@@ -39265,7 +39247,7 @@ export function removeAttributeOf(
 }
 
 /** Element's toggleAttribute, for the engine's own calls. */
-export function toggleAttributeOf(
+function toggleAttributeOf(
 	element: globalThis.Element,
 	qualifiedName: string,
 	force?: boolean,

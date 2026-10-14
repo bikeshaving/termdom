@@ -590,11 +590,7 @@ export function layoutMath(element: Element, display: boolean): MathBox {
 	return layoutRow(getLayoutChildren(element), element, context);
 }
 
-export function createEmptyBox(
-	width: number,
-	height = 1,
-	baseline = 0,
-): MathBox {
+function createEmptyBox(width: number, height = 1, baseline = 0): MathBox {
 	const cells: MathCell[][] = [];
 	for (let row = 0; row < height; row++) {
 		cells.push(blankRow(width));
@@ -786,7 +782,7 @@ export function getMathCellRects(
 	return rects;
 }
 
-export function getDescent(box: MathBox): number {
+function getDescent(box: MathBox): number {
 	return box.height - box.baseline - 1;
 }
 

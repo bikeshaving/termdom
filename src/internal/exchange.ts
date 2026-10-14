@@ -2393,7 +2393,7 @@ const STOP_CHECK = 50;
 const STOP_GRACE = 1000;
 
 // The size a terminal that reports none is taken to have, as a VT100's.
-export const DEFAULT_COLS = 80;
+const DEFAULT_COLS = 80;
 export const DEFAULT_ROWS = 24;
 
 /**
