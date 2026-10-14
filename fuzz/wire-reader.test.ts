@@ -9,7 +9,7 @@ import {expect, test} from "@b9g/libuild/test";
 import fc from "fast-check";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "../tests/test-utils.js";
+import {MockProcess, nextFrame, until} from "../tests/test-utils.js";
 
 const NUM_RUNS = Number(process.env.FC_NUM_RUNS ?? 40);
 // A fixed seed by default, as the rest of the fuzz suite does: inside
@@ -122,6 +122,7 @@ test("any bytes in any chunks: no throw, no control byte in a key, and the next 
 				// Close whatever the noise left open, then type.
 				await send(proc, "\x1b[201~\x1b\\\x07~");
 				await send(proc, "x");
+				await until(() => keys.at(-1) === "x");
 				for (const key of keys) {
 					expect(isCleanKey(key)).toBe(true);
 				}

@@ -44,6 +44,7 @@ test("an unterminated unsolicited clipboard opener does not swallow keys", async
 	const {proc, dom, keys} = await mount();
 	await send(proc, "\x1b]52;c;");
 	await send(proc, "x");
+	await until(() => keys.at(-1) === "x");
 	expect(keys.at(-1)).toBe("x");
 	for (const key of keys) {
 		expect(key.includes("\x1b")).toBe(false);
