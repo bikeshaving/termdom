@@ -4613,11 +4613,27 @@ function harvestRequiredKeys(
 // and :empty.
 const SIBLING_SELECTOR = /[+~]|:(?:nth-|first-|last-|only-|empty)/;
 
+// Every document reads the UA sheet's selectors again, so each selector
+// is read once and its reading shared. No caller changes a reading.
+const selectorReadings = new Map<string, SelectorReading>();
+
+export function readSelector(selector: string): SelectorReading {
+	let reading = selectorReadings.get(selector);
+	if (reading === undefined) {
+		reading = readSelectorText(selector);
+		if (selectorReadings.size > 4096) {
+			selectorReadings.clear();
+		}
+		selectorReadings.set(selector, reading);
+	}
+	return reading;
+}
+
 // A selector this parser cannot read weighs nothing. The matcher reads
 // a wider grammar and may still accept it, and a rule whose weight
 // cannot be counted should lose a tie. It anchors to no type and names
 // no keys.
-export function readSelector(selector: string): SelectorReading {
+function readSelectorText(selector: string): SelectorReading {
 	const reachesSiblings = SIBLING_SELECTOR.test(selector);
 	let failed = false;
 	let list: CSSTree.SelectorNode | null = null;
