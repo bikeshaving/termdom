@@ -34,6 +34,7 @@ import {
 	getPseudoHost,
 	getPseudoName,
 	getShadowRoot,
+	getTopLayer,
 	HTML_NAMESPACE,
 	isButtonInput,
 	isUAShadowTree,
@@ -3737,6 +3738,122 @@ export function getComputedValue(
 	return declaration[kComputedValue](property);
 }
 
+// A box with nothing to contain or transform: no box at all, or a plain
+// inline one. Containment also skips table parts other than cells and
+// ruby parts (css-contain-2 §3.2, css-transforms-1's transformable
+// element).
+const BOXLESS_DISPLAYS = new Set([
+	"none",
+	"contents",
+	"inline",
+	"table-column",
+	"table-column-group",
+]);
+const UNCONTAINED_DISPLAYS = new Set([
+	"table-row",
+	"table-row-group",
+	"table-header-group",
+	"table-footer-group",
+	"ruby-base",
+	"ruby-text",
+	"ruby-base-container",
+	"ruby-text-container",
+]);
+const PAINT_CONTAINMENT = new Set(["paint", "content", "strict"]);
+const LAYOUT_OR_PAINT_CONTAINMENT = new Set([
+	"layout",
+	"paint",
+	"content",
+	"strict",
+]);
+const FIXED_CONTAINING_PROPERTIES = [
+	"transform",
+	"translate",
+	"rotate",
+	"scale",
+	"perspective",
+	"filter",
+	"backdrop-filter",
+];
+// A will-change naming a property whose other values would make the box a
+// containing block makes it one now.
+const FIXED_CONTAINING_WILL_CHANGE = new Set([
+	...FIXED_CONTAINING_PROPERTIES,
+	"contain",
+]);
+
+function hasContainment(element: Element, kinds: Set<string>): boolean {
+	const display = getComputedValue(element, "display");
+	if (BOXLESS_DISPLAYS.has(display) || UNCONTAINED_DISPLAYS.has(display)) {
+		return false;
+	}
+	return getComputedValue(element, "contain")
+		.split(" ")
+		.some((keyword) => kinds.has(keyword));
+}
+
+export function hasPaintContainment(element: Element): boolean {
+	return hasContainment(element, PAINT_CONTAINMENT);
+}
+
+export function hasLayoutOrPaintContainment(element: Element): boolean {
+	return hasContainment(element, LAYOUT_OR_PAINT_CONTAINMENT);
+}
+
+// Paint containment clips as overflow: clip would, on each axis overflow
+// leaves visible (css-contain-2 §3.4).
+export function getUsedOverflow(element: Element, axis: "x" | "y"): string {
+	const overflow =
+		getComputedValue(element, axis === "x" ? "overflow-x" : "overflow-y") ||
+		getComputedValue(element, "overflow");
+	return overflow === "visible" && hasPaintContainment(element)
+		? "clip"
+		: overflow;
+}
+
+// Layout or paint containment, a transform, a perspective or a filter
+// makes a box the containing block for every positioned descendant, fixed
+// ones included, as does a will-change naming one of them, whether or not
+// the box is positioned itself (css-contain-2 §3.2 and §3.4,
+// css-transforms-1, filter-effects-1, css-will-change-1).
+export function establishesFixedContainingBlock(element: Element): boolean {
+	if (BOXLESS_DISPLAYS.has(getComputedValue(element, "display"))) {
+		return false;
+	}
+	if (hasLayoutOrPaintContainment(element)) {
+		return true;
+	}
+	for (const property of FIXED_CONTAINING_PROPERTIES) {
+		const value = getComputedValue(element, property);
+		if (value !== "" && value !== "none") {
+			return true;
+		}
+	}
+	return getComputedValue(element, "will-change")
+		.split(",")
+		.some((name) =>
+			FIXED_CONTAINING_WILL_CHANGE.has(name.trim().toLowerCase()),
+		);
+}
+
+// The flat-tree ancestor a fixed box is placed in, or null for the
+// viewport. The top layer always belongs to the viewport (css-position-4).
+export function getFixedContainingBlock(element: Element): Element | null {
+	if (getTopLayer(element.ownerDocument).has(element as DOMElement)) {
+		return null;
+	}
+	for (
+		let ancestor = flatParentElement(element);
+		ancestor;
+		ancestor = flatParentElement(ancestor)
+	) {
+		if (establishesFixedContainingBlock(ancestor)) {
+			return ancestor;
+		}
+	}
+	return null;
+}
+
 // Only declarations handed to an author materialize an item list. The
 // engine's own computed styles never do. Every computed declaration lists
 // the same longhands first, so their indices are accessors on the shared
@@ -4562,7 +4679,10 @@ function getContainingBlockBox(
 	position: string,
 ): DOMRect | null {
 	if (position === "fixed") {
-		return getViewportBox(declaration);
+		const block = getFixedContainingBlock(declaration[kElement]);
+		return block
+			? getUsedBoxRect(declaration, block, false)
+			: getViewportBox(declaration);
 	}
 	if (position === "absolute") {
 		for (
@@ -4571,7 +4691,10 @@ function getContainingBlockBox(
 			ancestor = flatParentElement(ancestor)
 		) {
 			const ancestorPosition = getComputedValue(ancestor, "position");
-			if (ancestorPosition && ancestorPosition !== "static") {
+			if (
+				(ancestorPosition && ancestorPosition !== "static") ||
+				establishesFixedContainingBlock(ancestor)
+			) {
 				return getUsedBoxRect(declaration, ancestor, false);
 			}
 		}

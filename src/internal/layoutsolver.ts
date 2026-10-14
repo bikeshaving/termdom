@@ -44,8 +44,9 @@ type DisplayType =
 	"grid";
 
 // `fixed` is contained by the viewport however deep it is, so no
-// ancestor between may claim it. `sticky` flows as static does and is
-// shifted only when its position is read.
+// ancestor between may claim it. A fixed box some ancestor contains is
+// given `absolute` instead. `sticky` flows as static does and is shifted
+// only when its position is read.
 export type PositionType =
 	"static" | "relative" | "absolute" | "fixed" | "sticky";
 
@@ -53,8 +54,8 @@ function isOutOfFlowType(positionType: PositionType): boolean {
 	return positionType === "absolute" || positionType === "fixed";
 }
 
-export function isContainingBlockType(positionType: PositionType): boolean {
-	return positionType !== "static";
+export function isContainingBlock(style: Style): boolean {
+	return style.positionType !== "static" || style.containsPositioned;
 }
 
 export type AvailableSpace = "indefinite" | "definite" | "shrink-to-fit";
@@ -179,6 +180,9 @@ export interface Style {
 	// Whether the box clips what overflows it, so its scrollable overflow
 	// stops at its own edges (css-overflow-3 §2.2).
 	clipsOverflow: boolean;
+	// Whether a static box contains its positioned descendants anyway, as
+	// containment, a transform or a filter makes it.
+	containsPositioned: boolean;
 
 	gap: {column: number; row: number};
 
@@ -760,6 +764,7 @@ export function createStyle(): Style {
 		flexWrap: "nowrap",
 		displayType: "flex",
 		clipsOverflow: false,
+		containsPositioned: false,
 
 		gap: {column: 0, row: 0},
 
@@ -1631,7 +1636,7 @@ function getOutOfFlowDescendants(
 			// A fixed box belongs to the viewport however deep it is. An
 			// absolute one stops at the first containing block, itself
 			// included.
-			if (!viewport && isContainingBlockType(type)) {
+			if (!viewport && isContainingBlock(child.style)) {
 				continue;
 			}
 			enter(child);

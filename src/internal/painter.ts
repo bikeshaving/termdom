@@ -1,11 +1,13 @@
 import {
 	type Cascade,
+	establishesFixedContainingBlock,
 	getBoxModel,
 	getCellBorderWidths,
 	getCellSize,
 	getComputedValue,
 	getDeclaredDisplay,
 	getTabSize,
+	getUsedOverflow,
 	getWhiteSpace,
 	resolveBorderSides,
 	resolveLength,
@@ -274,7 +276,6 @@ function readPaintStyle(element: Element): PaintStyle {
 		// takes the element's own color, as a border's currentcolor does.
 		outlineColor = hasColor ? CSSValues.numberFromCSSColor(outline) : fg;
 	}
-	const overflow = getComputedValue(element, "overflow");
 	let shiftX = 0;
 	let shiftY = 0;
 	if (getComputedValue(element, "position") === "relative") {
@@ -313,8 +314,8 @@ function readPaintStyle(element: Element): PaintStyle {
 			? border
 			: null,
 		outlineColor,
-		overflowX: getComputedValue(element, "overflow-x") || overflow,
-		overflowY: getComputedValue(element, "overflow-y") || overflow,
+		overflowX: getUsedOverflow(element, "x"),
+		overflowY: getUsedOverflow(element, "y"),
 		textTransform: getComputedValue(element, "text-transform"),
 		whiteSpace: getWhiteSpace(element),
 		tabSize: getTabSize(element),
@@ -1803,8 +1804,9 @@ function getMathCellStyle(
 // The context root's clip intersected with the overflow of the ancestors
 // in the box's containing block chain (css-overflow-3 §3). A relative or
 // sticky box is contained by its parent, so every scroller around it
-// clips it. An absolute box skips to its nearest positioned ancestor, and
-// a fixed box to the viewport.
+// clips it. An absolute box skips to its nearest positioned or containing
+// ancestor, and a fixed box to its nearest containing ancestor or the
+// viewport.
 function getPositionedClip(
 	painter: Painter,
 	element: Element,
@@ -1819,15 +1821,15 @@ function getPositionedClip(
 		ancestor = flatParentElement(ancestor)
 	) {
 		if (
-			position === "fixed" ||
-			(position === "absolute" && !isPositioned(ancestor))
+			(position === "fixed" ||
+				(position === "absolute" && !isPositioned(ancestor))) &&
+			!establishesFixedContainingBlock(ancestor)
 		) {
 			continue;
 		}
 		position = getComputedValue(ancestor, "position");
-		const overflow = getComputedValue(ancestor, "overflow");
-		const overflowX = getComputedValue(ancestor, "overflow-x") || overflow;
-		const overflowY = getComputedValue(ancestor, "overflow-y") || overflow;
+		const overflowX = getUsedOverflow(ancestor, "x");
+		const overflowY = getUsedOverflow(ancestor, "y");
 		if (isClippingOverflow(overflowX) || isClippingOverflow(overflowY)) {
 			const rect = painter[kLayout].getRect(ancestor);
 			if (rect) {
