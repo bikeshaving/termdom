@@ -75,11 +75,15 @@ class Slot extends Stamp {
 	}
 
 	static read(value: object): SlotRecord {
-		try {
-			return (value as Slot).#record;
-		} catch {
+		if (
+			(typeof value !== "object" && typeof value !== "function") ||
+			value === null ||
+			!(#record in value)
+		) {
 			throw new TypeError("Illegal invocation");
 		}
+
+		return (value as Slot).#record;
 	}
 }
 
@@ -196,7 +200,9 @@ export function declareInterfaceObject(
 }
 
 /** Calls `hook` with each object sealed from now on, and its class. */
-export function onSeal(hook: (target: object, type: Constructor) => void): void {
+export function onSeal(
+	hook: (target: object, type: Constructor) => void,
+): void {
 	sealedHook = hook;
 }
 
@@ -233,8 +239,8 @@ export function declareSealedParent(
  * or the one declareSealedParent() named.
  */
 export function parentOf(type: Constructor): Constructor {
-	const parent = sealedParents.get(type) ??
-		(Object.getPrototypeOf(type) as Constructor);
+	const parent =
+		sealedParents.get(type) ?? (Object.getPrototypeOf(type) as Constructor);
 	return interfaceObjects.get(parent) ?? parent;
 }
 
