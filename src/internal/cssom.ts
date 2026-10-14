@@ -31,9 +31,6 @@ import {
 	flushStyle,
 	getAddedNodes,
 	getAttributeList,
-	getAttributeLocalName,
-	getAttributeNamespace,
-	getAttributeValue,
 	getCellPixels,
 	getCellSizeSetting,
 	getClassTokens,
@@ -48,6 +45,7 @@ import {
 	HTML_NAMESPACE,
 	isButtonInput,
 	isDocumentElement,
+	isShadowRoot,
 	isUAShadowTree,
 	localNameOf,
 	MATHML_NAMESPACE,
@@ -3629,12 +3627,6 @@ const elementSheets = new WeakMap<Element, CSSStyleSheet>();
 
 const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
 
-// A bare fragment is a document fragment too and hosts nothing, which
-// is what separates it from a tree some element composes.
-function isShadowRoot(root: Node): root is ShadowRoot {
-	return nodeTypeOf(root) === 11 && (root as ShadowRoot).host !== undefined;
-}
-
 function getSheet(element: Element): CSSStyleSheet {
 	let sheet = elementSheets.get(element);
 	if (!sheet) {
@@ -4210,9 +4202,9 @@ function getSharedResolved(
 		key += `,${id}`;
 	}
 	for (const attribute of getAttributeList(element)) {
-		key += `\0${getAttributeNamespace(attribute) ?? ""}:${
-			getAttributeLocalName(attribute)
-		}=${getAttributeValue(attribute)}`;
+		key += `\0${attribute.extra.namespace ?? ""}:${
+			attribute.extra.localName
+		}=${attribute.extra.value}`;
 	}
 	const parent = flatParentElement(element);
 	let table: Map<string, Map<string, string>>;
@@ -5294,7 +5286,7 @@ function resolvePropertyValueRaw(
 	let direction: string | null = null;
 	const declarationSlots = _(declaration);
 	const mapsHere = names.length === 1
-		? CSSValues.acceptsAnyName
+		? () => true
 		: (name: string): boolean =>
 			name === property ||
 			CSSValues.getPhysicalProperty(
@@ -9738,10 +9730,9 @@ function getRuleIndex(cascade: Cascade): RuleIndex {
 function getIdValue(element: Element): string | null {
 	for (const attribute of getAttributeList(element)) {
 		if (
-			getAttributeLocalName(attribute) === "id" &&
-			getAttributeNamespace(attribute) === null
+			attribute.extra.localName === "id" && attribute.extra.namespace === null
 		) {
-			return getAttributeValue(attribute);
+			return attribute.extra.value;
 		}
 	}
 	return null;

@@ -13,7 +13,6 @@ import {
 	CanvasGradient,
 	CanvasPattern,
 	CanvasRenderingContext2D,
-	canvasToPNG,
 	clearCanvasText,
 	createCellGridContext,
 	createContext2D,
@@ -65,6 +64,7 @@ import {
 	type Bitmap,
 	createBitmap,
 	decodeImageOffThread,
+	encodePNG,
 	IMAGE_ACCEPT,
 	MAX_IMAGE_PIXELS,
 	naturalHeightOf,
@@ -5259,7 +5259,7 @@ function retarget(
 }
 
 /** Whether a root is a shadow root, meaning a fragment with a host. */
-function isShadowRoot(root: Node): root is ShadowRoot {
+export function isShadowRoot(root: unknown): root is ShadowRoot {
 	return root instanceof ShadowRoot;
 }
 
@@ -9907,20 +9907,6 @@ function setDescendantText(node: Node, value: string | null): void {
 
 export type AttributeSlots = Slots<Attr>;
 
-export function getAttributeLocalName(attribute: AttributeSlots): string {
-	return attribute.extra.localName;
-}
-
-export function getAttributeNamespace(
-	attribute: AttributeSlots,
-): string | null {
-	return attribute.extra.namespace;
-}
-
-export function getAttributeValue(attribute: AttributeSlots): string {
-	return attribute.extra.value;
-}
-
 const kQualifiedName = Symbol("qualified name");
 
 interface AttrExtra extends NodeExtra {
@@ -10900,7 +10886,7 @@ export class Element extends Node implements globalThis.Element {
 		fullscreenChanged(this);
 		// The screen switch happens on the next frame so no frame straddles it.
 		// The promise resolves once that frame is written.
-		return frameSettled(_(this).document, attached);
+		return _(attached).extra.render();
 	}
 
 	hasAttributes(): boolean {
@@ -12074,7 +12060,7 @@ export class HTMLElement extends Element {
 		slots.customState = "custom";
 		slots.definition = definition;
 		slots.isValue = null;
-		slots.registry = getDefinitionRegistry(definition);
+		slots.registry = definition.registry;
 	}
 
 	get style(): globalThis.CSSStyleDeclaration {
@@ -14305,12 +14291,6 @@ function upgradeElement(
 	}
 }
 
-function getDefinitionRegistry(
-	definition: CustomElementDefinition,
-): CustomElementRegistry | null {
-	return definition.registry;
-}
-
 // Elements inside template contents never upgrade, including ones moved
 // in that already carry a registry (custom-elements/registries/upgrade.html).
 // Parser-built contents already resolve to no definition, because the
@@ -16061,7 +16041,7 @@ class HTMLCanvasElement extends HTMLElement {
 			: getCanvasBitmap(this);
 		const bytes = bitmap === null || bitmap.width === 0 || bitmap.height === 0
 			? null
-			: canvasToPNG(bitmap);
+			: encodePNG(bitmap);
 		void type;
 		setTimeout(() =>
 			callback(
@@ -16084,7 +16064,7 @@ class HTMLCanvasElement extends HTMLElement {
 		if (bitmap.width === 0 || bitmap.height === 0) {
 			return "data:,";
 		}
-		const bytes = canvasToPNG(bitmap);
+		const bytes = encodePNG(bitmap);
 		let binary = "";
 		for (let i = 0; i < bytes.length; i += 0x8000) {
 			binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -28048,7 +28028,7 @@ export class Document extends Node implements globalThis.Document {
 		if (exiting) {
 			fullscreenChanged(exiting);
 		}
-		return frameSettled(this, attached);
+		return _(attached).extra.render();
 	}
 
 	// There is no document.open() here, so there is never a parse to flush.
@@ -37470,15 +37450,6 @@ function holdFrameCallback(
 	const handle = state.next++;
 	state.held.set(handle, callback);
 	return handle;
-}
-
-// A fullscreen transition resolves its promise here, once the render
-// that carries the switch has been written.
-function frameSettled(
-	_document: Document,
-	attached: AttachedDocument,
-): Promise<void> {
-	return _(attached).extra.render();
 }
 
 /**

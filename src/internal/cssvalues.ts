@@ -5178,10 +5178,6 @@ export function getSlotCandidates(property: string): readonly string[] {
 	return names;
 }
 
-export function acceptsAnyName(): boolean {
-	return true;
-}
-
 /** Roman numeral for 1-3999. Callers must range-check. */
 function toRoman(num: number): string {
 	const romanNumerals = [
