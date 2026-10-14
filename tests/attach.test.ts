@@ -270,6 +270,73 @@ test("window.close() fires beforeunload, then tears down", async () => {
 	expect(watched.closes()).toBe(1);
 });
 
+test("window.close() ends a session whose requestAnimationFrame chain never stops", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const watched = closeCountingTransport(terminal);
+	const dom = new TermDOM({transport: watched.transport});
+	dom.attach();
+	let frames = 0;
+
+	function tick(): void {
+		frames++;
+		dom.document.body.textContent = `frame ${frames}`;
+		dom.window.requestAnimationFrame(tick);
+	}
+
+	dom.window.requestAnimationFrame(tick);
+	await until(() => frames > 3);
+	dom.window.close();
+	await until(() => watched.closes() === 1);
+	expect(watched.closes()).toBe(1);
+});
+
+test("timers run between the frames of a requestAnimationFrame chain that runs long", async () => {
+	// A write to a tty finishes before the call returns, so nothing between
+	// frames is a task unless the loop makes one.
+	const dom = new TermDOM({
+		transport: {
+			cols: 40,
+			rows: 10,
+			interactive: true,
+			sharesScreen: false,
+			readable: new ReadableStream<string>({}),
+			writable: new WritableStream<string>({}),
+			resizes: new ReadableStream({}),
+			ready: Promise.resolve(),
+			closed: new Promise(() => {}),
+			close() {},
+		},
+		colorDepth: "rgb",
+		colorScheme: "dark",
+	});
+	dom.attach();
+	let frames = 0;
+
+	function tick(): void {
+		frames++;
+		const end = performance.now() + 20;
+		while (performance.now() < end) {
+			// A frame longer than the frame interval.
+		}
+		dom.document.body.textContent = `frame ${frames}`;
+		dom.window.requestAnimationFrame(tick);
+	}
+
+	try {
+		dom.window.requestAnimationFrame(tick);
+		await until(() => frames > 2);
+		const before = frames;
+		let firedAt = -1;
+		setTimeout(() => {
+			firedAt = frames;
+		}, 0);
+		await until(() => firedAt !== -1);
+		expect(firedAt - before).toBeLessThan(3);
+	} finally {
+		await dom.dispose();
+	}
+});
+
 test("a beforeunload listener that preventDefaults keeps the session", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const watched = closeCountingTransport(terminal);

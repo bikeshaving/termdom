@@ -330,6 +330,14 @@ interface TermDOMSlots extends EventTargetSlots {
 	// mutation starts a fresh one below it.
 	sealed: boolean;
 	renderQueued: boolean;
+	// How many frames the loop has begun, and the render() calls waiting
+	// for the frame after the one under way when they were made.
+	framesStarted: number;
+	frameWaiters: Array<{
+		frame: number;
+		resolve: () => void;
+		reject: (error: unknown) => void;
+	}>;
 	// Which screen frames land on. Switched at the start of a frame when
 	// the document's fullscreen state disagrees.
 	onAlternateScreen: boolean;
@@ -420,6 +428,8 @@ export class TermDOM extends EventTarget {
 		slots.sealed = false;
 
 		slots.renderQueued = false;
+		slots.framesStarted = 0;
+		slots.frameWaiters = [];
 		slots.onAlternateScreen = false;
 		slots.renderInFlight = null;
 		slots.flowPainted = false;
@@ -1207,6 +1217,32 @@ function cellSizeChanged(termDOM: TermDOM): void {
 	syncMediaQueries(termDOM.document);
 }
 
+// Settled once a frame begun after the call has been painted, which holds
+// the caller's changes, or once the loop stops without painting one.
+function waitForFrame(termDOM: TermDOM): Promise<void> {
+	const termDOMSlots = _(termDOM);
+	return new Promise((resolve, reject) => {
+		termDOMSlots.frameWaiters.push({
+			frame: termDOMSlots.framesStarted + 1,
+			resolve,
+			reject,
+		});
+	});
+}
+
+function settleFrameWaiters(termDOM: TermDOM, painted: number): void {
+	const termDOMSlots = _(termDOM);
+	const waiters = termDOMSlots.frameWaiters;
+	termDOMSlots.frameWaiters = waiters.filter(
+		(waiter) => waiter.frame > painted,
+	);
+	for (const waiter of waiters) {
+		if (waiter.frame <= painted) {
+			waiter.resolve();
+		}
+	}
+}
+
 async function render(termDOM: TermDOM): Promise<void> {
 	// Until attach(), mutations keep the DOM and layout live but write
 	// nothing. Nor while suspended: the terminal is the shell's until the
@@ -1225,14 +1261,17 @@ async function render(termDOM: TermDOM): Promise<void> {
 	// Coalesce, never drop. A dropped render leaves the diff's previous
 	// buffer out of step with the screen. The loop folds this call's changes
 	// into a trailing frame, so awaiting render() means they are painted.
+	// It waits for that frame, not for the loop to go idle, which a
+	// requestAnimationFrame chain never lets it do.
 	if (termDOMSlots.renderInFlight !== null) {
 		termDOMSlots.renderQueued = true;
-		return termDOMSlots.renderInFlight;
+		return waitForFrame(termDOM);
 	}
 
 	// The loop's first synchronous step can trigger a render, which has to
 	// coalesce too, so claim the slot before starting.
 	termDOMSlots.renderInFlight = Promise.resolve();
+	const painted = waitForFrame(termDOM);
 	let framesAwaiting = false;
 	const frames = (async () => {
 		try {
@@ -1262,14 +1301,15 @@ async function render(termDOM: TermDOM): Promise<void> {
 					break;
 				}
 				// One frame per interval at most. What changes in the wait,
-				// a burst of keys or a timer's updates, is drawn once.
+				// a burst of keys or a timer's updates, is drawn once. The
+				// wait is a task even when the last frame ran over, or a
+				// requestAnimationFrame chain would run frame after frame on
+				// microtasks alone, and input and timers would never get a turn.
 				const wait =
 					termDOMSlots.lastFrameAt + FRAME_INTERVAL_MS - performance.now();
-				if (wait > 0) {
-					await new Promise((resolve) => setTimeout(resolve, wait));
-					if (!isAttached(termDOM) || termDOMSlots.suspended) {
-						break;
-					}
+				await new Promise((resolve) => setTimeout(resolve, Math.max(0, wait)));
+				if (!isAttached(termDOM) || termDOMSlots.suspended) {
+					break;
 				}
 				// A resize that began in the wait draws its own frame once
 				// it settles.
@@ -1277,6 +1317,7 @@ async function render(termDOM: TermDOM): Promise<void> {
 					break;
 				}
 				termDOMSlots.lastFrameAt = performance.now();
+				const frame = ++termDOMSlots.framesStarted;
 				// The order of "update the rendering": the frame callbacks
 				// first, then style, layout and paint, so what a callback
 				// changes lands in the frame it ran for and nothing is shown
@@ -1293,6 +1334,7 @@ async function render(termDOM: TermDOM): Promise<void> {
 				// After the paint, never inside the scrollTo() that asked
 				// for it. A listener's mutations queue the next frame.
 				runScrollSteps(termDOM.document);
+				settleFrameWaiters(termDOM, frame);
 			} while (termDOMSlots.renderQueued || framesAwaiting);
 		} catch (error) {
 			// The page's own exceptions were reported where they happened,
@@ -1304,13 +1346,23 @@ async function render(termDOM: TermDOM): Promise<void> {
 			} catch (_err) {
 				// The failure that got us here.
 			}
-			throw error;
+			// Raised once: to whoever waits for a frame, or else out of the
+			// loop.
+			const waiters = termDOMSlots.frameWaiters;
+			termDOMSlots.frameWaiters = [];
+			if (waiters.length === 0) {
+				throw error;
+			}
+			for (const waiter of waiters) {
+				waiter.reject(error);
+			}
 		} finally {
 			termDOMSlots.renderInFlight = null;
+			settleFrameWaiters(termDOM, Infinity);
 		}
 	})();
 	termDOMSlots.renderInFlight = frames;
-	return frames;
+	return painted;
 }
 
 /**
