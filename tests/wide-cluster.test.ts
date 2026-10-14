@@ -1,16 +1,20 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {Framebuffer} from "../src/internal/framebuffer.ts";
+import {
+	beginFrame,
+	endFrame,
+	Framebuffer,
+} from "../src/internal/framebuffer.ts";
 import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
 
 test("a cell written inside a wide cluster's span is dropped, not emitted", () => {
 	const framebuffer = new Framebuffer(2, 12, "rgb");
-	const ctx = framebuffer.beginFrame({offset: 0});
+	const ctx = beginFrame(framebuffer, {offset: 0});
 	ctx.drawText("काा", 2, 0);
 	ctx.drawText("ab", 3, 0);
 	ctx.drawText("cd", 6, 0);
-	const frame = stripControlCodes(framebuffer.endFrame());
+	const frame = stripControlCodes(endFrame(framebuffer));
 	expect(frame).toContain("काा");
 	expect(frame).toContain("cd");
 	expect(frame).not.toContain("a");
@@ -35,14 +39,14 @@ test("text that replaces wide characters on a fill rewrites every column", () =>
 	// written, so a frame may skip neither.
 	const framebuffer = new Framebuffer(1, 20, "rgb");
 	const white = {bg: 0x1000000 | 0xffffff, fg: 0x1000000};
-	let ctx = framebuffer.beginFrame({offset: 0});
+	let ctx = beginFrame(framebuffer, {offset: 0});
 	ctx.drawText(" ".repeat(20), 0, 0, white);
 	ctx.drawText("日本語のテキストです", 0, 0, white);
-	framebuffer.endFrame();
-	ctx = framebuffer.beginFrame({offset: 0});
+	endFrame(framebuffer);
+	ctx = beginFrame(framebuffer, {offset: 0});
 	ctx.drawText(" ".repeat(20), 0, 0, white);
 	ctx.drawText("a", 0, 0, white);
-	const update = framebuffer.endFrame();
+	const update = endFrame(framebuffer);
 	expect(update).not.toMatch(/\x1b\[\d*C/);
 	expect(update.replace(/\x1b(?:\[[?\d;]*[A-Za-z]|[78])|\r/g, "")).toBe(
 		"a" + " ".repeat(19),

@@ -1,9 +1,11 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 
 import {
+	beginFrame,
 	type CellContext,
 	Framebuffer,
 	type LineStyle,
+	repaintAll,
 } from "../src/internal/framebuffer.ts";
 import {renderFrame, stripControlCodes} from "./test-utils.js";
 
@@ -47,7 +49,7 @@ describe("cells through the pen", () => {
 
 	test("measureText and the layout agree on widths", () => {
 		const framebuffer = new Framebuffer(1, 10);
-		const context = framebuffer.beginFrame({offset: 0});
+		const context = beginFrame(framebuffer, {offset: 0});
 		expect(
 			context.measureText("\u{1f468}\u200d\u{1f469}\u200d\u{1f467}")
 				.width,
@@ -143,7 +145,7 @@ describe("Framebuffer", () => {
 				ctx.drawText("First", 0, 0);
 			});
 
-			framebuffer.repaintAll();
+			repaintAll(framebuffer);
 
 			// Second frame should render everything (no diff)
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
@@ -702,7 +704,7 @@ describe("Border Integration", () => {
 		const framebuffer = new Framebuffer(5, 10);
 
 		// Clear previous buffer to ensure output
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Draw a simple box that fits in viewport
@@ -756,7 +758,7 @@ describe("Border Integration", () => {
 		const framebuffer = new Framebuffer(5, 8);
 
 		// Clear any previous state
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Draw box
@@ -784,7 +786,7 @@ describe("Border Integration", () => {
 	test("renders collapsed table borders - 2x2 grid", () => {
 		const framebuffer = new Framebuffer(5, 9);
 
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Simulate CSS collapsed table borders by drawing each cell's borders
@@ -843,7 +845,7 @@ describe("Border Integration", () => {
 	test("renders collapsed table borders - mixed border styles", () => {
 		const framebuffer = new Framebuffer(3, 11);
 
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Test border merging with different styles
@@ -880,7 +882,7 @@ describe("Border Integration", () => {
 	test("renders collapsed table borders - header and data rows", () => {
 		const framebuffer = new Framebuffer(5, 13); // 3 columns x 4 chars + 1 = 13 width
 
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Simulate a typical HTML table with header and data rows
@@ -949,7 +951,7 @@ describe("Border Integration", () => {
 
 	test("renders simple single cell with border", () => {
 		const framebuffer = new Framebuffer(4, 6);
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawBox(1, 1, 4, 2, {
@@ -969,7 +971,7 @@ describe("Border Integration", () => {
 
 	test("renders double border box", () => {
 		const framebuffer = new Framebuffer(5, 8);
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawBox(1, 1, 6, 3, {
@@ -991,7 +993,7 @@ describe("Border Integration", () => {
 
 	test("renders partial borders - top and left only", () => {
 		const framebuffer = new Framebuffer(4, 6);
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawBox(0, 0, 5, 3, {top: {style: "solid"}, left: {style: "solid"}});
@@ -1012,7 +1014,7 @@ describe("Border Integration", () => {
 		// the end rows too. Skipping them is what cut a blockquote's border
 		// off at its first and last row.
 		const framebuffer = new Framebuffer(5, 8);
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawBox(0, 0, 6, 4, {left: {style: "solid"}});
@@ -1028,7 +1030,7 @@ describe("Border Integration", () => {
 
 	test("renders L-shaped table border pattern", () => {
 		const framebuffer = new Framebuffer(4, 7);
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Top row - 2 cells
@@ -1067,7 +1069,7 @@ describe("Border Integration", () => {
 
 	test("renders mixed border styles in adjacent cells", () => {
 		const framebuffer = new Framebuffer(3, 9);
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Solid border cell
@@ -1109,7 +1111,7 @@ describe("Border Integration", () => {
 
 	test("renders nested borders", () => {
 		const framebuffer = new Framebuffer(7, 11); // Wider to accommodate text
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Outer border
@@ -1145,7 +1147,7 @@ describe("Border Integration", () => {
 
 	test("renders grid layout - 3x3 table", () => {
 		const framebuffer = new Framebuffer(7, 11);
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Draw 3x3 grid of cells
@@ -1177,7 +1179,7 @@ describe("Border Integration", () => {
 
 	test("renders borders with background colors", () => {
 		const framebuffer = new Framebuffer(3, 7);
-		framebuffer.repaintAll();
+		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			ctx.drawRect(1, 0, 5, 3, 0x00ff00);

@@ -2047,133 +2047,6 @@ export class Framebuffer {
 		this.documentTopRow = row;
 	}
 
-	resize(rows: number, cols: number): void {
-		this.rowCount = rows;
-		this.colCount = cols;
-	}
-
-	rebind(colorDepth: ColorDepth): void {
-		this.writer = new FrameWriter(colorDepth);
-	}
-
-	scrollTo(row: number): void {
-		const next = Math.max(0, row);
-		this.frameScroll += next - this.scrollRow;
-		this.scrollRow = next;
-	}
-
-	/**
-	 * XTWINOPS answered. Whatever was painted against the guess repaints.
-	 * Whether the size changed, which images sized from it need to know.
-	 */
-	adoptCellPixels(width: number, height: number): boolean {
-		const cell = this.cellSize;
-		if (cell.width === width && cell.height === height) {
-			return false;
-		}
-		this.cellSize = {width, height};
-		this.invalidate();
-		return true;
-	}
-
-	invalidate(): void {
-		this.dirty = true;
-	}
-
-	/**
-	 * Whether shifting the whole width of rows `[top, end)` by `delta` costs
-	 * less than repainting the columns `[left, right)` that scrolled. The
-	 * shift drags the cells beside those columns too, and the diff has to put
-	 * them back. Both costs are read from the previous frame: a cell costs
-	 * its glyph and each color it changes from its left neighbour, which is
-	 * what the diff writes.
-	 */
-	insetShiftPays(
-		{delta, top, end, left, right}: {
-			delta: number;
-			top: number;
-			end: number;
-			left: number;
-			right: number;
-		},
-	): boolean {
-		const prev = this.prev;
-		if (prev === null || prev.cols !== this.colCount) {
-			return false;
-		}
-		const cols = prev.cols;
-		const cost = (index: number, col: number): number =>
-			1 +
-			(col > 0 && prev.fg[index] !== prev.fg[index - 1] ? 16 : 0) +
-			(col > 0 && prev.bg[index] !== prev.bg[index - 1] ? 16 : 0);
-		const bandEnd = Math.min(end, prev.rows);
-		let beside = 0;
-		let inside = 0;
-		for (let row = top; row < bandEnd; row++) {
-			const from = row + delta;
-			const vacated = from < top || from >= bandEnd;
-			for (let col = 0; col < cols; col++) {
-				const index = row * cols + col;
-				const source = from * cols + col;
-				if (col < left || col >= right) {
-					if (
-						vacated
-							? prev.cluster[index] !== 0
-							: !prev.equalCells(index, prev, source)
-					) {
-						beside += cost(index, col);
-					}
-				} else if (!vacated && !prev.equalCells(index, prev, source)) {
-					inside += cost(source, col);
-				}
-			}
-		}
-		return beside < inside;
-	}
-
-	wrappedRowsAbovePark(cols: number): number | null {
-		// The resize re-anchor asks the terminal where the cursor is after the
-		// rewrap and subtracts this to find the frame's new top row.
-		const grid = this.prev;
-		if (grid === null || this.prevContentHeight === 0 || cols <= 0) {
-			return null;
-		}
-		const limit = Math.min(this.park.row, this.prevContentHeight, grid.rows);
-		let wrapped = 0;
-		for (let row = 0; row < limit; row++) {
-			wrapped += Math.max(1, Math.ceil(getLineLength(grid, row) / cols));
-		}
-		return wrapped + Math.floor(this.park.col / cols);
-	}
-
-	replaced(fromRow = 0): void {
-		this.needsScreenReset = true;
-		this.resetAtRow = Math.max(0, fromRow);
-		this.hasSavedCursor = false;
-		this.repaintAll();
-	}
-
-	scrolled(rows: number): void {
-		if (this.needsScreenReset && rows > 0) {
-			this.resetAtRow = Math.max(0, this.resetAtRow - rows);
-		}
-	}
-
-	flushProbes(): void {
-		this.probesWaiting = true;
-	}
-
-	repaintAll(): void {
-		// After a resize DECRC no longer points where the content began, so
-		// the next frame homes, clears the visible screen (ED2, not ED3, which
-		// leaves the scrollback alone) and reprints.
-		this.spare = this.prev;
-		this.prev = null;
-		this.prevContentHeight = 0;
-		this.needsFullClear = true;
-		this.renderedLines.clear();
-	}
-
 	/**
 	 * A static rendering painted apart from the live frame, whose pending
 	 * scroll and repaint it leaves as they were. A file wants a bare
@@ -2197,463 +2070,632 @@ export class Framebuffer {
 		}
 		return lines.join(lineEnding) + lineEnding;
 	}
+}
 
-	beginFrame(
-		{offset, cursorRow: cursorPosition, regionRows, delta = 0, shift}: {
+export function resize(
+	framebuffer: Framebuffer,
+	rows: number,
+	cols: number,
+): void {
+	framebuffer.rowCount = rows;
+	framebuffer.colCount = cols;
+}
 
-			/** Rows the document scroll has scrolled, negative downward. */
-			offset: number;
+export function rebind(framebuffer: Framebuffer, colorDepth: ColorDepth): void {
+	framebuffer.writer = new FrameWriter(colorDepth);
+}
 
-			cursorRow?: number;
+export function scrollTo(framebuffer: Framebuffer, row: number): void {
+	const next = Math.max(0, row);
+	framebuffer.frameScroll += next - framebuffer.scrollRow;
+	framebuffer.scrollRow = next;
+}
 
-			/**
-		 * Rows past the terminal's height are printed with newlines, which is
-		 * what scrolls them into the scrollback where they stay readable (CSI n
-		 * S discards them). Only the last `rows` of them are kept as the previous
-		 * frame. They alone can still be redrawn.
-		 */
-			regionRows?: number;
+/**
+ * XTWINOPS answered. Whatever was painted against the guess repaints.
+ * Whether the size changed, which images sized from it need to know.
+ */
+export function adoptCellPixels(
+	framebuffer: Framebuffer,
+	width: number,
+	height: number,
+): boolean {
+	const cell = framebuffer.cellSize;
+	if (cell.width === width && cell.height === height) {
+		return false;
+	}
+	framebuffer.cellSize = {width, height};
+	invalidate(framebuffer);
+	return true;
+}
 
-			/** Rows the scroll moved since the last frame, positive downward. */
-			delta?: number;
+export function invalidate(framebuffer: Framebuffer): void {
+	framebuffer.dirty = true;
+}
 
-			/**
-		 * The buffer rows `delta` moved, `[top, end)`. A scrolling element's
-		 * port names its own rows here. The document scroll names none and takes the
-		 * whole region, which is the rows a document scroll spans.
-		 */
-			shift?: {top: number; end: number};
-		},
-	): CellContext {
-		const frameRows = Math.max(this.rowCount, regionRows ?? this.rowCount);
-		const overflowing = frameRows > this.rowCount;
-		const cols = this.colCount;
-		const next = takeGrid(this, frameRows, cols);
-
-		// A scroll is a rigid transform the terminal performs. DECSTBM pins the
-		// margins to the shifted rows (a shell prompt above stays outside
-		// them), and DL/IL move rows without touching the scrollback, unlike
-		// SU. The previous buffer shifts to match, so the diff emits only what
-		// the shift could not carry.
-		let scrollPrefix = "";
-		const regionTop = cursorPosition ?? 0;
-		const regionEnd = Math.min(regionRows ?? this.rowCount, this.rowCount);
-		const viewportTop = Math.max(0, shift ? shift.top : 0);
-		const bandEnd = Math.min(
-			this.prev?.rows ?? 0,
-			shift ? shift.end : regionEnd - regionTop,
-		);
-		const scrolling =
-			delta !== 0 &&
-			Math.abs(delta) < this.rowCount &&
-			bandEnd > viewportTop &&
-			this.prev !== null &&
-			// A rigid transform only makes sense between grids of one width.
-			this.prev.cols === cols &&
-			!overflowing &&
-			!this.needsScreenReset &&
-			!this.needsFullClear &&
-			cursorPosition !== undefined;
-		if (scrolling && this.prev) {
-			const prev = this.prev;
-			const start = viewportTop * cols;
-			const stop = bandEnd * cols;
-			const shift = Math.abs(delta) * cols;
-			if (shift >= stop - start) {
-				prev.clearRange(start, stop);
-			} else if (delta > 0) {
-				prev.moveRange(start, start + shift, stop);
-				prev.clearRange(stop - shift, stop);
-			} else {
-				prev.moveRange(start + shift, start, stop - shift);
-				prev.clearRange(start, start + shift);
-			}
-			const shiftedLines = new Set<number>();
-			for (const row of this.renderedLines) {
-				if (row < viewportTop || row >= bandEnd) {
-					shiftedLines.add(row);
-					continue;
+/**
+ * Whether shifting the whole width of rows `[top, end)` by `delta` costs
+ * less than repainting the columns `[left, right)` that scrolled. The
+ * shift drags the cells beside those columns too, and the diff has to put
+ * them back. Both costs are read from the previous frame: a cell costs
+ * its glyph and each color it changes from its left neighbour, which is
+ * what the diff writes.
+ */
+export function insetShiftPays(
+	framebuffer: Framebuffer,
+	{delta, top, end, left, right}: {
+		delta: number;
+		top: number;
+		end: number;
+		left: number;
+		right: number;
+	},
+): boolean {
+	const prev = framebuffer.prev;
+	if (prev === null || prev.cols !== framebuffer.colCount) {
+		return false;
+	}
+	const cols = prev.cols;
+	const cost = (index: number, col: number): number =>
+		1 +
+		(col > 0 && prev.fg[index] !== prev.fg[index - 1] ? 16 : 0) +
+		(col > 0 && prev.bg[index] !== prev.bg[index - 1] ? 16 : 0);
+	const bandEnd = Math.min(end, prev.rows);
+	let beside = 0;
+	let inside = 0;
+	for (let row = top; row < bandEnd; row++) {
+		const from = row + delta;
+		const vacated = from < top || from >= bandEnd;
+		for (let col = 0; col < cols; col++) {
+			const index = row * cols + col;
+			const source = from * cols + col;
+			if (col < left || col >= right) {
+				if (
+					vacated
+						? prev.cluster[index] !== 0
+						: !prev.equalCells(index, prev, source)
+				) {
+					beside += cost(index, col);
 				}
-				const moved = row - delta;
-				if (moved >= viewportTop && moved < bandEnd) {
-					shiftedLines.add(moved);
-				}
+			} else if (!vacated && !prev.equalCells(index, prev, source)) {
+				inside += cost(source, col);
 			}
-			this.renderedLines = shiftedLines;
+		}
+	}
+	return beside < inside;
+}
 
-			// DECSTBM homes the cursor. The standard prefix always CUPs for
-			// this caller afterward.
-			const count = Math.abs(delta);
-			const bandRow = regionTop + viewportTop + 1;
-			const writer = this.writer;
-			writer.setScrollRegion(bandRow, regionTop + bandEnd).cursorTo(bandRow, 1);
-			if (delta > 0) {
-				writer.deleteLines(count);
-			} else {
-				writer.insertLines(count);
+export function wrappedRowsAbovePark(
+	framebuffer: Framebuffer,
+	cols: number,
+): number | null {
+	// The resize re-anchor asks the terminal where the cursor is after the
+	// rewrap and subtracts this to find the frame's new top row.
+	const grid = framebuffer.prev;
+	if (grid === null || framebuffer.prevContentHeight === 0 || cols <= 0) {
+		return null;
+	}
+	const limit = Math.min(
+		framebuffer.park.row,
+		framebuffer.prevContentHeight,
+		grid.rows,
+	);
+	let wrapped = 0;
+	for (let row = 0; row < limit; row++) {
+		wrapped += Math.max(1, Math.ceil(getLineLength(grid, row) / cols));
+	}
+	return wrapped + Math.floor(framebuffer.park.col / cols);
+}
+
+export function replaced(framebuffer: Framebuffer, fromRow = 0): void {
+	framebuffer.needsScreenReset = true;
+	framebuffer.resetAtRow = Math.max(0, fromRow);
+	framebuffer.hasSavedCursor = false;
+	repaintAll(framebuffer);
+}
+
+export function scrolled(framebuffer: Framebuffer, rows: number): void {
+	if (framebuffer.needsScreenReset && rows > 0) {
+		framebuffer.resetAtRow = Math.max(0, framebuffer.resetAtRow - rows);
+	}
+}
+
+export function flushProbes(framebuffer: Framebuffer): void {
+	framebuffer.probesWaiting = true;
+}
+
+export function repaintAll(framebuffer: Framebuffer): void {
+	// After a resize DECRC no longer points where the content began, so
+	// the next frame homes, clears the visible screen (ED2, not ED3, which
+	// leaves the scrollback alone) and reprints.
+	framebuffer.spare = framebuffer.prev;
+	framebuffer.prev = null;
+	framebuffer.prevContentHeight = 0;
+	framebuffer.needsFullClear = true;
+	framebuffer.renderedLines.clear();
+}
+
+export function beginFrame(
+	framebuffer: Framebuffer,
+	{offset, cursorRow: cursorPosition, regionRows, delta = 0, shift}: {
+
+		/** Rows the document scroll has scrolled, negative downward. */
+		offset: number;
+
+		cursorRow?: number;
+
+		/**
+	 * Rows past the terminal's height are printed with newlines, which is
+	 * what scrolls them into the scrollback where they stay readable (CSI n
+	 * S discards them). Only the last `rows` of them are kept as the previous
+	 * frame. They alone can still be redrawn.
+	 */
+		regionRows?: number;
+
+		/** Rows the scroll moved since the last frame, positive downward. */
+		delta?: number;
+
+		/**
+	 * The buffer rows `delta` moved, `[top, end)`. A scrolling element's
+	 * port names its own rows here. The document scroll names none and takes the
+	 * whole region, which is the rows a document scroll spans.
+	 */
+		shift?: {top: number; end: number};
+	},
+): CellContext {
+	const frameRows = Math.max(
+		framebuffer.rowCount,
+		regionRows ?? framebuffer.rowCount,
+	);
+	const overflowing = frameRows > framebuffer.rowCount;
+	const cols = framebuffer.colCount;
+	const next = takeGrid(framebuffer, frameRows, cols);
+
+	// A scroll is a rigid transform the terminal performs. DECSTBM pins the
+	// margins to the shifted rows (a shell prompt above stays outside
+	// them), and DL/IL move rows without touching the scrollback, unlike
+	// SU. The previous buffer shifts to match, so the diff emits only what
+	// the shift could not carry.
+	let scrollPrefix = "";
+	const regionTop = cursorPosition ?? 0;
+	const regionEnd = Math.min(
+		regionRows ?? framebuffer.rowCount,
+		framebuffer.rowCount,
+	);
+	const viewportTop = Math.max(0, shift ? shift.top : 0);
+	const bandEnd = Math.min(
+		framebuffer.prev?.rows ?? 0,
+		shift ? shift.end : regionEnd - regionTop,
+	);
+	const scrolling =
+		delta !== 0 &&
+		Math.abs(delta) < framebuffer.rowCount &&
+		bandEnd > viewportTop &&
+		framebuffer.prev !== null &&
+		// A rigid transform only makes sense between grids of one width.
+		framebuffer.prev.cols === cols &&
+		!overflowing &&
+		!framebuffer.needsScreenReset &&
+		!framebuffer.needsFullClear &&
+		cursorPosition !== undefined;
+	if (scrolling && framebuffer.prev) {
+		const prev = framebuffer.prev;
+		const start = viewportTop * cols;
+		const stop = bandEnd * cols;
+		const shift = Math.abs(delta) * cols;
+		if (shift >= stop - start) {
+			prev.clearRange(start, stop);
+		} else if (delta > 0) {
+			prev.moveRange(start, start + shift, stop);
+			prev.clearRange(stop - shift, stop);
+		} else {
+			prev.moveRange(start + shift, start, stop - shift);
+			prev.clearRange(start, start + shift);
+		}
+		const shiftedLines = new Set<number>();
+		for (const row of framebuffer.renderedLines) {
+			if (row < viewportTop || row >= bandEnd) {
+				shiftedLines.add(row);
+				continue;
 			}
-			scrollPrefix = writer.resetScrollRegion().take();
+			const moved = row - delta;
+			if (moved >= viewportTop && moved < bandEnd) {
+				shiftedLines.add(moved);
+			}
+		}
+		framebuffer.renderedLines = shiftedLines;
+
+		// DECSTBM homes the cursor. The standard prefix always CUPs for
+		// this caller afterward.
+		const count = Math.abs(delta);
+		const bandRow = regionTop + viewportTop + 1;
+		const writer = framebuffer.writer;
+		writer.setScrollRegion(bandRow, regionTop + bandEnd).cursorTo(bandRow, 1);
+		if (delta > 0) {
+			writer.deleteLines(count);
+		} else {
+			writer.insertLines(count);
+		}
+		scrollPrefix = writer.resetScrollRegion().take();
+	}
+
+	const context = new CellContext(next, frameRows, cols, offset);
+	context.backdrop = framebuffer.exchange?.terminalBackground ?? null;
+	framebuffer.pendingEnd = (): string => {
+		const measurer =
+			framebuffer.exchange !== null &&
+			isProbingUseful(framebuffer.exchange)
+				? framebuffer.exchange
+				: undefined;
+		// The frame is complete. Join the borders whose strokes touch, so
+		// the diff below sees a junction appear even when only its
+		// neighbour changed.
+		joinTouchingBorders(next);
+
+		// Build the diff. A frame taller than the terminal is a growth
+		// frame. The rows below the fold have never been on screen, so
+		// there is nothing to diff against. Print all of it.
+		let diff = framebuffer.diff;
+		if (diff === null || diff.rows !== frameRows || diff.cols !== cols) {
+			diff = new CellGrid(frameRows, cols);
+			framebuffer.diff = diff;
+		} else {
+			diff.clear();
 		}
 
-		const context = new CellContext(next, frameRows, cols, offset);
-		context.backdrop = this.exchange?.terminalBackground ?? null;
-		this.pendingEnd = (): string => {
-			const measurer = this.exchange !== null && isProbingUseful(this.exchange)
-				? this.exchange
-				: undefined;
-			// The frame is complete. Join the borders whose strokes touch, so
-			// the diff below sees a junction appear even when only its
-			// neighbour changed.
-			joinTouchingBorders(next);
+		const prev = framebuffer.prev;
+		const erasesDisputedRows =
+			framebuffer.exchange !== null &&
+			!framebuffer.exchange.clusterWidthsNegotiated();
+		if (prev === null || overflowing) {
+			diff.copyFrom(next, {to: 0, start: 0, end: frameRows * cols});
+		} else {
+			const prevRows = prev.rows;
+			const prevCols = prev.cols;
+			const aligned = prevCols === cols;
 
-			// Build the diff. A frame taller than the terminal is a growth
-			// frame. The rows below the fold have never been on screen, so
-			// there is nothing to diff against. Print all of it.
-			let diff = this.diff;
-			if (diff === null || diff.rows !== frameRows || diff.cols !== cols) {
-				diff = new CellGrid(frameRows, cols);
-				this.diff = diff;
-			} else {
-				diff.clear();
-			}
+			for (let row = 0; row < framebuffer.rowCount; row++) {
+				const nextRow = row * cols;
+				const prevRow = row * prevCols;
+				const rowInPrev = row < prevRows;
 
-			const prev = this.prev;
-			const erasesDisputedRows =
-				this.exchange !== null && !this.exchange.clusterWidthsNegotiated();
-			if (prev === null || overflowing) {
-				diff.copyFrom(next, {to: 0, start: 0, end: frameRows * cols});
-			} else {
-				const prevRows = prev.rows;
-				const prevCols = prev.cols;
-				const aligned = prevCols === cols;
-
-				for (let row = 0; row < this.rowCount; row++) {
-					const nextRow = row * cols;
-					const prevRow = row * prevCols;
-					const rowInPrev = row < prevRows;
-
-					let col = 0;
-					if (aligned && rowInPrev) {
-						while (col < cols) {
-							const n = nextRow + col;
-							const p = prevRow + col;
-							if (
-								next.cluster[n] !== prev.cluster[p] ||
-								next.fg[n] !== prev.fg[p] ||
-								next.bg[n] !== prev.bg[p] ||
-								(next.attrs[n] & ATTR.StyleMask) !==
-								(prev.attrs[p] & ATTR.StyleMask) ||
-								next.border[n] !== prev.border[p]
-							) {
-								break;
-							}
-							col++;
-						}
-						if (col === cols) {
-							continue;
-						}
-						// A terminal that drew a cluster of the old row at another
-						// width than the engine measured has the rest of that row
-						// shifted. Cells rewritten after it would land beside the
-						// old ones, so the row is erased and written whole. A
-						// cluster of the new row is the same in reverse: a
-						// multiplexer that counts it wider than the terminal under
-						// it draws it never writes the extra column, and that
-						// column would keep the old row's glyph.
-						if (
-							erasesDisputedRows &&
-							hasDisputedCellBefore(prev, prevRow, cols, next, nextRow)
-						) {
-							this.renderedLines.delete(row);
-							let empty = true;
-							for (let c = 0; c < cols; c++) {
-								if (next.cluster[nextRow + c] !== 0) {
-									diff.setFrom(nextRow + c, next, nextRow + c);
-									empty = false;
-								}
-							}
-							if (empty) {
-								diff.setBlank(nextRow);
-							}
-							continue;
-						}
-					}
-
-					for (; col < cols; col++) {
+				let col = 0;
+				if (aligned && rowInPrev) {
+					while (col < cols) {
 						const n = nextRow + col;
-						const nextChar = next.cluster[n];
-
-						if (!rowInPrev || col >= prevCols) {
-							if (nextChar !== 0) {
-								diff.setFrom(n, next, n);
-							}
-							continue;
-						}
-
 						const p = prevRow + col;
-						const prevChar = prev.cluster[p];
-
-						if (prevChar === 0) {
-							if (nextChar !== 0) {
-								diff.setFrom(n, next, n);
-							}
-						} else if (nextChar === 0) {
-							// A cell the frame no longer paints has to be
-							// erased, not merely skipped. The terminal still
-							// shows the old glyph there.
-							diff.setBlank(n);
-						} else if (!next.equalCells(n, prev, p)) {
-							diff.setFrom(n, next, n);
-						}
-					}
-				}
-			}
-
-			// A reset frame redraws onto rows whose terminal content is
-			// unknown, because the previous buffer was dropped. Every region
-			// row must clear ITSELF. A row the new frame leaves blank gets a
-			// seeded space so generateANSI emits its \r\e[K line like any
-			// content row. Per-row erases instead of one ED from the home
-			// position matter in tmux, which preserves a fully-erased screen by
-			// pushing it into scrollback (the courtesy it extends to `clear`).
-			// The ED archived a copy of the old frame into the scrollback on
-			// every resize.
-			const resetFrame = this.needsScreenReset || this.needsFullClear;
-			if (resetFrame) {
-				// Buffer rows are region-relative (the anchor row is where the
-				// frame CUPs to). regionRows is a screen-absolute end. Seed
-				// exactly the region's rows. Seeding further would count blank
-				// screen rows as content and skew the park the resize re-anchor
-				// measures from.
-				const anchorRow = this.needsScreenReset
-					? this.resetAtRow
-					: (cursorPosition ?? 0);
-				const regionHeight = (regionRows ?? this.rowCount) - anchorRow;
-				const seedRows = Math.min(frameRows, this.rowCount, regionHeight);
-				for (let row = 0; row < seedRows; row++) {
-					const rowStart = row * cols;
-					let empty = true;
-					for (let col = 0; col < cols; col++) {
-						if (diff.cluster[rowStart + col] !== 0) {
-							empty = false;
+						if (
+							next.cluster[n] !== prev.cluster[p] ||
+							next.fg[n] !== prev.fg[p] ||
+							next.bg[n] !== prev.bg[p] ||
+							(next.attrs[n] & ATTR.StyleMask) !==
+							(prev.attrs[p] & ATTR.StyleMask) ||
+							next.border[n] !== prev.border[p]
+						) {
 							break;
 						}
+						col++;
 					}
-					if (empty) {
-						diff.setBlank(rowStart);
+					if (col === cols) {
+						continue;
 					}
-				}
-			}
-
-			let hasContent = false;
-
-			const diffCells = frameRows * cols;
-			for (let index = 0; index < diffCells; index++) {
-				if (diff.cluster[index] !== 0) {
-					hasContent = true;
-					break;
-				}
-			}
-
-			// Waiting probes go only under cells this same write paints over.
-			// A frame that diffs to nothing offers none, so the first
-			// contentful row re-emits verbatim: identical cells, no erase, and
-			// the probes go under them.
-			if (this.probesWaiting) {
-				this.probesWaiting = false;
-				if (measurer !== undefined && !hasContent) {
-					for (let row = 0; row < frameRows && !hasContent; row++) {
-						const rowStart = row * cols;
-						for (let col = 0; col < cols; col++) {
-							const index = rowStart + col;
-							if (next.cluster[index] !== 0) {
-								diff.setFrom(index, next, index);
-								hasContent = true;
+					// A terminal that drew a cluster of the old row at another
+					// width than the engine measured has the rest of that row
+					// shifted. Cells rewritten after it would land beside the
+					// old ones, so the row is erased and written whole. A
+					// cluster of the new row is the same in reverse: a
+					// multiplexer that counts it wider than the terminal under
+					// it draws it never writes the extra column, and that
+					// column would keep the old row's glyph.
+					if (
+						erasesDisputedRows &&
+						hasDisputedCellBefore(prev, prevRow, cols, next, nextRow)
+					) {
+						framebuffer.renderedLines.delete(row);
+						let empty = true;
+						for (let c = 0; c < cols; c++) {
+							if (next.cluster[nextRow + c] !== 0) {
+								diff.setFrom(nextRow + c, next, nextRow + c);
+								empty = false;
 							}
 						}
+						if (empty) {
+							diff.setBlank(nextRow);
+						}
+						continue;
+					}
+				}
+
+				for (; col < cols; col++) {
+					const n = nextRow + col;
+					const nextChar = next.cluster[n];
+
+					if (!rowInPrev || col >= prevCols) {
+						if (nextChar !== 0) {
+							diff.setFrom(n, next, n);
+						}
+						continue;
+					}
+
+					const p = prevRow + col;
+					const prevChar = prev.cluster[p];
+
+					if (prevChar === 0) {
+						if (nextChar !== 0) {
+							diff.setFrom(n, next, n);
+						}
+					} else if (nextChar === 0) {
+						// A cell the frame no longer paints has to be
+						// erased, not merely skipped. The terminal still
+						// shows the old glyph there.
+						diff.setBlank(n);
+					} else if (!next.equalCells(n, prev, p)) {
+						diff.setFrom(n, next, n);
 					}
 				}
 			}
-
-			// A caret appearing, moving, or disappearing must emit a frame even
-			// when no cell changed. A blurred input leaves no visual diff, but
-			// the real cursor is sitting visible at the stale caret until a
-			// frame re-parks it.
-			const caret = context.caret;
-			const caretBufferRow = caret === null ? null : caret.row + offset;
-			const caretVisible =
-				caret !== null &&
-				caretBufferRow !== null &&
-				caretBufferRow >= 0 &&
-				caretBufferRow < this.rowCount &&
-				caret.col >= 0 &&
-				caret.col < this.colCount;
-			const caretStateChanged =
-				caretVisible !== this.lastCaretVisible ||
-				(caretVisible &&
-					(this.park.row !== caretBufferRow || this.park.col !== caret.col));
-			if (caretStateChanged) {
-				hasContent = true;
-			}
-			this.lastCaretVisible = caretVisible;
-
-			if (scrolling) {
-				hasContent = true;
-			}
-			// A repaint asked the screen to be cleared, and the frame that
-			// answers it must be written even with nothing to draw. Leaving
-			// fullscreen for an emptied document shows the rows the document
-			// held before it went fullscreen until something erases them.
-			if (this.needsFullClear) {
-				hasContent = true;
-			}
-
-			const writer = this.writer;
-			let prefix = scrollPrefix;
-			let frameStartRow: number | undefined;
-			if (hasContent) {
-				if (this.needsScreenReset) {
-					// After a resize the terminal rewrapped our frame and moved
-					// the cursor where DECRC cannot find it. The row our
-					// content starts at still holds, since what is above us
-					// does not reflow-grow. No home and no ED. That would wipe
-					// what is above us, and tmux archives a full-screen erase
-					// into the scrollback.
-					prefix += writer.cursorTo(this.resetAtRow + 1, 1).saveCursor().take();
-					this.hasSavedCursor = true;
-					this.needsScreenReset = false;
-					this.needsFullClear = false;
-					frameStartRow = this.resetAtRow;
-				} else if (cursorPosition !== undefined) {
-					prefix += writer.cursorTo(cursorPosition + 1, 1).saveCursor().take();
-					this.hasSavedCursor = true;
-					frameStartRow = cursorPosition;
-				} else if (offset > 0) {
-					prefix += writer.cursorTo(offset + 1, 1).take();
-					frameStartRow = offset;
-				} else if (this.hasSavedCursor) {
-					prefix += writer.restoreCursor().saveCursor().take();
-				} else {
-					prefix += writer.saveCursor().take();
-					this.hasSavedCursor = true;
-				}
-
-				if (this.needsFullClear) {
-					prefix += writer.eraseBelow().take();
-					this.needsFullClear = false;
-				}
-			}
-
-			const output = generateANSI(diff, writer, this.renderedLines, measurer);
-
-			let contentHeight = 0;
-			for (const row of this.renderedLines) {
-				if (row + 1 > contentHeight) {
-					contentHeight = row + 1;
-				}
-			}
-
-			// Rows the last frame painted below where this one ends still show
-			// what it left on them.
-			let staleOutput = "";
-			if (this.hasSavedCursor && this.prevContentHeight > contentHeight) {
-				writer.restoreCursor();
-				if (contentHeight > 0) {
-					writer.cursorDown(contentHeight);
-				}
-				staleOutput = writer.carriageReturn().eraseBelow().take();
-			} else if (
-				resetFrame &&
-				frameStartRow !== undefined &&
-				frameStartRow + contentHeight < this.rowCount
-			) {
-				// After a reset nothing below the content is trusted either,
-				// because the old frame may have been taller. Erase from the
-				// first row past the content. This is a PARTIAL erase, which no
-				// terminal treats as a screen clear worth archiving.
-				staleOutput = writer
-					.cursorTo(frameStartRow + contentHeight + 1, 1)
-					.eraseBelow()
-					.take();
-			}
-
-			// The two grids trade places. Of an overflowing frame only the rows
-			// still on screen are kept. The rest scrolled into the scrollback.
-			const retired = this.prev;
-			if (overflowing) {
-				this.prev = next.bottomRows(this.rowCount);
-				this.spare = next;
-			} else {
-				this.prev = next;
-				this.spare = retired;
-			}
-			this.prevContentHeight = contentHeight;
-
-			// A diff leaves the cursor at the last changed cell, and a resize
-			// scrolls just enough to keep the cursor on screen, so the park is
-			// what wrappedRowsAbovePark re-anchors from. A caret parks the real
-			// cursor there, shown, because IME composition anchors at the real
-			// cursor.
-			let parkOutput = "";
-			if (hasContent && contentHeight > 0) {
-				if (caretVisible) {
-					this.park = {row: caretBufferRow, col: caret.col};
-					if (frameStartRow !== undefined) {
-						parkOutput = writer
-							.cursorTo(frameStartRow + caretBufferRow + 1, caret.col + 1)
-							.take();
-					} else if (this.hasSavedCursor) {
-						writer.restoreCursor().saveCursor();
-						if (caretBufferRow > 0) {
-							writer.cursorDown(caretBufferRow);
-						}
-						writer.carriageReturn();
-						if (caret.col > 0) {
-							writer.cursorForward(caret.col);
-						}
-						parkOutput = writer.take();
-					}
-				} else {
-					this.park = {row: Math.min(contentHeight, this.rowCount) - 1, col: 0};
-					if (frameStartRow !== undefined) {
-						// 0-based start + height = 1-based last row. The bottom
-						// margin caps it when the content overflows the screen.
-						const lastRow = Math.min(
-							frameStartRow + contentHeight,
-							this.rowCount,
-						);
-						parkOutput = writer.cursorTo(lastRow, 1).take();
-					} else if (this.hasSavedCursor) {
-						// No absolute row to name. Restore the saved content
-						// start, re-save it, and step down. CUD stops at the
-						// bottom margin, which is the content's visible bottom
-						// when it overflows.
-						writer.restoreCursor().saveCursor();
-						if (contentHeight > 1) {
-							writer.cursorDown(contentHeight - 1);
-						}
-						parkOutput = writer.carriageReturn().take();
-					}
-				}
-			}
-
-			const frame = prefix + output + staleOutput + parkOutput;
-			return hasContent ? wrapSynchronized(frame) : frame;
-		};
-		return context;
-	}
-
-	endFrame(): string {
-		const end = this.pendingEnd;
-		if (end === null) {
-			throw new Error("endFrame without a begun frame");
 		}
-		this.pendingEnd = null;
-		const ansi = end();
-		this.frameScroll = 0;
-		this.dirty = false;
-		return ansi;
+
+		// A reset frame redraws onto rows whose terminal content is
+		// unknown, because the previous buffer was dropped. Every region
+		// row must clear ITSELF. A row the new frame leaves blank gets a
+		// seeded space so generateANSI emits its \r\e[K line like any
+		// content row. Per-row erases instead of one ED from the home
+		// position matter in tmux, which preserves a fully-erased screen by
+		// pushing it into scrollback (the courtesy it extends to `clear`).
+		// The ED archived a copy of the old frame into the scrollback on
+		// every resize.
+		const resetFrame =
+			framebuffer.needsScreenReset || framebuffer.needsFullClear;
+		if (resetFrame) {
+			// Buffer rows are region-relative (the anchor row is where the
+			// frame CUPs to). regionRows is a screen-absolute end. Seed
+			// exactly the region's rows. Seeding further would count blank
+			// screen rows as content and skew the park the resize re-anchor
+			// measures from.
+			const anchorRow = framebuffer.needsScreenReset
+				? framebuffer.resetAtRow
+				: (cursorPosition ?? 0);
+			const regionHeight = (regionRows ?? framebuffer.rowCount) - anchorRow;
+			const seedRows = Math.min(frameRows, framebuffer.rowCount, regionHeight);
+			for (let row = 0; row < seedRows; row++) {
+				const rowStart = row * cols;
+				let empty = true;
+				for (let col = 0; col < cols; col++) {
+					if (diff.cluster[rowStart + col] !== 0) {
+						empty = false;
+						break;
+					}
+				}
+				if (empty) {
+					diff.setBlank(rowStart);
+				}
+			}
+		}
+
+		let hasContent = false;
+
+		const diffCells = frameRows * cols;
+		for (let index = 0; index < diffCells; index++) {
+			if (diff.cluster[index] !== 0) {
+				hasContent = true;
+				break;
+			}
+		}
+
+		// Waiting probes go only under cells this same write paints over.
+		// A frame that diffs to nothing offers none, so the first
+		// contentful row re-emits verbatim: identical cells, no erase, and
+		// the probes go under them.
+		if (framebuffer.probesWaiting) {
+			framebuffer.probesWaiting = false;
+			if (measurer !== undefined && !hasContent) {
+				for (let row = 0; row < frameRows && !hasContent; row++) {
+					const rowStart = row * cols;
+					for (let col = 0; col < cols; col++) {
+						const index = rowStart + col;
+						if (next.cluster[index] !== 0) {
+							diff.setFrom(index, next, index);
+							hasContent = true;
+						}
+					}
+				}
+			}
+		}
+
+		// A caret appearing, moving, or disappearing must emit a frame even
+		// when no cell changed. A blurred input leaves no visual diff, but
+		// the real cursor is sitting visible at the stale caret until a
+		// frame re-parks it.
+		const caret = context.caret;
+		const caretBufferRow = caret === null ? null : caret.row + offset;
+		const caretVisible =
+			caret !== null &&
+			caretBufferRow !== null &&
+			caretBufferRow >= 0 &&
+			caretBufferRow < framebuffer.rowCount &&
+			caret.col >= 0 &&
+			caret.col < framebuffer.colCount;
+		const caretStateChanged =
+			caretVisible !== framebuffer.lastCaretVisible ||
+			(caretVisible &&
+				(framebuffer.park.row !== caretBufferRow ||
+					framebuffer.park.col !== caret.col));
+		if (caretStateChanged) {
+			hasContent = true;
+		}
+		framebuffer.lastCaretVisible = caretVisible;
+
+		if (scrolling) {
+			hasContent = true;
+		}
+		// A repaint asked the screen to be cleared, and the frame that
+		// answers it must be written even with nothing to draw. Leaving
+		// fullscreen for an emptied document shows the rows the document
+		// held before it went fullscreen until something erases them.
+		if (framebuffer.needsFullClear) {
+			hasContent = true;
+		}
+
+		const writer = framebuffer.writer;
+		let prefix = scrollPrefix;
+		let frameStartRow: number | undefined;
+		if (hasContent) {
+			if (framebuffer.needsScreenReset) {
+				// After a resize the terminal rewrapped our frame and moved
+				// the cursor where DECRC cannot find it. The row our
+				// content starts at still holds, since what is above us
+				// does not reflow-grow. No home and no ED. That would wipe
+				// what is above us, and tmux archives a full-screen erase
+				// into the scrollback.
+				prefix += writer
+					.cursorTo(framebuffer.resetAtRow + 1, 1)
+					.saveCursor()
+					.take();
+				framebuffer.hasSavedCursor = true;
+				framebuffer.needsScreenReset = false;
+				framebuffer.needsFullClear = false;
+				frameStartRow = framebuffer.resetAtRow;
+			} else if (cursorPosition !== undefined) {
+				prefix += writer.cursorTo(cursorPosition + 1, 1).saveCursor().take();
+				framebuffer.hasSavedCursor = true;
+				frameStartRow = cursorPosition;
+			} else if (offset > 0) {
+				prefix += writer.cursorTo(offset + 1, 1).take();
+				frameStartRow = offset;
+			} else if (framebuffer.hasSavedCursor) {
+				prefix += writer.restoreCursor().saveCursor().take();
+			} else {
+				prefix += writer.saveCursor().take();
+				framebuffer.hasSavedCursor = true;
+			}
+
+			if (framebuffer.needsFullClear) {
+				prefix += writer.eraseBelow().take();
+				framebuffer.needsFullClear = false;
+			}
+		}
+
+		const output = generateANSI(
+			diff,
+			writer,
+			framebuffer.renderedLines,
+			measurer,
+		);
+
+		let contentHeight = 0;
+		for (const row of framebuffer.renderedLines) {
+			if (row + 1 > contentHeight) {
+				contentHeight = row + 1;
+			}
+		}
+
+		// Rows the last frame painted below where this one ends still show
+		// what it left on them.
+		let staleOutput = "";
+		if (
+			framebuffer.hasSavedCursor &&
+			framebuffer.prevContentHeight > contentHeight
+		) {
+			writer.restoreCursor();
+			if (contentHeight > 0) {
+				writer.cursorDown(contentHeight);
+			}
+			staleOutput = writer.carriageReturn().eraseBelow().take();
+		} else if (
+			resetFrame &&
+			frameStartRow !== undefined &&
+			frameStartRow + contentHeight < framebuffer.rowCount
+		) {
+			// After a reset nothing below the content is trusted either,
+			// because the old frame may have been taller. Erase from the
+			// first row past the content. This is a PARTIAL erase, which no
+			// terminal treats as a screen clear worth archiving.
+			staleOutput = writer
+				.cursorTo(frameStartRow + contentHeight + 1, 1)
+				.eraseBelow()
+				.take();
+		}
+
+		// The two grids trade places. Of an overflowing frame only the rows
+		// still on screen are kept. The rest scrolled into the scrollback.
+		const retired = framebuffer.prev;
+		if (overflowing) {
+			framebuffer.prev = next.bottomRows(framebuffer.rowCount);
+			framebuffer.spare = next;
+		} else {
+			framebuffer.prev = next;
+			framebuffer.spare = retired;
+		}
+		framebuffer.prevContentHeight = contentHeight;
+
+		// A diff leaves the cursor at the last changed cell, and a resize
+		// scrolls just enough to keep the cursor on screen, so the park is
+		// what wrappedRowsAbovePark re-anchors from. A caret parks the real
+		// cursor there, shown, because IME composition anchors at the real
+		// cursor.
+		let parkOutput = "";
+		if (hasContent && contentHeight > 0) {
+			if (caretVisible) {
+				framebuffer.park = {row: caretBufferRow, col: caret.col};
+				if (frameStartRow !== undefined) {
+					parkOutput = writer
+						.cursorTo(frameStartRow + caretBufferRow + 1, caret.col + 1)
+						.take();
+				} else if (framebuffer.hasSavedCursor) {
+					writer.restoreCursor().saveCursor();
+					if (caretBufferRow > 0) {
+						writer.cursorDown(caretBufferRow);
+					}
+					writer.carriageReturn();
+					if (caret.col > 0) {
+						writer.cursorForward(caret.col);
+					}
+					parkOutput = writer.take();
+				}
+			} else {
+				framebuffer.park = {
+					row: Math.min(contentHeight, framebuffer.rowCount) - 1,
+					col: 0,
+				};
+				if (frameStartRow !== undefined) {
+					// 0-based start + height = 1-based last row. The bottom
+					// margin caps it when the content overflows the screen.
+					const lastRow = Math.min(
+						frameStartRow + contentHeight,
+						framebuffer.rowCount,
+					);
+					parkOutput = writer.cursorTo(lastRow, 1).take();
+				} else if (framebuffer.hasSavedCursor) {
+					// No absolute row to name. Restore the saved content
+					// start, re-save it, and step down. CUD stops at the
+					// bottom margin, which is the content's visible bottom
+					// when it overflows.
+					writer.restoreCursor().saveCursor();
+					if (contentHeight > 1) {
+						writer.cursorDown(contentHeight - 1);
+					}
+					parkOutput = writer.carriageReturn().take();
+				}
+			}
+		}
+
+		const frame = prefix + output + staleOutput + parkOutput;
+		return hasContent ? wrapSynchronized(frame) : frame;
+	};
+	return context;
+}
+
+export function endFrame(framebuffer: Framebuffer): string {
+	const end = framebuffer.pendingEnd;
+	if (end === null) {
+		throw new Error("endFrame without a begun frame");
 	}
+	framebuffer.pendingEnd = null;
+	const ansi = end();
+	framebuffer.frameScroll = 0;
+	framebuffer.dirty = false;
+	return ansi;
 }
 
 // Whether the old row or the new one holds a disputed cluster at or

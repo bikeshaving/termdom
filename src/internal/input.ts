@@ -54,7 +54,7 @@ import {
 } from "./dom.ts";
 import {getEditingHost, requestEditingInsert} from "./editing.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
-import type {Framebuffer} from "./framebuffer.ts";
+import {type Framebuffer, invalidate, repaintAll} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";
 
 // The keys a terminal names, with the legacy keyCode plenty of code
@@ -448,7 +448,7 @@ export class Input {
 
 	dispatch(item: WireKey[] | WireMouse | WirePaste): void {
 		// Pseudo-state and the selection move with no mutation record.
-		this.framebuffer.invalidate();
+		invalidate(this.framebuffer);
 		if (Array.isArray(item)) {
 			deliverKeys(this, item);
 			return;
@@ -1439,7 +1439,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		// A terminal program's redraw, for a screen stray output scribbled
 		// on: clear what shows and paint the whole document again.
 		if (keyName === "l" && ctrlKey && !altKey && !shiftKey && !metaKey) {
-			input.framebuffer.repaintAll();
+			repaintAll(input.framebuffer);
 			requestRender(input.document);
 		}
 		if (keyName === "z" && ctrlKey && !altKey && !shiftKey && !metaKey) {

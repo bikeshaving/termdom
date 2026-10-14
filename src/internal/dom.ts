@@ -58,7 +58,13 @@ import {
 import * as CSSValues from "./cssvalues.ts";
 import {getEditingHost, installEditing} from "./editing.ts";
 import type {Exchange} from "./exchange.ts";
-import {CellContext, CellGrid, type Framebuffer} from "./framebuffer.ts";
+import {
+	CellContext,
+	CellGrid,
+	type Framebuffer,
+	invalidate,
+	scrollTo,
+} from "./framebuffer.ts";
 import {
 	getInterface,
 	getReflections,
@@ -10611,7 +10617,7 @@ export class Element extends Node implements globalThis.Element {
 			// subtree and repaint.
 			if (this.isConnected) {
 				_(attached).extra.layout.invalidate(this);
-				_(attached).extra.framebuffer.invalidate();
+				invalidate(_(attached).extra.framebuffer);
 				void _(attached).extra.render();
 			}
 		}
@@ -12181,7 +12187,7 @@ export class HTMLElement extends Element {
 			return;
 		}
 		handleFocusChange(_(attached).extra.cascade, this, null);
-		_(attached).extra.framebuffer.invalidate();
+		invalidate(_(attached).extra.framebuffer);
 		void _(attached).extra.render();
 		dispatchAsUserAgent(
 			this,
@@ -12342,7 +12348,7 @@ function runFocusingSteps(element: HTMLElement): void {
 	// elements' resolved styles are stale whether or not a listener changes
 	// anything.
 	handleFocusChange(_(attached).extra.cascade, previous, element);
-	_(attached).extra.framebuffer.invalidate();
+	invalidate(_(attached).extra.framebuffer);
 	void _(attached).extra.render();
 	// An edit the user made in the control focus is leaving is committed
 	// first, so change fires before blur.
@@ -15590,7 +15596,7 @@ function invalidateReplaced(element: Element, reflow: boolean): void {
 			_(attached).extra.layout.invalidate(parent as unknown as Node);
 		}
 	}
-	_(attached).extra.framebuffer.invalidate();
+	invalidate(_(attached).extra.framebuffer);
 	void _(attached).extra.render();
 }
 
@@ -15933,7 +15939,7 @@ export function relayoutReplacedElements(
 		}
 	};
 	visit(root);
-	_(attached).extra.framebuffer.invalidate();
+	invalidate(_(attached).extra.framebuffer);
 	void _(attached).extra.render();
 }
 
@@ -23278,7 +23284,7 @@ function stateChanged(element: Element, states: readonly string[]): void {
 		return;
 	}
 	handleStateChange(_(attached).extra.cascade, element, states);
-	_(attached).extra.framebuffer.invalidate();
+	invalidate(_(attached).extra.framebuffer);
 	queueMicrotask(() => {
 		void _(attached).extra.render();
 	});
@@ -29397,7 +29403,7 @@ function setScrollOffset(
 	if (axis === "top") {
 		recordScrollShift(attached, document, element, next - previous);
 	} else {
-		_(attached).extra.framebuffer.invalidate();
+		invalidate(_(attached).extra.framebuffer);
 	}
 	let pending = pendingScrollTargets.get(document);
 	if (pending === undefined) {
@@ -29535,7 +29541,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 	}
 	if (changed) {
 		scrollShifts.delete(document as Document);
-		_(attached).extra.framebuffer.invalidate();
+		invalidate(_(attached).extra.framebuffer);
 		void _(attached).extra.render();
 	}
 }
@@ -29553,7 +29559,7 @@ function recordScrollShift(
 		shift.delta += delta;
 	} else {
 		scrollShifts.delete(document);
-		_(attached).extra.framebuffer.invalidate();
+		invalidate(_(attached).extra.framebuffer);
 	}
 }
 
@@ -31184,7 +31190,7 @@ function scheduleSelectionChange(document: Document): void {
 	// below. That guard drops the second move in a task but not its paint.
 	const attached = getAttachedDocument(document);
 	if (attached !== undefined) {
-		_(attached).extra.framebuffer.invalidate();
+		invalidate(_(attached).extra.framebuffer);
 		void _(attached).extra.render();
 	}
 	const documentSlots = _(document);
@@ -32975,7 +32981,7 @@ function invalidateHighlights(document: Document): void {
 	if (attached === undefined) {
 		return;
 	}
-	_(attached).extra.framebuffer.invalidate();
+	invalidate(_(attached).extra.framebuffer);
 	void _(attached).extra.render();
 }
 
@@ -35911,7 +35917,7 @@ function onTextControlEditEvent(event: globalThis.Event): void {
 	_(attached).extra.pendingCaretReveal = target;
 	// A document scroll move and a caret move. No mutation record describes
 	// either.
-	_(attached).extra.framebuffer.invalidate();
+	invalidate(_(attached).extra.framebuffer);
 	void _(attached).extra.render();
 }
 
@@ -35983,7 +35989,7 @@ export function scrollDocumentTo(
 	if (next === _(attached).extra.framebuffer.scrollTop) {
 		return;
 	}
-	_(attached).extra.framebuffer.scrollTo(next);
+	scrollTo(_(attached).extra.framebuffer, next);
 	void _(attached).extra.render();
 }
 
@@ -36103,7 +36109,7 @@ export function revealPendingCaret(document: globalThis.Document): void {
 				? revealBottom - (top + regionHeight)
 				: 0;
 	if (delta) {
-		attachedSlots.extra.framebuffer.scrollTo(top + delta);
+		scrollTo(attachedSlots.extra.framebuffer, top + delta);
 		// No mutation record describes a document scroll move.
 		void attachedSlots.extra.render();
 	}

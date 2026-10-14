@@ -15,7 +15,11 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import type {Exchange} from "../src/internal/exchange.ts";
-import {Framebuffer} from "../src/internal/framebuffer.ts";
+import {
+	beginFrame,
+	endFrame,
+	Framebuffer,
+} from "../src/internal/framebuffer.ts";
 import {getStringWidth, recordClusterAdvance} from "../src/internal/text.ts";
 import {
 	captureRawOutput,
@@ -132,11 +136,11 @@ function emit(
 ): string {
 	const framebuffer = new Framebuffer(rows, cols, "rgb");
 	framebuffer.measurer = measurer;
-	const context = framebuffer.beginFrame({offset: 0});
+	const context = beginFrame(framebuffer, {offset: 0});
 	for (const [index, cluster] of cells) {
 		context.drawText(cluster, index % cols, Math.floor(index / cols));
 	}
-	return framebuffer.endFrame();
+	return endFrame(framebuffer);
 }
 
 function settle(ms = 60): Promise<void> {
