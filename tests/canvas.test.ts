@@ -576,6 +576,33 @@ test("hit testing: isPointInPath and isPointInStroke, with Path2D", async () => 
 	dom.dispose();
 });
 
+test("a translucent fill fades the text under it, until the layers cover it", async () => {
+	const {dom, terminal, document} = await mount(
+		"<canvas id=c width=80 height=32></canvas>",
+		40,
+		12,
+		PIXELS,
+	);
+	const ctx = context2d(document);
+	ctx.fillStyle = "#00ff00";
+	ctx.textBaseline = "top";
+	ctx.fillText("rain", 8, 16);
+	ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+	ctx.fillRect(0, 0, 80, 32);
+	await nextFrame(dom);
+	expect(rowText(terminal, 1).slice(1, 5)).toBe("rain");
+	expect(cell(terminal, 1, 1)).toMatchObject({fg: 0x00cc00});
+	// Three layers of 0.2 are just under half opaque, and a fourth is over.
+	ctx.fillRect(0, 0, 80, 32);
+	ctx.fillRect(0, 0, 80, 32);
+	await nextFrame(dom);
+	expect(rowText(terminal, 1).slice(1, 5)).toBe("rain");
+	ctx.fillRect(0, 0, 80, 32);
+	await nextFrame(dom);
+	expect(rowText(terminal, 1).includes("rain")).toBe(false);
+	dom.dispose();
+});
+
 test("fillText draws text as cells over the pixels", async () => {
 	const {dom, terminal, document} = await mount(
 		"<canvas id=c width=80 height=32></canvas>",
