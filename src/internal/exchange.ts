@@ -181,8 +181,6 @@ function createModeQuery(mode: string): string {
 		: `\x1b[${parseInt(mode, 10)}$p`;
 }
 
-// C0, DEL and the C1 range. In untrusted text one would end the
-// sequence around it or start one of its own.
 // Every mode the engine sets, so teardown can reset what was engaged
 // (in this order) and the panic paths can reset the union. A mode
 // written anywhere else is a restore leak.

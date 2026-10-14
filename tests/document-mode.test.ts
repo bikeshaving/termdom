@@ -523,3 +523,18 @@ test("hit-testing finds text in the root's boxes when the body is inline", async
 		.toBe(true);
 	dom.dispose();
 });
+
+test("an element outside the document cannot go fullscreen", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	await nextFrame(dom);
+	const heard: string[] = [];
+	dom.document.addEventListener("fullscreenerror", (event) =>
+		heard.push(event.type));
+	const stage = dom.document.createElement("div");
+	await expect(stage.requestFullscreen()).rejects.toThrow(TypeError);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(heard).toEqual(["fullscreenerror"]);
+	expect(dom.document.fullscreenElement).toBe(null);
+	dom.dispose();
+});

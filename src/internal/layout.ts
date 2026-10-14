@@ -5901,11 +5901,9 @@ export class Layout {
 			}
 
 			// An empty inline gets a zero-width rect at its position, as in a
-			// browser. The block fallback below returns the layout node's
-			// width, which for an empty inline is its containing block's, and
-			// `<div style="width:30ch"><span></span></div>` measured the span
-			// at 30 columns. inline-block keeps the fallback, since its node IS
-			// its box.
+			// browser. The block fallback below would give it the layout node's
+			// width, which for an empty inline is its containing block's.
+			// inline-block keeps the fallback, since its node IS its box.
 			if (display === "inline") {
 				const elementLayoutNode = runLayoutNode(this, element);
 				if (elementLayoutNode) {
@@ -5913,8 +5911,8 @@ export class Layout {
 					return new this.domRect(position.x, position.y, 0, 0);
 				}
 				// An empty inline that does not open its run still has a place:
-				// the cursor the line had reached. Null put the `span` in
-				// `<div>ab<span></span>cd</div>` at 0 rather than 2.
+				// the cursor the line had reached, so the span in
+				// `<div>ab<span></span>cd</div>` sits at 2.
 				const run = getBox(this, element);
 				if (run?.layoutNode) {
 					const origin = getAbsolutePosition(this, run.layoutNode);

@@ -235,3 +235,17 @@ test("offsetParent walks the flat tree and answers only shadow-including ancesto
 	expect(fixed.offsetParent).toBe(null);
 	dom.dispose();
 });
+
+test("an image's x and y are its box's edges from the document's origin", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<p>line</p><p>aa <img width=8 height=16 alt=x></p>";
+	await nextFrame(dom);
+	const image = dom.document.querySelector("img")!;
+	const rect = image.getBoundingClientRect();
+	expect([image.x, image.y]).toEqual([rect.left, rect.top]);
+	expect([image.x, image.y]).not.toEqual([0, 0]);
+	expect(new dom.window.Image().x).toBe(0);
+	dom.dispose();
+});
