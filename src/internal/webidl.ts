@@ -125,10 +125,7 @@ function parseCheck(
 const lineages = new Map<Constructor, Set<Constructor>>();
 
 /** Whether objects `type` makes implement `owner`'s interface. */
-export function implementsInterface(
-	type: Constructor,
-	owner: Constructor,
-): boolean {
+function implementsInterface(type: Constructor, owner: Constructor): boolean {
 	let lineage = lineages.get(type);
 	if (lineage === undefined) {
 		lineage = new Set();

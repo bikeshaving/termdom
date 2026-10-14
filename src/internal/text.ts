@@ -246,7 +246,7 @@ function getGraphemeWidth(cluster: string): number {
 
 	const code = cluster.codePointAt(0)!;
 
-	if (code < 32 || (code >= 0x7f && code < 0xa0)) {
+	if (isControlByte(code)) {
 		return 0;
 	}
 

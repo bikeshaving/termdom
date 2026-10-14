@@ -3989,10 +3989,6 @@ function hasContainment(element: Element, kinds: Set<string>): boolean {
 		.some((keyword) => kinds.has(keyword));
 }
 
-function hasPaintContainment(element: Element): boolean {
-	return hasContainment(element, PAINT_CONTAINMENT);
-}
-
 export function hasLayoutOrPaintContainment(element: Element): boolean {
 	return hasContainment(element, LAYOUT_OR_PAINT_CONTAINMENT);
 }
@@ -4003,7 +3999,7 @@ export function getUsedOverflow(element: Element, axis: "x" | "y"): string {
 	const overflow =
 		getComputedValue(element, axis === "x" ? "overflow-x" : "overflow-y") ||
 		getComputedValue(element, "overflow");
-	return overflow === "visible" && hasPaintContainment(element)
+	return overflow === "visible" && hasContainment(element, PAINT_CONTAINMENT)
 		? "clip"
 		: overflow;
 }

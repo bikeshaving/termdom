@@ -651,7 +651,7 @@ export function superStep(
 }
 
 /** The internal step `key` as `type` defines or inherits it. */
-export function hiddenMember(
+function hiddenMember(
 	type: Constructor,
 	key: string,
 ): (this: object, ...args: unknown[]) => unknown {
