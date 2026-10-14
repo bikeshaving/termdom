@@ -4315,7 +4315,6 @@ interface ComputedStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	// for the paint style to be derived again.
 	styleVersion: object;
 	custom: string[] | null;
-	_customProperties: Step<ComputedStyleDeclaration["_customProperties"]>;
 	_usedValue: Step<ComputedStyleDeclaration["_usedValue"]>;
 	_baseValue: Step<ComputedStyleDeclaration["_baseValue"]>;
 	_syncResolved: Step<ComputedStyleDeclaration["_syncResolved"]>;
@@ -4446,25 +4445,6 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return [...CSS_LONGHANDS, ...getCustomNames(this)][Symbol.iterator]();
 	}
 
-	_customProperties(this: Slots<ComputedStyleDeclaration>): string[] {
-		const names: string[] = [];
-		for (const rule of this.cssRules) {
-			for (const name of Object.keys(rule.declarations)) {
-				if (name.startsWith("--") && !names.includes(name)) {
-					names.push(name);
-				}
-			}
-		}
-		for (const name of Object.keys(
-			getInlineDeclarations(ownerOf(this)).declarations,
-		)) {
-			if (name.startsWith("--") && !names.includes(name)) {
-				names.push(name);
-			}
-		}
-		return names;
-	}
-
 	// Measured through the same flush a geometry read takes, and memoized
 	// behind it, so a property-heavy caller measures once per layout. The
 	// memo belongs to the cascade, which lets a flush drop every one.
@@ -4562,6 +4542,27 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		return value;
 	}
+}
+
+function getDeclaredCustomNames(
+	slots: Slots<ComputedStyleDeclaration>,
+): string[] {
+	const names: string[] = [];
+	for (const rule of slots.cssRules) {
+		for (const name of Object.keys(rule.declarations)) {
+			if (name.startsWith("--") && !names.includes(name)) {
+				names.push(name);
+			}
+		}
+	}
+	for (const name of Object.keys(
+		getInlineDeclarations(ownerOf(slots)).declarations,
+	)) {
+		if (name.startsWith("--") && !names.includes(name)) {
+			names.push(name);
+		}
+	}
+	return names;
 }
 
 // The cascade's declaration, interned, and absolutized against this
@@ -5481,7 +5482,8 @@ function getCustomNames(computed: ComputedStyleDeclaration): string[] {
 		element = flatParentElement(element)
 	) {
 		const declaration = computedSlots.cascade?.declarationFor(element);
-		for (const name of _maybe(declaration)?._customProperties() ?? []) {
+		const slots = _maybe(declaration);
+		for (const name of slots ? getDeclaredCustomNames(slots) : []) {
 			names.add(name);
 		}
 	}
