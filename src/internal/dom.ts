@@ -13867,13 +13867,18 @@ function toCallback(
 	return value as (...args: unknown[]) => void;
 }
 
-function lookUpDefinition(
-	registry: CustomElementRegistry,
+// Every node has a registry. An element takes its document's when
+// created and the tree's when inserted. A shadow root takes its host's
+// unless the caller named another. A node created for a registry that
+// has not been assigned one yet has null, which matches no definition
+// until a registry claims it.
+function lookUpCustomElementDefinition(
+	registry: CustomElementRegistry | null,
 	namespace: string | null,
 	localName: string,
 	is: string | null,
 ): CustomElementDefinition | null {
-	if (namespace !== HTML_NAMESPACE) {
+	if (registry === null || namespace !== HTML_NAMESPACE) {
 		return null;
 	}
 	const registrySlots = _(registry);
@@ -13928,23 +13933,6 @@ function getConstructorDefinition(
 // each define their own elements.
 function createWindowRegistry(): CustomElementRegistry {
 	return constructInternal(() => new CustomElementRegistry());
-}
-
-// Every node has a registry. An element takes its document's when
-// created and the tree's when inserted. A shadow root takes its host's
-// unless the caller named another. A node created for a registry that
-// has not been assigned one yet has null, which matches no definition
-// until a registry claims it.
-function lookUpCustomElementDefinition(
-	registry: CustomElementRegistry | null,
-	namespace: string | null,
-	localName: string,
-	is: string | null,
-): CustomElementDefinition | null {
-	if (registry === null) {
-		return null;
-	}
-	return lookUpDefinition(registry, namespace, localName, is);
 }
 
 // Walks the node tree only. A shadow tree under an element keeps
@@ -23570,22 +23558,6 @@ function hidePopoverStackUntil(
 	}
 }
 
-// Run by both light dismiss and an opening popover. With no hint stack,
-// this is just the auto stack's version.
-function hidePopoversUntil(
-	document: globalThis.Document,
-	endpoint: globalThis.Element | null,
-	focusPreviousElement: boolean,
-	fireEvents: boolean,
-): void {
-	hidePopoverStackUntil(
-		document as Document,
-		endpoint as Element | null,
-		focusPreviousElement,
-		fireEvents,
-	);
-}
-
 // The open auto popover a node belongs to, either by sitting inside it
 // in the flat tree or by being invoked from inside it. Returns the LAST
 // such popover in the stack, so everything above it is exactly what is
@@ -24022,7 +23994,12 @@ export function lightDismissRelease(
 	}
 	const document = _((target as Element)).document;
 	if (getTopmostAutoPopover(document) !== null) {
-		hidePopoversUntil(document, dismissAncestor, false, true);
+		hidePopoverStackUntil(
+			document as Document,
+			dismissAncestor as Element | null,
+			false,
+			true,
+		);
 	}
 }
 
@@ -36233,15 +36210,7 @@ export function runFocusFixup(document: globalThis.Document): void {
 // it, a move into an inert parent, display:none anywhere on its flat
 // chain) unfocuses it, including blur events and restyle.
 function dropUnfocusableFocus(document: Document): void {
-	let active = document.activeElement;
-	while (active !== null) {
-		const shadow = _((active as Element)).shadowRoot;
-		const inner = shadow?.activeElement ?? null;
-		if (inner === null) {
-			break;
-		}
-		active = inner;
-	}
+	const active = getFocusedElement(document);
 	if (active === null || active === document.body) {
 		return;
 	}
