@@ -45,14 +45,38 @@ import {
 	type Window,
 } from "./internal/dom.ts";
 import {
+	abandonColorDepthQuery,
+	abandonColorSchemeQuery,
+	clearScreen,
+	cursorToRow,
 	DEFAULT_ROWS,
+	deferResizeEvent,
+	detectAnchor,
 	type ColorDepth as EmittedColorDepth,
+	eraseBelow,
 	Exchange,
+	flushExchange,
+	initializeCursorDetection,
+	negotiateBidi,
+	negotiateCellPixels,
+	negotiateColorDepth,
+	negotiateColorScheme,
+	negotiateGraphemeClusters,
+	negotiateOverline,
+	queryDeviceAttributes,
+	reclaimModes,
+	releaseModes,
+	reserveRows,
+	restoreEngagedModes,
+	scrubProbeEcho,
+	setDisplayType,
+	startExchange,
 	type TerminalCloseInfo,
 	type TerminalResizeEvent,
 	type TerminalSize,
 	type TerminalTransport,
 	transportFromProcess,
+	writeLines,
 } from "./internal/exchange.ts";
 import {
 	beginFrame,
@@ -673,11 +697,11 @@ export class TermDOM extends EventTarget {
 			}
 
 			started = true;
-			slots.exchange.start(slots.input);
+			startExchange(slots.exchange, slots.input);
 			if (slots.transport.interactive) {
-				slots.exchange.setDisplayType("bracketedPaste", true);
+				setDisplayType(slots.exchange, "bracketedPaste", true);
 				// So dispose can restore the title.
-				slots.exchange.setDisplayType("titleStack", true);
+				setDisplayType(slots.exchange, "titleStack", true);
 				if (this.document.title) {
 					void slots.exchange.setTitle(this.document.title);
 				}
@@ -687,7 +711,7 @@ export class TermDOM extends EventTarget {
 			// The terminal's background, asked first so the first frame can
 			// wait for it.
 			const schemeBefore = slots.exchange.colorScheme;
-			void slots.exchange.negotiateColorScheme().then(() => {
+			void negotiateColorScheme(slots.exchange).then(() => {
 				if (isAttached(this) && slots.exchange.colorScheme !== schemeBefore) {
 					slots.cascade.syncStylesheets();
 					syncMediaQueries(this.document);
@@ -697,7 +721,7 @@ export class TermDOM extends EventTarget {
 			// What colors the terminal shows, when the program leaves it to the
 			// terminal to say. Asked before DA1, like the background.
 			const depthSettled = slots.colorDepth === undefined
-				? slots.exchange.negotiateColorDepth().then((depth) => {
+				? negotiateColorDepth(slots.exchange).then((depth) => {
 					if (isAttached(this) && depth !== slots.framebuffer.colorDepth) {
 						rebind(slots.framebuffer, depth);
 						syncMediaQueries(this.document);
@@ -707,34 +731,34 @@ export class TermDOM extends EventTarget {
 				: Promise.resolve();
 			// A terminal answers in the order it was asked, so once it answers
 			// DA1, one that said nothing of its background never will.
-			const answered = slots.exchange.queryDeviceAttributes();
-			slots.exchange.initializeCursorDetection();
+			const answered = queryDeviceAttributes(slots.exchange);
+			initializeCursorDetection(slots.exchange);
 			// A terminal that answers nothing is not waited on past the cursor
 			// question the anchor already waits for.
 			const cursor = slots.exchange.cursorDetectionPending;
 			const schemeSettled = (
 				cursor === null ? answered : Promise.race([answered, cursor])
 			).then(() => {
-				slots.exchange.abandonColorSchemeQuery();
-				slots.exchange.abandonColorDepthQuery();
+				abandonColorSchemeQuery(slots.exchange);
+				abandonColorDepthQuery(slots.exchange);
 			});
-			void slots.exchange.negotiateBidi();
-			void slots.exchange.negotiateGraphemeClusters();
+			void negotiateBidi(slots.exchange);
+			void negotiateGraphemeClusters(slots.exchange);
 			// Math draws its bars as overlines once the terminal has agreed
 			// to them, so what was measured before the answer measures again.
-			void slots.exchange.negotiateOverline().then((agreed) => {
+			void negotiateOverline(slots.exchange).then((agreed) => {
 				if (agreed && isAttached(this)) {
 					invalidateTextMeasurement(slots.layout);
 					void render(this);
 				}
 			});
-			slots.exchange.scrubProbeEcho();
+			scrubProbeEcho(slots.exchange);
 			// After the erase, which is for the mode probes' echo. What was
 			// painted against the guessed cell repaints when the answer lands.
 			// When the cell sizes the page, the first frame waits for it, so
 			// the page never lays out against the guess.
 			const measuresCell = getCellSizeSetting(this.document) === "auto";
-			const cellAnswered = slots.exchange.negotiateCellPixels().then(
+			const cellAnswered = negotiateCellPixels(slots.exchange).then(
 				(cellChanged) => {
 					if (!isAttached(this)) {
 						return;
@@ -759,10 +783,10 @@ export class TermDOM extends EventTarget {
 			if (measuresCell) {
 				// A font zoom resizes the grid, and the cell with it. The page
 				// hears of it once, when the cell is known.
-				slots.exchange.deferResizeEvent();
+				deferResizeEvent(slots.exchange);
 				slots.exchange.addEventListener("terminalresize", (event) => {
 					const {sizeChanged} = event as TerminalResizeEvent;
-					void slots.exchange.negotiateCellPixels().then((cellChanged) => {
+					void negotiateCellPixels(slots.exchange).then((cellChanged) => {
 						if (!isAttached(this)) {
 							return;
 						}
@@ -937,7 +961,7 @@ export class TermDOM extends EventTarget {
 		// Leaving the alternate screen puts the cursor where the switch saved
 		// it, on the flow content's bottom row. Step below it, or the shell's
 		// next line lands on ours.
-		slots.exchange.restoreEngagedModes();
+		restoreEngagedModes(slots.exchange);
 		dropFullscreen(this.document);
 		slots.hoverReportingEnabled = false;
 		slots.mouseReportingEnabled = false;
@@ -965,7 +989,7 @@ export class TermDOM extends EventTarget {
 		disconnectObservers(this.document);
 		clearWindowTimers(slots.window);
 		slots.disposal = Promise.all([
-			slots.exchange.flush(),
+			flushExchange(slots.exchange),
 			drained,
 			...slots.lifetimes,
 		]).then(() => {});
@@ -998,14 +1022,14 @@ async function suspendTermDOM(termDOM: TermDOM): Promise<void> {
 		flushDocument(termDOM);
 		termDOMSlots.sealed = true;
 	}
-	termDOMSlots.exchange.releaseModes();
-	await termDOMSlots.exchange.flush();
+	releaseModes(termDOMSlots.exchange);
+	await flushExchange(termDOMSlots.exchange);
 	await suspend.call(termDOMSlots.transport);
 	termDOMSlots.suspended = false;
 	if (termDOMSlots.lifecycle !== "attached") {
 		return;
 	}
-	termDOMSlots.exchange.reclaimModes();
+	reclaimModes(termDOMSlots.exchange);
 	if (termDOM.document.title) {
 		void termDOMSlots.exchange.setTitle(termDOM.document.title);
 	}
@@ -1136,7 +1160,7 @@ function writeHeldErrors(termDOM: TermDOM): void {
 		return;
 	}
 	termDOMSlots.unwrittenErrors = (termDOMSlots.unwrittenErrors ?? "") + text;
-	void termDOMSlots.exchange.writeLines(text).then(() => {
+	void writeLines(termDOMSlots.exchange, text).then(() => {
 		termDOMSlots.unwrittenErrors = null;
 		if (termDOMSlots.heldErrors.length === 0) {
 			sessionsHoldingErrors.delete(termDOM);
@@ -1197,7 +1221,7 @@ function syncMouseReporting(termDOM: TermDOM): void {
 		return;
 	}
 	termDOMSlots.mouseReportingEnabled = wanted;
-	termDOMSlots.exchange.setDisplayType("mouseCapture", wanted);
+	setDisplayType(termDOMSlots.exchange, "mouseCapture", wanted);
 }
 
 /**
@@ -1214,7 +1238,7 @@ function syncHoverReporting(termDOM: TermDOM): void {
 		return;
 	}
 	termDOMSlots.hoverReportingEnabled = wanted;
-	termDOMSlots.exchange.setDisplayType("motionReporting", wanted);
+	setDisplayType(termDOMSlots.exchange, "motionReporting", wanted);
 }
 
 // An image's or a canvas's natural size in cells is its pixels over the
@@ -1490,9 +1514,9 @@ function flushDocument(termDOM: TermDOM): void {
 	// old frame held below. Never a full ED from the top. tmux archives a
 	// fully erased screen into the scrollback, which put the document there
 	// twice.
-	void termDOMSlots.exchange.cursorToRow(top + 1);
-	void termDOMSlots.exchange.writeLines(output);
-	void termDOMSlots.exchange.eraseBelow();
+	void cursorToRow(termDOMSlots.exchange, top + 1);
+	void writeLines(termDOMSlots.exchange, output);
+	void eraseBelow(termDOMSlots.exchange);
 }
 
 /** The document as ANSI: colors and line breaks, no cursor controls, no modes. */
@@ -1523,7 +1547,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 			termDOM.attach();
 			// A terminal that does not answer leaves the anchor where it was,
 			// as at attach, and dispose() gives the question up.
-			await termDOMSlots.exchange.detectAnchor(NaN);
+			await detectAnchor(termDOMSlots.exchange, NaN);
 			if (termDOMSlots.lifecycle === "disposed") {
 				return;
 			}
@@ -1544,10 +1568,10 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	const wantAlt = isFullscreen(termDOM);
 	if (wantAlt !== termDOMSlots.onAlternateScreen) {
 		termDOMSlots.onAlternateScreen = wantAlt;
-		termDOMSlots.exchange.setDisplayType("altScreen", wantAlt);
+		setDisplayType(termDOMSlots.exchange, "altScreen", wantAlt);
 		if (wantAlt) {
-			termDOMSlots.exchange.setDisplayType("cursorHidden", true);
-			void termDOMSlots.exchange.clearScreen();
+			setDisplayType(termDOMSlots.exchange, "cursorHidden", true);
+			void clearScreen(termDOMSlots.exchange);
 		}
 		// Drop the diff model, or this frame patches one screen against the
 		// other's content.
@@ -1597,7 +1621,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		: termDOMSlots.layout.documentPaintHeight();
 	const regionHeight = Math.min(contentHeight, termDOMSlots.framebuffer.rows);
 
-	const top = fullscreen ? 0 : termDOMSlots.exchange.reserveRows(regionHeight);
+	const top = fullscreen ? 0 : reserveRows(termDOMSlots.exchange, regionHeight);
 
 	if (!fullscreen) {
 		// Through scrollTo, so the journal's delta is what the screen is about
@@ -1641,10 +1665,11 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		if (!fullscreen) {
 			termDOMSlots.flowPainted = true;
 		}
-		termDOMSlots.exchange.setDisplayType("cursorHidden", true);
+		setDisplayType(termDOMSlots.exchange, "cursorHidden", true);
 		await termDOMSlots.exchange.write(ansi);
 	}
-	termDOMSlots.exchange.setDisplayType(
+	setDisplayType(
+		termDOMSlots.exchange,
 		"cursorHidden",
 		!termDOMSlots.framebuffer.caretVisible,
 	);
