@@ -588,3 +588,16 @@ test("a namespace prefix declared after a style rule does not apply", async () =
 	expect(style.sheet!.cssRules.length).toBe(3);
 	dom.dispose();
 });
+
+test("a type selector matches its element through the rules filed by name", () => {
+	const {dom} = makeDOM(
+		"<style>p { color: red } foreignObject { color: blue }</style>" +
+			"<p class=x>text</p><svg><foreignObject id=f></foreignObject></svg>",
+	);
+	const view = dom.document.defaultView!;
+	const color = (selector: string): string =>
+		view.getComputedStyle(dom.document.querySelector(selector)!).color;
+	expect(color("p")).toBe("rgb(255, 0, 0)");
+	expect(color("#f")).toBe("rgb(0, 0, 255)");
+	dom.dispose();
+});
