@@ -2,7 +2,13 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {transportFromProcess} from "../src/internal/exchange.ts";
-import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.js";
+import {
+	captureRawOutput,
+	inputDispatched,
+	MockProcess,
+	nextFrame,
+	until,
+} from "./test-utils.js";
 
 test("keyboard events are dispatched to elements", async () => {
 	const terminal = new MockProcess();
@@ -51,7 +57,7 @@ test("keyboard events are dispatched to elements", async () => {
 	// Simulate keyboard input by calling the internal method directly
 	const chunk = Buffer.from("a");
 	(terminal.stdin as any).emit("data", chunk);
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	// Check events were fired
 	expect(events.length).toBeGreaterThan(0);
@@ -78,19 +84,19 @@ test("special keys are mapped correctly", async () => {
 
 	// Test Enter key
 	(terminal.stdin as any).emit("data", Buffer.from("\r"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(events.some((e) => e.key === "Enter" && e.keyCode === 13)).toBe(true);
 
 	// Test Tab key
 	events.length = 0;
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(events.some((e) => e.key === "Tab" && e.keyCode === 9)).toBe(true);
 
 	// Test Backspace
 	events.length = 0;
 	(terminal.stdin as any).emit("data", Buffer.from("\x7f"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(events.some((e) => e.key === "Backspace" && e.keyCode === 8)).toBe(
 		true,
 	);
@@ -117,11 +123,11 @@ test("Ctrl+letter decodes as the letter with ctrlKey, not a control character", 
 	// Ctrl+S = 0x13, Ctrl+A = 0x01, Ctrl+Z = 0x1A -- raw ASCII control bytes,
 	// no escape sequence.
 	(terminal.stdin as any).emit("data", Buffer.from([0x13]));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	(terminal.stdin as any).emit("data", Buffer.from([0x01]));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	(terminal.stdin as any).emit("data", Buffer.from([0x1a]));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	expect(events).toEqual([
 		{key: "s", keyCode: 83, ctrlKey: true},
@@ -145,7 +151,7 @@ test("a plain letter never has ctrlKey set", async () => {
 	});
 
 	(terminal.stdin as any).emit("data", Buffer.from("s"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	expect(events).toEqual([{key: "s", ctrlKey: false}]);
@@ -169,11 +175,11 @@ test("Enter and Tab stay their named keys, not Ctrl+M/Ctrl+I", async () => {
 	});
 
 	(terminal.stdin as any).emit("data", Buffer.from("\r"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(events).toEqual([
 		{key: "Enter", ctrlKey: false},
 		{key: "Tab", ctrlKey: false},
@@ -195,7 +201,7 @@ test("Ctrl+letter in a focused input moves the caret, not inserts text", async (
 	input.value = "hello";
 
 	(terminal.stdin as any).emit("data", Buffer.from([0x01]));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0)); // Ctrl+A
 	expect(input.value).toBe("hello"); // unchanged, not "helloa"
@@ -220,28 +226,28 @@ test("arrow keys are parsed correctly", async () => {
 
 	// Test arrow keys (ANSI sequences)
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[A"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(events.some((e) => e.key === "ArrowUp" && e.keyCode === 38)).toBe(
 		true,
 	);
 
 	events.length = 0;
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[B"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(events.some((e) => e.key === "ArrowDown" && e.keyCode === 40)).toBe(
 		true,
 	);
 
 	events.length = 0;
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[C"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(events.some((e) => e.key === "ArrowRight" && e.keyCode === 39)).toBe(
 		true,
 	);
 
 	events.length = 0;
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[D"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(events.some((e) => e.key === "ArrowLeft" && e.keyCode === 37)).toBe(
 		true,
 	);
@@ -270,7 +276,7 @@ test("modified arrow keys decode xterm's CSI 1;<mod> encoding", async () => {
 
 	const send = async (bytes: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(bytes));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 	};
 
 	await send("\x1b[1;3A"); // Alt+Up (mod 3 = 1 + 2)
@@ -334,7 +340,7 @@ test("an unmodified arrow key has no modifiers set", async () => {
 	});
 
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[A"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	expect(events).toEqual([
@@ -364,7 +370,7 @@ test("keyboard events bubble up the DOM", async () => {
 	// Nothing focused: the key lands on the body, and the elements under it
 	// hear nothing -- a dispatch does not descend.
 	(terminal.stdin as any).emit("data", Buffer.from("a"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(seen).toEqual(["body"]);
 
 	// Focused: the key lands on the field and climbs from there, so each
@@ -372,7 +378,7 @@ test("keyboard events bubble up the DOM", async () => {
 	seen.length = 0;
 	child.focus();
 	(terminal.stdin as any).emit("data", Buffer.from("b"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(seen).toEqual(["child", "parent", "body"]);
 });
 
@@ -558,7 +564,7 @@ test("a batched chunk of plain keys dispatches one keydown per key", async () =>
 		keys.push((e as KeyboardEvent).key),
 	);
 	(terminal.stdin as any).emit("data", Buffer.from("jjjjj"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(keys).toEqual(["j", "j", "j", "j", "j"]);
 	dom.dispose();
 });
@@ -577,7 +583,7 @@ test("a batched chunk of arrow sequences dispatches one keydown per arrow", asyn
 		keys.push((e as KeyboardEvent).key),
 	);
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[B\x1b[B\x1b[B"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(keys).toEqual(["ArrowDown", "ArrowDown", "ArrowDown"]);
 	dom.dispose();
 });
@@ -595,7 +601,7 @@ test("keys packed behind a stray cursor report still dispatch", async () => {
 		keys.push((e as KeyboardEvent).key),
 	);
 	(terminal.stdin as any).emit("data", Buffer.from("jj\x1b[12;1Rjjj"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(keys).toEqual(["j", "j", "j", "j", "j"]);
 	dom.dispose();
 });
@@ -610,7 +616,7 @@ test("a lone stray cursor report dispatches nothing", async () => {
 		keys.push((e as KeyboardEvent).key),
 	);
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[12;1R"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(keys).toEqual([]);
 	dom.dispose();
 });
@@ -634,7 +640,7 @@ test("a focused empty input still shows its placeholder, caret at the field star
 
 	// Typing replaces the placeholder with the value.
 	(terminal.stdin as any).emit("data", Buffer.from("x"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).not.toContain("What needs doing?");
 	expect(terminal.getPlainText()).toContain("x");
@@ -661,18 +667,18 @@ test("backspace works after a framework resets .value out from under the caret",
 	await nextFrame(dom);
 
 	(terminal.stdin as any).emit("data", Buffer.from("12345678"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	expect(input.value).toBe("12345678");
 
 	input.value = ""; // the framework's submit reset
 	(terminal.stdin as any).emit("data", Buffer.from("abc"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(input.value).toBe("abc");
 
 	(terminal.stdin as any).emit("data", Buffer.from("\x7f"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0)); // Backspace
 	expect(input.value).toBe("ab");
@@ -698,7 +704,7 @@ test("deleting at the end of an overflowed input scrolls earlier text back into 
 	await nextFrame(dom);
 
 	(terminal.stdin as any).emit("data", Buffer.from("abcdefghijklmno"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
@@ -707,7 +713,7 @@ test("deleting at the end of an overflowed input scrolls earlier text back into 
 
 	for (let i = 0; i < 4; i++) {
 		(terminal.stdin as any).emit("data", Buffer.from("\x7f"));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 	}
 	await nextFrame(dom);
 	expect(input.value).toBe("abcdefghijk");
@@ -731,13 +737,13 @@ test("the input caret IS selectionStart/End -- visible to and drivable by the st
 
 	// Typing moves the standard selection, not a private shadow of it.
 	(terminal.stdin as any).emit("data", Buffer.from("hello"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(input.selectionStart).toBe(5);
 	expect(input.selectionEnd).toBe(5);
 
 	// ArrowLeft is observable through the API too.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[D\x1b[D"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(input.selectionStart).toBe(3);
 
 	// And the API drives the rendered caret: reposition programmatically,
@@ -749,7 +755,7 @@ test("the input caret IS selectionStart/End -- visible to and drivable by the st
 
 	// Typing lands at the API-set caret.
 	(terminal.stdin as any).emit("data", Buffer.from("X"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(input.value).toBe("hXello");
 
 	dom.dispose();
@@ -766,30 +772,30 @@ test("Shift+arrows extend a selection with the browser's anchor/focus model", as
 	input.focus();
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("abcdef"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	// Shift+Left twice from the end: focus walks left, anchor stays.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D\x1b[1;2D"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect([input.selectionStart, input.selectionEnd]).toEqual([4, 6]);
 	expect(input.selectionDirection).toBe("backward");
 
 	// Shift+Right SHRINKS the backward selection instead of flipping it.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2C"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect([input.selectionStart, input.selectionEnd]).toEqual([5, 6]);
 
 	// A plain arrow collapses to the matching edge, not one past it.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[D"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect([input.selectionStart, input.selectionEnd]).toEqual([5, 5]);
 
 	// Shift+Home selects back to the start; typing replaces the selection.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2H"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect([input.selectionStart, input.selectionEnd]).toEqual([0, 5]);
 	(terminal.stdin as any).emit("data", Buffer.from("Z"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(input.value).toBe("Zf");
 	expect(input.selectionStart).toBe(1);
 
@@ -811,12 +817,12 @@ test("a number field paints its selection exactly as a text field does", async (
 		input.focus();
 		await nextFrame(dom);
 		(terminal.stdin as any).emit("data", Buffer.from("12345"));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 		(terminal.stdin as any).emit(
 			"data",
 			Buffer.from("\x1b[1;2D\x1b[1;2D\x1b[1;2D"),
 		);
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 		await nextFrame(dom);
 
 		const buffer = (terminal as any).terminal.buffer.active;
@@ -856,7 +862,7 @@ test("the readline chords move and cut, as a terminal user expects", async () =>
 	await nextFrame(dom);
 	const send = async (bytes: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(bytes));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 		await new Promise((r) => setTimeout(r, 0));
 	};
 
@@ -901,7 +907,7 @@ test("in a wrapped textarea the line chords work on the visual line", async () =
 	await nextFrame(dom);
 	const send = async (bytes: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(bytes));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 		await new Promise((r) => setTimeout(r, 0));
 	};
 
@@ -925,13 +931,13 @@ test("a selection paints as inverse video over the selected cells", async () => 
 	input.focus();
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("abcdef"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(terminal.getScreenContents()).not.toMatch(/\x1b\[[\d;]*7m/);
 
 	// Select "ef" and the frame carries SGR 7 (inverse) for those cells.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D\x1b[1;2D"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(terminal.getScreenContents()).toMatch(/\x1b\[[\d;]*7m/);
 
@@ -960,7 +966,7 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 
 	// Typing advances the real cursor with the caret.
 	(terminal.stdin as any).emit("data", Buffer.from("hey"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(buffer.cursorY).toBe(caretRow);
 	expect(buffer.cursorX).toBe(caretCol + 3);
@@ -991,7 +997,7 @@ test("Space toggles a focused checkbox and fires change; other keys are no-ops",
 	checkbox.addEventListener("change", () => changes.push(checkbox.checked));
 
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	expect(checkbox.checked).toBe(true);
@@ -1000,12 +1006,12 @@ test("Space toggles a focused checkbox and fires change; other keys are no-ops",
 	// Checkboxes don't accept typed text -- every key but the two that
 	// activate is a no-op.
 	(terminal.stdin as any).emit("data", Buffer.from("abc\x7f"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(checkbox.checked).toBe(true);
 	expect(changes).toEqual([true]);
 
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	expect(checkbox.checked).toBe(false);
@@ -1036,7 +1042,7 @@ test("Enter activates a checkbox and a radio, as Space does", async () => {
 
 	const press = async (data: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(data));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 		await new Promise((r) => setTimeout(r, 0));
 	};
 
@@ -1086,7 +1092,7 @@ test("a canceled click puts a checkbox's checkedness back, whichever key pressed
 
 	const press = async (data: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(data));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 		await new Promise((r) => setTimeout(r, 0));
 	};
 
@@ -1121,7 +1127,7 @@ test("radios render as ( )/(x); Space checks but never unchecks; groups are excl
 
 	// Space checks the focused radio...
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(a.checked).toBe(true);
 	expect(terminal.getPlainText()).toContain("(x)( )");
@@ -1129,14 +1135,14 @@ test("radios render as ( )/(x); Space checks but never unchecks; groups are excl
 	// ...but never unchecks it (the browser default; only another group
 	// member can take the check away).
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(a.checked).toBe(true);
 
 	// Checking the sibling unchecks this one -- the DOM's own radio-group
 	// exclusivity, surfaced through the same Space path.
 	b.focus();
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(b.checked).toBe(true);
 	expect(a.checked).toBe(false);
@@ -1184,7 +1190,7 @@ test("Escape, navigation, and function keys map to their named keys", async () =
 
 	const send = async (bytes: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(bytes));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 	};
 
 	await send("\x1b");
@@ -1249,7 +1255,7 @@ test("KeyboardEvent.code reports the physical key, not a formula off .key", asyn
 
 	const send = async (bytes: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(bytes));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 	};
 
 	await send("\r"); // Enter
@@ -1307,7 +1313,7 @@ test("fullscreen routes keydown through the general pipeline: tokenization, mous
 			..."j\x1b[<65;4;7Mj".split("").map((c) => c.charCodeAt(0)),
 		]),
 	);
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	expect(events).toEqual([
 		{key: "a", ctrlKey: true}, // Ctrl+A
@@ -1554,7 +1560,7 @@ test("a focused descendant inside a fullscreen element still wins over the eleme
 	input.focus();
 
 	(terminal.stdin as any).emit("data", Buffer.from("x"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	expect(input.value).toBe("x");
@@ -1575,7 +1581,7 @@ test("with nothing focused, fullscreen keydown still lands on the fullscreen ele
 	container.addEventListener("keydown", (e: any) => keys.push(e.key));
 
 	(terminal.stdin as any).emit("data", Buffer.from("q"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	expect(keys).toEqual(["q"]);
@@ -1603,7 +1609,7 @@ test("wide characters in an input measure in cells, not characters", async () =>
 	// Commit syllables one at a time, the way an IME delivers them.
 	for (const syllable of ["김", "남", "제"]) {
 		(terminal.stdin as any).emit("data", Buffer.from(syllable));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 		await new Promise((resolve) => setTimeout(resolve, 40));
 	}
 
@@ -1781,14 +1787,14 @@ test("display:none subtrees neither render, ghost, nor take tab focus", async ()
 
 	(document.querySelector(".edit") as HTMLElement).focus();
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	// The hidden checkbox and button are not in tab order: past the edit
 	// input -- the only rendered focusable -- Tab rests on nothing, and
 	// another Tab re-enters at the edit input, never a hidden control.
 	expect(document.activeElement).toBe(document.body);
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect((document.activeElement as HTMLElement).className).toBe("edit");
 
@@ -1855,7 +1861,7 @@ test("typing in a width:auto input never clips the lead character", async () => 
 	await nextFrame(dom);
 
 	(terminal.stdin as any).emit("data", Buffer.from("d"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom); // the FIRST frame after the keystroke
@@ -1885,11 +1891,11 @@ test("an empty width:auto input keeps a single caret cell", async () => {
 	// Typing grows the field; deleting back to empty returns to the single
 	// cell rather than zero width.
 	(terminal.stdin as any).emit("data", Buffer.from("hi"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(line().translateToString(false).trimEnd()).toBe("a: hi z");
 	(terminal.stdin as any).emit("data", Buffer.from("\x7f\x7f"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(line().translateToString(false).trimEnd()).toBe("a:   z");
 	dom.dispose();
@@ -1914,7 +1920,7 @@ test("non-mouse nav: a link underlines at rest and inverts on Tab focus", async 
 
 	// Tab moves focus to the link and inverts it.
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(dom.document.activeElement?.tagName).toBe("A");
 	expect(cellAt(0, 0).isInverse()).toBeTruthy();
@@ -1935,7 +1941,7 @@ test("an author-colored link keeps its focus ring", async () => {
 	await nextFrame(dom);
 
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(dom.document.activeElement?.textContent).toBe("All");
 	const cell = (terminal as any).terminal.buffer.active.getLine(1).getCell(0);
@@ -1960,7 +1966,7 @@ test("non-mouse nav: a button lines both edges of its whole box on Tab focus", a
 	expect(line0()).toBe("[ go ]");
 
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
@@ -2036,14 +2042,14 @@ test("non-mouse nav: the focus ring is keyboard-only (:focus-visible)", async ()
 
 	// Tab (keyboard) focuses the link WITH the ring.
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(dom.document.activeElement?.tagName).toBe("A");
 	expect(inverse()).toBeTruthy();
 
 	// A mouse press keeps the link focused but drops the ring.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;1M"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(dom.document.activeElement?.tagName).toBe("A");
 	expect(inverse()).toBeFalsy();
@@ -2061,7 +2067,7 @@ test("a click in a text input parks the caret at the pressed character", async (
 
 	// Column 7 (1-based) is the second 'o' region: offset 6.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;7;1M\x1b[<0;7;1m"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(dom.document.activeElement).toBe(input);
 	expect(input.selectionStart).toBe(6);
@@ -2121,7 +2127,7 @@ test("clicking into a field clears the document selection's highlight", async ()
 	expect(dom.window.getSelection()?.toString()).toBe("page tex");
 
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;3;2M\x1b[<0;3;2m"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
@@ -2184,18 +2190,18 @@ test("a focused button activates on Enter and on Space", async () => {
 
 	(document.getElementById("btn") as HTMLElement).focus();
 	terminal.stdin.emit("data", Buffer.from("\r"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	terminal.stdin.emit("data", Buffer.from(" "));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 
 	(document.getElementById("submit") as HTMLElement).focus();
 	terminal.stdin.emit("data", Buffer.from("\r"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	terminal.stdin.emit("data", Buffer.from(" "));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 
 	expect(seen).toEqual(["btn", "btn", "submit", "submit"]);
@@ -2219,7 +2225,7 @@ test("a keydown listener can cancel a button's activation", async () => {
 
 	terminal.stdin.emit("data", Buffer.from("\r"));
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 
 	expect(clicks).toBe(0);
@@ -2248,7 +2254,7 @@ test("links are focusable, and activate on Enter but not Space", async () => {
 	(document.getElementById("text") as HTMLElement).focus();
 	for (let i = 0; i < 4; i++) {
 		terminal.stdin.emit("data", Buffer.from("\t"));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 		await nextFrame(dom);
 		order.push(document.activeElement?.id ?? "");
 	}
@@ -2264,13 +2270,13 @@ test("links are focusable, and activate on Enter but not Space", async () => {
 
 	terminal.stdin.emit("data", Buffer.from("\r"));
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(clicks).toBe(1);
 
 	terminal.stdin.emit("data", Buffer.from(" "));
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(clicks).toBe(1);
 
@@ -2295,7 +2301,7 @@ test("caret motion and deletion move by grapheme, not code unit", async () => {
 
 	const type = async (seq: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(seq));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 	};
 	const BS = "\x7f";
 	const DEL = "\x1b[3~";
@@ -2358,7 +2364,7 @@ test("a password input paints masked bullets, never the real value", async () =>
 	// Typing extends the mask, and .value stays real (position aside).
 	input.focus();
 	(terminal.stdin as any).emit("data", Buffer.from("x"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(input.value.length).toBe(7);
 	expect(input.value).toContain("secret");
@@ -2383,7 +2389,7 @@ test("a constrained input scrolls horizontally to follow the caret", async () =>
 
 	for (const c of "abcdefghijklmnop") {
 		(terminal.stdin as any).emit("data", Buffer.from(c));
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 		await nextFrame(dom);
 	}
 
@@ -2413,7 +2419,7 @@ test("a printable key runs keydown, keypress, input, keyup in that order", async
 	}
 
 	(terminal.stdin as any).emit("data", Buffer.from("b"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	expect(seen).toEqual([
 		["keydown", "a"],
@@ -2434,7 +2440,7 @@ test("a canceled keypress inserts nothing", async () => {
 
 	input.addEventListener("keypress", (event) => event.preventDefault());
 	(terminal.stdin as any).emit("data", Buffer.from("b"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	expect(input.value).toBe("a");
 
@@ -2453,7 +2459,7 @@ test("a non-ASCII printable key fires keypress and is inserted", async () => {
 		seen.push((event as KeyboardEvent).key),
 	);
 	(terminal.stdin as any).emit("data", Buffer.from("é"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	expect(seen).toEqual(["é"]);
 	expect(input.value).toBe("é");
@@ -2476,7 +2482,7 @@ test("an astral character is one keystroke, not two halves", async () => {
 		]),
 	);
 	(terminal.stdin as any).emit("data", Buffer.from("😀"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	expect(seen).toEqual([["😀", 0x1f600]]);
 	expect(input.value).toBe("😀");
@@ -2501,7 +2507,7 @@ test("an onkeydown handler assigned by property runs, and can cancel the edit", 
 		return false;
 	};
 	(terminal.stdin as any).emit("data", Buffer.from("x"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 
 	expect(keys).toEqual(["x"]);
 	// Returning false canceled keydown, and a canceled keydown fires no
@@ -2531,9 +2537,9 @@ test("line feed is the Ctrl+J chord, not Enter", async () => {
 	});
 
 	(terminal.stdin as any).emit("data", Buffer.from("\r"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	(terminal.stdin as any).emit("data", Buffer.from("\n"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 
 	expect(keys).toEqual(["Enter", "j+ctrl"]);
@@ -2566,7 +2572,7 @@ test("moving focus and opening a disclosure bring their target into view", async
 
 	// Tab past the lines to the far input: the camera follows.
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(document.activeElement?.id).toBe("last");
 	expect(window.scrollY).toBeGreaterThan(0);
@@ -2603,7 +2609,7 @@ test("a decoded keystroke is trusted; a constructed event is not", async () => {
 	}
 
 	(terminal.stdin as any).emit("data", Buffer.from("a"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(trust).toEqual([
 		{type: "keydown", isTrusted: true},
 		{type: "keypress", isTrusted: true},
@@ -2639,9 +2645,9 @@ test("a mouse report is trusted, and so is the focus move it causes", async () =
 	}
 
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;1M"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;1m"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(trust.every((entry) => entry.isTrusted)).toBe(true);
 	expect(trust.map((entry) => entry.type)).toContain("click");
 
@@ -2672,15 +2678,15 @@ test("Space toggles a focused checkbox and checks a focused radio", async () => 
 
 	box.focus();
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(box.checked).toBe(true);
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(box.checked).toBe(false);
 
 	two.focus();
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(two.checked).toBe(true);
 	expect(one.checked).toBe(false);
 	expect(changes).toEqual(["box", "box", "two"]);
@@ -3045,5 +3051,36 @@ test("typing and moving in a long textarea keep the caret's line in view", async
 		await send("\x1b[A");
 	}
 	expect(rows()[1]).toContain("line 0");
+	dom.dispose();
+});
+
+test("each key in a chunk is a task of its own, so microtasks settle between keys", async () => {
+	// A paste without bracketed paste markers, fast typing or a slow link
+	// sends several keys at once. As in a browser, what one key's listeners
+	// start, an observer's records and a promise's reactions, has run by the
+	// time the next key arrives.
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const observed: string[] = [];
+	const settled: string[] = [];
+	const seen: string[] = [];
+	const log = dom.document.createElement("div");
+	dom.document.body.append(log);
+	new dom.window.MutationObserver((records) => {
+		for (const record of records) {
+			observed.push((record.addedNodes[0] as Text).data);
+		}
+	}).observe(log, {childList: true});
+	dom.document.addEventListener("keydown", (e: Event) => {
+		const key = (e as KeyboardEvent).key;
+		seen.push(`${key}: ${observed.join("")} ${settled.join("")}`);
+		log.append(key);
+		void Promise.resolve().then(() => settled.push(key));
+	});
+	(terminal.stdin as any).emit("data", Buffer.from("abc"));
+	await inputDispatched();
+	expect(seen).toEqual(["a:  ", "b: a a", "c: ab ab"]);
 	dom.dispose();
 });

@@ -15,3 +15,19 @@ export const clearInterval: typeof globalThis.clearInterval =
 	globalThis.clearInterval.bind(globalThis);
 export const queueMicrotask: typeof globalThis.queueMicrotask =
 	globalThis.queueMicrotask.bind(globalThis);
+
+/**
+ * Runs `callback` in a task of its own, as soon as the runtime can:
+ * setImmediate where there is one, which a timer's minimum delay does not
+ * hold back.
+ */
+export function queueTask(callback: () => void): void {
+	const immediate = (globalThis as {
+		setImmediate?: (callback: () => void) => unknown;
+	}).setImmediate;
+	if (immediate === undefined) {
+		setTimeout(callback, 0);
+	} else {
+		immediate(callback);
+	}
+}
