@@ -1,44 +1,14 @@
 import bidiFactory from "bidi-js";
 
 import * as CSSTree from "./csstree.ts";
-import {
-	type Element,
-	getHeadingLevel,
-	getMeterLevel,
-	getOpenAssignedSlot,
-	getPartNames,
-	getRangeMatch,
-	getShadowHost,
-	getUserValidityMatch,
-	getValidityMatch,
-	hasCustomState,
-	hasFocus,
-	hasFocusWithin,
-	isActive,
-	isActuallyDisabled,
-	isCheckedControl,
-	isDefaultControl,
-	isDefinedElement,
-	isFocusVisible,
-	isFormAssociatedCustom,
-	isFullscreenElement,
-	isHovered,
-	isHTMLNode,
-	isIndeterminateControl,
-	isInQuirksMode,
-	isMeterValue,
-	isModalDialog,
-	isOpenElement,
-	isPlaceholderShown,
-	isShowingPopover,
-	isTargetElement,
-	Node,
-	READONLY_INPUT_TYPES,
-	REQUIRED_INPUT_TYPES,
-} from "./dom.ts";
+import type * as DOM from "./dom.ts";
+import type {Element, Node} from "./dom.ts";
 import {splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
 import {
 	attributeOf,
+	CDATA_SECTION_NODE,
+	DOCUMENT_NODE,
+	ELEMENT_NODE,
 	getAttributeList,
 	getElementChildren,
 	getFirstChildNode,
@@ -55,9 +25,56 @@ import {
 	nodeTypeOf,
 	parentElement,
 	SVG_NAMESPACE,
+	TEXT_NODE,
 	XLINK_NAMESPACE,
 	XML_NAMESPACE,
 } from "./tree.ts";
+
+/**
+ * What the matcher asks the DOM about an element's state: focus, hover,
+ * a form control's validity and the rest, which only dom.ts can answer.
+ * dom.ts hands them over as it loads, so this module never imports it.
+ */
+type ElementStates = Pick<
+	typeof DOM,
+	"getHeadingLevel" |
+	"getMeterLevel" |
+	"getOpenAssignedSlot" |
+	"getPartNames" |
+	"getRangeMatch" |
+	"getShadowHost" |
+	"getUserValidityMatch" |
+	"getValidityMatch" |
+	"hasCustomState" |
+	"hasFocus" |
+	"hasFocusWithin" |
+	"isActive" |
+	"isActuallyDisabled" |
+	"isCheckedControl" |
+	"isDefaultControl" |
+	"isDefinedElement" |
+	"isFocusVisible" |
+	"isFormAssociatedCustom" |
+	"isFullscreenElement" |
+	"isHovered" |
+	"isHTMLNode" |
+	"isIndeterminateControl" |
+	"isInQuirksMode" |
+	"isMeterValue" |
+	"isModalDialog" |
+	"isOpenElement" |
+	"isPlaceholderShown" |
+	"isShowingPopover" |
+	"isTargetElement" |
+	"READONLY_INPUT_TYPES" |
+	"REQUIRED_INPUT_TYPES"
+>;
+
+let states: ElementStates;
+
+export function setElementStates(given: ElementStates): void {
+	states = given;
+}
 
 // CSS Selectors: the language, and the matcher a selector compiles to.
 // css-tree parses the selector. It is checked against the pseudo-classes
@@ -710,7 +727,7 @@ function compileSimple(
 				if (value === null) {
 					return false;
 				}
-				return isInQuirksMode(element)
+				return states.isInQuirksMode(element)
 					? toASCIILowercase(value) === folded
 					: value === id;
 			});
@@ -727,7 +744,7 @@ function compileSimple(
 				if (value === null) {
 					return false;
 				}
-				if (!isInQuirksMode(element)) {
+				if (!states.isInQuirksMode(element)) {
 					return hasToken(value, name);
 				}
 				for (const token of splitOnASCIIWhitespace(value)) {
@@ -814,7 +831,7 @@ function compileType(name: string, compiling: Compiling): Predicate {
 	const {namespace, local} = qualifiedName(name, compiling.namespaces, false);
 	const folded = local === null ? null : toASCIILowercase(local);
 	return (element) => {
-		if (nodeTypeOf(element) !== Node.ELEMENT_NODE) {
+		if (nodeTypeOf(element) !== ELEMENT_NODE) {
 			return false;
 		}
 		const elementNamespace = namespaceOf(element);
@@ -830,7 +847,7 @@ function compileType(name: string, compiling: Compiling): Predicate {
 		}
 		return (
 			elementNamespace === HTML_NAMESPACE &&
-			isHTMLNode(element) &&
+			states.isHTMLNode(element) &&
 			toASCIILowercase(elementLocal) === folded
 		);
 	};
@@ -911,7 +928,8 @@ function compileAttribute(
 	// Read the attribute the way HTML reads a name. An HTML element in an
 	// HTML document lowercases its attribute names.
 	const read = (element: Element): string | null => {
-		const fold = namespaceOf(element) === HTML_NAMESPACE && isHTMLNode(element);
+		const fold =
+			namespaceOf(element) === HTML_NAMESPACE && states.isHTMLNode(element);
 		const attributes = getAttributeList(element);
 		for (let index = 0; index < attributes.length; index++) {
 			const attribute = attributes[index];
@@ -951,7 +969,7 @@ function compileAttribute(
 			flags === "i" ||
 			(flags === "" &&
 				namespaceOf(element) === HTML_NAMESPACE &&
-				isHTMLNode(element) &&
+				states.isHTMLNode(element) &&
 				CASE_INSENSITIVE_ATTRIBUTES.has(folded));
 		const subject = insensitive ? toASCIILowercase(value) : value;
 		const target = insensitive ? foldedWanted : wanted;
@@ -1041,7 +1059,7 @@ function compilePseudoClass(
 			const context = name === "host-context";
 			compound.tests.push((element, state) => {
 				const shadow = state.shadow;
-				if (shadow === null || getShadowHost(shadow) !== element) {
+				if (shadow === null || states.getShadowHost(shadow) !== element) {
 					return false;
 				}
 				if (inner === null) {
@@ -1074,7 +1092,7 @@ function compilePseudoClass(
 		case "root":
 			compound.tests.push((element) => {
 				const parent = getParentNode(element);
-				return parent !== null && nodeTypeOf(parent) === Node.DOCUMENT_NODE;
+				return parent !== null && nodeTypeOf(parent) === DOCUMENT_NODE;
 			});
 			return;
 		case "empty":
@@ -1126,19 +1144,21 @@ function compilePseudoClass(
 			// Bare, any heading. With arguments, a heading at one of the
 			// listed levels (selectors-5 §7.4).
 			if (args.length === 0) {
-				compound.tests.push((element) => getHeadingLevel(element) !== null);
+				compound.tests.push(
+					(element) => states.getHeadingLevel(element) !== null,
+				);
 				return;
 			}
 			const levels = getIntegerArguments(args, "heading");
 			compound.tests.push((element) => {
-				const level = getHeadingLevel(element);
+				const level = states.getHeadingLevel(element);
 				return level !== null && levels.includes(level);
 			});
 			return;
 		}
 		case "state": {
 			const wanted = getIdentifierArgument(args, "state");
-			compound.tests.push((element) => hasCustomState(element, wanted));
+			compound.tests.push((element) => states.hasCustomState(element, wanted));
 			return;
 		}
 		case "link":
@@ -1151,107 +1171,117 @@ function compilePseudoClass(
 			compound.tests.push(matchNothing);
 			return;
 		case "target":
-			compound.tests.push((element) => isTargetElement(element));
+			compound.tests.push((element) => states.isTargetElement(element));
 			return;
 		case "hover":
-			compound.tests.push((element) => isHovered(element));
+			compound.tests.push((element) => states.isHovered(element));
 			return;
 		case "active":
 			// Between a mouse press and its release, which a terminal's mouse
 			// reporting sends apart.
-			compound.tests.push((element) => isActive(element));
+			compound.tests.push((element) => states.isActive(element));
 			return;
 		case "focus":
-			compound.tests.push((element) => hasFocus(element));
+			compound.tests.push((element) => states.hasFocus(element));
 			return;
 		case "focus-visible":
-			compound.tests.push((element) => isFocusVisible(element));
+			compound.tests.push((element) => states.isFocusVisible(element));
 			return;
 		case "focus-within":
-			compound.tests.push((element) => hasFocusWithin(element));
+			compound.tests.push((element) => states.hasFocusWithin(element));
 			return;
 		case "modal":
 			// A dialog shown modally, or an element in fullscreen.
 			compound.tests.push(
-				(element) => isModalDialog(element) || isFullscreenElement(element),
+				(element) => states.isModalDialog(element) ||
+					states.isFullscreenElement(element),
 			);
 			return;
 		case "popover-open":
-			compound.tests.push((element) => isShowingPopover(element));
+			compound.tests.push((element) => states.isShowingPopover(element));
 			return;
 		case "fullscreen":
-			compound.tests.push((element) => isFullscreenElement(element));
+			compound.tests.push((element) => states.isFullscreenElement(element));
 			return;
 		case "defined":
-			compound.tests.push((element) => isDefinedElement(element));
+			compound.tests.push((element) => states.isDefinedElement(element));
 			return;
 		case "open":
-			compound.tests.push((element) => isOpenElement(element));
+			compound.tests.push((element) => states.isOpenElement(element));
 			return;
 		case "closed":
 			compound.tests.push(
-				(element) => canOpen(element) && !isOpenElement(element),
+				(element) => canOpen(element) && !states.isOpenElement(element),
 			);
 			return;
 		case "checked":
-			compound.tests.push((element) => isCheckedControl(element));
+			compound.tests.push((element) => states.isCheckedControl(element));
 			return;
 		case "indeterminate":
-			compound.tests.push((element) => isIndeterminateControl(element));
+			compound.tests.push((element) => states.isIndeterminateControl(element));
 			return;
 		case "low-value":
-			compound.tests.push((element) => isMeterValue(element, "low"));
+			compound.tests.push((element) => states.isMeterValue(element, "low"));
 			return;
 		case "high-value":
-			compound.tests.push((element) => isMeterValue(element, "high"));
+			compound.tests.push((element) => states.isMeterValue(element, "high"));
 			return;
 		case "optimal-value":
 		case "-moz-meter-optimum":
-			compound.tests.push((element) => getMeterLevel(element) === "optimum");
+			compound.tests.push(
+				(element) => states.getMeterLevel(element) === "optimum",
+			);
 			return;
 		case "-moz-meter-sub-optimum":
-			compound.tests.push((element) => getMeterLevel(element) === "suboptimum");
+			compound.tests.push(
+				(element) => states.getMeterLevel(element) === "suboptimum",
+			);
 			return;
 		case "-moz-meter-sub-sub-optimum":
 			compound.tests.push(
-				(element) => getMeterLevel(element) === "even-less-good",
+				(element) => states.getMeterLevel(element) === "even-less-good",
 			);
 			return;
 		case "placeholder-shown":
-			compound.tests.push((element) => isPlaceholderShown(element));
+			compound.tests.push((element) => states.isPlaceholderShown(element));
 			return;
 		case "default":
-			compound.tests.push((element) => isDefaultControl(element));
+			compound.tests.push((element) => states.isDefaultControl(element));
 			return;
 		case "disabled":
-			compound.tests.push(isActuallyDisabled);
+			compound.tests.push(states.isActuallyDisabled);
 			return;
 		case "enabled":
 			compound.tests.push(
-				(element) => isDisableable(element) && !isActuallyDisabled(element),
+				(element) => isDisableable(element) &&
+					!states.isActuallyDisabled(element),
 			);
 			return;
 		case "valid":
-			compound.tests.push((element) => getValidityMatch(element) === "valid");
+			compound.tests.push(
+				(element) => states.getValidityMatch(element) === "valid",
+			);
 			return;
 		case "invalid":
-			compound.tests.push((element) => getValidityMatch(element) === "invalid");
+			compound.tests.push(
+				(element) => states.getValidityMatch(element) === "invalid",
+			);
 			return;
 		case "user-valid":
 			compound.tests.push(
-				(element) => getUserValidityMatch(element) === "valid",
+				(element) => states.getUserValidityMatch(element) === "valid",
 			);
 			return;
 		case "user-invalid":
 			compound.tests.push(
-				(element) => getUserValidityMatch(element) === "invalid",
+				(element) => states.getUserValidityMatch(element) === "invalid",
 			);
 			return;
 		case "in-range":
-			compound.tests.push((element) => getRangeMatch(element) === "in");
+			compound.tests.push((element) => states.getRangeMatch(element) === "in");
 			return;
 		case "out-of-range":
-			compound.tests.push((element) => getRangeMatch(element) === "out");
+			compound.tests.push((element) => states.getRangeMatch(element) === "out");
 			return;
 		case "required":
 			compound.tests.push((element) =>
@@ -1424,10 +1454,10 @@ function compilePseudoElement(
 		// before `::slotted()` describes the slot it landed in.
 		compound.originTests = compound.tests;
 		compound.tests = [];
-		compound.origin = (element) => getOpenAssignedSlot(element);
+		compound.origin = (element) => states.getOpenAssignedSlot(element);
 		compound.tests.push(
 			(element, state) =>
-				getOpenAssignedSlot(element) !== null &&
+				states.getOpenAssignedSlot(element) !== null &&
 				inner.some((complex) => matchComplex(complex, element, state, false)),
 		);
 		return;
@@ -1442,9 +1472,9 @@ function compilePseudoElement(
 		// `::part()` describes the host whose tree the part lives in.
 		compound.originTests = compound.tests;
 		compound.tests = [];
-		compound.origin = (element) => getShadowHost(getRoot(element));
+		compound.origin = (element) => states.getShadowHost(getRoot(element));
 		compound.tests.push((element) => {
-			const names = getPartNames(element);
+			const names = states.getPartNames(element);
 			return wanted.every((name) => names.includes(name));
 		});
 		return;
@@ -1481,7 +1511,7 @@ function compileNth(
 	const fromEnd = name === "nth-last-child" || name === "nth-last-of-type";
 	const ofType = name === "nth-of-type" || name === "nth-last-of-type";
 	return (element, state) => {
-		if (nodeTypeOf(element) !== Node.ELEMENT_NODE) {
+		if (nodeTypeOf(element) !== ELEMENT_NODE) {
 			return false;
 		}
 		// The plain forms read the element's place in a list built once per
@@ -1596,7 +1626,8 @@ const DISABLEABLE = new Set([
 function isDisableable(element: Element): boolean {
 	return (
 		(namespaceOf(element) === HTML_NAMESPACE &&
-			DISABLEABLE.has(localNameOf(element))) || isFormAssociatedCustom(element)
+			DISABLEABLE.has(localNameOf(element))) ||
+		states.isFormAssociatedCustom(element)
 	);
 }
 
@@ -1612,7 +1643,9 @@ function isRequirable(element: Element): boolean {
 		return false;
 	}
 	// The type property, which an unknown type reads as text.
-	return REQUIRED_INPUT_TYPES.has((element as unknown as {type: string}).type);
+	return states.REQUIRED_INPUT_TYPES.has(
+		(element as unknown as {type: string}).type,
+	);
 }
 
 // `:read-write`: a text control the user can type into, or anything an
@@ -1624,10 +1657,10 @@ function isMutable(element: Element): boolean {
 			const type = name === "input"
 				? (element as unknown as {type: string}).type
 				: "text";
-			if (READONLY_INPUT_TYPES.has(type)) {
+			if (states.READONLY_INPUT_TYPES.has(type)) {
 				return (
 					attributeOf(element, "readonly") === null &&
-					!isActuallyDisabled(element)
+					!states.isActuallyDisabled(element)
 				);
 			}
 		}
@@ -1672,12 +1705,12 @@ function isEmpty(element: Element): boolean {
 		child !== null;
 		child = getNextSiblingNode(child)
 	) {
-		if (nodeTypeOf(child) === Node.ELEMENT_NODE) {
+		if (nodeTypeOf(child) === ELEMENT_NODE) {
 			return false;
 		}
 		if (
-			(nodeTypeOf(child) === Node.TEXT_NODE ||
-				nodeTypeOf(child) === Node.CDATA_SECTION_NODE) &&
+			(nodeTypeOf(child) === TEXT_NODE ||
+				nodeTypeOf(child) === CDATA_SECTION_NODE) &&
 				(child.nodeValue ?? "") !== ""
 		) {
 			return false;
@@ -1731,7 +1764,7 @@ function getLanguageParent(node: Element): Element | null {
 	if (parent === null) {
 		return null;
 	}
-	return isElement(parent) ? parent : getShadowHost(parent);
+	return isElement(parent) ? parent : states.getShadowHost(parent);
 }
 
 // The nearest lang attribute, climbing out of a shadow tree into its host
@@ -1806,7 +1839,7 @@ const AUTO_INPUT_TYPES = new Set([
 function compileDir(args: CSSTree.SelectorNode[]): Predicate {
 	const wanted = toASCIILowercase(getIdentifierArgument(args, "dir"));
 	return (element) =>
-		nodeTypeOf(element) === Node.ELEMENT_NODE &&
+		nodeTypeOf(element) === ELEMENT_NODE &&
 		getDirectionality(element) === wanted;
 }
 
@@ -1834,7 +1867,7 @@ export function getDirectionality(element: Element): "ltr" | "rtl" {
 
 // Includes `bdi`'s default.
 function getDeclaredDirection(element: Element): "ltr" | "rtl" | "auto" | null {
-	if (nodeTypeOf(element) !== Node.ELEMENT_NODE) {
+	if (nodeTypeOf(element) !== ELEMENT_NODE) {
 		return null;
 	}
 	const html = namespaceOf(element) === HTML_NAMESPACE;
@@ -1875,8 +1908,8 @@ function getTextUnder(element: Element, all: boolean): string {
 		child = getNextSiblingNode(child)
 	) {
 		if (
-			nodeTypeOf(child) === Node.TEXT_NODE ||
-			nodeTypeOf(child) === Node.CDATA_SECTION_NODE
+			nodeTypeOf(child) === TEXT_NODE ||
+			nodeTypeOf(child) === CDATA_SECTION_NODE
 		) {
 			text += child.nodeValue ?? "";
 			continue;
@@ -1933,7 +1966,7 @@ function matchFrom(
 	if (featureless && !compound.host) {
 		return false;
 	}
-	if (nodeTypeOf(element) !== Node.ELEMENT_NODE) {
+	if (nodeTypeOf(element) !== ELEMENT_NODE) {
 		return false;
 	}
 	for (const test of compound.tests) {
@@ -2007,7 +2040,7 @@ function getParentStep(
 	element: Element,
 	state: MatchState,
 ): {element: Element; featureless: boolean} | null {
-	if (state.shadow !== null && getShadowHost(state.shadow) === element) {
+	if (state.shadow !== null && states.getShadowHost(state.shadow) === element) {
 		return null;
 	}
 	const parent = getParentNode(element);
@@ -2021,7 +2054,7 @@ function getParentStep(
 	// the host is featureless. Only `:host` and its two functional forms can
 	// match it.
 	if (state.shadow !== null && parent === state.shadow) {
-		const host = getShadowHost(parent);
+		const host = states.getShadowHost(parent);
 		return host === null ? null : {element: host, featureless: true};
 	}
 	return null;
@@ -2040,7 +2073,7 @@ function hasMatch(
 	// Asked of the host from inside its shadow tree, :has() searches that
 	// tree, and the answer is not the one a light-tree rule would get.
 	const hostOfShadow =
-		state.shadow !== null && getShadowHost(state.shadow) === element;
+		state.shadow !== null && states.getShadowHost(state.shadow) === element;
 	const store = cacheable && !hostOfShadow ? state.hasResults : null;
 	let answers = store?.get(element);
 	const known = answers?.get(inner);
@@ -2068,7 +2101,7 @@ function findHasMatch(
 	// to.
 	const inside: MatchState = {...state, anchor: element};
 	const hostOfShadow =
-		state.shadow !== null && getShadowHost(state.shadow) === element;
+		state.shadow !== null && states.getShadowHost(state.shadow) === element;
 	for (const complex of inner) {
 		const selects = (node: Element): boolean =>
 			matchComplex(complex, node, inside, false);
