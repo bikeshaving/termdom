@@ -9,6 +9,7 @@ import {getCellSize, getComputedValue, resolveLength} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
 	attributeOf,
+	containsOf,
 	getDocumentExchange,
 	localNameOf,
 	MATHML_NAMESPACE,
@@ -768,7 +769,7 @@ export function getMathCellRects(
 				source !== undefined &&
 				(nodeTypeOf(node) === node.TEXT_NODE
 					? source.node === node
-					: node.contains(source.node))
+					: containsOf(node, source.node))
 			) {
 				const last = rects[rects.length - 1];
 				if (

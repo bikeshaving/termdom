@@ -16,8 +16,10 @@ import {
 import * as CSSTree from "./csstree.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
+	appendChildOf,
 	attributeOf,
 	constructInternal,
+	containsOf,
 	dispatchAsUserAgent,
 	type Document as DOMDocument,
 	type Element as DOMElement,
@@ -56,6 +58,7 @@ import {
 	pseudoElementCount,
 	releaseRemovedNodes,
 	reobserveShadowRoot,
+	setAttributeOf,
 	styleElementCount,
 	TransitionEvent,
 	type Window,
@@ -942,7 +945,8 @@ function flushStyleAttribute(declaration: CSSStyleDeclaration): void {
 	const declarationSlots = _(declaration);
 	if (declarationSlots.element) {
 		declarationSlots.attributeText = serializeDeclarations(declaration);
-		declarationSlots.element.setAttribute(
+		setAttributeOf(
+			declarationSlots.element,
 			"style",
 			declarationSlots.attributeText,
 		);
@@ -9924,7 +9928,7 @@ function getScopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 			candidate;
 			candidate = candidate.parentElement
 		) {
-			if (outer && candidate !== outer && !outer.contains(candidate)) {
+			if (outer && candidate !== outer && !containsOf(outer, candidate)) {
 				break;
 			}
 			if (!isScopeRootMatch(candidate, condition, outer)) {
@@ -10261,7 +10265,7 @@ function attachPseudoElementToElementForType(
 	}
 	const node = ensurePseudoElement<Element>(element, pseudoType);
 	cascade.pseudoHosts.add(element);
-	node.appendChild(element.ownerDocument.createTextNode(content));
+	appendChildOf(node, element.ownerDocument.createTextNode(content));
 	cascade.layout.invalidate();
 	cascade.layout.invalidate(element);
 }

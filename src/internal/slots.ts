@@ -143,6 +143,12 @@ let newestRecord: SlotRecord | null = null;
 let olderObject: object | null = null;
 let olderRecord: SlotRecord | null = null;
 
+// The class the last object sealed came from, and what seal() found for
+// it, since objects are often made many of one kind in a row.
+let lastSealedConstructor: Constructor | null = null;
+let lastSealedType: Constructor | null = null;
+let lastSealedPlan: FamilyPlan | null = null;
+
 /**
  * Gives a newly constructed object its slots. The root class of each
  * public hierarchy calls this first in its constructor, before any state
@@ -153,11 +159,24 @@ export function seal(
 	constructor: Constructor,
 	root: Constructor,
 ): void {
-	const type = interfaceObjects.get(constructor) ?? constructor;
-	let plan = familyPlans.get(type);
-	if (plan === undefined) {
-		plan = planFamilyRecord(type, root);
-		familyPlans.set(type, plan);
+	let type: Constructor;
+	let plan: FamilyPlan | null;
+	if (constructor === lastSealedConstructor) {
+		type = lastSealedType!;
+		plan = lastSealedPlan;
+	} else {
+		type = interfaceObjects.get(constructor) ?? constructor;
+		let found = familyPlans.get(type);
+		if (found === undefined) {
+			found = planFamilyRecord(type, root);
+			familyPlans.set(type, found);
+		}
+
+		plan = found;
+
+		lastSealedConstructor = constructor;
+		lastSealedType = type;
+		lastSealedPlan = plan;
 	}
 
 	if (plan !== null) {
@@ -202,6 +221,7 @@ export function declareInterfaceObject(
 	type: Constructor,
 ): void {
 	interfaceObjects.set(object, type);
+	lastSealedConstructor = null;
 }
 
 /** Calls `hook` with each object sealed from now on, and its class. */
@@ -320,6 +340,7 @@ export function prepareClasses(values: Iterable<unknown>): void {
 		if (root !== null && !familyPlans.has(type)) {
 			const plan = planFamilyRecord(type, root);
 			familyPlans.set(type, plan);
+			lastSealedConstructor = null;
 			if (plan === null) {
 				hiddenPrototype(type, root);
 			}
@@ -667,6 +688,7 @@ export function moveLateMembers(): void {
 	for (const [type, plan] of familyPlans) {
 		if (plan !== null) {
 			familyPlans.delete(type);
+			lastSealedConstructor = null;
 		}
 	}
 }
