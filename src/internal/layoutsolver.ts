@@ -5613,8 +5613,8 @@ function layoutBlock(
 	// so each is measured once at the width it keeps.
 	// While the width is being found, a child's percentage of it is
 	// cyclic and counts as auto (css-sizing-3 §5.2.1). Read against the
-	// probe, `width: 100%` turned every probe into a definite width of
-	// its own, and nested tables were laid out again for each.
+	// probe, `width: 100%` would make every probe a definite width of its
+	// own and lay nested tables out again for each.
 	let borderBoxWidth: number;
 	if (widthSpace === "definite") {
 		borderBoxWidth = availableWidth - marginRow;

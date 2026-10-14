@@ -8842,12 +8842,8 @@ function createTagNameNSCollection(
 }
 
 /**
- * An element's attributes as the element holds them, for engine code that
- * reads them. `attributes` would build a live NamedNodeMap to hand out.
- */
-/**
- * An element's attributes, as their slots, so a reader looks none of
- * them up. The accessors below read them.
+ * An element's attributes, as their slots, for engine code that reads
+ * them. `attributes` would build a live NamedNodeMap to hand out.
  */
 export function getAttributeList(
 	element: globalThis.Element,
@@ -12060,11 +12056,6 @@ export class HTMLElement extends Element {
 		return "";
 	}
 
-	// HTML's "rendered text" respects display, collapses white space and
-	// carries the line breaks layout chose. This engine computes all of
-	// that but does not read it back here yet, so every element takes the
-	// path the standard gives an element that is not being rendered: its
-	// descendant text content.
 	get innerText(): string {
 		return getInnerText(this);
 	}
@@ -12349,7 +12340,6 @@ function runFocusingSteps(element: HTMLElement): void {
 	}
 	// Uses shadow-including connectedness. A node whose tree root is a
 	// shadow root is focusable when its host chain reaches the document.
-	// The node-tree root test rejected every element in a shadow tree.
 	if (isFocusableArea(element) && element.isConnected) {
 		_(document).extra.activeElement = element;
 		// Focusing the body moves nothing a Tab would start from.
@@ -14070,8 +14060,8 @@ function upgradeElement(
 function getUpgradeDefinition(
 	element: Element,
 ): CustomElementDefinition | null {
-	// A template's contents never upgrade. A connected element's root is a
-	// document, so only a detached one has to climb to find out.
+	// A connected element's root is a document, so only a detached one
+	// has to climb to find out.
 	const elementSlots = _(element);
 	if (!elementSlots.connected) {
 		const root = getRoot(element);
@@ -15882,13 +15872,13 @@ class HTMLCanvasElement extends HTMLElement {
 
 declareExtraSlots(HTMLCanvasElement);
 
-// The bitmap, made at the canvas's size when first needed.
-// Past MAX_IMAGE_PIXELS a canvas gets no bitmap and draws nothing, as a
-// browser's canvas does past its own limit, rather than failing to
-// allocate. A cell takes 18 bytes, so a cell grid stops sooner.
+// A cell takes 18 bytes, so a cell grid stops sooner than a bitmap does.
 const GRID_CELL_LIMIT = 1 << 22;
 
-// The bitmap, made at the canvas's size when first drawn on.
+// The bitmap, made at the canvas's size when first drawn on. Past
+// MAX_IMAGE_PIXELS a canvas gets no bitmap and draws nothing, as a
+// browser's canvas does past its own limit, rather than failing to
+// allocate.
 function getCanvasBitmap(canvas: HTMLCanvasElement): Bitmap {
 	const width = canvas.width;
 	const height = canvas.height;
@@ -18078,14 +18068,16 @@ class HTMLImageElement extends HTMLElement {
 		return state.status === "complete" || state.status === "broken";
 	}
 
-	// Deprecated members that report the rendered position. This engine
-	// implements them through the geometry surface instead.
+	// The border box's left and top edges from the document's origin, as
+	// CSSOM View defines these old members, or 0 for an image with no box.
 	get x(): number {
-		return 0;
+		const view = this.ownerDocument.defaultView;
+		return this.getBoundingClientRect().left + (view?.scrollX ?? 0);
 	}
 
 	get y(): number {
-		return 0;
+		const view = this.ownerDocument.defaultView;
+		return this.getBoundingClientRect().top + (view?.scrollY ?? 0);
 	}
 
 	decode(): Promise<void> {
@@ -18840,7 +18832,6 @@ export class HTMLInputElement extends HTMLElement {
 		);
 	}
 
-	// Only the types that render as a button can invoke a popover.
 	get popoverTargetElement(): Element | null {
 		return getAttributeElement(this, "popovertarget");
 	}
@@ -21725,8 +21716,8 @@ export class HTMLSelectElement extends HTMLElement {
 
 		syncPickerRows(ownerOf(this), picker);
 
-		// Anchor below the text control in DOCUMENT coordinates (the picker's
-		// containing block is the ICB), at least the text control's width
+		// Anchor below the select in DOCUMENT coordinates (the picker's
+		// containing block is the ICB), at least the select's width
 		// and as wide as its widest row, a grouped option's indent included.
 		const rect = attachedSlots.extra.layout.getRect(ownerOf(this));
 		if (rect) {
@@ -24179,26 +24170,16 @@ function fullscreenChanged(element: Element): void {
 	_maybe(getAttachedDocument(element))?.extra.layout.invalidate(element);
 }
 
-// The alternate screen comes up holding whatever the terminal left in
-// it, so entering clears it and homes the cursor. The cursor is hidden
-// before the screen is touched, so it never blinks on the clear.
+// An element outside the document cannot go fullscreen: the Fullscreen
+// Standard fires fullscreenerror and rejects with a TypeError.
 function enterFullscreen(element: Element): void {
-	const stack = getFullscreenStack(_(element).document);
-	try {
-		if (!element.isConnected) {
-			const error = new Error("The element is not contained by a document.");
-			error.name = "InvalidStateError";
-			throw error;
-		}
-		stack.push(element);
-		fireFullscreenEvent("fullscreenchange", element);
-	} catch (error) {
-		if (stack[stack.length - 1] === element) {
-			stack.pop();
-		}
-		fireFullscreenEvent("fullscreenerror", element, {error: error as Error});
+	if (!element.isConnected) {
+		const error = new TypeError("The element is not in the document");
+		fireFullscreenEvent("fullscreenerror", element, {error});
 		throw error;
 	}
+	getFullscreenStack(_(element).document).push(element);
+	fireFullscreenEvent("fullscreenchange", element);
 }
 
 function getDatasetAttributeName(property: string): string {
@@ -25820,7 +25801,7 @@ export function isInFlatTree(target: globalThis.Node): boolean {
 // The flat-tree hops: shadow content in its slot's place, and
 // pseudo-element nodes among the children they belong beside. Neither is
 // a link a node stores, so each hop computes its result. The engine
-// walks this tree through the three traversals exported below; the DOM's
+// walks this tree through the traversals exported below; the DOM's
 // own TreeWalker never does.
 
 function isElementOrText(node: Node): boolean {
@@ -26675,8 +26656,8 @@ class IntersectionObserver {
 		disconnectObserver(this as unknown as AnyObserver);
 	}
 
-	// Records are computed and delivered in the same pass (see the
-	// manager's flush), so nothing is ever queued undelivered and this is
+	// Records are computed and delivered in the same pass (see
+	// flushObservers()), so nothing is ever queued undelivered and this is
 	// always empty. It exists because the interface has it and code checks
 	// for it.
 	takeRecords(): IntersectionObserverEntry[] {
@@ -26783,8 +26764,7 @@ function applyRootMargin(
 
 // This is what the spec actually watches. An observation fires when
 // this CHANGES, so a target scrolling through `[0, 0.5, 1]` reports at
-// each step. Tracking only the boolean "is it intersecting" collapsed
-// all of those into one callback and made threshold arrays decorative.
+// each step, not once when it starts to intersect.
 function getThresholdIndex(
 	observer: IntersectionObserver,
 	ratio: number,
@@ -26832,10 +26812,6 @@ function isHTMLDocument(document: Document): boolean {
 	return _(document).extra.type === "html";
 }
 
-/**
- * The event handler attributes installed on the prototype below, and the
- * ParentNode mixin from the tables.
- */
 export interface DocumentExtra extends NodeExtra {
 	// What an attached document renders through, set by attachDocument. A
 	// headless document has none and behaves as a document with no browsing
@@ -26884,7 +26860,6 @@ export interface DocumentExtra extends NodeExtra {
 	activeElement: Element | null;
 	defaultView: object | null;
 	styleElements: number;
-	children: HTMLCollection | null;
 	topLayer: Set<Element>;
 	// The reentrancy guards the popover algorithms keep on the document:
 	// one popover opening at a time, and a count of the ones closing under
@@ -29430,6 +29405,12 @@ function isDocumentScroller(element: Element): boolean {
 
 const scrolledElements = new WeakMap<Document, Set<Element>>();
 
+// The scroll steps of "update the rendering": each box scrolled since the
+// last frame gets one "scroll" event, and the document one that bubbles
+// to the window, before the frame's callbacks run.
+const pendingScrollTargets = new WeakMap<Document, Set<Element>>();
+const reportedDocumentScrollTop = new WeakMap<Document, number>();
+
 // A write on an attached document rounds to whole cells (everything
 // paints on the cell grid, like the document scroll), clamps into the
 // range layout reports for the box, stores the value, and tells the
@@ -29438,12 +29419,6 @@ const scrolledElements = new WeakMap<Document, Set<Element>>();
 // run) stores the write unclamped; the caret-reveal code owns those
 // offsets and keeps them sane. On a headless document the write is
 // stored and read back, and nothing moves.
-// The scroll steps of "update the rendering": each box scrolled since the
-// last frame gets one "scroll" event, and the document one that bubbles
-// to the window, before the frame's callbacks run.
-const pendingScrollTargets = new WeakMap<Document, Set<Element>>();
-const reportedDocumentScrollTop = new WeakMap<Document, number>();
-
 function setScrollOffset(
 	element: Element,
 	axis: "left" | "top",

@@ -1,5 +1,5 @@
-// Node's inspect hook, so console.log(element) shows markup rather than a
-// text control dump. Importing the module installs the hooks.
+// Node's and Deno's inspect hooks, so console.log(element) shows markup
+// rather than a text control dump. Importing the module installs the hooks.
 import {
 	Comment,
 	Document,
