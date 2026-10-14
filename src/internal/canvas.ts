@@ -302,17 +302,28 @@ interface RGBA {
 	a: number;
 }
 
+// Set once per shape or glyph by many scripts, so parsed once per string.
+const canvasColors = new Map<string, RGBA | null>();
+const CANVAS_COLOR_CACHE_SIZE = 256;
+
 function parseCanvasColor(value: string): RGBA | null {
-	const parsed = parseColor(value);
-	if (parsed === null) {
-		return null;
+	let color = canvasColors.get(value);
+	if (color === undefined) {
+		const parsed = parseColor(value);
+		color = parsed === null
+			? null
+			: {
+				r: (parsed.color >> 16) & 0xff,
+				g: (parsed.color >> 8) & 0xff,
+				b: parsed.color & 0xff,
+				a: parsed.alpha,
+			};
+		if (canvasColors.size >= CANVAS_COLOR_CACHE_SIZE) {
+			canvasColors.clear();
+		}
+		canvasColors.set(value, color);
 	}
-	return {
-		r: (parsed.color >> 16) & 0xff,
-		g: (parsed.color >> 8) & 0xff,
-		b: parsed.color & 0xff,
-		a: parsed.alpha,
-	};
+	return color === null ? null : {...color};
 }
 
 // HTML's serialization of a canvas color: #rrggbb when opaque, rgba()
