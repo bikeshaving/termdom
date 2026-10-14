@@ -39540,8 +39540,10 @@ function startPendingImages(
 // cycle through cssvalues, and a table built at module load would read
 // its classes before they exist when canvas.ts is the first module
 // imported.
-function getWindowClasses(): Record<string, Constructor> {
-	return {
+let windowClasses: Readonly<Record<string, Constructor>> | null = null;
+
+function getWindowClasses(): Readonly<Record<string, Constructor>> {
+	windowClasses ??= {
 		...platform,
 		...CSSOM_INTERFACES,
 		CanvasGradient,
@@ -39551,6 +39553,7 @@ function getWindowClasses(): Record<string, Constructor> {
 		ImageData,
 		Path2D,
 	} as unknown as Record<string, Constructor>;
+	return windowClasses;
 }
 
 /** The names of the interfaces a window exposes. */
