@@ -3,6 +3,7 @@ import {
 	attributeOf,
 	commitRangeThumb,
 	constructInternal,
+	containsOf,
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
 	flatParentElement,
@@ -1203,7 +1204,7 @@ function dispatchPress(
 		focusable = flatParentElement(focusable);
 	}
 	const host = getEditingHost(target);
-	if (host !== null && (focusable === null || !host.contains(focusable))) {
+	if (host !== null && (focusable === null || !containsOf(host, focusable))) {
 		focusable = host;
 	}
 	const active = getFocusedElement(input.document);

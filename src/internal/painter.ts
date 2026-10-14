@@ -15,6 +15,7 @@ import {
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
+	containsOf,
 	flatParentElement,
 	flowContent,
 	getCanvasTextRuns,
@@ -1680,7 +1681,7 @@ function renderEditingCaret(
 	const point = getEditingCaretPoint(painter.document);
 	if (
 		point === null ||
-		!element.contains(point.node) ||
+		!containsOf(element, point.node) ||
 		painter.document.getSelection()?.isCollapsed === false
 	) {
 		return;

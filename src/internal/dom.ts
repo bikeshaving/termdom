@@ -946,9 +946,9 @@ function addPart(
 ): globalThis.HTMLElement {
 	const document = getUADocument(root);
 	const span = document.createElement("span");
-	span.setAttribute("part", part);
-	span.appendChild(document.createTextNode(""));
-	root.appendChild(span);
+	setAttributeOf(span, "part", part);
+	appendChildOf(span, document.createTextNode(""));
+	appendChildOf(root, span);
 	return span;
 }
 
@@ -5714,7 +5714,7 @@ function isDetailsSummary(target: EventTarget): target is HTMLElement {
 
 function toggleTheDetails(summary: HTMLElement): void {
 	const details = objectOf(_(summary).parent) as HTMLDetailsElement;
-	details.toggleAttribute("open", !hasAttributeOf(details, "open"));
+	toggleAttributeOf(details, "open", !hasAttributeOf(details, "open"));
 }
 
 const DIALOG_COMMANDS = new Set(["close", "request-close", "show-modal"]);
@@ -7194,14 +7194,13 @@ function insertNode(
 	child: Node | null,
 	suppressObservers: boolean,
 ): void {
-	const nodes = nodeTypeOf(node) === DOCUMENT_FRAGMENT_NODE
-		? getChildNodeArray(node)
-		: [node];
+	const isFragment = _(node).nodeType === DOCUMENT_FRAGMENT_NODE;
+	const nodes = isFragment ? getChildNodeArray(node) : [node];
 	const count = nodes.length;
 	if (count === 0) {
 		return;
 	}
-	if (nodeTypeOf(node) === DOCUMENT_FRAGMENT_NODE) {
+	if (isFragment) {
 		for (const child_ of nodes) {
 			removeNode(child_, true);
 		}
@@ -7210,11 +7209,12 @@ function insertNode(
 	if (child !== null) {
 		liveRangeInsertSteps(parent, child, count);
 	}
+	const parentSlots = _(parent);
 	const previousSibling = child !== null
 		? objectOf(_(child).previous)
-		: objectOf(_(parent).lastChild);
-	const document = _(parent).document;
-	const connected = _(parent).connected;
+		: objectOf(parentSlots.lastChild);
+	const document = parentSlots.document;
+	const connected = parentSlots.connected;
 	for (const inserted of nodes) {
 		// The inserted node was its own tree's root. Everything registered
 		// under it now belongs to the tree it is joining.
@@ -7244,7 +7244,7 @@ function insertNode(
 		linkChild(inserted, parent, child);
 		// The inserted tree's root is now the parent's. The walk follows the
 		// light tree only. A shadow tree under it keeps its own root.
-		const treeRoot = _(parent).treeRoot;
+		const treeRoot = parentSlots.treeRoot;
 		const insertedSlots = slotsOf(inserted);
 		for (
 			let joined: Slots<Node> | null = insertedSlots;
@@ -7253,8 +7253,8 @@ function insertNode(
 		) {
 			joined.treeRoot = treeRoot;
 		}
-		const shadow = nodeTypeOf(parent) === ELEMENT_NODE
-			? _((parent as Element)).shadowRoot
+		const shadow = parentSlots.nodeType === ELEMENT_NODE
+			? (parentSlots as Slots<Element>).shadowRoot
 			: null;
 		if (shadow !== null) {
 			if (_(shadow).extra.slotAssignment === "named") {
@@ -9192,7 +9192,7 @@ class DOMTokenList implements globalThis.DOMTokenList {
 
 	set value(value: string) {
 		const slots = _(this);
-		slots.element.setAttribute(slots.attribute, String(value));
+		setAttributeOf(slots.element, slots.attribute, String(value));
 	}
 
 	get [kTokens](): string[] {
@@ -9322,7 +9322,7 @@ function writeTokenList(list: DOMTokenList, tokens: string[]): void {
 	) {
 		return;
 	}
-	listSlots.element.setAttribute(listSlots.attribute, tokens.join(" "));
+	setAttributeOf(listSlots.element, listSlots.attribute, tokens.join(" "));
 }
 
 Object.defineProperty(DOMTokenList.prototype, Symbol.toStringTag, {
@@ -10669,19 +10669,19 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	get id(): string {
-		return this.getAttribute("id") ?? "";
+		return attributeOf(this, "id") ?? "";
 	}
 
 	set id(value: string) {
-		this.setAttribute("id", String(value));
+		setAttributeOf(this, "id", String(value));
 	}
 
 	get className(): string {
-		return this.getAttribute("class") ?? "";
+		return attributeOf(this, "class") ?? "";
 	}
 
 	set className(value: string) {
-		this.setAttribute("class", String(value));
+		setAttributeOf(this, "class", String(value));
 	}
 
 	get classList(): DOMTokenList {
@@ -10696,15 +10696,15 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	set classList(value: string) {
-		this.setAttribute("class", String(value));
+		setAttributeOf(this, "class", String(value));
 	}
 
 	get slot(): string {
-		return this.getAttribute("slot") ?? "";
+		return attributeOf(this, "slot") ?? "";
 	}
 
 	set slot(value: string) {
-		this.setAttribute("slot", String(value));
+		setAttributeOf(this, "slot", String(value));
 	}
 
 	get assignedSlot(): HTMLSlotElement | null {
@@ -10929,22 +10929,7 @@ export class Element extends Node implements globalThis.Element {
 		if (arguments.length < 2) {
 			throw new TypeError("setAttribute needs a name and a value");
 		}
-		let name = String(qualifiedName);
-		validateAttributeLocalName(name);
-		const slots = _(this);
-		if (slots.namespace === HTML_NAMESPACE && isHTMLDocument(slots.document)) {
-			name = toASCIILowercase(name);
-		}
-		const string = value === null ? "null" : String(value);
-		for (const attribute of slots.attributeList) {
-			if (attribute[kQualifiedName] === name) {
-				changeAttribute(objectOf(attribute), string);
-				return;
-			}
-		}
-		const attribute = new Attr(null, null, name, string);
-		_(attribute).document = slots.document;
-		appendAttribute(this, attribute);
+		setAttributeOf(this, qualifiedName, value);
 	}
 
 	setAttributeNS(
@@ -10970,10 +10955,7 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	removeAttribute(qualifiedName: string): void {
-		const attribute = getAttributeByName(this, String(qualifiedName));
-		if (attribute !== null) {
-			removeAttributeNode(this, attribute);
-		}
+		removeAttributeOf(this, qualifiedName);
 	}
 
 	removeAttributeNS(namespace: string | null, localName: string): void {
@@ -10988,27 +10970,7 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	toggleAttribute(qualifiedName: string, force?: boolean): boolean {
-		let name = String(qualifiedName);
-		validateAttributeLocalName(name);
-		const slots = _(this);
-		if (slots.namespace === HTML_NAMESPACE && isHTMLDocument(slots.document)) {
-			name = toASCIILowercase(name);
-		}
-		const attribute = getAttributeByName(this, name);
-		if (attribute === null) {
-			if (force === undefined || force === true) {
-				const created = new Attr(null, null, name, "");
-				_(created).document = slots.document;
-				appendAttribute(this, created);
-				return true;
-			}
-			return false;
-		}
-		if (force === undefined || force === false) {
-			removeAttributeNode(this, attribute);
-			return false;
-		}
-		return true;
+		return toggleAttributeOf(this, qualifiedName, force);
 	}
 
 	hasAttribute(qualifiedName: string): boolean {
@@ -12126,7 +12088,7 @@ export class HTMLElement extends Element {
 	// Inherited. An element that sets no mode takes its parent's, and the
 	// root of a tree that sets none is translated.
 	get translate(): boolean {
-		const value = this.getAttribute("translate");
+		const value = attributeOf(this, "translate");
 		if (value !== null) {
 			const mode = toASCIILowercase(value);
 			if (mode === "" || mode === "yes") {
@@ -12144,13 +12106,13 @@ export class HTMLElement extends Element {
 	}
 
 	set translate(value: boolean) {
-		this.setAttribute("translate", value ? "yes" : "no");
+		setAttributeOf(this, "translate", value ? "yes" : "no");
 	}
 
 	// An element that sets neither state falls back to the two elements HTML
 	// makes draggable by default.
 	get draggable(): boolean {
-		const value = this.getAttribute("draggable");
+		const value = attributeOf(this, "draggable");
 		if (value !== null) {
 			const state = toASCIILowercase(value);
 			if (state === "true") {
@@ -12167,16 +12129,16 @@ export class HTMLElement extends Element {
 		if (slots.localName === "img") {
 			return true;
 		}
-		return slots.localName === "a" && this.hasAttribute("href");
+		return slots.localName === "a" && hasAttributeOf(this, "href");
 	}
 
 	set draggable(value: boolean) {
-		this.setAttribute("draggable", value ? "true" : "false");
+		setAttributeOf(this, "draggable", value ? "true" : "false");
 	}
 
 	/** Inherited, like translate. */
 	get spellcheck(): boolean {
-		const value = this.getAttribute("spellcheck");
+		const value = attributeOf(this, "spellcheck");
 		if (value !== null) {
 			const state = toASCIILowercase(value);
 			if (state === "" || state === "true") {
@@ -12194,11 +12156,11 @@ export class HTMLElement extends Element {
 	}
 
 	set spellcheck(value: boolean) {
-		this.setAttribute("spellcheck", value ? "true" : "false");
+		setAttributeOf(this, "spellcheck", value ? "true" : "false");
 	}
 
 	get autocapitalize(): string {
-		const value = this.getAttribute("autocapitalize");
+		const value = attributeOf(this, "autocapitalize");
 		if (value === null) {
 			return "";
 		}
@@ -12216,33 +12178,33 @@ export class HTMLElement extends Element {
 	}
 
 	set autocapitalize(value: string) {
-		this.setAttribute("autocapitalize", String(value));
+		setAttributeOf(this, "autocapitalize", String(value));
 	}
 
 	/** Every value except "off" means on. */
 	get autocorrect(): boolean {
-		const value = this.getAttribute("autocorrect");
+		const value = attributeOf(this, "autocorrect");
 		return value === null || toASCIILowercase(value) !== "off";
 	}
 
 	set autocorrect(value: boolean) {
-		this.setAttribute("autocorrect", value ? "on" : "off");
+		setAttributeOf(this, "autocorrect", value ? "on" : "off");
 	}
 
 	get inert(): boolean {
-		return this.hasAttribute("inert");
+		return hasAttributeOf(this, "inert");
 	}
 
 	set inert(value: boolean) {
 		if (value) {
-			this.setAttribute("inert", "");
+			setAttributeOf(this, "inert", "");
 		} else {
-			this.removeAttribute("inert");
+			removeAttributeOf(this, "inert");
 		}
 	}
 
 	get hidden(): boolean | "until-found" {
-		const value = this.getAttribute("hidden");
+		const value = attributeOf(this, "hidden");
 		if (value === null) {
 			return false;
 		}
@@ -12253,16 +12215,16 @@ export class HTMLElement extends Element {
 		if (
 			typeof value === "string" && toASCIILowercase(value) === "until-found"
 		) {
-			this.setAttribute("hidden", "until-found");
+			setAttributeOf(this, "hidden", "until-found");
 		} else if (value) {
-			this.setAttribute("hidden", "");
+			setAttributeOf(this, "hidden", "");
 		} else {
-			this.removeAttribute("hidden");
+			removeAttributeOf(this, "hidden");
 		}
 	}
 
 	get contentEditable(): string {
-		const value = this.getAttribute("contenteditable");
+		const value = attributeOf(this, "contenteditable");
 		if (value === null) {
 			return "inherit";
 		}
@@ -12282,13 +12244,13 @@ export class HTMLElement extends Element {
 	set contentEditable(value: string) {
 		const state = toASCIILowercase(String(value));
 		if (state === "inherit") {
-			this.removeAttribute("contenteditable");
+			removeAttributeOf(this, "contenteditable");
 			return;
 		}
 		if (state !== "true" && state !== "false" && state !== "plaintext-only") {
 			throw domError("SyntaxError", `"${value}" is not an editability`);
 		}
-		this.setAttribute("contenteditable", state);
+		setAttributeOf(this, "contenteditable", state);
 	}
 
 	get isContentEditable(): boolean {
@@ -12312,7 +12274,7 @@ export class HTMLElement extends Element {
 	// that are in the tab order without an attribute, minus one for the
 	// rest.
 	get tabIndex(): number {
-		const value = this.getAttribute("tabindex");
+		const value = attributeOf(this, "tabindex");
 		const parsed = value === null ? null : parseInteger(value);
 		if (parsed !== null && parsed >= -2147483648 && parsed <= 2147483647) {
 			return parsed;
@@ -12321,7 +12283,7 @@ export class HTMLElement extends Element {
 	}
 
 	set tabIndex(value: number) {
-		this.setAttribute("tabindex", String(toLong(value)));
+		setAttributeOf(this, "tabindex", String(toLong(value)));
 	}
 
 	get dataset(): DOMStringMap {
@@ -13202,7 +13164,7 @@ export class SVGElement extends Element {
 	}
 
 	override get className(): any {
-		return this.getAttribute("class") ?? "";
+		return attributeOf(this, "class") ?? "";
 	}
 
 	get attributeStyleMap(): globalThis.StylePropertyMap {
@@ -15013,11 +14975,11 @@ class HTMLSlotElement extends HTMLElement {
 	}
 
 	get name(): string {
-		return this.getAttribute("name") ?? "";
+		return attributeOf(this, "name") ?? "";
 	}
 
 	set name(value: string) {
-		this.setAttribute("name", String(value));
+		setAttributeOf(this, "name", String(value));
 	}
 
 	assignedNodes(options?: globalThis.AssignedNodesOptions): globalThis.Node[] {
@@ -15154,7 +15116,7 @@ class HTMLTemplateElement extends HTMLElement {
 	}
 
 	get shadowRootMode(): string {
-		const value = this.getAttribute("shadowrootmode");
+		const value = attributeOf(this, "shadowrootmode");
 		if (value === null) {
 			return "";
 		}
@@ -15163,31 +15125,31 @@ class HTMLTemplateElement extends HTMLElement {
 	}
 
 	set shadowRootMode(value: string) {
-		this.setAttribute("shadowrootmode", String(value));
+		setAttributeOf(this, "shadowrootmode", String(value));
 	}
 
 	get shadowRootDelegatesFocus(): boolean {
-		return this.hasAttribute("shadowrootdelegatesfocus");
+		return hasAttributeOf(this, "shadowrootdelegatesfocus");
 	}
 
 	set shadowRootDelegatesFocus(value: boolean) {
-		this.toggleAttribute("shadowrootdelegatesfocus", Boolean(value));
+		toggleAttributeOf(this, "shadowrootdelegatesfocus", Boolean(value));
 	}
 
 	get shadowRootClonable(): boolean {
-		return this.hasAttribute("shadowrootclonable");
+		return hasAttributeOf(this, "shadowrootclonable");
 	}
 
 	set shadowRootClonable(value: boolean) {
-		this.toggleAttribute("shadowrootclonable", Boolean(value));
+		toggleAttributeOf(this, "shadowrootclonable", Boolean(value));
 	}
 
 	get shadowRootSerializable(): boolean {
-		return this.hasAttribute("shadowrootserializable");
+		return hasAttributeOf(this, "shadowrootserializable");
 	}
 
 	set shadowRootSerializable(value: boolean) {
-		this.toggleAttribute("shadowrootserializable", Boolean(value));
+		toggleAttributeOf(this, "shadowrootserializable", Boolean(value));
 	}
 
 	override [kAdoptingSteps](
@@ -15340,27 +15302,27 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 	switch (spec.kind) {
 		case "string":
 			get = function (this: Element): string {
-				return this.getAttribute(attribute) ?? "";
+				return attributeOf(this, attribute) ?? "";
 			};
 			set = function (this: Element, value: unknown): void {
-				this.setAttribute(attribute, String(value));
+				setAttributeOf(this, attribute, String(value));
 			};
 			break;
 		case "nullable-string":
 			get = function (this: Element): string | null {
-				return this.getAttribute(attribute);
+				return attributeOf(this, attribute);
 			};
 			set = function (this: Element, value: unknown): void {
 				if (value == null) {
-					this.removeAttribute(attribute);
+					removeAttributeOf(this, attribute);
 				} else {
-					this.setAttribute(attribute, String(value));
+					setAttributeOf(this, attribute, String(value));
 				}
 			};
 			break;
 		case "url":
 			get = function (this: Element): string {
-				const value = this.getAttribute(attribute);
+				const value = attributeOf(this, attribute);
 				if (value === null) {
 					return "";
 				}
@@ -15369,21 +15331,21 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 					trimmed;
 			};
 			set = function (this: Element, value: unknown): void {
-				this.setAttribute(attribute, String(value));
+				setAttributeOf(this, attribute, String(value));
 			};
 			break;
 		case "boolean":
 			get = function (this: Element): boolean {
-				return this.hasAttribute(attribute);
+				return hasAttributeOf(this, attribute);
 			};
 			set = function (this: Element, value: unknown): void {
-				this.toggleAttribute(attribute, Boolean(value));
+				toggleAttributeOf(this, attribute, Boolean(value));
 			};
 			break;
 		case "long": {
 			const fallback = spec.fallback ?? 0;
 			get = function (this: Element): number {
-				const value = this.getAttribute(attribute);
+				const value = attributeOf(this, attribute);
 				const parsed = value === null ? null : parseInteger(value);
 				if (parsed === null) {
 					return fallback;
@@ -15401,7 +15363,7 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 				if (spec.nonNegative && number < 0) {
 					throw indexSizeError(`${spec.property} cannot be negative`);
 				}
-				this.setAttribute(attribute, String(number));
+				setAttributeOf(this, attribute, String(number));
 			};
 			break;
 		}
@@ -15413,7 +15375,7 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 					: (spec.fallback ?? 0);
 			get = function (this: Element): number {
 				const fallback = fallbackFor(this);
-				const value = this.getAttribute(attribute);
+				const value = attributeOf(this, attribute);
 				let parsed = value === null ? null : parseNonNegativeInteger(value);
 				if (parsed !== null && parsed > 2147483647) {
 					parsed = null;
@@ -15440,7 +15402,8 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 				if (spec.greaterThanZero && number === 0) {
 					throw indexSizeError(`${spec.property} cannot be zero`);
 				}
-				this.setAttribute(
+				setAttributeOf(
+					this,
 					attribute,
 					String(number > 2147483647 ? fallbackFor(this) : number),
 				);
@@ -15452,7 +15415,7 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 			const missing = spec.missing ?? "";
 			const invalid = spec.invalid ?? "";
 			get = function (this: Element): string | null {
-				const value = this.getAttribute(attribute);
+				const value = attributeOf(this, attribute);
 				if (value === null) {
 					return spec.nullable ? null : missing;
 				}
@@ -15471,10 +15434,10 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 			};
 			set = function (this: Element, value: unknown): void {
 				if (spec.nullable && (value == null)) {
-					this.removeAttribute(attribute);
+					removeAttributeOf(this, attribute);
 					return;
 				}
-				this.setAttribute(attribute, String(value));
+				setAttributeOf(this, attribute, String(value));
 			};
 			break;
 		}
@@ -15484,7 +15447,7 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 				return getReflectedTokenList(this, spec.property, attribute, supported);
 			};
 			set = function (this: Element, value: unknown): void {
-				this.setAttribute(attribute, String(value));
+				setAttributeOf(this, attribute, String(value));
 			};
 			break;
 		}
@@ -15562,7 +15525,7 @@ function createHyperlinkPart(
 const hyperlinkMembers: PropertyDescriptorMap = {
 	href: {
 		get(this: Element): string {
-			const value = this.getAttribute("href");
+			const value = attributeOf(this, "href");
 			if (value === null) {
 				return "";
 			}
@@ -15570,7 +15533,7 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 			return parseURL(trimmed, getDocumentBaseURL(_(this).document)) ?? trimmed;
 		},
 		set(this: Element, value: string): void {
-			this.setAttribute("href", String(value));
+			setAttributeOf(this, "href", String(value));
 		},
 		enumerable: true,
 		configurable: true,
@@ -15648,7 +15611,7 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 	),
 	toString: {
 		value: function toString(this: Element): string {
-			const value = this.getAttribute("href");
+			const value = attributeOf(this, "href");
 			if (value === null) {
 				return "";
 			}
@@ -15684,7 +15647,7 @@ function writeHyperlink(element: Element, change: (url: URL) => void): void {
 	} catch (_err) {
 		return;
 	}
-	element.setAttribute("href", url.href);
+	setAttributeOf(element, "href", url.href);
 }
 
 Object.defineProperties(HTMLAnchorElement.prototype, hyperlinkMembers);
@@ -15719,7 +15682,7 @@ Object.defineProperties(HTMLAreaElement.prototype, hyperlinkMembers);
 class HTMLBaseElement extends HTMLElement {
 	declare target: globalThis.HTMLBaseElement["target"];
 	get href(): string {
-		const value = this.getAttribute("href");
+		const value = attributeOf(this, "href");
 		const fallback = _(_(this).document).extra.documentURL;
 		if (value === null) {
 			return fallback;
@@ -15728,7 +15691,7 @@ class HTMLBaseElement extends HTMLElement {
 	}
 
 	set href(value: string) {
-		this.setAttribute("href", String(value));
+		setAttributeOf(this, "href", String(value));
 	}
 }
 
@@ -15848,7 +15811,7 @@ class HTMLButtonElement extends HTMLElement {
 	}
 
 	get command(): string {
-		const value = this.getAttribute("command");
+		const value = attributeOf(this, "command");
 		if (value === null) {
 			return "";
 		}
@@ -15860,7 +15823,7 @@ class HTMLButtonElement extends HTMLElement {
 	}
 
 	set command(value: string) {
-		this.setAttribute("command", value);
+		setAttributeOf(this, "command", value);
 	}
 
 	get commandForElement(): Element | null {
@@ -16378,8 +16341,8 @@ class HTMLDetailsElement extends HTMLElement {
 		const shadow = root as unknown as ShadowRoot;
 		const summarySlot = document.createElement("slot");
 		const content = document.createElement("div");
-		content.setAttribute("part", "details-content");
-		content.appendChild(document.createElement("slot"));
+		setAttributeOf(content, "part", "details-content");
+		appendChildOf(content, document.createElement("slot"));
 		// The distribution function must be in place before the slots enter the
 		// tree, because inserting each slot runs the assignment pass that fills
 		// it.
@@ -16387,8 +16350,8 @@ class HTMLDetailsElement extends HTMLElement {
 		shadowSlots.extra.slotAssignment = "manual";
 		shadowSlots.extra.uaSlotting = (slot) =>
 			getDetailsSlottables(ownerOf(this), slot === summarySlot);
-		root.appendChild(summarySlot);
-		root.appendChild(content);
+		appendChildOf(root, summarySlot);
+		appendChildOf(root, content);
 		this.extra.content = content;
 		syncUAShadowTree(ownerOf(this));
 	}
@@ -16598,7 +16561,7 @@ class HTMLDialogElement extends HTMLElement {
 	}
 
 	show(): void {
-		if (this.hasAttribute("open")) {
+		if (hasAttributeOf(this, "open")) {
 			if (isModalDialog(this)) {
 				throw domError(
 					"InvalidStateError",
@@ -16607,12 +16570,12 @@ class HTMLDialogElement extends HTMLElement {
 			}
 			return;
 		}
-		this.setAttribute("open", "");
+		setAttributeOf(this, "open", "");
 		focusDialog(this);
 	}
 
 	showModal(): void {
-		if (this.hasAttribute("open")) {
+		if (hasAttributeOf(this, "open")) {
 			throw domError("InvalidStateError", "That dialog is already showing");
 		}
 		if (!isConnectedNode(this)) {
@@ -16626,7 +16589,7 @@ class HTMLDialogElement extends HTMLElement {
 		// membership rather than a separate flag.
 		getTopLayer(_(this).document).add(this);
 		stateChanged(this, ["modal"]);
-		this.setAttribute("open", "");
+		setAttributeOf(this, "open", "");
 		focusDialog(this);
 	}
 
@@ -16635,7 +16598,7 @@ class HTMLDialogElement extends HTMLElement {
 	}
 
 	requestClose(returnValue?: string): void {
-		if (!this.hasAttribute("open")) {
+		if (!hasAttributeOf(this, "open")) {
 			return;
 		}
 		const canceled = !dispatch(
@@ -16739,7 +16702,7 @@ function closeDialog(
 	const dialogSlots = _(dialog);
 	const document = dialogSlots.document;
 	const wasModal = isModalDialog(dialog);
-	dialog.removeAttribute("open");
+	removeAttributeOf(dialog, "open");
 	getTopLayer(document).delete(dialog);
 	if (wasModal) {
 		stateChanged(dialog, ["modal"]);
@@ -18419,7 +18382,7 @@ class HTMLImageElement extends HTMLElement {
 			// An empty alt marks an image that is only decoration, and with
 			// no source and no alt there is nothing to stand in for: both
 			// show nothing.
-			const alt = this.getAttribute("alt");
+			const alt = attributeOf(this, "alt");
 			if (alt === "" || (alt === null && state.status === "unavailable")) {
 				return null;
 			}
@@ -18454,7 +18417,7 @@ class HTMLImageElement extends HTMLElement {
 	}
 
 	set width(value: number) {
-		this.setAttribute("width", String(toImageDimension(value)));
+		setAttributeOf(this, "width", String(toImageDimension(value)));
 	}
 
 	get height(): number {
@@ -18462,7 +18425,7 @@ class HTMLImageElement extends HTMLElement {
 	}
 
 	set height(value: number) {
-		this.setAttribute("height", String(toImageDimension(value)));
+		setAttributeOf(this, "height", String(toImageDimension(value)));
 	}
 
 	get currentSrc(): string {
@@ -18471,8 +18434,8 @@ class HTMLImageElement extends HTMLElement {
 
 	get complete(): boolean {
 		const state = _(this).extra.imageState;
-		const src = this.getAttribute("src");
-		const srcset = this.getAttribute("srcset");
+		const src = attributeOf(this, "src");
+		const srcset = attributeOf(this, "srcset");
 		if ((src === null || src === "") && (srcset === null || srcset === "")) {
 			return true;
 		}
@@ -18527,7 +18490,7 @@ class HTMLImageElement extends HTMLElement {
 		}
 		const root = buildUAShadowTree(ownerOf(this), attached);
 		slots.extra.altText = slots.document.createTextNode(alt) as unknown as Text;
-		root.appendChild(slots.extra.altText as unknown as globalThis.Text);
+		appendChildOf(root, slots.extra.altText as unknown as globalThis.Text);
 	}
 
 	override [kInsertionSteps](this: Slots<HTMLImageElement>): void {
@@ -19070,7 +19033,7 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	get list(): HTMLDataListElement | null {
-		const id = this.getAttribute("list");
+		const id = attributeOf(this, "list");
 		if (id === null || id === "") {
 			return null;
 		}
@@ -19104,9 +19067,9 @@ export class HTMLInputElement extends HTMLElement {
 				}
 				return slots.extra.value;
 			case "default":
-				return this.getAttribute("value") ?? "";
+				return attributeOf(this, "value") ?? "";
 			case "on":
-				return this.getAttribute("value") ?? "on";
+				return attributeOf(this, "value") ?? "on";
 			default:
 				return "";
 		}
@@ -19137,7 +19100,7 @@ export class HTMLInputElement extends HTMLElement {
 				}
 				break;
 			default:
-				this.setAttribute("value", string);
+				setAttributeOf(this, "value", string);
 		}
 		syncUAShadowTree(this);
 	}
@@ -19281,22 +19244,22 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	get capture(): string {
-		return this.getAttribute("capture") ?? "";
+		return attributeOf(this, "capture") ?? "";
 	}
 
 	set capture(value: string) {
-		this.setAttribute("capture", String(value));
+		setAttributeOf(this, "capture", String(value));
 	}
 
 	get webkitdirectory(): boolean {
-		return this.hasAttribute("webkitdirectory");
+		return hasAttributeOf(this, "webkitdirectory");
 	}
 
 	set webkitdirectory(value: boolean) {
 		if (value) {
-			this.setAttribute("webkitdirectory", "");
+			setAttributeOf(this, "webkitdirectory", "");
 		} else {
-			this.removeAttribute("webkitdirectory");
+			removeAttributeOf(this, "webkitdirectory");
 		}
 	}
 
@@ -19809,7 +19772,7 @@ function buildInputWidget(input: HTMLInputElement): void {
 		// A rebuild keeps the root and its observer registration and replaces
 		// only what is under it.
 		while (root.firstChild) {
-			root.removeChild(root.firstChild);
+			removeChildOf(root, root.firstChild);
 		}
 		attachedSlots.extra.layout.invalidate();
 	}
@@ -20102,7 +20065,7 @@ function buildSlider(
 ): globalThis.HTMLElement {
 	const document = getUADocument(root);
 	const track = addPart(root, "track");
-	track.removeChild(track.firstChild!);
+	removeChildOf(track, track.firstChild!);
 	const parts: Array<[string, string]> = [
 		["fill", getGaugeGlyphs(input, SLIDER_FILL_GLYPH)],
 		["thumb", SLIDER_THUMB_GLYPH],
@@ -20110,9 +20073,9 @@ function buildSlider(
 	];
 	for (const [part, text] of parts) {
 		const span = document.createElement("span");
-		span.setAttribute("part", part);
-		span.appendChild(document.createTextNode(text));
-		track.appendChild(span);
+		setAttributeOf(span, "part", part);
+		appendChildOf(span, document.createTextNode(text));
+		appendChildOf(track, span);
 	}
 	return track.firstChild as globalThis.HTMLElement;
 }
@@ -20222,7 +20185,7 @@ export class HTMLLabelElement extends HTMLElement {
 	// The element the `for` attribute names, or the first labelable
 	// descendant.
 	get control(): HTMLElement | null {
-		const id = this.getAttribute("for");
+		const id = attributeOf(this, "for");
 		if (id !== null) {
 			if (id === "") {
 				return null;
@@ -20852,10 +20815,10 @@ function buildGaugeRoot(
 	const document = getUADocument(host);
 	const root = buildUAShadowTree(host, attached);
 	const track = addPart(root, "track");
-	track.removeChild(track.firstChild!);
+	removeChildOf(track, track.firstChild!);
 	const bar = document.createElement("span");
-	bar.setAttribute("part", "bar");
-	track.appendChild(bar);
+	setAttributeOf(bar, "part", "bar");
+	appendChildOf(track, bar);
 	return bar;
 }
 
@@ -20909,33 +20872,33 @@ class HTMLMeterElement extends HTMLElement {
 	}
 
 	get min(): number {
-		return parseFloatingPoint(this.getAttribute("min") ?? "") ?? 0;
+		return parseFloatingPoint(attributeOf(this, "min") ?? "") ?? 0;
 	}
 
 	set min(value: number) {
-		this.setAttribute("min", String(toDouble(value)));
+		setAttributeOf(this, "min", String(toDouble(value)));
 	}
 
 	get max(): number {
-		const max = parseFloatingPoint(this.getAttribute("max") ?? "") ?? 1;
+		const max = parseFloatingPoint(attributeOf(this, "max") ?? "") ?? 1;
 		return Math.max(max, this.min);
 	}
 
 	set max(value: number) {
-		this.setAttribute("max", String(toDouble(value)));
+		setAttributeOf(this, "max", String(toDouble(value)));
 	}
 
 	get value(): number {
-		const value = parseFloatingPoint(this.getAttribute("value") ?? "") ?? 0;
+		const value = parseFloatingPoint(attributeOf(this, "value") ?? "") ?? 0;
 		return Math.min(Math.max(value, this.min), this.max);
 	}
 
 	set value(value: number) {
-		this.setAttribute("value", String(toDouble(value)));
+		setAttributeOf(this, "value", String(toDouble(value)));
 	}
 
 	get low(): number {
-		const low = parseFloatingPoint(this.getAttribute("low") ?? "");
+		const low = parseFloatingPoint(attributeOf(this, "low") ?? "");
 		if (low === null) {
 			return this.min;
 		}
@@ -20943,11 +20906,11 @@ class HTMLMeterElement extends HTMLElement {
 	}
 
 	set low(value: number) {
-		this.setAttribute("low", String(toDouble(value)));
+		setAttributeOf(this, "low", String(toDouble(value)));
 	}
 
 	get high(): number {
-		const high = parseFloatingPoint(this.getAttribute("high") ?? "");
+		const high = parseFloatingPoint(attributeOf(this, "high") ?? "");
 		if (high === null) {
 			return this.max;
 		}
@@ -20955,11 +20918,11 @@ class HTMLMeterElement extends HTMLElement {
 	}
 
 	set high(value: number) {
-		this.setAttribute("high", String(toDouble(value)));
+		setAttributeOf(this, "high", String(toDouble(value)));
 	}
 
 	get optimum(): number {
-		const optimum = parseFloatingPoint(this.getAttribute("optimum") ?? "");
+		const optimum = parseFloatingPoint(attributeOf(this, "optimum") ?? "");
 		if (optimum === null) {
 			return (this.min + this.max) / 2;
 		}
@@ -20967,7 +20930,7 @@ class HTMLMeterElement extends HTMLElement {
 	}
 
 	set optimum(value: number) {
-		this.setAttribute("optimum", String(toDouble(value)));
+		setAttributeOf(this, "optimum", String(toDouble(value)));
 	}
 
 	get labels(): NodeListOf<HTMLLabelElement> {
@@ -21001,7 +20964,7 @@ class HTMLMeterElement extends HTMLElement {
 		const barLevel = getMeterLevel(ownerOf(this))!;
 		const part = `bar ${barLevel}`;
 		if (attributeOf(bar, "part") !== part) {
-			bar.setAttribute("part", part);
+			setAttributeOf(bar, "part", part);
 		}
 	}
 
@@ -21178,21 +21141,21 @@ class HTMLOptionElement extends HTMLElement {
 	}
 
 	get label(): string {
-		const label = this.getAttribute("label");
+		const label = attributeOf(this, "label");
 		return label === null ? this.text : label;
 	}
 
 	set label(value: string) {
-		this.setAttribute("label", String(value));
+		setAttributeOf(this, "label", String(value));
 	}
 
 	get value(): string {
-		const value = this.getAttribute("value");
+		const value = attributeOf(this, "value");
 		return value === null ? this.text : value;
 	}
 
 	set value(value: string) {
-		this.setAttribute("value", String(value));
+		setAttributeOf(this, "value", String(value));
 	}
 
 	get text(): string {
@@ -21573,7 +21536,7 @@ class HTMLProgressElement extends HTMLElement {
 	}
 
 	get value(): number {
-		const value = parseFloatingPoint(this.getAttribute("value") ?? "");
+		const value = parseFloatingPoint(attributeOf(this, "value") ?? "");
 		if (value === null || value < 0) {
 			return 0;
 		}
@@ -21581,20 +21544,20 @@ class HTMLProgressElement extends HTMLElement {
 	}
 
 	set value(value: number) {
-		this.setAttribute("value", String(toDouble(value)));
+		setAttributeOf(this, "value", String(toDouble(value)));
 	}
 
 	get max(): number {
-		const max = parseFloatingPoint(this.getAttribute("max") ?? "");
+		const max = parseFloatingPoint(attributeOf(this, "max") ?? "");
 		return max === null || max <= 0 ? 1 : max;
 	}
 
 	set max(value: number) {
-		this.setAttribute("max", String(toDouble(value)));
+		setAttributeOf(this, "max", String(toDouble(value)));
 	}
 
 	get position(): number {
-		return this.hasAttribute("value") ? this.value / this.max : -1;
+		return hasAttributeOf(this, "value") ? this.value / this.max : -1;
 	}
 
 	get labels(): NodeListOf<HTMLLabelElement> {
@@ -21676,11 +21639,11 @@ class HTMLScriptElement extends HTMLElement {
 
 	/** Async is the one boolean whose IDL attribute a parser can force. */
 	get async(): boolean {
-		return this.hasAttribute("async");
+		return hasAttributeOf(this, "async");
 	}
 
 	set async(value: boolean) {
-		this.toggleAttribute("async", Boolean(value));
+		toggleAttributeOf(this, "async", Boolean(value));
 	}
 
 	static supports(type: string): boolean {
@@ -21879,7 +21842,7 @@ export class HTMLSelectElement extends HTMLElement {
 	}
 
 	get type(): "select-one" | "select-multiple" {
-		return this.hasAttribute("multiple") ? "select-multiple" : "select-one";
+		return hasAttributeOf(this, "multiple") ? "select-multiple" : "select-one";
 	}
 
 	get options(): HTMLOptionsCollection {
@@ -22075,8 +22038,8 @@ export class HTMLSelectElement extends HTMLElement {
 			addPart(root, "value").firstChild as globalThis.Text;
 		(addPart(root, "indicator").firstChild as globalThis.Text).data = " ▾";
 		const picker = document.createElement("div");
-		picker.setAttribute("part", "picker");
-		root.appendChild(picker);
+		setAttributeOf(picker, "part", "picker");
+		appendChildOf(root, picker);
 		slots.extra.picker = picker;
 
 		// Losing focus closes the picker.
@@ -22222,10 +22185,10 @@ function syncPickerRows(
 	const document = getUADocument(select);
 	const rows = getPickerRows(select);
 	while (picker.childNodes.length > rows.length) {
-		picker.removeChild(picker.lastChild!);
+		removeChildOf(picker, picker.lastChild!);
 	}
 	while (picker.childNodes.length < rows.length) {
-		picker.appendChild(document.createElement("div"));
+		appendChildOf(picker, document.createElement("div"));
 	}
 	rows.forEach((row, index) => {
 		const node = picker.childNodes[index] as globalThis.HTMLElement;
@@ -22239,7 +22202,7 @@ function syncPickerRows(
 			...(row.grouped ? ["grouped"] : []),
 		].join(" ");
 		if (attributeOf(node, "part") !== part) {
-			node.setAttribute("part", part);
+			setAttributeOf(node, "part", part);
 		}
 		if (node.textContent !== row.label) {
 			node.textContent = row.label;
@@ -23408,7 +23371,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 		// line after a final newline, and without the anchor a value ending in
 		// "\n" measures one row short, which puts the caret on the bottom
 		// border.
-		root.appendChild(document.createElement("br"));
+		appendChildOf(root, document.createElement("br"));
 
 		syncUAShadowTree(ownerOf(this));
 	}
@@ -23970,7 +23933,7 @@ function hidePopover(
 			focusPreviousElement &&
 			active !== null &&
 			(active === element ||
-				element.contains(active as unknown as globalThis.Node))
+				containsOf(element, active as unknown as globalThis.Node))
 		) {
 			(previouslyFocused as HTMLElement).focus();
 		}
@@ -24189,7 +24152,7 @@ function getAttributeElement(node: Node, attribute: string): Element | null {
 		// or in one that tree composes into. It goes stale rather than dangling
 		// when the target is moved out from under it.
 		for (let root: Node = getRoot(element); ;) {
-			if (root.contains(explicit as unknown as globalThis.Node)) {
+			if (containsOf(root, explicit as unknown as globalThis.Node)) {
 				return explicit;
 			}
 			if (!isShadowRoot(root)) {
@@ -24222,7 +24185,7 @@ function setAttributeElement(
 ): void {
 	if (value == null) {
 		explicitAttributeElements.get(element)?.delete(attribute);
-		element.removeAttribute(attribute);
+		removeAttributeOf(element, attribute);
 		return;
 	}
 	let explicit = explicitAttributeElements.get(element);
@@ -24231,7 +24194,7 @@ function setAttributeElement(
 		explicitAttributeElements.set(element, explicit);
 	}
 	explicit.set(attribute, value);
-	element.setAttribute(attribute, "");
+	setAttributeOf(element, attribute, "");
 }
 
 // A BUTTON as the popover target attributes define it: the button
@@ -24699,7 +24662,7 @@ function syncDataset(map: DOMStringMap): void {
 			},
 			set: wrapWithReactions(
 				function (this: DOMStringMap, value: unknown): void {
-					_(this).datasetElement.setAttribute(attribute, String(value));
+					setAttributeOf(_(this).datasetElement, attribute, String(value));
 				},
 			) as (value: unknown) => void,
 			enumerable: true,
@@ -25399,9 +25362,9 @@ for (const [property, attribute] of ARIA_STRING_REFLECTIONS) {
 		set(this: ElementInternals, value: unknown): void {
 			const slots = _(this);
 			if (value == null) {
-				slots.elementInternalsTarget.removeAttribute(attribute);
+				removeAttributeOf(slots.elementInternalsTarget, attribute);
 			} else {
-				slots.elementInternalsTarget.setAttribute(attribute, String(value));
+				setAttributeOf(slots.elementInternalsTarget, attribute, String(value));
 			}
 		},
 		enumerable: true,
@@ -25475,7 +25438,7 @@ function setARIATargets(
 	const elementSlots = _(element);
 	if (targets === null) {
 		elementSlots.ariaElements?.delete(property);
-		element.removeAttribute(attribute);
+		removeAttributeOf(element, attribute);
 		return;
 	}
 	let explicit = elementSlots.ariaElements;
@@ -25484,7 +25447,7 @@ function setARIATargets(
 		elementSlots.ariaElements = explicit;
 	}
 	explicit.set(property, targets);
-	element.setAttribute(attribute, "");
+	setAttributeOf(element, attribute, "");
 }
 
 // A member returns the elements the caller last passed in, or if none
@@ -32827,7 +32790,7 @@ function getModifiedPoint(
 		nodes = nodes.filter((node) =>
 			granularity === "line"
 				? getEditingHost(node as unknown as globalThis.Node) === host
-				: host.contains(node as unknown as globalThis.Node),
+				: containsOf(host, node as unknown as globalThis.Node),
 		);
 	}
 	const run = flattenSelectionText(nodes);
@@ -36846,7 +36809,7 @@ export function revealPendingEditingCaret(document: globalThis.Document): void {
 	attachedSlots.extra.pendingEditingReveal = null;
 	const selection = attached.getSelection();
 	const node = selection?.focusNode;
-	if (!node || !host.contains(node)) {
+	if (!node || !containsOf(host, node)) {
 		return;
 	}
 	flushLayout(host);
@@ -39549,10 +39512,10 @@ function buildWindow(document: Document): Window {
 		}
 		const image = document.createElement("img");
 		if (width !== undefined) {
-			image.setAttribute("width", String(toImageDimension(width)));
+			setAttributeOf(image, "width", String(toImageDimension(width)));
 		}
 		if (height !== undefined) {
-			image.setAttribute("height", String(toImageDimension(height)));
+			setAttributeOf(image, "height", String(toImageDimension(height)));
 		}
 		return image;
 	} as unknown as typeof HTMLImageElement;
@@ -39667,6 +39630,118 @@ export function ownerDocumentOf(node: globalThis.Node): Document | null {
 /** The element's localName, read without going through its binding. */
 export function localNameOf(element: globalThis.Element): string {
 	return _(element as Element).localName;
+}
+
+/** Node's appendChild, for the engine's own calls. */
+export function appendChildOf<T extends globalThis.Node>(
+	parent: globalThis.Node,
+	node: T,
+): T {
+	return preInsert(
+		node as unknown as Node,
+		parent as unknown as Node,
+		null,
+	) as unknown as T;
+}
+
+/** Node's insertBefore, for the engine's own calls. */
+export function insertBeforeOf<T extends globalThis.Node>(
+	parent: globalThis.Node,
+	node: T,
+	child: globalThis.Node | null,
+): T {
+	return preInsert(
+		node as unknown as Node,
+		parent as unknown as Node,
+		child as unknown as Node | null,
+	) as unknown as T;
+}
+
+/** Node's removeChild, for the engine's own calls. */
+export function removeChildOf<T extends globalThis.Node>(
+	parent: globalThis.Node,
+	child: T,
+): T {
+	return preRemove(
+		child as unknown as Node,
+		parent as unknown as Node,
+	) as unknown as T;
+}
+
+/** Node's contains, for the engine's own calls. */
+export function containsOf(
+	node: globalThis.Node,
+	other: globalThis.Node | null | undefined,
+): boolean {
+	return other != null &&
+		isInclusiveAncestor(node as unknown as Node, other as unknown as Node);
+}
+
+/** Element's setAttribute, for the engine's own calls. */
+export function setAttributeOf(
+	element: globalThis.Element,
+	qualifiedName: string,
+	value: unknown,
+): void {
+	const target = element as unknown as Element;
+	let name = String(qualifiedName);
+	validateAttributeLocalName(name);
+	const slots = _(target);
+	if (slots.namespace === HTML_NAMESPACE && isHTMLDocument(slots.document)) {
+		name = toASCIILowercase(name);
+	}
+	const string = value === null ? "null" : String(value);
+	for (const attribute of slots.attributeList) {
+		if (attribute[kQualifiedName] === name) {
+			changeAttribute(objectOf(attribute), string);
+			return;
+		}
+	}
+	const attribute = new Attr(null, null, name, string);
+	_(attribute).document = slots.document;
+	appendAttribute(target, attribute);
+}
+
+/** Element's removeAttribute, for the engine's own calls. */
+export function removeAttributeOf(
+	element: globalThis.Element,
+	qualifiedName: string,
+): void {
+	const target = element as unknown as Element;
+	const attribute = getAttributeByName(target, String(qualifiedName));
+	if (attribute !== null) {
+		removeAttributeNode(target, attribute);
+	}
+}
+
+/** Element's toggleAttribute, for the engine's own calls. */
+export function toggleAttributeOf(
+	element: globalThis.Element,
+	qualifiedName: string,
+	force?: boolean,
+): boolean {
+	const target = element as unknown as Element;
+	let name = String(qualifiedName);
+	validateAttributeLocalName(name);
+	const slots = _(target);
+	if (slots.namespace === HTML_NAMESPACE && isHTMLDocument(slots.document)) {
+		name = toASCIILowercase(name);
+	}
+	const attribute = getAttributeByName(target, name);
+	if (attribute === null) {
+		if (force === undefined || force === true) {
+			const created = new Attr(null, null, name, "");
+			_(created).document = slots.document;
+			appendAttribute(target, created);
+			return true;
+		}
+		return false;
+	}
+	if (force === undefined || force === false) {
+		removeAttributeNode(target, attribute);
+		return false;
+	}
+	return true;
 }
 
 /** The element's attribute's value, read without going through its binding. */
