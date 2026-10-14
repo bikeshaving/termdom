@@ -2,7 +2,12 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {transportFromProcess} from "../src/internal/exchange.ts";
-import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
+import {
+	captureRawOutput,
+	inputDispatched,
+	MockProcess,
+	nextFrame,
+} from "./test-utils.js";
 
 const ENABLE = "\x1b[?1002h\x1b[?1006h";
 const DISABLE = "\x1b[?1006l\x1b[?1002l";
@@ -555,7 +560,7 @@ test("wheel scrolling moves the screen with a scroll region, not a redraw", asyn
 	const emitted = captureRawOutput(terminal);
 
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<65;10;5M"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 
 	// The region's margins are set, which only the transform path does.

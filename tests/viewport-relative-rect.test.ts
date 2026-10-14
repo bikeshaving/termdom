@@ -16,7 +16,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {inputDispatched, MockProcess, nextFrame} from "./test-utils.js";
 
 function makeOverflowingApp(
 	rows = 5,
@@ -92,7 +92,7 @@ test("mouse click hit-testing still targets the right element while scrolled", a
 
 	// Row 3 (1-based) at the top -> line2 (0-based row index 2).
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;3M"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(clicked.pop()).toBe("line2");
 
@@ -102,7 +102,7 @@ test("mouse click hit-testing still targets the right element while scrolled", a
 	dom.window.scrollTo(0, 5);
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;3M"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(clicked.pop()).toBe("line7");
 	dom.dispose();

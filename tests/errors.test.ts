@@ -7,14 +7,14 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {installGlobals, TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame, until} from "./test-utils.js";
+import {inputDispatched, MockProcess, nextFrame, until} from "./test-utils.js";
 
 const press = (col: number, row: number): string => `\x1b[<0;${col};${row}M`;
 const release = (col: number, row: number): string => `\x1b[<0;${col};${row}m`;
 
 async function type(terminal: MockProcess, data: string): Promise<void> {
 	(terminal.stdin as any).emit("data", Buffer.from(data));
-	return new Promise((resolve) => setTimeout(resolve, 0));
+	return inputDispatched();
 }
 
 function attached(

@@ -12,7 +12,12 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {createWindow} from "../src/internal/dom.ts";
-import {findCollector, MockProcess, nextFrame} from "./test-utils.js";
+import {
+	findCollector,
+	inputDispatched,
+	MockProcess,
+	nextFrame,
+} from "./test-utils.js";
 
 test("attachShadow content renders, replacing the host's light children", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
@@ -489,11 +494,11 @@ test("::selection colors replace the inverse-video default", async () => {
 	input.focus();
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("abc"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	// Shift+Left selects "c".
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 
 	const cellAt = (row: number, col: number) =>
@@ -543,10 +548,10 @@ test("selection still paints inverse via the UA rule's system colors", async () 
 	input.focus();
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("abc"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D"));
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 
 	const cellAt = (row: number, col: number) =>

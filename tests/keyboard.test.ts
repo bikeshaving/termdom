@@ -153,7 +153,7 @@ test("a plain letter never has ctrlKey set", async () => {
 	(terminal.stdin as any).emit("data", Buffer.from("s"));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(events).toEqual([{key: "s", ctrlKey: false}]);
 });
 
@@ -177,7 +177,7 @@ test("Enter and Tab stay their named keys, not Ctrl+M/Ctrl+I", async () => {
 	(terminal.stdin as any).emit("data", Buffer.from("\r"));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
 	await inputDispatched();
 	expect(events).toEqual([
@@ -203,7 +203,7 @@ test("Ctrl+letter in a focused input moves the caret, not inserts text", async (
 	(terminal.stdin as any).emit("data", Buffer.from([0x01]));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0)); // Ctrl+A
+	await inputDispatched(); // Ctrl+A
 	expect(input.value).toBe("hello"); // unchanged, not "helloa"
 });
 
@@ -342,7 +342,7 @@ test("an unmodified arrow key has no modifiers set", async () => {
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[A"));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(events).toEqual([
 		{key: "ArrowUp", shiftKey: false, altKey: false, ctrlKey: false},
 	]);
@@ -669,7 +669,7 @@ test("backspace works after a framework resets .value out from under the caret",
 	(terminal.stdin as any).emit("data", Buffer.from("12345678"));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(input.value).toBe("12345678");
 
 	input.value = ""; // the framework's submit reset
@@ -680,7 +680,7 @@ test("backspace works after a framework resets .value out from under the caret",
 	(terminal.stdin as any).emit("data", Buffer.from("\x7f"));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0)); // Backspace
+	await inputDispatched(); // Backspace
 	expect(input.value).toBe("ab");
 
 	dom.dispose();
@@ -706,7 +706,7 @@ test("deleting at the end of an overflowed input scrolls earlier text back into 
 	(terminal.stdin as any).emit("data", Buffer.from("abcdefghijklmno"));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	// Window follows the caret: the last 9 chars + the caret cell.
 	expect(terminal.getPlainText()).toContain("ghijklmno");
@@ -863,7 +863,7 @@ test("the readline chords move and cut, as a terminal user expects", async () =>
 	const send = async (bytes: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(bytes));
 		await inputDispatched();
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 	};
 
 	await send("some text");
@@ -908,7 +908,7 @@ test("in a wrapped textarea the line chords work on the visual line", async () =
 	const send = async (bytes: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(bytes));
 		await inputDispatched();
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 	};
 
 	await send("aaaa bbbb cccc");
@@ -999,7 +999,7 @@ test("Space toggles a focused checkbox and fires change; other keys are no-ops",
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(checkbox.checked).toBe(true);
 	expect(changes).toEqual([true]);
 
@@ -1013,7 +1013,7 @@ test("Space toggles a focused checkbox and fires change; other keys are no-ops",
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(checkbox.checked).toBe(false);
 	expect(changes).toEqual([true, false]);
 
@@ -1043,7 +1043,7 @@ test("Enter activates a checkbox and a radio, as Space does", async () => {
 	const press = async (data: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(data));
 		await inputDispatched();
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 	};
 
 	await press("\r");
@@ -1093,7 +1093,7 @@ test("a canceled click puts a checkbox's checkedness back, whichever key pressed
 	const press = async (data: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(data));
 		await inputDispatched();
-		await new Promise((r) => setTimeout(r, 0));
+		await inputDispatched();
 	};
 
 	await press("\r");
@@ -1341,6 +1341,7 @@ test("Escape is the app's key in fullscreen: dispatched, and the screen stays", 
 
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b"));
 	await new Promise((r) => setTimeout(r, 10));
+	await inputDispatched();
 
 	expect(escapeSeenByContainer).toEqual(["Escape"]);
 	expect(document.fullscreenElement).toBe(container);
@@ -1361,6 +1362,7 @@ test("Tab rests on nothing past the last focusable, and re-enters at the ends", 
 	const press = async (key: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(key));
 		await new Promise((r) => setTimeout(r, 10));
+		await inputDispatched();
 	};
 
 	// Forward: enter at the first, walk to the last, rest on nothing.
@@ -1403,6 +1405,7 @@ test("focusing a field inside a fullscreen element leaves the camera alone", asy
 	input.focus();
 	(terminal.stdin as any).emit("data", Buffer.from("x"));
 	await new Promise((r) => setTimeout(r, 10));
+	await inputDispatched();
 	expect(window.scrollY).toBe(0);
 	dom.dispose();
 });
@@ -1424,6 +1427,7 @@ async function numberInput(): Promise<{
 	const press = async (data: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(data));
 		await new Promise((r) => setTimeout(r, 10));
+		await inputDispatched();
 	};
 	return {terminal, dom, input, press};
 }
@@ -1562,7 +1566,7 @@ test("a focused descendant inside a fullscreen element still wins over the eleme
 	(terminal.stdin as any).emit("data", Buffer.from("x"));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(input.value).toBe("x");
 	dom.dispose();
 });
@@ -1583,7 +1587,7 @@ test("with nothing focused, fullscreen keydown still lands on the fullscreen ele
 	(terminal.stdin as any).emit("data", Buffer.from("q"));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	expect(keys).toEqual(["q"]);
 	dom.dispose();
 });
@@ -1611,6 +1615,7 @@ test("wide characters in an input measure in cells, not characters", async () =>
 		(terminal.stdin as any).emit("data", Buffer.from(syllable));
 		await inputDispatched();
 		await new Promise((resolve) => setTimeout(resolve, 40));
+		await inputDispatched();
 	}
 
 	expect(input.value).toBe("김남제");
@@ -1863,7 +1868,7 @@ test("typing in a width:auto input never clips the lead character", async () => 
 	(terminal.stdin as any).emit("data", Buffer.from("d"));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom); // the FIRST frame after the keystroke
 	expect(terminal.getPlainText().split("\n")[0]).toContain("abcd");
 	dom.dispose();
@@ -1968,7 +1973,7 @@ test("non-mouse nav: a button lines both edges of its whole box on Tab focus", a
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(dom.document.activeElement?.tagName).toBe("BUTTON");
 	for (const col of [0, 5]) {
@@ -2129,7 +2134,7 @@ test("clicking into a field clears the document selection's highlight", async ()
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;3;2M\x1b[<0;3;2m"));
 	await inputDispatched();
 
-	await new Promise((r) => setTimeout(r, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	expect(dom.window.getSelection()?.isCollapsed ?? true).toBe(true);
 	const input = dom.document.querySelector("input") as HTMLInputElement;
@@ -3035,6 +3040,7 @@ test("typing and moving in a long textarea keep the caret's line in view", async
 		(terminal.stdin as any).emit("data", Buffer.from(bytes));
 		await nextFrame(dom);
 		await new Promise((r) => setTimeout(r, 20));
+		await inputDispatched();
 	};
 	const rows = () => terminal.getPlainText().split("\n").slice(0, 6);
 

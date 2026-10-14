@@ -7,7 +7,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {inputDispatched, MockProcess, nextFrame} from "./test-utils.js";
 
 function send(proc: MockProcess, data: string): Promise<void> {
 	(proc.stdin as unknown as {emit(e: string, d: Buffer): void}).emit(
@@ -312,7 +312,7 @@ test("removing the pressed element leaves :active with its parent, as a full res
 	await nextFrame(dom);
 	// A press with no release, so the button is still down.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;2;1M"));
-	await new Promise((resolve) => setTimeout(resolve, 0));
+	await inputDispatched();
 	await nextFrame(dom);
 	const box = document.getElementById("box")!;
 	expect(window.getComputedStyle(box).color).toBe("rgb(255, 0, 0)");

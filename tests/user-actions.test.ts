@@ -7,7 +7,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {inputDispatched, MockProcess, nextFrame} from "./test-utils.js";
 
 async function mounted(
 	html: string,
@@ -22,6 +22,7 @@ async function mounted(
 async function send(proc: MockProcess, data: string): Promise<void> {
 	(proc.stdin as any).emit("data", Buffer.from(data));
 	await new Promise((resolve) => setTimeout(resolve, 30));
+	await inputDispatched();
 }
 
 test("a control in the starting markup takes typing", async () => {
