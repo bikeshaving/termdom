@@ -8350,11 +8350,9 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 // children match, and the element itself through :empty. Their
 // descendants only follow when a sheet tests siblings outside a subject
 // or inherits through one.
+// Only a child a sibling-tested compound could name restyles, with its
+// subtree when such a rule reaches descendants.
 function invalidateChildren(cascade: Cascade, element: Element): void {
-	if (getSiblingIndex(cascade, element)?.reachesDescendants) {
-		invalidateSubtree(cascade, element);
-		return;
-	}
 	invalidateSibling(cascade, element);
 	for (const child of element.children) {
 		invalidateSibling(cascade, child);

@@ -138,3 +138,51 @@ test("a list marker's text follows a ::marker rule added after the first frame",
 	expect(dom.renderANSI()).toContain("- item");
 	dom.dispose();
 });
+
+test("appending a child leaves its earlier siblings' styles alone", async () => {
+	const {dom, document} =
+		await mount("<div id=log><div id=first><span>a</span></div></div>");
+	const first = document.getElementById("first");
+	const span = first.firstElementChild;
+	const boxes = [getBoxModel(first), getBoxModel(span)];
+	const next = document.createElement("div");
+	next.textContent = "b";
+	document.getElementById("log").append(next);
+	await nextFrame(dom);
+	expect([getBoxModel(first), getBoxModel(span)]).toEqual(boxes);
+	expect(getBoxModel(first)).toBe(boxes[0]);
+	expect(getBoxModel(span)).toBe(boxes[1]);
+	dom.dispose();
+});
+
+test("a sibling rule that reaches descendants follows a child placed first", async () => {
+	const {dom, document} = await mount(
+		"<style>li:first-child span { padding-left: 2px }</style>" +
+			"<ul><li id=a><span id=sa>a</span></li></ul>",
+	);
+	expect(getBoxModel(document.getElementById("sa")).paddingLeft).toBe(2);
+	const b = document.createElement("li");
+	b.innerHTML = "<span id=sb>b</span>";
+	document.querySelector("ul").prepend(b);
+	await nextFrame(dom);
+	expect(getBoxModel(document.getElementById("sb")).paddingLeft).toBe(2);
+	expect(getBoxModel(document.getElementById("sa")).paddingLeft === 0)
+		.toBe(true);
+	dom.dispose();
+});
+
+test("only a details element's first summary is its marker", async () => {
+	const {dom, document} =
+		await mount("<details><summary id=old>old</summary>body</details>");
+	const view = dom.window;
+	const display = (id: string): string =>
+		view.getComputedStyle(document.getElementById(id)).display;
+	expect(display("old")).toBe("list-item");
+	const summary = document.createElement("summary");
+	summary.id = "new";
+	summary.textContent = "new";
+	document.querySelector("details").prepend(summary);
+	await nextFrame(dom);
+	expect([display("new"), display("old")]).toEqual(["list-item", "block"]);
+	dom.dispose();
+});
