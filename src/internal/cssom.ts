@@ -79,6 +79,7 @@ import {
 	UA_DOCUMENT_STYLES,
 	UA_ELEMENT_STYLES,
 } from "./useragent.ts";
+import {windowMember} from "./webidl.ts";
 
 // What one terminal cell measures in CSS pixels, per document. Layout
 // counts cells; everything a page writes or reads counts CSS pixels. At
@@ -6399,14 +6400,18 @@ export class Cascade {
 		this[kDocument] = window.document;
 
 		documentCascades.set(this[kDocument], this);
-		window.getComputedStyle = (
-			element: Element,
-			pseudoElt?: string | null,
-		): globalThis.CSSStyleDeclaration =>
-			getPageView(
-				getResolvedStyle(this, element, pseudoElt) as unknown as
-					CSSStyleDeclaration,
-			) as unknown as globalThis.CSSStyleDeclaration;
+		window.getComputedStyle = windowMember(
+			window,
+			"getComputedStyle",
+			(
+				element: Element,
+				pseudoElt?: string | null,
+			): globalThis.CSSStyleDeclaration =>
+				getPageView(
+					getResolvedStyle(this, element, pseudoElt) as unknown as
+						CSSStyleDeclaration,
+				) as unknown as globalThis.CSSStyleDeclaration,
+		) as typeof window.getComputedStyle;
 
 		setupInvalidationHooks(this);
 
@@ -10322,7 +10327,8 @@ function removePseudoElement(
 	cascade[kLayout].invalidate(element);
 }
 
-const CSSOM_WINDOW_GLOBALS = {
+/** The CSSOM interfaces a window exposes, by name. */
+export const CSSOM_INTERFACES = {
 	CSSStyleSheet,
 	StyleSheetList,
 	CSSRuleList,
@@ -10355,7 +10361,7 @@ const CSSOM_WINDOW_GLOBALS = {
 function setupInvalidationHooks(cascade: Cascade): void {
 	// An error thrown out of a constructed sheet belongs to this realm.
 	cssomWindow = cascade[kWindow];
-	Object.assign(cascade[kWindow], CSSOM_WINDOW_GLOBALS, {
+	Object.assign(cascade[kWindow], {
 		CSS: createCSSNamespace(cascade[kDocument]),
 	});
 }

@@ -18,6 +18,7 @@ import {
 	MutationObserver,
 	NodeFilter,
 	Text,
+	Window,
 } from "../src/internal/dom.ts";
 
 // The door a test document comes through. The parser is the one that hands
@@ -2016,7 +2017,7 @@ test("a body's window handlers are its window's, and are dropped without one", (
 	expect(body.onload).toBe(null);
 
 	const handler = () => {};
-	const view: any = new (realm as any).Window(document);
+	const view: any = new Window(document);
 	body.onload = handler;
 	expect(view.onload).toBe(handler);
 	expect(body.onload).toBe(handler);
