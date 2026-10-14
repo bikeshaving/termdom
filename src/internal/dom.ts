@@ -124,15 +124,12 @@ export const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
 export const XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
 const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
 
-const kEnsureUAShadowTree = Symbol("build a control's UA shadow tree");
-
 // Safe to call more than once, and synchronous: the shadow tree exists
 // when this returns. A control that was removed and re-inserted keeps its
 // tree and only updates the state it missed.
 function ensureUAShadowTree(element: globalThis.Element): void {
-	(_(element) as unknown as Record<symbol, (() => void) | undefined>)[
-		kEnsureUAShadowTree
-	]?.();
+	(_(element) as unknown as Record<string, (() => void) | undefined>)
+		._ensureUAShadowTree?.();
 }
 
 // Built-in tags that get a UA shadow tree when they connect.
@@ -180,8 +177,6 @@ function ensureUAShadowTrees(root: globalThis.Node): void {
 	}
 }
 
-const kUASelection = Symbol("a control's selection, whatever its type");
-
 /**
  * A text control's selection record, without the type check authors get.
  * Per spec selectionStart is null on a number input, but the UA still needs
@@ -191,12 +186,10 @@ export function getSelectionRecord(
 	control: globalThis.Element,
 ): {start: number; end: number; direction: string} | null {
 	const slots = _(control) as unknown as {
-		[kUASelection]?: () => ReturnType<typeof getSelectionRecord>;
+		_uaSelection?: () => ReturnType<typeof getSelectionRecord>;
 	};
-	return slots[kUASelection]?.() ?? null;
+	return slots._uaSelection?.() ?? null;
 }
-
-const kSetUASelection = Symbol("move a control's selection, whatever its type");
 
 /** Set a text control's selection, without the type check authors get. */
 export function setUASelection(
@@ -207,16 +200,14 @@ export function setUASelection(
 ): void {
 	(
 		_(control) as unknown as {
-			[kSetUASelection](
+			_setUASelection(
 				start: number,
 				end: number,
 				direction?: string,
 			): void;
 		}
-	)[kSetUASelection]!(start, end, direction);
+	)._setUASelection!(start, end, direction);
 }
-
-const kSyncUAShadowTree = Symbol("bring a control's UA tree back into step");
 
 // The pseudo-classes that read a control's state rather than its
 // attributes, each with its bit in a snapshot of what an element matches.
@@ -285,9 +276,8 @@ function reportControlStates(element: Element): void {
 // selected. Its shadow tree redraws, and the rules that read that state
 // are told, since no mutation record says so.
 function syncUAShadowTree(element: Element): void {
-	(_(element) as unknown as Record<symbol, (() => void) | undefined>)[
-		kSyncUAShadowTree
-	]?.();
+	(_(element) as unknown as Record<string, (() => void) | undefined>)
+		._syncUAShadowTree?.();
 	reportControlStates(element);
 	// A form and every fieldset around the control are :valid or :invalid
 	// by what they hold, so they are told as well.
@@ -329,9 +319,6 @@ export function takesTextCursor(
 	return isTextControl(element) && !CURSORLESS_INPUT_TYPES.has(element.type!);
 }
 
-const kUAValueText =
-	Symbol("the text node a control's editable value lives in");
-
 /**
  * The text node holding a form control's value inside its UA shadow tree,
  * or null before the tree is built. The editable text lives at
@@ -342,10 +329,8 @@ export function getTextControlValueText(
 	textControl: globalThis.Element,
 ): globalThis.Text | null {
 	return (
-		(_(textControl) as unknown as Record<
-			symbol,
-			globalThis.Text | null | undefined
-		>)[kUAValueText] ?? null
+		(_(textControl) as unknown as {_uaValueText?: globalThis.Text | null})
+			._uaValueText ?? null
 	);
 }
 
@@ -418,8 +403,6 @@ export function placeTextControlCaret(
 	return {textControl: target, offset};
 }
 
-const kUASelectionRange = Symbol("what an element's own selection covers");
-
 /**
  * The focused text control's selection over this text node, or null. Per
  * spec a control's selection is invisible to getSelection(), so this is
@@ -438,7 +421,7 @@ export function getTextControlSelectionRange(
 	const range =
 		_(
 			(active as HTMLInputElement | HTMLTextAreaElement),
-		)[kUASelectionRange]?.() ??
+		)._uaSelectionRange?.() ??
 		null;
 	if (!range || range.startContainer !== textNode) {
 		return null;
@@ -583,8 +566,6 @@ function moveTextControlSelection(
 	return {value, start: clamped, end: clamped, direction: "none"};
 }
 
-const kUAValue = Symbol("a text control's value, beneath the IDL attribute");
-
 // Handles Backspace, Delete, the horizontal arrows and the readline chords,
 // grapheme-aware. Returns null for any other key. Enter, vertical motion
 // and Home/End are left to the control, which knows where its lines end,
@@ -596,7 +577,7 @@ function applySharedTextControlEdit(
 	ctrlKey: boolean,
 	altKey: boolean,
 ): TextControlEditResult | null {
-	const value = _(textControl)[kUAValue];
+	const value = _(textControl)._uaValue;
 	const {start, end, direction} = getSelectionRecord(textControl)!;
 	const backward = direction === "backward";
 	const caret = backward ? start : end;
@@ -782,7 +763,7 @@ function printableTextControlEdit(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
 	text: string,
 ): TextControlEditResult {
-	const value = _(textControl)[kUAValue];
+	const value = _(textControl)._uaValue;
 	const {start, end} = getSelectionRecord(textControl)!;
 	return createCollapsedEdit(
 		value.slice(0, start) + text + value.slice(end),
@@ -823,8 +804,6 @@ function createCollapsedEdit(
 	const clamped = Math.max(0, Math.min(pos, value.length));
 	return {value, start: clamped, end: clamped, direction: "none"};
 }
-
-const kSetUAValue = Symbol("write a text control's value, as a user edit does");
 
 // Fires input when the value actually changed and select when the user
 // moved the selection. Writes to the control's value directly, never
@@ -886,7 +865,7 @@ function applyTextControlEdit(
 	kind: TextControlEditKind = {inputType: "", asked: true},
 ): void {
 	const textControlSlots = _(textControl);
-	const value = textControlSlots[kUAValue];
+	const value = textControlSlots._uaValue;
 	const {start, end, direction} = getSelectionRecord(textControl)!;
 	if (result.value !== value) {
 		const init = {
@@ -907,8 +886,8 @@ function applyTextControlEdit(
 			return;
 		}
 		editedSinceChange.add(textControl);
-		textControlSlots[kSetUAValue]!(result.value);
-		textControlSlots[kSetUASelection]!(
+		textControlSlots._setUAValue!(result.value);
+		textControlSlots._setUASelection!(
 			result.start,
 			result.end,
 			result.direction,
@@ -922,7 +901,7 @@ function applyTextControlEdit(
 		result.end !== end ||
 		(result.start !== result.end && result.direction !== direction)
 	) {
-		textControlSlots[kSetUASelection]!(
+		textControlSlots._setUASelection!(
 			result.start,
 			result.end,
 			result.direction,
@@ -1104,169 +1083,7 @@ function replaceTextRange(
 	}
 }
 
-// WebIDL §3.14.1: the legacy code of each name that had one, 0 for the
-// rest.
-const DOM_EXCEPTION_CODES = new Map<string, number>([
-	["IndexSizeError", 1],
-	["DOMStringSizeError", 2],
-	["HierarchyRequestError", 3],
-	["WrongDocumentError", 4],
-	["InvalidCharacterError", 5],
-	["NoDataAllowedError", 6],
-	["NoModificationAllowedError", 7],
-	["NotFoundError", 8],
-	["NotSupportedError", 9],
-	["InUseAttributeError", 10],
-	["InvalidStateError", 11],
-	["SyntaxError", 12],
-	["InvalidModificationError", 13],
-	["NamespaceError", 14],
-	["InvalidAccessError", 15],
-	["ValidationError", 16],
-	["TypeMismatchError", 17],
-	["SecurityError", 18],
-	["NetworkError", 19],
-	["AbortError", 20],
-	["URLMismatchError", 21],
-	["QuotaExceededError", 22],
-	["TimeoutError", 23],
-	["InvalidNodeTypeError", 24],
-	["DataCloneError", 25],
-]);
-
-export interface SealedDOMExceptionSlots {
-	exceptionName: string;
-	exceptionMessage: string;
-}
-
-export interface SealedDOMException {
-	readonly [internals]: SealedDOMExceptionSlots;
-}
-
-/**
- * WebIDL's DOMException, for a runtime that has none. Its prototype's is
- * Error's, as WebIDL says.
- */
-export class SealedDOMException
-	extends Error
-	implements globalThis.DOMException {
-	static readonly INDEX_SIZE_ERR = 1;
-	static readonly DOMSTRING_SIZE_ERR = 2;
-	static readonly HIERARCHY_REQUEST_ERR = 3;
-	static readonly WRONG_DOCUMENT_ERR = 4;
-	static readonly INVALID_CHARACTER_ERR = 5;
-	static readonly NO_DATA_ALLOWED_ERR = 6;
-	static readonly NO_MODIFICATION_ALLOWED_ERR = 7;
-	static readonly NOT_FOUND_ERR = 8;
-	static readonly NOT_SUPPORTED_ERR = 9;
-	static readonly INUSE_ATTRIBUTE_ERR = 10;
-	static readonly INVALID_STATE_ERR = 11;
-	static readonly SYNTAX_ERR = 12;
-	static readonly INVALID_MODIFICATION_ERR = 13;
-	static readonly NAMESPACE_ERR = 14;
-	static readonly INVALID_ACCESS_ERR = 15;
-	static readonly VALIDATION_ERR = 16;
-	static readonly TYPE_MISMATCH_ERR = 17;
-	static readonly SECURITY_ERR = 18;
-	static readonly NETWORK_ERR = 19;
-	static readonly ABORT_ERR = 20;
-	static readonly URL_MISMATCH_ERR = 21;
-	static readonly QUOTA_EXCEEDED_ERR = 22;
-	static readonly TIMEOUT_ERR = 23;
-	static readonly INVALID_NODE_TYPE_ERR = 24;
-	static readonly DATA_CLONE_ERR = 25;
-
-	declare readonly INDEX_SIZE_ERR: 1;
-	declare readonly DOMSTRING_SIZE_ERR: 2;
-	declare readonly HIERARCHY_REQUEST_ERR: 3;
-	declare readonly WRONG_DOCUMENT_ERR: 4;
-	declare readonly INVALID_CHARACTER_ERR: 5;
-	declare readonly NO_DATA_ALLOWED_ERR: 6;
-	declare readonly NO_MODIFICATION_ALLOWED_ERR: 7;
-	declare readonly NOT_FOUND_ERR: 8;
-	declare readonly NOT_SUPPORTED_ERR: 9;
-	declare readonly INUSE_ATTRIBUTE_ERR: 10;
-	declare readonly INVALID_STATE_ERR: 11;
-	declare readonly SYNTAX_ERR: 12;
-	declare readonly INVALID_MODIFICATION_ERR: 13;
-	declare readonly NAMESPACE_ERR: 14;
-	declare readonly INVALID_ACCESS_ERR: 15;
-	declare readonly VALIDATION_ERR: 16;
-	declare readonly TYPE_MISMATCH_ERR: 17;
-	declare readonly SECURITY_ERR: 18;
-	declare readonly NETWORK_ERR: 19;
-	declare readonly ABORT_ERR: 20;
-	declare readonly URL_MISMATCH_ERR: 21;
-	declare readonly QUOTA_EXCEEDED_ERR: 22;
-	declare readonly TIMEOUT_ERR: 23;
-	declare readonly INVALID_NODE_TYPE_ERR: 24;
-	declare readonly DATA_CLONE_ERR: 25;
-
-	constructor(message = "", name = "Error") {
-		super();
-		seal(this, new.target, SealedDOMException);
-		const slots = _(this);
-		slots.exceptionName = String(name);
-		slots.exceptionMessage = String(message);
-	}
-
-	override get name(): string {
-		return _(this).exceptionName;
-	}
-
-	override get message(): string {
-		return _(this).exceptionMessage;
-	}
-
-	get code(): number {
-		return DOM_EXCEPTION_CODES.get(_(this).exceptionName) ?? 0;
-	}
-}
-
-declareSealedRoot(SealedDOMException);
-
-for (const [index, name] of [
-	"INDEX_SIZE_ERR",
-	"DOMSTRING_SIZE_ERR",
-	"HIERARCHY_REQUEST_ERR",
-	"WRONG_DOCUMENT_ERR",
-	"INVALID_CHARACTER_ERR",
-	"NO_DATA_ALLOWED_ERR",
-	"NO_MODIFICATION_ALLOWED_ERR",
-	"NOT_FOUND_ERR",
-	"NOT_SUPPORTED_ERR",
-	"INUSE_ATTRIBUTE_ERR",
-	"INVALID_STATE_ERR",
-	"SYNTAX_ERR",
-	"INVALID_MODIFICATION_ERR",
-	"NAMESPACE_ERR",
-	"INVALID_ACCESS_ERR",
-	"VALIDATION_ERR",
-	"TYPE_MISMATCH_ERR",
-	"SECURITY_ERR",
-	"NETWORK_ERR",
-	"ABORT_ERR",
-	"URL_MISMATCH_ERR",
-	"QUOTA_EXCEEDED_ERR",
-	"TIMEOUT_ERR",
-	"INVALID_NODE_TYPE_ERR",
-	"DATA_CLONE_ERR",
-].entries()) {
-	Object.defineProperty(SealedDOMException.prototype, name, {
-		value: index + 1,
-		enumerable: true,
-	});
-}
-
-Object.defineProperty(SealedDOMException.prototype, Symbol.toStringTag, {
-	value: "DOMException",
-	configurable: true,
-});
-
-export const DOMException: typeof globalThis.DOMException =
-	(globalThis as {DOMException?: typeof globalThis.DOMException})
-		.DOMException ??
-	(SealedDOMException as unknown as typeof globalThis.DOMException);
+export const DOMException = globalThis.DOMException;
 
 export type DOMException = globalThis.DOMException;
 
@@ -1450,8 +1267,6 @@ function toDictionary<T extends object>(value: unknown, what: string): T {
 	}
 	return value as T;
 }
-
-const kState = Symbol("state");
 
 // One accessor shared by every event and installed as an own property on
 // each. The interface declares isTrusted unforgeable, so it cannot live on
@@ -4399,8 +4214,6 @@ interface Listener {
 	hoverCount?: HoverListenerCount;
 }
 
-const kGetTheParent = Symbol("get the parent");
-
 // Every target starts on this one empty list, frozen since nothing may add
 // to it: most nodes are never listened to, and a list of their own would
 // be one more allocation each.
@@ -4423,7 +4236,7 @@ export interface EventTargetSlots {
 
 	/** Null until EventTarget target is given an event handler. Most never are. */
 	handlers: Map<string, EventHandlerRecord> | null;
-	[kGetTheParent]: Step<EventTarget[typeof kGetTheParent]>;
+	_getTheParent: Step<EventTarget["_getTheParent"]>;
 }
 
 export interface EventTarget {
@@ -4531,7 +4344,7 @@ export class EventTarget
 	}
 
 	// A bare event target ends the path. A node returns its parent.
-	[kGetTheParent](_event: Event): EventTarget | null {
+	_getTheParent(_event: Event): EventTarget | null {
 		return null;
 	}
 }
@@ -4645,11 +4458,6 @@ export function isAbortSignal(value: unknown): value is SealedAbortSignal {
 	);
 }
 
-const RuntimeAbortController:
-	typeof globalThis.AbortController | undefined = globalThis.AbortController;
-const RuntimeAbortSignal: typeof globalThis.AbortSignal | undefined =
-	globalThis.AbortSignal;
-
 const runtimeSignalFollowers = new WeakMap<
 	globalThis.AbortSignal,
 	SealedAbortSignal
@@ -4759,15 +4567,11 @@ Object.defineProperty(SealedAbortController.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export const AbortController: typeof globalThis.AbortController =
-	RuntimeAbortController ??
-	(SealedAbortController as unknown as typeof globalThis.AbortController);
+export const AbortController = globalThis.AbortController;
 
 export type AbortController = globalThis.AbortController;
 
-export const AbortSignal: typeof globalThis.AbortSignal =
-	RuntimeAbortSignal ??
-	(SealedAbortSignal as unknown as typeof globalThis.AbortSignal);
+export const AbortSignal = globalThis.AbortSignal;
 
 export type AbortSignal = globalThis.AbortSignal;
 
@@ -4802,9 +4606,7 @@ function flattenMore(
 	if (given !== undefined) {
 		if (isAbortSignal(given)) {
 			signal = given;
-		} else if (
-			RuntimeAbortSignal !== undefined && given instanceof RuntimeAbortSignal
-		) {
+		} else if (given instanceof AbortSignal) {
 			signal = followRuntimeSignal(given);
 		} else {
 			throw new TypeError("A listener's signal must be an AbortSignal");
@@ -5484,7 +5286,7 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 		if (isActivationEvent && hasActivationBehavior(eventTarget)) {
 			activationTarget = eventTarget;
 		}
-		let parent = _(eventTarget)[kGetTheParent](event);
+		let parent = _(eventTarget)._getTheParent(event);
 		while (parent !== null) {
 			if (slottable !== null) {
 				slottable = null;
@@ -5536,7 +5338,7 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 				);
 			}
 			if (parent !== null) {
-				parent = _(parent)[kGetTheParent](event);
+				parent = _(parent)._getTheParent(event);
 			}
 			slotInClosedTree = false;
 		}
@@ -6062,18 +5864,14 @@ function getEventTargetDocument(target: EventTarget): Document | null {
 	return null;
 }
 
-const kSync = Symbol("resynchronize own properties");
-const kChildrenChangedSteps = Symbol("children changed steps");
-const kAttributeSync = Symbol("resynchronize after an attribute change");
-
 interface LiveCollection {
-	[kSync](): void;
-	[kChildrenChangedSteps](
+	_sync(): void;
+	_childrenChangedSteps(
 		point: Node,
 		changed: readonly Node[] | null,
 		added: boolean,
 	): void;
-	[kAttributeSync](element: Element, localName: string): void;
+	_attributeSync(element: Element, localName: string): void;
 }
 
 // A collection's indexed and named properties are own properties rather
@@ -6141,14 +5939,14 @@ function runChildrenChangedSteps(
 				continue;
 			}
 			for (const collection of held) {
-				_(collection)[kChildrenChangedSteps](point, changed, added);
+				_(collection)._childrenChangedSteps(point, changed, added);
 			}
 		}
 	}
 	const wide = _(pointSlots.document).extra.documentWideLists;
 	if (wide !== null) {
 		for (const collection of wide) {
-			_(collection)[kChildrenChangedSteps](point, changed, added);
+			_(collection)._childrenChangedSteps(point, changed, added);
 		}
 	}
 }
@@ -6161,16 +5959,16 @@ function syncAttributeCollections(element: Element, localName: string): void {
 	const elementSlots = _(element);
 	const map = elementSlots.attributesMap;
 	if (map !== null) {
-		_(map)[kSync]();
+		_(map)._sync();
 	}
 	const classList = elementSlots.classList;
 	if (classList !== null) {
-		_(classList)[kSync]();
+		_(classList)._sync();
 	}
 	const lists = elementSlots.tokenLists;
 	if (lists !== null) {
 		for (const list of lists.values()) {
-			_(list)[kSync]();
+			_(list)._sync();
 		}
 	}
 	if (heldListDocuments.has(elementSlots.document)) {
@@ -6182,14 +5980,14 @@ function syncAttributeCollections(element: Element, localName: string): void {
 				continue;
 			}
 			for (const collection of held) {
-				_(collection)[kAttributeSync](element, localName);
+				_(collection)._attributeSync(element, localName);
 			}
 		}
 	}
 	const wide = _(elementSlots.document).extra.documentWideLists;
 	if (wide !== null) {
 		for (const collection of wide) {
-			_(collection)[kAttributeSync](element, localName);
+			_(collection)._attributeSync(element, localName);
 		}
 	}
 }
@@ -6203,12 +6001,6 @@ const DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC = 0x20;
 
 /** A stable per-node serial, so disconnected nodes order consistently. */
 let nodeSerial = 0;
-
-const kInsertionSteps = Symbol("insertion steps");
-const kRemovingSteps = Symbol("removing steps");
-const kAdoptingSteps = Symbol("adopting steps");
-const kCloningSteps = Symbol("cloning steps");
-const kCloneSingle = Symbol("clone a single node");
 
 /** The node-type constants, installed on the prototype below. */
 // The slots a class below Node, Element or CharacterData declares of its
@@ -6245,11 +6037,11 @@ export interface NodeSlots extends EventTargetSlots {
 	// What nodeType reports, read here by the engine's hot paths.
 	nodeType: number;
 	registeredObservers: RegisteredObserver[] | null;
-	[kInsertionSteps]: Step<Node[typeof kInsertionSteps]>;
-	[kRemovingSteps]: Step<Node[typeof kRemovingSteps]>;
-	[kAdoptingSteps]: Step<Node[typeof kAdoptingSteps]>;
-	[kCloningSteps]: Step<Node[typeof kCloningSteps]>;
-	[kCloneSingle]: Step<Node[typeof kCloneSingle]>;
+	_insertionSteps: Step<Node["_insertionSteps"]>;
+	_removingSteps: Step<Node["_removingSteps"]>;
+	_adoptingSteps: Step<Node["_adoptingSteps"]>;
+	_cloningSteps: Step<Node["_cloningSteps"]>;
+	_cloneSingle: Step<Node["_cloneSingle"]>;
 	children: HTMLCollection | null;
 	// Set on the first collection a node is asked for by kind and name.
 	collectionCaches?: Map<string, HTMLCollection>;
@@ -6641,25 +6433,22 @@ export class Node extends EventTarget implements globalThis.Node {
 
 	// An assigned slottable overrides this to return its slot, where the
 	// composed tree continues.
-	override [kGetTheParent](
-		this: Slots<Node>,
-		_event: Event,
-	): EventTarget | null {
+	override _getTheParent(this: Slots<Node>, _event: Event): EventTarget | null {
 		return objectOf(this.parent);
 	}
 
 	// The spec's per-node steps. Subclasses override them; the algorithms
 	// call them.
 
-	[kInsertionSteps](): void {}
+	_insertionSteps(): void {}
 
-	[kRemovingSteps](_oldParent: Node): void {}
+	_removingSteps(_oldParent: Node): void {}
 
-	[kAdoptingSteps](_oldDocument: Document): void {}
+	_adoptingSteps(_oldDocument: Document): void {}
 
-	[kCloningSteps](_copy: Node, _document: Document, _deep: boolean): void {}
+	_cloningSteps(_copy: Node, _document: Document, _deep: boolean): void {}
 
-	[kCloneSingle](_document: Document): Node {
+	_cloneSingle(_document: Document): Node {
 		throw domError("NotSupportedError", "That node cannot be cloned");
 	}
 }
@@ -7288,7 +7077,7 @@ function insertNode(
 			)
 		) {
 			descendantSlots.connected = connected;
-			descendantSlots[kInsertionSteps]();
+			descendantSlots._insertionSteps();
 			if (!connected) {
 				continue;
 			}
@@ -7582,7 +7371,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 	const parentWasConnected = _(parent).connected;
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 		_(descendant).connected = false;
-		_(descendant)[kRemovingSteps](parent);
+		_(descendant)._removingSteps(parent);
 		if (
 			parentWasConnected &&
 			nodeTypeOf(descendant) === ELEMENT_NODE &&
@@ -7631,7 +7420,7 @@ function adoptNode(node: Node, document: Document): void {
 				document,
 			]);
 		}
-		_(descendant)[kAdoptingSteps](oldDocument);
+		_(descendant)._adoptingSteps(oldDocument);
 	}
 }
 
@@ -8250,12 +8039,6 @@ function queueTreeMutationRecord(
 	);
 }
 
-const kMembersMoved = Symbol("members moved");
-
-const kListMembers = Symbol("listMembers");
-const kListNames = Symbol("listNames");
-const kChangedMembers = Symbol("changedMembers");
-
 const anyAttribute = Symbol("any attribute");
 
 // Copies an internal base's methods onto an interface's prototype, where
@@ -8295,17 +8078,17 @@ interface LiveListSlots {
 	documentWide: boolean;
 	watched: string | symbol | null;
 	names: string[];
-	[kListMembers](): Node[];
-	[kListNames](items: Node[]): Map<string, Node> | null;
-	[kChangedMembers](changed: readonly Node[]): Node[] | null;
-	[kMembersMoved](): void;
-	[kSync](): void;
-	[kChildrenChangedSteps](
+	_listMembers(): Node[];
+	_listNames(items: Node[]): Map<string, Node> | null;
+	_changedMembers(changed: readonly Node[]): Node[] | null;
+	_membersMoved(): void;
+	_sync(): void;
+	_childrenChangedSteps(
 		point: Node,
 		changed: readonly Node[] | null,
 		added: boolean,
 	): void;
-	[kAttributeSync](element: Element, localName: string): void;
+	_attributeSync(element: Element, localName: string): void;
 }
 
 interface LiveList {
@@ -8316,16 +8099,16 @@ interface LiveList {
 // where a page would see it: shareMethods() copies its methods onto each
 // list interface.
 abstract class LiveList implements LiveCollection {
-	abstract [kListMembers](): Node[];
+	abstract _listMembers(): Node[];
 
-	[kListNames](_items: Node[]): Map<string, Node> | null {
+	_listNames(_items: Node[]): Map<string, Node> | null {
 		return null;
 	}
 
 	// The members the changed nodes carry, if the collection can determine
 	// that from those nodes alone and knows its named properties did not
 	// move. Null if the list has to be recomputed to find out.
-	[kChangedMembers](
+	_changedMembers(
 		this: Slots<LiveList>,
 		changed: readonly Node[],
 	): Node[] | null {
@@ -8344,9 +8127,9 @@ abstract class LiveList implements LiveCollection {
 
 	// The list cannot tell its members moved, because a splice moves them
 	// within the one array the collection holds.
-	[kMembersMoved](): void {}
+	_membersMoved(): void {}
 
-	[kSync](this: Slots<LiveList>): void {
+	_sync(this: Slots<LiveList>): void {
 		const slots = this;
 		if (slots.registered === null) {
 			return;
@@ -8367,7 +8150,7 @@ abstract class LiveList implements LiveCollection {
 	// except for a document-wide list, which is dropped and recomputed on the
 	// next read, because a document sees far more changes than reads of such
 	// a list.
-	[kChildrenChangedSteps](
+	_childrenChangedSteps(
 		this: Slots<LiveList>,
 		point: Node,
 		changed: readonly Node[] | null,
@@ -8386,7 +8169,7 @@ abstract class LiveList implements LiveCollection {
 				return;
 			}
 			if (changed !== null) {
-				const members = slots[kChangedMembers](changed);
+				const members = slots._changedMembers(changed);
 				if (
 					members !== null &&
 					splice(ownerOf(this), point, changed, members, added)
@@ -8399,7 +8182,7 @@ abstract class LiveList implements LiveCollection {
 	}
 
 	// A list that reads none of the element's attributes is unaffected.
-	[kAttributeSync](
+	_attributeSync(
 		this: Slots<LiveList>,
 		_element: Element,
 		localName: string,
@@ -8407,7 +8190,7 @@ abstract class LiveList implements LiveCollection {
 		const slots = this;
 		const watched = slots.watched;
 		if (watched === localName || watched === anyAttribute) {
-			slots[kSync]();
+			slots._sync();
 		}
 	}
 }
@@ -8449,14 +8232,14 @@ function dropList(list: LiveList): void {
 		return;
 	}
 	listSlots.exact = false;
-	listSlots[kMembersMoved]();
+	listSlots._membersMoved();
 }
 
 function recomputeList(list: LiveList): void {
 	const listSlots = _(list);
-	listSlots.items = listSlots[kListMembers]();
+	listSlots.items = listSlots._listMembers();
 	listSlots.exact = true;
-	listSlots[kMembersMoved]();
+	listSlots._membersMoved();
 	defineListProperties(list);
 }
 
@@ -8515,7 +8298,7 @@ function splice(
 		}
 		items.splice(at, members.length);
 	}
-	listSlots[kMembersMoved]();
+	listSlots._membersMoved();
 	defineIndices(list, items.length);
 	return true;
 }
@@ -8551,7 +8334,7 @@ function defineListProperties(list: LiveList): void {
 		delete record[name];
 	}
 	listSlots.names = [];
-	const named = listSlots[kListNames](items);
+	const named = listSlots._listNames(items);
 	if (named !== null) {
 		for (const [name, node] of named) {
 			if (name === "" || Object.prototype.hasOwnProperty.call(list, name)) {
@@ -8612,7 +8395,7 @@ function ensureList(list: LiveList): Node[] {
 
 export interface NodeListSlots extends LiveListSlots {
 	compute: () => Node[];
-	[kListMembers]: Step<NodeList[typeof kListMembers]>;
+	_listMembers: Step<NodeList["_listMembers"]>;
 }
 
 export interface NodeList extends LiveList {
@@ -8657,7 +8440,7 @@ export class NodeList {
 		return at < items.length ? (items[at] as unknown as globalThis.Node) : null;
 	}
 
-	[kListMembers](this: Slots<NodeList>): Node[] {
+	_listMembers(this: Slots<NodeList>): Node[] {
 		return this.compute();
 	}
 }
@@ -8693,11 +8476,11 @@ interface HTMLCollectionSlots extends LiveListSlots {
 	root?: Node;
 	matches?: (element: Element) => boolean;
 	members?: Set<Node> | null;
-	[kListMembers]: Step<HTMLCollection[typeof kListMembers]>;
-	[kChangedMembers]: Step<HTMLCollection[typeof kChangedMembers]>;
-	[kListNames]: Step<HTMLCollection[typeof kListNames]>;
-	[kAttributeSync]: Step<HTMLCollection[typeof kAttributeSync]>;
-	[kMembersMoved]: Step<HTMLCollection[typeof kMembersMoved]>;
+	_listMembers: Step<HTMLCollection["_listMembers"]>;
+	_changedMembers: Step<HTMLCollection["_changedMembers"]>;
+	_listNames: Step<HTMLCollection["_listNames"]>;
+	_attributeSync: Step<HTMLCollection["_attributeSync"]>;
+	_membersMoved: Step<HTMLCollection["_membersMoved"]>;
 }
 
 interface HTMLCollection extends LiveList {
@@ -8750,11 +8533,11 @@ class HTMLCollection {
 		return null;
 	}
 
-	[kListMembers](this: Slots<HTMLCollection>): Node[] {
+	_listMembers(this: Slots<HTMLCollection>): Node[] {
 		return this.compute();
 	}
 
-	[kChangedMembers](
+	_changedMembers(
 		this: Slots<HTMLCollection>,
 		changed: readonly Node[],
 	): Node[] | null {
@@ -8762,14 +8545,14 @@ class HTMLCollection {
 		if (matches !== undefined) {
 			return matchingChangedMembers(ownerOf(this), matches, changed);
 		}
-		const members = LiveList.prototype[kChangedMembers].call(this, changed);
+		const members = LiveList.prototype._changedMembers.call(this, changed);
 		if (members === null || isNameless(members)) {
 			return members;
 		}
 		return null;
 	}
 
-	[kListNames](items: Node[]): Map<string, Node> {
+	_listNames(items: Node[]): Map<string, Node> {
 		const named = new Map<string, Node>();
 		for (const item of items) {
 			const element = item as Element;
@@ -8791,7 +8574,7 @@ class HTMLCollection {
 	// change to either moves its named properties. No collection here selects
 	// members by id or name, so the members stay and only the names are
 	// rebuilt.
-	[kAttributeSync](
+	_attributeSync(
 		this: Slots<HTMLCollection>,
 		element: Element,
 		localName: string,
@@ -8803,7 +8586,7 @@ class HTMLCollection {
 			return;
 		}
 		if (localName !== "id" && localName !== "name") {
-			LiveList.prototype[kAttributeSync].call(this, element, localName);
+			LiveList.prototype._attributeSync.call(this, element, localName);
 			return;
 		}
 		if (
@@ -8818,7 +8601,7 @@ class HTMLCollection {
 		}
 	}
 
-	[kMembersMoved](this: Slots<HTMLCollection>): void {
+	_membersMoved(this: Slots<HTMLCollection>): void {
 		const slots = this;
 		if (slots.members !== undefined) {
 			slots.members = null;
@@ -8988,7 +8771,7 @@ function matchingAttributeSync(
 			return;
 		}
 	}
-	collectionSlots[kSync]();
+	collectionSlots._sync();
 }
 
 function getDescendantElements(root: Node, into: Element[]): Element[] {
@@ -9146,15 +8929,13 @@ function toASCIIUppercase(value: string): string {
 	return value.toUpperCase();
 }
 
-const kTokens = Symbol("tokens");
-
 interface DOMTokenListSlots extends LiveListSlots {
 	element: Element;
 	attribute: string;
 	supported: Set<string> | null;
-	[kTokens]: Step<DOMTokenList[typeof kTokens]>;
-	[kChangedMembers]: Step<DOMTokenList[typeof kChangedMembers]>;
-	[kListMembers]: Step<DOMTokenList[typeof kListMembers]>;
+	_tokens: Step<DOMTokenList["_tokens"]>;
+	_changedMembers: Step<DOMTokenList["_changedMembers"]>;
+	_listMembers: Step<DOMTokenList["_listMembers"]>;
 }
 
 interface DOMTokenList extends LiveList {
@@ -9182,7 +8963,7 @@ class DOMTokenList implements globalThis.DOMTokenList {
 	}
 
 	get length(): number {
-		return _(this)[kTokens].length;
+		return _(this)._tokens.length;
 	}
 
 	get value(): string {
@@ -9195,25 +8976,25 @@ class DOMTokenList implements globalThis.DOMTokenList {
 		setAttributeOf(slots.element, slots.attribute, String(value));
 	}
 
-	get [kTokens](): string[] {
+	get _tokens(): string[] {
 		return ensureList(
 			ownerOf(this as unknown as Slots<DOMTokenList>),
 		) as unknown as string[];
 	}
 
 	item(index: number): string | null {
-		const tokens = _(this)[kTokens];
+		const tokens = _(this)._tokens;
 		const at = toUnsignedLong(index);
 		return at < tokens.length ? tokens[at] : null;
 	}
 
 	contains(token: string): boolean {
-		return _(this)[kTokens].includes(String(token));
+		return _(this)._tokens.includes(String(token));
 	}
 
 	add(...tokens: string[]): void {
 		validateTokens(tokens);
-		const current = _(this)[kTokens].slice();
+		const current = _(this)._tokens.slice();
 		for (const token of tokens) {
 			if (!current.includes(token)) {
 				current.push(String(token));
@@ -9224,7 +9005,7 @@ class DOMTokenList implements globalThis.DOMTokenList {
 
 	remove(...tokens: string[]): void {
 		validateTokens(tokens);
-		const current = _(this)[kTokens].filter(
+		const current = _(this)._tokens.filter(
 			(each) => !tokens.some((token) => String(token) === each),
 		);
 		writeTokenList(this, current);
@@ -9233,7 +9014,7 @@ class DOMTokenList implements globalThis.DOMTokenList {
 	toggle(token: string, force?: boolean): boolean {
 		validateTokens([token]);
 		const name = String(token);
-		const current = _(this)[kTokens].slice();
+		const current = _(this)._tokens.slice();
 		const index = current.indexOf(name);
 		if (index !== -1) {
 			if (force === undefined || force === false) {
@@ -9255,7 +9036,7 @@ class DOMTokenList implements globalThis.DOMTokenList {
 		validateTokens([token, newToken]);
 		const name = String(token);
 		const replacement = String(newToken);
-		const current = _(this)[kTokens].slice();
+		const current = _(this)._tokens.slice();
 		if (!current.includes(name)) {
 			return false;
 		}
@@ -9292,11 +9073,11 @@ class DOMTokenList implements globalThis.DOMTokenList {
 	}
 
 	// An attribute's tokens are not part of the tree's shape.
-	[kChangedMembers](): Node[] {
+	_changedMembers(): Node[] {
 		return [];
 	}
 
-	[kListMembers](this: Slots<DOMTokenList>): Node[] {
+	_listMembers(this: Slots<DOMTokenList>): Node[] {
 		const slots = this;
 		const value = attributeOf(slots.element, slots.attribute);
 		const tokens = value === null ? [] : splitOnASCIIWhitespace(value);
@@ -9597,15 +9378,12 @@ export class Text extends CharacterData implements globalThis.Text {
 		return created;
 	}
 
-	override [kGetTheParent](
-		this: Slots<Text>,
-		_event: Event,
-	): EventTarget | null {
+	override _getTheParent(this: Slots<Text>, _event: Event): EventTarget | null {
 		const slots = this;
 		return slots.assignedSlot ?? objectOf(slots.parent);
 	}
 
-	override [kCloneSingle](this: Slots<Text>, document: Document): Node {
+	override _cloneSingle(this: Slots<Text>, document: Document): Node {
 		const copy = new Text(this.data);
 		_(copy).document = document;
 		return copy;
@@ -9635,7 +9413,7 @@ class CDATASection extends Text {
 		return "#cdata-section";
 	}
 
-	override [kCloneSingle](this: Slots<CDATASection>, document: Document): Node {
+	override _cloneSingle(this: Slots<CDATASection>, document: Document): Node {
 		const copy = new CDATASection(this.data);
 		_(copy).document = document;
 		return copy;
@@ -9668,7 +9446,7 @@ export class Comment extends CharacterData implements globalThis.Comment {
 		return "#comment";
 	}
 
-	override [kCloneSingle](this: Slots<Comment>, document: Document): Node {
+	override _cloneSingle(this: Slots<Comment>, document: Document): Node {
 		const copy = new Comment(this.data);
 		_(copy).document = document;
 		return copy;
@@ -9716,7 +9494,7 @@ class ProcessingInstruction extends CharacterData {
 		return _(this).extra.target;
 	}
 
-	override [kCloneSingle](
+	override _cloneSingle(
 		this: Slots<ProcessingInstruction>,
 		document: Document,
 	): Node {
@@ -9784,7 +9562,7 @@ class DocumentType extends Node {
 		return _(this).extra.name;
 	}
 
-	override [kCloneSingle](this: Slots<DocumentType>, document: Document): Node {
+	override _cloneSingle(this: Slots<DocumentType>, document: Document): Node {
 		const slots = this;
 		const copy = new DocumentType(
 			slots.extra.name,
@@ -9868,7 +9646,7 @@ export class DocumentFragment
 		return null;
 	}
 
-	override [kCloneSingle](document: Document): Node {
+	override _cloneSingle(document: Document): Node {
 		const copy = new DocumentFragment();
 		_(copy).document = document;
 		return copy;
@@ -9907,8 +9685,6 @@ function setDescendantText(node: Node, value: string | null): void {
 
 export type AttributeSlots = Slots<Attr>;
 
-const kQualifiedName = Symbol("qualified name");
-
 interface AttrExtra extends NodeExtra {
 	namespace: string | null;
 	prefix: string | null;
@@ -9919,7 +9695,7 @@ interface AttrExtra extends NodeExtra {
 
 interface AttrSlots extends NodeSlots {
 	extra: AttrExtra;
-	[kQualifiedName]: Step<Attr[typeof kQualifiedName]>;
+	_qualifiedName: Step<Attr["_qualifiedName"]>;
 }
 
 interface Attr {
@@ -9957,7 +9733,7 @@ class Attr extends Node implements globalThis.Attr {
 	}
 
 	get name(): string {
-		return _(this)[kQualifiedName];
+		return _(this)._qualifiedName;
 	}
 
 	get value(): string {
@@ -9981,7 +9757,7 @@ class Attr extends Node implements globalThis.Attr {
 	}
 
 	override get nodeName(): string {
-		return _(this)[kQualifiedName];
+		return _(this)._qualifiedName;
 	}
 
 	override get nodeValue(): string | null {
@@ -10000,14 +9776,14 @@ class Attr extends Node implements globalThis.Attr {
 		setExistingAttributeValue(this, nullableString(value));
 	}
 
-	get [kQualifiedName](): string {
+	get _qualifiedName(): string {
 		const slots = this as unknown as Slots<Attr>;
 		return slots.extra.prefix === null
 			? slots.extra.localName
 			: `${slots.extra.prefix}:${slots.extra.localName}`;
 	}
 
-	override [kCloneSingle](this: Slots<Attr>, document: Document): Node {
+	override _cloneSingle(this: Slots<Attr>, document: Document): Node {
 		const slots = this;
 		const copy = new Attr(
 			slots.extra.namespace,
@@ -10044,15 +9820,13 @@ function notifyAttributeChange(element: Element, localName: string): void {
 	styleAttributeChanged(element, localName);
 }
 
-const kAttributeChangeSteps = Symbol("attribute change steps");
-
 function changeAttribute(attribute: Attr, value: string): void {
 	const attributeSlots = _(attribute);
 	const element = attributeSlots.extra.ownerElement as Element;
 	const oldValue = attributeSlots.extra.value;
 	queueAttributeMutationRecord(element, attribute, oldValue);
 	attributeSlots.extra.value = value;
-	_(element)[kAttributeChangeSteps](
+	_(element)._attributeChangeSteps(
 		attributeSlots.extra.localName,
 		oldValue,
 		value,
@@ -10071,7 +9845,7 @@ function appendAttribute(element: Element, attribute: Attr): void {
 	const attributeSlots = _(attribute);
 	attributeSlots.extra.ownerElement = element;
 	attributeSlots.document = elementSlots.document;
-	elementSlots[kAttributeChangeSteps](
+	elementSlots._attributeChangeSteps(
 		attributeSlots.extra.localName,
 		null,
 		attributeSlots.extra.value,
@@ -10092,7 +9866,7 @@ function removeAttributeNode(element: Element, attribute: Attr): void {
 		list.splice(index, 1);
 	}
 	attributeSlots.extra.ownerElement = null;
-	elementSlots[kAttributeChangeSteps](
+	elementSlots._attributeChangeSteps(
 		attributeSlots.extra.localName,
 		oldValue,
 		null,
@@ -10120,7 +9894,7 @@ function replaceAttribute(
 	newAttributeSlots.extra.ownerElement = element;
 	newAttributeSlots.document = elementSlots.document;
 	oldAttributeSlots.extra.ownerElement = null;
-	elementSlots[kAttributeChangeSteps](
+	elementSlots._attributeChangeSteps(
 		newAttributeSlots.extra.localName,
 		oldAttributeSlots.extra.value,
 		newAttributeSlots.extra.value,
@@ -10162,7 +9936,7 @@ function getAttributeByName(
 		name = toASCIILowercase(name);
 	}
 	for (const attribute of elementSlots.attributeList) {
-		if (attribute[kQualifiedName] === name) {
+		if (attribute._qualifiedName === name) {
 			return objectOf(attribute);
 		}
 	}
@@ -10215,9 +9989,9 @@ function setAttributeNode(element: Element, attribute: Attr): Attr | null {
 
 interface NamedNodeMapSlots extends LiveListSlots {
 	element: Element;
-	[kChangedMembers]: Step<NamedNodeMap[typeof kChangedMembers]>;
-	[kListMembers]: Step<NamedNodeMap[typeof kListMembers]>;
-	[kListNames]: Step<NamedNodeMap[typeof kListNames]>;
+	_changedMembers: Step<NamedNodeMap["_changedMembers"]>;
+	_listMembers: Step<NamedNodeMap["_listMembers"]>;
+	_listNames: Step<NamedNodeMap["_listNames"]>;
 }
 
 interface NamedNodeMap extends LiveList {
@@ -10288,17 +10062,17 @@ class NamedNodeMap implements globalThis.NamedNodeMap {
 	}
 
 	// An element's attributes are not part of the tree's shape.
-	[kChangedMembers](): Node[] {
+	_changedMembers(): Node[] {
 		return [];
 	}
 
-	[kListMembers](this: Slots<NamedNodeMap>): Node[] {
+	_listMembers(this: Slots<NamedNodeMap>): Node[] {
 		return _(this.element).attributeList.map((attribute) =>
 			objectOf(attribute),
 		);
 	}
 
-	[kListNames](this: Slots<NamedNodeMap>, items: Node[]): Map<string, Node> {
+	_listNames(this: Slots<NamedNodeMap>, items: Node[]): Map<string, Node> {
 		const named = new Map<string, Node>();
 		const slots = this;
 		const html =
@@ -10306,7 +10080,7 @@ class NamedNodeMap implements globalThis.NamedNodeMap {
 			isHTMLDocument(_(slots.element).document);
 		for (const item of items) {
 			const attribute = item as Attr;
-			const name = _(attribute)[kQualifiedName];
+			const name = _(attribute)._qualifiedName;
 			if (html && toASCIILowercase(name) !== name) {
 				continue;
 			}
@@ -10498,8 +10272,8 @@ export interface ElementSlots extends NodeSlots {
 	pseudoElements: Map<string, Element> | null;
 	pseudoHost: Element | null;
 	pseudoName: string | null;
-	[kQualifiedName]: Step<Element[typeof kQualifiedName]>;
-	[kAttributeChangeSteps]: Step<Element[typeof kAttributeChangeSteps]>;
+	_qualifiedName: Step<Element["_qualifiedName"]>;
+	_attributeChangeSteps: Step<Element["_attributeChangeSteps"]>;
 	// Set on the first selectionchange a text control schedules.
 	textSelectionChangeScheduled?: boolean;
 }
@@ -10644,11 +10418,11 @@ export class Element extends Node implements globalThis.Element {
 	get tagName(): string {
 		const slots = _(this);
 		if (slots.namespace !== HTML_NAMESPACE || !isHTMLDocument(slots.document)) {
-			return slots[kQualifiedName];
+			return slots._qualifiedName;
 		}
 		let upper = slots.upperName;
 		if (upper === null) {
-			upper = toASCIIUppercase(slots[kQualifiedName]);
+			upper = toASCIIUppercase(slots._qualifiedName);
 			slots.upperName = upper;
 		}
 		return upper;
@@ -10767,7 +10541,7 @@ export class Element extends Node implements globalThis.Element {
 		return 1;
 	}
 
-	get [kQualifiedName](): string {
+	get _qualifiedName(): string {
 		const slots = this;
 		return slots.prefix === null
 			? slots.localName
@@ -10894,7 +10668,7 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	getAttributeNames(): string[] {
-		return _(this).attributeList.map((attribute) => attribute[kQualifiedName]);
+		return _(this).attributeList.map((attribute) => attribute._qualifiedName);
 	}
 
 	getAttribute(qualifiedName: string): string | null {
@@ -10966,7 +10740,7 @@ export class Element extends Node implements globalThis.Element {
 			name = toASCIILowercase(name);
 		}
 		for (const attribute of slots.attributeList) {
-			if (attribute[kQualifiedName] === name) {
+			if (attribute._qualifiedName === name) {
 				return true;
 			}
 		}
@@ -11243,7 +11017,7 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	/** An assigned slottable returns its slot instead of its parent. */
-	override [kGetTheParent](
+	override _getTheParent(
 		this: Slots<Element>,
 		_event: Event,
 	): EventTarget | null {
@@ -11251,7 +11025,7 @@ export class Element extends Node implements globalThis.Element {
 		return slots.assignedSlot ?? objectOf(slots.parent);
 	}
 
-	override [kInsertionSteps](this: Slots<Element>): void {
+	override _insertionSteps(this: Slots<Element>): void {
 		const root = getRoot(ownerOf(this));
 		if (nodeTypeOf(root) === DOCUMENT_NODE) {
 			addToIdMap(root as Document, ownerOf(this));
@@ -11277,7 +11051,7 @@ export class Element extends Node implements globalThis.Element {
 		}
 	}
 
-	override [kRemovingSteps](this: Slots<Element>, oldParent: Node): void {
+	override _removingSteps(this: Slots<Element>, oldParent: Node): void {
 		const root = getRoot(oldParent);
 		if (nodeTypeOf(root) === DOCUMENT_NODE) {
 			removeFromIdMap(root as Document, ownerOf(this));
@@ -11294,7 +11068,7 @@ export class Element extends Node implements globalThis.Element {
 		}
 	}
 
-	[kAttributeChangeSteps](
+	_attributeChangeSteps(
 		this: Slots<Element>,
 		localName: string,
 		oldValue: string | null,
@@ -11373,7 +11147,7 @@ export class Element extends Node implements globalThis.Element {
 		syncUAShadowTree(ownerOf(this));
 	}
 
-	override [kCloneSingle](this: Slots<Element>, document: Document): Node {
+	override _cloneSingle(this: Slots<Element>, document: Document): Node {
 		const slots = this;
 		const copy = createElementInternal(
 			document,
@@ -12508,14 +12282,14 @@ export class HTMLElement extends Element {
 	// was showing as, so it closes. It closes silently, because the author
 	// who changed the attribute is not asking to be told about the old
 	// popover.
-	override [kAttributeChangeSteps](
+	override _attributeChangeSteps(
 		this: Slots<HTMLElement>,
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		superStep(HTMLElement, kAttributeChangeSteps).call(
+		superStep(HTMLElement, "_attributeChangeSteps").call(
 			this,
 			localName,
 			oldValue,
@@ -12536,8 +12310,8 @@ export class HTMLElement extends Element {
 
 	// The top layer holds nothing that is off the tree, and there is no page
 	// for the popover to be above anymore.
-	override [kRemovingSteps](this: Slots<HTMLElement>, oldParent: Node): void {
-		superStep(HTMLElement, kRemovingSteps).call(this, oldParent);
+	override _removingSteps(this: Slots<HTMLElement>, oldParent: Node): void {
+		superStep(HTMLElement, "_removingSteps").call(this, oldParent);
 		if (!isShowingPopover(ownerOf(this))) {
 			return;
 		}
@@ -14598,7 +14372,7 @@ export class ShadowRoot
 
 	// Dispatch leaves a shadow tree through the host, unless the event was
 	// dispatched inside this tree and is not composed.
-	override [kGetTheParent](
+	override _getTheParent(
 		this: Slots<ShadowRoot>,
 		event: Event,
 	): EventTarget | null {
@@ -14614,7 +14388,7 @@ export class ShadowRoot
 		return this.extra.host;
 	}
 
-	override [kCloneSingle](_document: Document): Node {
+	override _cloneSingle(_document: Document): Node {
 		throw domError("NotSupportedError", "A shadow root cannot be cloned");
 	}
 }
@@ -15132,7 +14906,7 @@ class HTMLTemplateElement extends HTMLElement {
 		toggleAttributeOf(this, "shadowrootserializable", Boolean(value));
 	}
 
-	override [kAdoptingSteps](
+	override _adoptingSteps(
 		this: Slots<HTMLTemplateElement>,
 		_oldDocument: Document,
 	): void {
@@ -15143,7 +14917,7 @@ class HTMLTemplateElement extends HTMLElement {
 		}
 	}
 
-	override [kCloningSteps](
+	override _cloningSteps(
 		this: Slots<HTMLTemplateElement>,
 		copy: Node,
 		document: Document,
@@ -16076,14 +15850,14 @@ class HTMLCanvasElement extends HTMLElement {
 		return noMediaPipeline("bitmap");
 	}
 
-	override [kAttributeChangeSteps](
+	override _attributeChangeSteps(
 		this: Slots<HTMLCanvasElement>,
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		superStep(HTMLCanvasElement, kAttributeChangeSteps).call(
+		superStep(HTMLCanvasElement, "_attributeChangeSteps").call(
 			this,
 			localName,
 			oldValue,
@@ -16286,8 +16060,8 @@ interface HTMLDetailsElementExtra extends NodeExtra {
 
 interface HTMLDetailsElementSlots extends HTMLElementSlots {
 	extra: HTMLDetailsElementExtra;
-	[kEnsureUAShadowTree]: Step<HTMLDetailsElement[typeof kEnsureUAShadowTree]>;
-	[kSyncUAShadowTree]: Step<HTMLDetailsElement[typeof kSyncUAShadowTree]>;
+	_ensureUAShadowTree: Step<HTMLDetailsElement["_ensureUAShadowTree"]>;
+	_syncUAShadowTree: Step<HTMLDetailsElement["_syncUAShadowTree"]>;
 }
 
 interface HTMLDetailsElement {
@@ -16306,7 +16080,7 @@ class HTMLDetailsElement extends HTMLElement {
 		slots.extra.content = null;
 	}
 
-	[kEnsureUAShadowTree]?(this: Slots<HTMLDetailsElement>): void {
+	_ensureUAShadowTree?(this: Slots<HTMLDetailsElement>): void {
 		if (this.extra.upgraded) {
 			syncUAShadowTree(ownerOf(this));
 			return;
@@ -16336,7 +16110,7 @@ class HTMLDetailsElement extends HTMLElement {
 		syncUAShadowTree(ownerOf(this));
 	}
 
-	[kSyncUAShadowTree]?(this: Slots<HTMLDetailsElement>): void {
+	_syncUAShadowTree?(this: Slots<HTMLDetailsElement>): void {
 		const content = this.extra.content;
 		if (content === null) {
 			return;
@@ -16347,14 +16121,14 @@ class HTMLDetailsElement extends HTMLElement {
 		}
 	}
 
-	override [kAttributeChangeSteps](
+	override _attributeChangeSteps(
 		this: Slots<HTMLDetailsElement>,
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		superStep(HTMLDetailsElement, kAttributeChangeSteps).call(
+		superStep(HTMLDetailsElement, "_attributeChangeSteps").call(
 			this,
 			localName,
 			oldValue,
@@ -16593,25 +16367,25 @@ class HTMLDialogElement extends HTMLElement {
 
 	// Nothing off the tree can render above the document, and a detached
 	// dialog is no longer modal.
-	override [kRemovingSteps](
+	override _removingSteps(
 		this: Slots<HTMLDialogElement>,
 		oldParent: Node,
 	): void {
-		superStep(HTMLDialogElement, kRemovingSteps).call(this, oldParent);
+		superStep(HTMLDialogElement, "_removingSteps").call(this, oldParent);
 		getTopLayer(this.document).delete(ownerOf(this));
 	}
 
 	// Removing `open` by hand ends a modal dialog's modality too: it leaves
 	// the top layer, and the page behind it is no longer inert (HTML's
 	// dialog attribute change steps).
-	override [kAttributeChangeSteps](
+	override _attributeChangeSteps(
 		this: Slots<HTMLDialogElement>,
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		superStep(HTMLDialogElement, kAttributeChangeSteps).call(
+		superStep(HTMLDialogElement, "_attributeChangeSteps").call(
 			this,
 			localName,
 			oldValue,
@@ -17137,14 +16911,12 @@ function implicitlySubmit(input: HTMLInputElement): void {
 	}
 }
 
-const kResetControl = Symbol("put a control back to its default");
-
 function resetControl(control: Element): void {
 	editedSinceChange.delete(control);
 	setUserValidity(control, false);
-	const resettable = control as unknown as Record<symbol, () => void>;
-	if (typeof _(resettable)[kResetControl] === "function") {
-		_(resettable)[kResetControl]!();
+	const slots = _(control) as unknown as {_resetControl?: () => void};
+	if (typeof slots._resetControl === "function") {
+		slots._resetControl();
 	} else if (isFormAssociatedCustom(control)) {
 		enqueueCallbackReaction(control, "formResetCallback", []);
 	}
@@ -17230,124 +17002,14 @@ function createEntry(
 	return [key, file];
 }
 
-const kEntryList = Symbol("the entry list");
-
-interface EntryListFormData {
-	[kEntryList]: FormDataEntry[];
-}
-
-/**
- * The entry list a runtime without its own FormData falls back to. Every
- * runtime this engine supports has one, and its storage is what `fetch`
- * reads, so it is the base below whenever it exists.
- */
-class EntryListFormData {
-	constructor() {
-		this[kEntryList] = [];
-	}
-
-	append(name: string, value: string | Blob, filename?: string): void {
-		this[kEntryList].push(createEntry(name, value, filename));
-	}
-
-	delete(name: string): void {
-		const wanted = toScalarValueString(String(name));
-		this[kEntryList] = this[kEntryList].filter(([key]) => key !== wanted);
-	}
-
-	get(name: string): globalThis.FormDataEntryValue | null {
-		const wanted = toScalarValueString(String(name));
-		const found = this[kEntryList].find(([key]) => key === wanted);
-		return found === undefined ? null : found[1];
-	}
-
-	getAll(name: string): globalThis.FormDataEntryValue[] {
-		const wanted = toScalarValueString(String(name));
-		return this[kEntryList]
-			.filter(([key]) => key === wanted).map(([, value]) => value);
-	}
-
-	has(name: string): boolean {
-		const wanted = toScalarValueString(String(name));
-		return this[kEntryList].some(([key]) => key === wanted);
-	}
-
-	set(name: string, value: string | Blob, filename?: string): void {
-		const entry = createEntry(name, value, filename);
-		const entries = this[kEntryList];
-		const at = entries.findIndex(([key]) => key === entry[0]);
-		if (at === -1) {
-			entries.push(entry);
-			return;
-		}
-		entries[at] = entry;
-		this[kEntryList] = entries.filter(
-			(held, index) => index === at || held[0] !== entry[0],
-		);
-	}
-
-	forEach(
-		callbackfn: (
-			value: globalThis.FormDataEntryValue,
-			key: string,
-			parent: any,
-		) => void,
-		thisArg?: any,
-	): void {
-		for (let index = 0; index < this[kEntryList].length; index++) {
-			const [key, value] = this[kEntryList][index];
-			callbackfn.call(thisArg, value, key, this);
-		}
-	}
-
-	entries(): FormDataIterator<[string, globalThis.FormDataEntryValue]> {
-		return this[kEntryList]
-			.map(([key, value]): [string, globalThis.FormDataEntryValue] =>
-				[key, value])[Symbol.iterator]();
-	}
-
-	keys(): FormDataIterator<string> {
-		return this[kEntryList].map(([key]) => key)[Symbol.iterator]();
-	}
-
-	values(): FormDataIterator<globalThis.FormDataEntryValue> {
-		return this[kEntryList].map(
-			([, value]): globalThis.FormDataEntryValue => value,
-		)[Symbol.iterator]();
-	}
-
-	[Symbol.iterator](): FormDataIterator<
-		[string, globalThis.FormDataEntryValue]
-	> {
-		return this.entries();
-	}
-}
-
-const FormDataBase: new () => EntryListFormData =
-	typeof (globalThis as {
-		FormData?: unknown;
-	}).FormData === "function"
-		? (globalThis as unknown as {FormData: new () => EntryListFormData})
-			.FormData
-		: EntryListFormData;
-
-// A runtime stores a file under the filename its caller gave, or, in at
-// least one, under the name the file already had. The wire is right
-// either way; only reading an entry back differs, so the filenames are
-// kept here when the runtime reports the wrong one.
+// A runtime stores a file under the filename its caller gave, or, as Bun
+// does, under the name the file already had. The wire is right either
+// way; only reading an entry back differs, so the filenames are kept here
+// when the runtime reports the wrong one.
 const runtimeKeepsFilenames = ((): boolean => {
-	const Runtime = (globalThis as {FormData?: unknown}).FormData;
-	if (typeof Runtime !== "function") {
-		return true;
-	}
-	try {
-		const probe = new (Runtime as new () => globalThis.FormData)();
-		probe.append("k", new File(["x"], "given"), "wanted");
-		return (probe.get("k") as globalThis.File).name === "wanted";
-	} catch (error) {
-		void error;
-		return true;
-	}
+	const probe = new globalThis.FormData();
+	probe.append("k", new File(["x"], "given"), "wanted");
+	return (probe.get("k") as globalThis.File).name === "wanted";
 })();
 
 // One File per stored blob and name, so reading an entry twice gives one
@@ -17385,7 +17047,7 @@ interface FormData {
 	readonly [internals]: FormDataSlots;
 }
 
-class FormData extends FormDataBase {
+class FormData extends globalThis.FormData {
 	constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
 		super();
 		seal(this, new.target, FormData);
@@ -17866,7 +17528,7 @@ function constructEntryList(
 class HTMLFormControlsCollection
 	extends (HTMLCollection as new (
 		...args: ConstructorParameters<typeof HTMLCollection>
-	) => Omit<HTMLCollection, "namedItem" | typeof kListNames>) {
+	) => Omit<HTMLCollection, "namedItem" | "_listNames">) {
 	constructor(compute: () => Element[], owner: Node | null = null) {
 		// The form attribute can associate a control anywhere in the tree, and
 		// what counts as a control depends on its attributes, so the list is
@@ -17894,7 +17556,7 @@ class HTMLFormControlsCollection
 		) as unknown as Element;
 	}
 
-	[kListNames](
+	_listNames(
 		this: Slots<HTMLFormControlsCollection>,
 		items: Node[],
 	): Map<string, Node> {
@@ -18179,8 +17841,8 @@ class HTMLIFrameElement extends HTMLElement {
 		return null;
 	}
 
-	override [kInsertionSteps](this: Slots<HTMLIFrameElement>): void {
-		superStep(HTMLIFrameElement, kInsertionSteps).call(this);
+	override _insertionSteps(this: Slots<HTMLIFrameElement>): void {
+		superStep(HTMLIFrameElement, "_insertionSteps").call(this);
 		if (!ownerOf(this).isConnected) {
 			return;
 		}
@@ -18197,11 +17859,8 @@ class HTMLIFrameElement extends HTMLElement {
 		}, 0);
 	}
 
-	override [kRemovingSteps](
-		this: Slots<HTMLIFrameElement>,
-		parent: Node,
-	): void {
-		superStep(HTMLIFrameElement, kRemovingSteps).call(this, parent);
+	override _removingSteps(this: Slots<HTMLIFrameElement>, parent: Node): void {
+		superStep(HTMLIFrameElement, "_removingSteps").call(this, parent);
 		const slots = this;
 		slots.extra.contentDocument = null;
 		slots.extra.contentWindow = null;
@@ -18308,7 +17967,7 @@ interface HTMLImageElementExtra extends NodeExtra {
 
 interface HTMLImageElementSlots extends HTMLElementSlots {
 	extra: HTMLImageElementExtra;
-	[kEnsureUAShadowTree]: Step<HTMLImageElement[typeof kEnsureUAShadowTree]>;
+	_ensureUAShadowTree: Step<HTMLImageElement["_ensureUAShadowTree"]>;
 }
 
 interface HTMLImageElement {
@@ -18451,7 +18110,7 @@ class HTMLImageElement extends HTMLElement {
 	// as an inline element would, unless HTML's rendering rules keep it a
 	// box. Its UA shadow tree holds the text, built the first time it can
 	// be needed.
-	[kEnsureUAShadowTree]?(this: Slots<HTMLImageElement>): void {
+	_ensureUAShadowTree?(this: Slots<HTMLImageElement>): void {
 		const alt = attributeOf(ownerOf(this), "alt") ?? "";
 		const slots = this;
 		const text = slots.extra.altText;
@@ -18473,18 +18132,18 @@ class HTMLImageElement extends HTMLElement {
 		appendChildOf(root, slots.extra.altText as unknown as globalThis.Text);
 	}
 
-	override [kInsertionSteps](this: Slots<HTMLImageElement>): void {
-		superStep(HTMLImageElement, kInsertionSteps).call(this);
+	override _insertionSteps(this: Slots<HTMLImageElement>): void {
+		superStep(HTMLImageElement, "_insertionSteps").call(this);
 		if (this.extra.imageState.pending) {
 			updateImageData(ownerOf(this));
 		}
 	}
 
-	override [kAdoptingSteps](
+	override _adoptingSteps(
 		this: Slots<HTMLImageElement>,
 		oldDocument: Document,
 	): void {
-		superStep(HTMLImageElement, kAdoptingSteps).call(this, oldDocument);
+		superStep(HTMLImageElement, "_adoptingSteps").call(this, oldDocument);
 		// The fragment parser builds a <template>'s contents in the
 		// template's document and then moves them. A load that started
 		// there stops, and waits for a document with a window.
@@ -18496,14 +18155,14 @@ class HTMLImageElement extends HTMLElement {
 		}
 	}
 
-	override [kAttributeChangeSteps](
+	override _attributeChangeSteps(
 		this: Slots<HTMLImageElement>,
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		superStep(HTMLImageElement, kAttributeChangeSteps).call(
+		superStep(HTMLImageElement, "_attributeChangeSteps").call(
 			this,
 			localName,
 			oldValue,
@@ -18789,15 +18448,15 @@ export interface HTMLInputElementExtra extends NodeExtra {
 
 export interface HTMLInputElementSlots extends HTMLElementSlots {
 	extra: HTMLInputElementExtra;
-	[kUAValue]: Step<HTMLInputElement[typeof kUAValue]>;
-	[kUAValueText]: Step<HTMLInputElement[typeof kUAValueText]>;
-	[kSetUAValue]: Step<HTMLInputElement[typeof kSetUAValue]>;
-	[kUASelection]: Step<HTMLInputElement[typeof kUASelection]>;
-	[kSetUASelection]: Step<HTMLInputElement[typeof kSetUASelection]>;
-	[kResetControl]: Step<HTMLInputElement[typeof kResetControl]>;
-	[kUASelectionRange]: Step<HTMLInputElement[typeof kUASelectionRange]>;
-	[kEnsureUAShadowTree]: Step<HTMLInputElement[typeof kEnsureUAShadowTree]>;
-	[kSyncUAShadowTree]: Step<HTMLInputElement[typeof kSyncUAShadowTree]>;
+	_uaValue: Step<HTMLInputElement["_uaValue"]>;
+	_uaValueText: Step<HTMLInputElement["_uaValueText"]>;
+	_setUAValue: Step<HTMLInputElement["_setUAValue"]>;
+	_uaSelection: Step<HTMLInputElement["_uaSelection"]>;
+	_setUASelection: Step<HTMLInputElement["_setUASelection"]>;
+	_resetControl: Step<HTMLInputElement["_resetControl"]>;
+	_uaSelectionRange: Step<HTMLInputElement["_uaSelectionRange"]>;
+	_ensureUAShadowTree: Step<HTMLInputElement["_ensureUAShadowTree"]>;
+	_syncUAShadowTree: Step<HTMLInputElement["_syncUAShadowTree"]>;
 }
 
 export interface HTMLInputElement {
@@ -18967,7 +18626,7 @@ export class HTMLInputElement extends HTMLElement {
 				return;
 			}
 
-			const value = slots[kUAValue];
+			const value = slots._uaValue;
 			const {start, end, direction} = getSelectionRecord(this)!;
 			const anchor = direction === "backward" ? end : start;
 			const caret = direction === "backward" ? start : end;
@@ -19303,14 +18962,14 @@ export class HTMLInputElement extends HTMLElement {
 					: type === "week" ? formatWeekString(value) : iso.slice(11, 19);
 	}
 
-	get [kUAValue](): string {
+	get _uaValue(): string {
 		const slots = this as unknown as Slots<HTMLInputElement>;
 		return getInputValueMode(ownerOf(slots).type) === "value"
 			? slots.extra.value
 			: "";
 	}
 
-	get [kUAValueText](): globalThis.Text | null {
+	get _uaValueText(): globalThis.Text | null {
 		return (this as unknown as Slots<HTMLInputElement>).extra.valueText;
 	}
 
@@ -19355,7 +19014,7 @@ export class HTMLInputElement extends HTMLElement {
 			throw new TypeError("setSelectionRange needs a start and an end");
 		}
 		requireSelectable(this);
-		_(this)[kSetUASelection]!(start ?? 0, end ?? 0, direction);
+		_(this)._setUASelection!(start ?? 0, end ?? 0, direction);
 	}
 
 	setRangeText(replacement: string): void;
@@ -19399,7 +19058,7 @@ export class HTMLInputElement extends HTMLElement {
 	// collapse it to the end. A control with no value of its own (a file
 	// input's filename list) has nothing a keystroke can write, as in a
 	// browser, where its UI accepts no typing.
-	[kSetUAValue]?(this: Slots<HTMLInputElement>, value: string): void {
+	_setUAValue?(this: Slots<HTMLInputElement>, value: string): void {
 		if (getInputValueMode(ownerOf(this).type) !== "value") {
 			return;
 		}
@@ -19421,7 +19080,7 @@ export class HTMLInputElement extends HTMLElement {
 	// throw for the rest. But the caret in an email or number text control is
 	// real, and the UA shadow tree behind the control edits through it. This is
 	// the same algorithm without the type check an author gets.
-	[kUASelection]?(this: Slots<HTMLInputElement>): {
+	_uaSelection?(this: Slots<HTMLInputElement>): {
 		start: number;
 		end: number;
 		direction: string;
@@ -19434,7 +19093,7 @@ export class HTMLInputElement extends HTMLElement {
 		};
 	}
 
-	[kSetUASelection]?(
+	_setUASelection?(
 		this: Slots<HTMLInputElement>,
 		start: number,
 		end: number,
@@ -19455,14 +19114,14 @@ export class HTMLInputElement extends HTMLElement {
 		);
 	}
 
-	override [kAttributeChangeSteps](
+	override _attributeChangeSteps(
 		this: Slots<HTMLInputElement>,
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		superStep(HTMLInputElement, kAttributeChangeSteps).call(
+		superStep(HTMLInputElement, "_attributeChangeSteps").call(
 			this,
 			localName,
 			oldValue,
@@ -19486,7 +19145,7 @@ export class HTMLInputElement extends HTMLElement {
 		}
 	}
 
-	override [kCloningSteps](this: Slots<HTMLInputElement>, copy: Node): void {
+	override _cloningSteps(this: Slots<HTMLInputElement>, copy: Node): void {
 		const clone = copy as HTMLInputElement;
 		const slots = this;
 		const cloneSlots = _(clone);
@@ -19496,7 +19155,7 @@ export class HTMLInputElement extends HTMLElement {
 		cloneSlots.extra.dirtyChecked = slots.extra.dirtyChecked;
 	}
 
-	[kResetControl]?(this: Slots<HTMLInputElement>): void {
+	_resetControl?(this: Slots<HTMLInputElement>): void {
 		const slots = this;
 		slots.extra.value = sanitizeInputValue(
 			ownerOf(this),
@@ -19509,11 +19168,11 @@ export class HTMLInputElement extends HTMLElement {
 		syncUAShadowTree(ownerOf(this));
 	}
 
-	[kUASelectionRange]?(this: Slots<HTMLInputElement>): globalThis.Range | null {
+	_uaSelectionRange?(this: Slots<HTMLInputElement>): globalThis.Range | null {
 		return getTextSelectionRange(ownerOf(this), this.extra.valueText);
 	}
 
-	[kEnsureUAShadowTree]?(this: Slots<HTMLInputElement>): void {
+	_ensureUAShadowTree?(this: Slots<HTMLInputElement>): void {
 		const slots = this;
 		if (slots.extra.upgraded) {
 			// A control that left the tree and came back keeps its tree. Only
@@ -19535,7 +19194,7 @@ export class HTMLInputElement extends HTMLElement {
 	// whether it is checked, which is state like any other: it is written
 	// here, where the state changes, so the frame that shows it is scheduled
 	// by the same mutation as every other change.
-	[kSyncUAShadowTree]?(this: Slots<HTMLInputElement>): void {
+	_syncUAShadowTree?(this: Slots<HTMLInputElement>): void {
 		const slots = this;
 		if (!slots.extra.upgraded) {
 			return;
@@ -19570,7 +19229,7 @@ export class HTMLInputElement extends HTMLElement {
 		if (!slots.extra.valueText) {
 			return;
 		}
-		const value = slots[kUAValue];
+		const value = slots._uaValue;
 		const placeholder = attributeOf(ownerOf(this), "placeholder") ?? "";
 		// A password puts one bullet per code unit into the shadow tree, never
 		// the real value. So what lays out, paints and can be selected is only
@@ -19628,7 +19287,7 @@ function insertTextControlText(
 	if (!text) {
 		return;
 	}
-	const value = _(textControl)[kUAValue];
+	const value = _(textControl)._uaValue;
 	const {start, end} = getSelectionRecord(textControl)!;
 	const next = value.slice(0, start) + text + value.slice(end);
 	if (textControl.type === "number" && !isFloatPrefix(next)) {
@@ -19882,7 +19541,7 @@ function getSteppedValue(
 	const min = parseFloatingPoint(attributeOf(input, "min")?.trim() ?? "");
 	const max = parseFloatingPoint(attributeOf(input, "max")?.trim() ?? "");
 	const inputSlots = _(input);
-	const current = parseFloatingPoint(inputSlots[kUAValue]) ?? 0;
+	const current = parseFloatingPoint(inputSlots._uaValue) ?? 0;
 	const base = min ?? 0;
 
 	// The offset in grid units, rounded enough that a value the grid itself
@@ -19904,7 +19563,7 @@ function getSteppedValue(
 	const places = Math.max(
 		getDecimalPlaces(stepAttribute),
 		getDecimalPlaces(attributeOf(input, "min")),
-		getDecimalPlaces(inputSlots[kUAValue]),
+		getDecimalPlaces(inputSlots._uaValue),
 	);
 	return String(Number(next.toFixed(Math.min(places, 20))));
 }
@@ -20753,8 +20412,8 @@ class HTMLMetaElement extends HTMLElement {
 
 	// HTML §4.2.5.3: the Content-Security-Policy pragma runs when the
 	// element is inserted into a document as a child of its head.
-	override [kInsertionSteps](this: Slots<HTMLMetaElement>): void {
-		superStep(HTMLMetaElement, kInsertionSteps).call(this);
+	override _insertionSteps(this: Slots<HTMLMetaElement>): void {
+		superStep(HTMLMetaElement, "_insertionSteps").call(this);
 		const content = attributeOf(ownerOf(this), "content");
 		if (
 			ownerOf(this).isConnected &&
@@ -20836,8 +20495,8 @@ interface HTMLMeterElementExtra extends NodeExtra {
 
 interface HTMLMeterElementSlots extends HTMLElementSlots {
 	extra: HTMLMeterElementExtra;
-	[kEnsureUAShadowTree]: Step<HTMLMeterElement[typeof kEnsureUAShadowTree]>;
-	[kSyncUAShadowTree]: Step<HTMLMeterElement[typeof kSyncUAShadowTree]>;
+	_ensureUAShadowTree: Step<HTMLMeterElement["_ensureUAShadowTree"]>;
+	_syncUAShadowTree: Step<HTMLMeterElement["_syncUAShadowTree"]>;
 }
 
 interface HTMLMeterElement {
@@ -20918,7 +20577,7 @@ class HTMLMeterElement extends HTMLElement {
 		return getLabels(this);
 	}
 
-	[kEnsureUAShadowTree]?(this: Slots<HTMLMeterElement>): void {
+	_ensureUAShadowTree?(this: Slots<HTMLMeterElement>): void {
 		const slots = this;
 		if (slots.extra.upgraded) {
 			syncUAShadowTree(ownerOf(this));
@@ -20933,7 +20592,7 @@ class HTMLMeterElement extends HTMLElement {
 		syncUAShadowTree(ownerOf(this));
 	}
 
-	[kSyncUAShadowTree]?(this: Slots<HTMLMeterElement>): void {
+	_syncUAShadowTree?(this: Slots<HTMLMeterElement>): void {
 		const slots = this;
 		if (!slots.extra.upgraded) {
 			return;
@@ -20949,14 +20608,14 @@ class HTMLMeterElement extends HTMLElement {
 		}
 	}
 
-	override [kAttributeChangeSteps](
+	override _attributeChangeSteps(
 		this: Slots<HTMLMeterElement>,
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		superStep(HTMLMeterElement, kAttributeChangeSteps).call(
+		superStep(HTMLMeterElement, "_attributeChangeSteps").call(
 			this,
 			localName,
 			oldValue,
@@ -21087,8 +20746,6 @@ class HTMLOptGroupElement extends HTMLElement {
 	declare label: string;
 }
 
-const kSelectedness = Symbol("an option's selectedness");
-
 interface HTMLOptionElementExtra extends NodeExtra {
 	selectednessValue: boolean;
 	optionDirty: boolean;
@@ -21096,8 +20753,7 @@ interface HTMLOptionElementExtra extends NodeExtra {
 
 interface HTMLOptionElementSlots extends HTMLElementSlots {
 	extra: HTMLOptionElementExtra;
-	[kSelectedness]: Step<HTMLOptionElement[typeof kSelectedness]>;
-	[kSelectedness]: Step<HTMLOptionElement[typeof kSelectedness]>;
+	_selectedness: Step<HTMLOptionElement["_selectedness"]>;
 }
 
 interface HTMLOptionElement {
@@ -21160,21 +20816,21 @@ class HTMLOptionElement extends HTMLElement {
 		if (select !== null) {
 			askForAReset(select);
 		}
-		return _(this)[kSelectedness];
+		return _(this)._selectedness;
 	}
 
 	set selected(value: boolean) {
 		const slots = _(this);
 		slots.extra.optionDirty = true;
-		slots[kSelectedness] = Boolean(value);
+		slots._selectedness = Boolean(value);
 		const select = getSelect(this);
 		if (select === null) {
 			return;
 		}
-		if (slots[kSelectedness] && !hasAttributeOf(select, "multiple")) {
+		if (slots._selectedness && !hasAttributeOf(select, "multiple")) {
 			for (const option of getOptions(select)) {
 				if (option !== this) {
-					_(option)[kSelectedness] = false;
+					_(option)._selectedness = false;
 				}
 			}
 		}
@@ -21185,13 +20841,13 @@ class HTMLOptionElement extends HTMLElement {
 	// Selectedness is not an attribute and not part of the tree. The one
 	// live list that depends on it is the select's `selectedOptions`, which
 	// is notified here.
-	get [kSelectedness](): boolean {
+	get _selectedness(): boolean {
 		return (this as unknown as Slots<
 			HTMLOptionElement
 		>).extra.selectednessValue;
 	}
 
-	set [kSelectedness](value: boolean) {
+	set _selectedness(value: boolean) {
 		const slots = this as unknown as Slots<HTMLOptionElement>;
 		if (slots.extra.selectednessValue === value) {
 			return;
@@ -21200,18 +20856,18 @@ class HTMLOptionElement extends HTMLElement {
 		const select = getSelect(ownerOf(slots));
 		const selected = select === null ? null : _(select).extra.selectedOptions;
 		if (selected !== null) {
-			_(selected)[kSync]();
+			_(selected)._sync();
 		}
 	}
 
-	override [kAttributeChangeSteps](
+	override _attributeChangeSteps(
 		this: Slots<HTMLOptionElement>,
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		superStep(HTMLOptionElement, kAttributeChangeSteps).call(
+		superStep(HTMLOptionElement, "_attributeChangeSteps").call(
 			this,
 			localName,
 			oldValue,
@@ -21222,7 +20878,7 @@ class HTMLOptionElement extends HTMLElement {
 		if (
 			namespace === null && localName === "selected" && !slots.extra.optionDirty
 		) {
-			slots[kSelectedness] = value !== null;
+			slots._selectedness = value !== null;
 		}
 		const select = getSelect(ownerOf(this));
 		if (select !== null) {
@@ -21230,11 +20886,11 @@ class HTMLOptionElement extends HTMLElement {
 		}
 	}
 
-	override [kCloningSteps](this: Slots<HTMLOptionElement>, copy: Node): void {
+	override _cloningSteps(this: Slots<HTMLOptionElement>, copy: Node): void {
 		const clone = copy as HTMLOptionElement;
 		const slots = this;
 		const cloneSlots = _(clone);
-		cloneSlots[kSelectedness] = slots[kSelectedness];
+		cloneSlots._selectedness = slots._selectedness;
 		cloneSlots.extra.optionDirty = slots.extra.optionDirty;
 	}
 }
@@ -21378,7 +21034,7 @@ interface HTMLOutputElementExtra extends NodeExtra {
 
 interface HTMLOutputElementSlots extends HTMLElementSlots {
 	extra: HTMLOutputElementExtra;
-	[kResetControl]: Step<HTMLOutputElement[typeof kResetControl]>;
+	_resetControl: Step<HTMLOutputElement["_resetControl"]>;
 }
 
 interface HTMLOutputElement {
@@ -21461,7 +21117,7 @@ class HTMLOutputElement extends HTMLElement {
 		setCustomValidity(this, error);
 	}
 
-	[kResetControl]?(this: Slots<HTMLOutputElement>): void {
+	_resetControl?(this: Slots<HTMLOutputElement>): void {
 		const slots = this;
 		if (slots.extra.dirty) {
 			setDescendantText(ownerOf(this), slots.extra.stored);
@@ -21500,8 +21156,8 @@ interface HTMLProgressElementExtra extends NodeExtra {
 
 interface HTMLProgressElementSlots extends HTMLElementSlots {
 	extra: HTMLProgressElementExtra;
-	[kEnsureUAShadowTree]: Step<HTMLProgressElement[typeof kEnsureUAShadowTree]>;
-	[kSyncUAShadowTree]: Step<HTMLProgressElement[typeof kSyncUAShadowTree]>;
+	_ensureUAShadowTree: Step<HTMLProgressElement["_ensureUAShadowTree"]>;
+	_syncUAShadowTree: Step<HTMLProgressElement["_syncUAShadowTree"]>;
 }
 
 interface HTMLProgressElement {
@@ -21545,7 +21201,7 @@ class HTMLProgressElement extends HTMLElement {
 		return getLabels(this);
 	}
 
-	[kEnsureUAShadowTree]?(this: Slots<HTMLProgressElement>): void {
+	_ensureUAShadowTree?(this: Slots<HTMLProgressElement>): void {
 		const slots = this;
 		if (slots.extra.upgraded) {
 			syncUAShadowTree(ownerOf(this));
@@ -21560,7 +21216,7 @@ class HTMLProgressElement extends HTMLElement {
 		syncUAShadowTree(ownerOf(this));
 	}
 
-	[kSyncUAShadowTree]?(this: Slots<HTMLProgressElement>): void {
+	_syncUAShadowTree?(this: Slots<HTMLProgressElement>): void {
 		const slots = this;
 		if (!slots.extra.upgraded) {
 			return;
@@ -21569,14 +21225,14 @@ class HTMLProgressElement extends HTMLElement {
 		setGaugeFill(slots.extra.bar!, position < 0 ? null : position);
 	}
 
-	override [kAttributeChangeSteps](
+	override _attributeChangeSteps(
 		this: Slots<HTMLProgressElement>,
 		localName: string,
 		oldValue: string | null,
 		value: string | null,
 		namespace: string | null,
 	): void {
-		superStep(HTMLProgressElement, kAttributeChangeSteps).call(
+		superStep(HTMLProgressElement, "_attributeChangeSteps").call(
 			this,
 			localName,
 			oldValue,
@@ -21664,11 +21320,11 @@ export interface HTMLSelectElementExtra extends NodeExtra {
 
 export interface HTMLSelectElementSlots extends HTMLElementSlots {
 	extra: HTMLSelectElementExtra;
-	[kUAValueText]: Step<HTMLSelectElement[typeof kUAValueText]>;
-	[kUASelection]: Step<HTMLSelectElement[typeof kUASelection]>;
-	[kResetControl]: Step<HTMLSelectElement[typeof kResetControl]>;
-	[kEnsureUAShadowTree]: Step<HTMLSelectElement[typeof kEnsureUAShadowTree]>;
-	[kSyncUAShadowTree]: Step<HTMLSelectElement[typeof kSyncUAShadowTree]>;
+	_uaValueText: Step<HTMLSelectElement["_uaValueText"]>;
+	_uaSelection: Step<HTMLSelectElement["_uaSelection"]>;
+	_resetControl: Step<HTMLSelectElement["_resetControl"]>;
+	_ensureUAShadowTree: Step<HTMLSelectElement["_ensureUAShadowTree"]>;
+	_syncUAShadowTree: Step<HTMLSelectElement["_syncUAShadowTree"]>;
 }
 
 export interface HTMLSelectElement {
@@ -21851,7 +21507,7 @@ export class HTMLSelectElement extends HTMLElement {
 		if (selected === null) {
 			selected = live(
 				new HTMLCollection(() =>
-					getOptions(this).filter((option) => _(option)[kSelectedness]), this),
+					getOptions(this).filter((option) => _(option)._selectedness), this),
 			) as HTMLCollectionOf<HTMLOptionElement>;
 			slots.extra.selectedOptions = selected;
 		}
@@ -21861,18 +21517,18 @@ export class HTMLSelectElement extends HTMLElement {
 
 	get selectedIndex(): number {
 		askForAReset(this);
-		return getOptions(this).findIndex((option) => _(option)[kSelectedness]);
+		return getOptions(this).findIndex((option) => _(option)._selectedness);
 	}
 
 	set selectedIndex(value: number) {
 		const index = toLong(value);
 		const options = getOptions(this);
 		for (let at = 0; at < options.length; at++) {
-			_(options[at])[kSelectedness] = false;
+			_(options[at])._selectedness = false;
 			_(options[at]).extra.optionDirty = true;
 		}
 		if (index >= 0 && index < options.length) {
-			_(options[index])[kSelectedness] = true;
+			_(options[index])._selectedness = true;
 		}
 		syncUAShadowTree(this);
 	}
@@ -21880,7 +21536,7 @@ export class HTMLSelectElement extends HTMLElement {
 	get value(): string {
 		askForAReset(this);
 		for (const option of getOptions(this)) {
-			if (_(option)[kSelectedness]) {
+			if (_(option)._selectedness) {
 				return option.value;
 			}
 		}
@@ -21893,11 +21549,11 @@ export class HTMLSelectElement extends HTMLElement {
 		let found = false;
 		for (const option of options) {
 			if (!found && option.value === wanted) {
-				_(option)[kSelectedness] = true;
+				_(option)._selectedness = true;
 				_(option).extra.optionDirty = true;
 				found = true;
 			} else {
-				_(option)[kSelectedness] = false;
+				_(option)._selectedness = false;
 			}
 		}
 		syncUAShadowTree(this);
@@ -21915,7 +21571,7 @@ export class HTMLSelectElement extends HTMLElement {
 		return getValidationMessage(this);
 	}
 
-	get [kUAValueText](): globalThis.Text | null {
+	get _uaValueText(): globalThis.Text | null {
 		return (this as unknown as Slots<HTMLSelectElement>).extra.valueText;
 	}
 
@@ -21982,20 +21638,20 @@ export class HTMLSelectElement extends HTMLElement {
 	// A select's selection record is always collapsed at the label's start, so
 	// the caret placement path can treat a select like a text control. The
 	// caret is the focus of the selection.
-	[kUASelection]?(): {start: number; end: number; direction: string} {
+	_uaSelection?(): {start: number; end: number; direction: string} {
 		return {start: 0, end: 0, direction: "none"};
 	}
 
-	[kResetControl]?(this: Slots<HTMLSelectElement>): void {
+	_resetControl?(this: Slots<HTMLSelectElement>): void {
 		for (const option of getOptions(ownerOf(this))) {
-			_(option)[kSelectedness] = hasAttributeOf(option, "selected");
+			_(option)._selectedness = hasAttributeOf(option, "selected");
 			_(option).extra.optionDirty = false;
 		}
 		askForAReset(ownerOf(this));
 		syncUAShadowTree(ownerOf(this));
 	}
 
-	[kEnsureUAShadowTree]?(this: Slots<HTMLSelectElement>): void {
+	_ensureUAShadowTree?(this: Slots<HTMLSelectElement>): void {
 		const slots = this;
 		if (slots.extra.upgraded) {
 			// Removed, the document's observer let go of it.
@@ -22033,11 +21689,11 @@ export class HTMLSelectElement extends HTMLElement {
 	// The dropdown is transient interaction state. Leaving the tree ends the
 	// interaction, the same as losing focus does. Removal also causes a focus
 	// loss, since focus cannot rest on an element off the tree.
-	override [kRemovingSteps](
+	override _removingSteps(
 		this: Slots<HTMLSelectElement>,
 		oldParent: Node,
 	): void {
-		superStep(HTMLSelectElement, kRemovingSteps).call(this, oldParent);
+		superStep(HTMLSelectElement, "_removingSteps").call(this, oldParent);
 		const slots = this;
 		if (slots.extra.pickerHighlight !== null) {
 			slots.extra.pickerHighlight = null;
@@ -22045,7 +21701,7 @@ export class HTMLSelectElement extends HTMLElement {
 		}
 	}
 
-	[kSyncUAShadowTree]?(this: Slots<HTMLSelectElement>): void {
+	_syncUAShadowTree?(this: Slots<HTMLSelectElement>): void {
 		const slots = this;
 		const picker = slots.extra.picker;
 		if (!slots.extra.upgraded || picker === null) {
@@ -22316,7 +21972,7 @@ function getDisplaySize(select: HTMLSelectElement): number {
 // more than one option selected keeps only the last.
 function askForAReset(select: HTMLSelectElement): void {
 	const options = getOptions(select);
-	const selected = options.filter((option) => _(option)[kSelectedness]);
+	const selected = options.filter((option) => _(option)._selectedness);
 	if (
 		!hasAttributeOf(select, "multiple") &&
 		getDisplaySize(select) === 1 &&
@@ -22324,13 +21980,13 @@ function askForAReset(select: HTMLSelectElement): void {
 	) {
 		const first = options.find((option) => !isActuallyDisabled(option));
 		if (first !== undefined) {
-			_(first)[kSelectedness] = true;
+			_(first)._selectedness = true;
 		}
 		return;
 	}
 	if (selected.length >= 2 && !hasAttributeOf(select, "multiple")) {
 		for (let index = 0; index < selected.length - 1; index++) {
-			_(selected[index])[kSelectedness] = false;
+			_(selected[index])._selectedness = false;
 		}
 	}
 }
@@ -22372,18 +22028,18 @@ export class HTMLStyleElement extends HTMLElement {
 		void _value;
 	}
 
-	override [kInsertionSteps](this: Slots<HTMLStyleElement>): void {
-		superStep(HTMLStyleElement, kInsertionSteps).call(this);
+	override _insertionSteps(this: Slots<HTMLStyleElement>): void {
+		superStep(HTMLStyleElement, "_insertionSteps").call(this);
 		const slots = this;
 		_(slots.document).extra.styleElements =
 			_(slots.document).extra.styleElements + 1;
 	}
 
-	override [kRemovingSteps](
+	override _removingSteps(
 		this: Slots<HTMLStyleElement>,
 		oldParent: Node,
 	): void {
-		superStep(HTMLStyleElement, kRemovingSteps).call(this, oldParent);
+		superStep(HTMLStyleElement, "_removingSteps").call(this, oldParent);
 		const slots = this;
 		_(slots.document).extra.styleElements =
 			_(slots.document).extra.styleElements - 1;
@@ -22945,15 +22601,15 @@ export interface HTMLTextAreaElementExtra extends NodeExtra {
 
 export interface HTMLTextAreaElementSlots extends HTMLElementSlots {
 	extra: HTMLTextAreaElementExtra;
-	[kUAValue]: Step<HTMLTextAreaElement[typeof kUAValue]>;
-	[kUAValueText]: Step<HTMLTextAreaElement[typeof kUAValueText]>;
-	[kSetUAValue]: Step<HTMLTextAreaElement[typeof kSetUAValue]>;
-	[kUASelection]: Step<HTMLTextAreaElement[typeof kUASelection]>;
-	[kSetUASelection]: Step<HTMLTextAreaElement[typeof kSetUASelection]>;
-	[kResetControl]: Step<HTMLTextAreaElement[typeof kResetControl]>;
-	[kUASelectionRange]: Step<HTMLTextAreaElement[typeof kUASelectionRange]>;
-	[kEnsureUAShadowTree]: Step<HTMLTextAreaElement[typeof kEnsureUAShadowTree]>;
-	[kSyncUAShadowTree]: Step<HTMLTextAreaElement[typeof kSyncUAShadowTree]>;
+	_uaValue: Step<HTMLTextAreaElement["_uaValue"]>;
+	_uaValueText: Step<HTMLTextAreaElement["_uaValueText"]>;
+	_setUAValue: Step<HTMLTextAreaElement["_setUAValue"]>;
+	_uaSelection: Step<HTMLTextAreaElement["_uaSelection"]>;
+	_setUASelection: Step<HTMLTextAreaElement["_setUASelection"]>;
+	_resetControl: Step<HTMLTextAreaElement["_resetControl"]>;
+	_uaSelectionRange: Step<HTMLTextAreaElement["_uaSelectionRange"]>;
+	_ensureUAShadowTree: Step<HTMLTextAreaElement["_ensureUAShadowTree"]>;
+	_syncUAShadowTree: Step<HTMLTextAreaElement["_syncUAShadowTree"]>;
 }
 
 export interface HTMLTextAreaElement {
@@ -23021,7 +22677,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 				slots.extra.goalColumn = null;
 			}
 
-			const value = slots[kUAValue];
+			const value = slots._uaValue;
 			const {start, end, direction} = getSelectionRecord(this)!;
 			const backward = direction === "backward";
 			const caret = backward ? start : end;
@@ -23114,13 +22770,13 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	get value(): string {
-		return _(this)[kUAValue];
+		return _(this)._uaValue;
 	}
 
 	set value(value: string) {
 		editedSinceChange.delete(this);
 		const slots = _(this);
-		const previous = slots[kUAValue];
+		const previous = slots._uaValue;
 		slots.extra.value = normalizeNewlines(value === null ? "" : String(value));
 		slots.extra.dirty = true;
 		if (previous !== slots.extra.value) {
@@ -23187,14 +22843,14 @@ export class HTMLTextAreaElement extends HTMLElement {
 		return getValidationMessage(this);
 	}
 
-	get [kUAValue](): string {
+	get _uaValue(): string {
 		const slots = this as unknown as Slots<HTMLTextAreaElement>;
 		return slots.extra.dirty
 			? slots.extra.value
 			: normalizeNewlines(getDescendantText(ownerOf(slots)));
 	}
 
-	get [kUAValueText](): globalThis.Text | null {
+	get _uaValueText(): globalThis.Text | null {
 		return (this as unknown as Slots<HTMLTextAreaElement>).extra.valueText;
 	}
 
@@ -23225,7 +22881,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 		if (arguments.length < 2) {
 			throw new TypeError("setSelectionRange needs a start and an end");
 		}
-		_(this)[kSetUASelection]!(start ?? 0, end ?? 0, direction);
+		_(this)._setUASelection!(start ?? 0, end ?? 0, direction);
 	}
 
 	setRangeText(replacement: string): void;
@@ -23265,7 +22921,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 	// A user edit: sets the raw value and the dirty value flag, and leaves
 	// the selection to the edit that made it.
-	[kSetUAValue]?(this: Slots<HTMLTextAreaElement>, value: string): void {
+	_setUAValue?(this: Slots<HTMLTextAreaElement>, value: string): void {
 		const slots = this;
 		slots.extra.value = normalizeNewlines(value);
 		slots.extra.dirty = true;
@@ -23273,7 +22929,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	// A textarea's selection is always its own. See the input's version.
-	[kUASelection]?(this: Slots<HTMLTextAreaElement>): {
+	_uaSelection?(this: Slots<HTMLTextAreaElement>): {
 		start: number;
 		end: number;
 		direction: string;
@@ -23286,7 +22942,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 		};
 	}
 
-	[kSetUASelection]?(
+	_setUASelection?(
 		this: Slots<HTMLTextAreaElement>,
 		start: number,
 		end: number,
@@ -23298,7 +22954,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 			toUnsignedLong(start),
 			toUnsignedLong(end),
 			direction,
-			slots[kUAValue].length,
+			slots._uaValue.length,
 			(selection) => {
 				slots.extra.selectionStart = selection[0];
 				slots.extra.selectionEnd = selection[1];
@@ -23307,7 +22963,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 		);
 	}
 
-	override [kCloningSteps](this: Slots<HTMLTextAreaElement>, copy: Node): void {
+	override _cloningSteps(this: Slots<HTMLTextAreaElement>, copy: Node): void {
 		const clone = copy as HTMLTextAreaElement;
 		const slots = this;
 		const cloneSlots = _(clone);
@@ -23315,20 +22971,20 @@ export class HTMLTextAreaElement extends HTMLElement {
 		cloneSlots.extra.dirty = slots.extra.dirty;
 	}
 
-	[kResetControl]?(this: Slots<HTMLTextAreaElement>): void {
+	_resetControl?(this: Slots<HTMLTextAreaElement>): void {
 		const slots = this;
 		slots.extra.value = "";
 		slots.extra.dirty = false;
 		syncUAShadowTree(ownerOf(this));
 	}
 
-	[kUASelectionRange]?(
+	_uaSelectionRange?(
 		this: Slots<HTMLTextAreaElement>,
 	): globalThis.Range | null {
 		return getTextSelectionRange(ownerOf(this), this.extra.valueText);
 	}
 
-	[kEnsureUAShadowTree]?(this: Slots<HTMLTextAreaElement>): void {
+	_ensureUAShadowTree?(this: Slots<HTMLTextAreaElement>): void {
 		const slots = this;
 		if (slots.extra.upgraded) {
 			syncUAShadowTree(ownerOf(this));
@@ -23359,13 +23015,13 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 	// Placeholder visibility is real CSS (an inline display:none), not
 	// painter logic, so the normal pipeline never sees a hidden placeholder.
-	[kSyncUAShadowTree]?(this: Slots<HTMLTextAreaElement>): void {
+	_syncUAShadowTree?(this: Slots<HTMLTextAreaElement>): void {
 		const slots = this;
 		if (!slots.extra.upgraded) {
 			return;
 		}
 		const attached = getAttachedDocument(ownerOf(this))!;
-		const value = slots[kUAValue];
+		const value = slots._uaValue;
 		const placeholder = attributeOf(ownerOf(this), "placeholder") ?? "";
 		let changed = false;
 		if (slots.extra.valueText!.data !== value) {
@@ -24958,11 +24614,9 @@ function noValidityFlags(): ValidityFlags {
 	};
 }
 
-const kValidityFlags = Symbol("validity flags");
-
 interface ValidityStateSlots {
 	flags: () => ValidityFlags;
-	[kValidityFlags]: Step<ValidityState[typeof kValidityFlags]>;
+	_validityFlags: Step<ValidityState["_validityFlags"]>;
 }
 
 interface ValidityState {
@@ -24993,7 +24647,7 @@ class ValidityState {
 		return !VALIDITY_FLAG_NAMES.some((name) => flags[name]);
 	}
 
-	get [kValidityFlags](): ValidityFlags {
+	get _validityFlags(): ValidityFlags {
 		return (this as unknown as Slots<ValidityState>).flags();
 	}
 }
@@ -25003,7 +24657,7 @@ declareSealedRoot(ValidityState);
 for (const name of VALIDITY_FLAG_NAMES) {
 	Object.defineProperty(ValidityState.prototype, name, {
 		get(this: ValidityState): boolean {
-			return _(this)[kValidityFlags][name];
+			return _(this)._validityFlags[name];
 		},
 		enumerable: true,
 		configurable: true,
@@ -25899,7 +25553,7 @@ function collectSelectValidity(
 		return;
 	}
 	const options = getOptions(select);
-	const selected = options.filter((option) => _(option)[kSelectedness]);
+	const selected = options.filter((option) => _(option)._selectedness);
 	if (selected.length === 0) {
 		flags.valueMissing = true;
 		return;
@@ -26606,10 +26260,6 @@ interface ContentBox {
 	left: number;
 }
 
-// The observers' measuring hook, an internal step, which author code
-// must never see on an observer it holds.
-const kMeasure = Symbol("measure");
-
 // Keyed by document, not by a registry object, because the document is
 // what an observer can reach from the target it was given. That is why
 // `new ResizeObserver(callback)` needs only its callback.
@@ -26661,7 +26311,7 @@ interface ObserverSlots<TState, TEntry, TOptions> {
 	>;
 	// One entry per document the observer has a target in.
 	homes: Set<object>;
-	[kMeasure](
+	_measure(
 		target: globalThis.Element,
 		last: TState | null,
 		layout: Layout,
@@ -26737,7 +26387,7 @@ function checkObserver<TState, TEntry, TOptions>(
 ): void {
 	const entries: TEntry[] = [];
 	for (const [target, observation] of _(observer).targets) {
-		const result = _(observer)[kMeasure](
+		const result = _(observer)._measure(
 			target,
 			observation.last,
 			layout,
@@ -26793,7 +26443,7 @@ interface ResizeObserverSlots
 		ResizeObserverEntry,
 		ResizeObserverOptions
 	> {
-	[kMeasure]: Step<ResizeObserver[typeof kMeasure]>;
+	_measure: Step<ResizeObserver["_measure"]>;
 }
 
 interface ResizeObserver
@@ -26837,7 +26487,7 @@ class ResizeObserver {
 		disconnectObserver(this as unknown as AnyObserver);
 	}
 
-	[kMeasure](
+	_measure(
 		target: globalThis.Element,
 		last: ResizeSize | null,
 		layout: Layout,
@@ -26980,7 +26630,7 @@ function checkObserverMargin(margin: string, what: string): string {
 interface IntersectionObserverSlots
 	extends ObserverSlots<number, IntersectionObserverEntry, void> {
 	intersectionRoot: globalThis.Element | globalThis.Document | null;
-	[kMeasure]: Step<IntersectionObserver[typeof kMeasure]>;
+	_measure: Step<IntersectionObserver["_measure"]>;
 }
 
 interface IntersectionObserver {
@@ -27041,7 +26691,7 @@ class IntersectionObserver {
 		return [];
 	}
 
-	[kMeasure](
+	_measure(
 		this: Slots<IntersectionObserver>,
 		target: globalThis.Element,
 		last: number | null,
@@ -28682,7 +28332,7 @@ export class Document extends Node implements globalThis.Document {
 
 	// A document's parent in the event path is its window, for every event
 	// but load.
-	override [kGetTheParent](
+	override _getTheParent(
 		this: Slots<Document>,
 		event: Event,
 	): EventTarget | null {
@@ -28692,7 +28342,7 @@ export class Document extends Node implements globalThis.Document {
 		return this.extra.defaultView as EventTarget | null;
 	}
 
-	override [kCloneSingle](this: Slots<Document>, _document: Document): Node {
+	override _cloneSingle(this: Slots<Document>, _document: Document): Node {
 		const copy = new Document();
 		copyDocumentState(ownerOf(this), copy);
 		return copy;
@@ -28831,9 +28481,9 @@ function isAllNamed(element: Element, name: string): boolean {
 // also falsy and reports its typeof as "undefined", which no JavaScript
 // object can do, so here it is an ordinary collection.
 interface HTMLAllCollectionSlots extends LiveListSlots {
-	[kListMembers]: Step<HTMLAllCollection[typeof kListMembers]>;
-	[kListNames]: Step<HTMLAllCollection[typeof kListNames]>;
-	[kAttributeSync]: Step<HTMLAllCollection[typeof kAttributeSync]>;
+	_listMembers: Step<HTMLAllCollection["_listMembers"]>;
+	_listNames: Step<HTMLAllCollection["_listNames"]>;
+	_attributeSync: Step<HTMLAllCollection["_attributeSync"]>;
 }
 
 interface HTMLAllCollection extends LiveList {
@@ -28900,11 +28550,11 @@ class HTMLAllCollection {
 		);
 	}
 
-	[kListMembers](this: Slots<HTMLAllCollection>): Node[] {
+	_listMembers(this: Slots<HTMLAllCollection>): Node[] {
 		return getDescendantElements(this.owner as Document, []);
 	}
 
-	[kListNames](items: Node[]): Map<string, Node> {
+	_listNames(items: Node[]): Map<string, Node> {
 		const named = new Map<string, Node>();
 		for (const item of items) {
 			const element = item as Element;
@@ -28926,13 +28576,13 @@ class HTMLAllCollection {
 	}
 
 	// An id or name moves the named properties without moving a member.
-	[kAttributeSync](
+	_attributeSync(
 		this: Slots<HTMLAllCollection>,
 		element: Element,
 		localName: string,
 	): void {
 		if (localName !== "id" && localName !== "name") {
-			LiveList.prototype[kAttributeSync].call(this, element, localName);
+			LiveList.prototype._attributeSync.call(this, element, localName);
 			return;
 		}
 		if (this.exact) {
@@ -29109,7 +28759,7 @@ interface XMLDocument {
 }
 
 class XMLDocument extends Document {
-	override [kCloneSingle](this: Slots<XMLDocument>, _document: Document): Node {
+	override _cloneSingle(this: Slots<XMLDocument>, _document: Document): Node {
 		const copy = new XMLDocument();
 		copyDocumentState(ownerOf(this), copy);
 		return copy;
@@ -30062,12 +29712,12 @@ function cloneNode(
 ): Node {
 	const nodeSlots = _(node);
 	const target = document ?? nodeSlots.document;
-	const copy = nodeSlots[kCloneSingle](target);
+	const copy = nodeSlots._cloneSingle(target);
 	const copySlots = _(copy);
 	if (nodeTypeOf(copy) === DOCUMENT_NODE) {
 		copySlots.document = copy as Document;
 	}
-	nodeSlots[kCloningSteps](copy, target, deep);
+	nodeSlots._cloningSteps(copy, target, deep);
 	if (nodeTypeOf(node) === ELEMENT_NODE) {
 		const shadow = _((node as Element)).shadowRoot;
 		if (shadow !== null && _(shadow).extra.clonable) {
@@ -33783,7 +33433,7 @@ export interface TreeWalkerSlots {
 	whatToShow: number;
 	filter: NodeFilterInput;
 	active: {value: boolean};
-	[kState]: Step<TreeWalker[typeof kState]>;
+	_state: Step<TreeWalker["_state"]>;
 }
 
 export interface TreeWalker {
@@ -33824,7 +33474,7 @@ export class TreeWalker implements globalThis.TreeWalker {
 		_(this).current = node as Node;
 	}
 
-	get [kState](): {
+	get _state(): {
 		whatToShow: number;
 		filter: NodeFilterInput;
 		active: {value: boolean};
@@ -33875,7 +33525,7 @@ function walkChildren(walk: TreeWalker, first: boolean): Node | null {
 		? objectOf(_(walkSlots.current).firstChild)
 		: objectOf(_(walkSlots.current).lastChild);
 	while (node !== null) {
-		const result = filterNode(walkSlots[kState], node);
+		const result = filterNode(walkSlots._state, node);
 		if (result === FILTER_ACCEPT) {
 			walkSlots.current = node;
 			return node;
@@ -33925,7 +33575,7 @@ function walkSiblings(walk: TreeWalker, next: boolean): Node | null {
 		let sibling = next ? objectOf(_(node).next) : objectOf(_(node).previous);
 		while (sibling !== null) {
 			node = sibling;
-			const result = filterNode(walkSlots[kState], node);
+			const result = filterNode(walkSlots._state, node);
 			if (result === FILTER_ACCEPT) {
 				walkSlots.current = node;
 				return node;
@@ -33942,7 +33592,7 @@ function walkSiblings(walk: TreeWalker, next: boolean): Node | null {
 			return null;
 		}
 		node = parent;
-		if (filterNode(walkSlots[kState], node) === FILTER_ACCEPT) {
+		if (filterNode(walkSlots._state, node) === FILTER_ACCEPT) {
 			return null;
 		}
 	}
@@ -33953,9 +33603,7 @@ function walkParent(walk: TreeWalker): Node | null {
 	let node: Node | null = walkSlots.current;
 	while (node !== null && node !== walkSlots.root) {
 		node = objectOf(_(node).parent);
-		if (
-			node !== null && filterNode(walkSlots[kState], node) === FILTER_ACCEPT
-		) {
+		if (node !== null && filterNode(walkSlots._state, node) === FILTER_ACCEPT) {
 			walkSlots.current = node;
 			return node;
 		}
@@ -33977,7 +33625,7 @@ function walkNext(walk: TreeWalker): Node | null {
 				break;
 			}
 			node = child;
-			result = filterNode(walkSlots[kState], node);
+			result = filterNode(walkSlots._state, node);
 			if (result === FILTER_ACCEPT) {
 				walkSlots.current = node;
 				return node;
@@ -33999,7 +33647,7 @@ function walkNext(walk: TreeWalker): Node | null {
 			return null;
 		}
 		node = sibling;
-		result = filterNode(walkSlots[kState], node);
+		result = filterNode(walkSlots._state, node);
 		if (result === FILTER_ACCEPT) {
 			walkSlots.current = node;
 			return node;
@@ -34014,7 +33662,7 @@ function walkPrevious(walk: TreeWalker): Node | null {
 		let sibling = objectOf(_(node).previous);
 		while (sibling !== null) {
 			node = sibling;
-			let result = filterNode(walkSlots[kState], node);
+			let result = filterNode(walkSlots._state, node);
 			for (;;) {
 				if (result === FILTER_REJECT) {
 					break;
@@ -34024,7 +33672,7 @@ function walkPrevious(walk: TreeWalker): Node | null {
 					break;
 				}
 				node = child;
-				result = filterNode(walkSlots[kState], node);
+				result = filterNode(walkSlots._state, node);
 			}
 			if (result === FILTER_ACCEPT) {
 				walkSlots.current = node;
@@ -34037,7 +33685,7 @@ function walkPrevious(walk: TreeWalker): Node | null {
 			return null;
 		}
 		node = parent;
-		if (filterNode(walkSlots[kState], node) === FILTER_ACCEPT) {
+		if (filterNode(walkSlots._state, node) === FILTER_ACCEPT) {
 			walkSlots.current = node;
 			return node;
 		}
@@ -34789,14 +34437,14 @@ function createTreeAdapter(document: Document | null) {
 		},
 		getAttrList(element: Element): ParseAttribute[] {
 			return _(element).attributeList.map((attribute) => ({
-				name: attribute[kQualifiedName],
+				name: attribute._qualifiedName,
 				value: attribute.extra.value,
 				namespace: attribute.extra.namespace ?? undefined,
 				prefix: attribute.extra.prefix ?? undefined,
 			}));
 		},
 		getTagName(element: Element): string {
-			return _(element)[kQualifiedName];
+			return _(element)._qualifiedName;
 		},
 		getNamespaceURI(element: Element): string {
 			return _(element).namespace as string;
@@ -35785,7 +35433,7 @@ function getAttributeSerializedName(attribute: Attr): string {
 	if (namespace === XLINK_NAMESPACE) {
 		return `xlink:${attributeSlots.extra.localName}`;
 	}
-	return attributeSlots[kQualifiedName];
+	return attributeSlots._qualifiedName;
 }
 
 // A shadow root is written out as the template the parser reads back,
@@ -35867,7 +35515,7 @@ function serializeNode(
 				namespace === MATHML_NAMESPACE ||
 				namespace === SVG_NAMESPACE
 					? _(element).localName
-					: _(element)[kQualifiedName];
+					: _(element)._qualifiedName;
 			let html = `<${tagName}`;
 			for (const attribute of _(element).attributeList) {
 				html += ` ${getAttributeSerializedName(objectOf(attribute))}="${escapeAttribute(attribute.extra.value)}"`;
@@ -39667,7 +39315,7 @@ export function setAttributeOf(
 	}
 	const string = value === null ? "null" : String(value);
 	for (const attribute of slots.attributeList) {
-		if (attribute[kQualifiedName] === name) {
+		if (attribute._qualifiedName === name) {
 			changeAttribute(objectOf(attribute), string);
 			return;
 		}

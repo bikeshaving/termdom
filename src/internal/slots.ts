@@ -10,8 +10,8 @@
  * through `_()`.
  *
  * The record's prototype mirrors the object's class chain. The internal
- * steps and defaults a class defines under symbol keys move there from
- * the public prototype, and run with the record as `this`, so a step
+ * steps and defaults a class defines under names that start with "_"
+ * move there from the public prototype, and run with the record as `this`, so a step
  * reads its own slots without a lookup. `ownerOf()` gives it the object.
  *
  * A family, such as every element, makes its records one way instead:
@@ -92,17 +92,11 @@ class Slot extends Stamp {
 	}
 }
 
-const WELL_KNOWN_SYMBOLS = new Set<symbol>(
-	Object.getOwnPropertyNames(Symbol)
-		.map((name) => (Symbol as unknown as Record<string, unknown>)[name])
-		.filter((value): value is symbol => typeof value === "symbol"),
-);
-
 const hiddenPrototypes = new Map<Constructor, object>();
 const roots = new Map<Constructor, Constructor>();
 const superSteps = new Map<
 	Constructor,
-	Map<symbol, (this: object, ...args: unknown[]) => unknown>
+	Map<string, (this: object, ...args: unknown[]) => unknown>
 >();
 const recordTypes = new Map<Constructor, new () => SlotRecord>();
 
@@ -114,7 +108,7 @@ interface Family {
 		steps: object,
 		extra: object | null,
 	) => SlotRecord;
-	dispatched: Set<symbol>;
+	dispatched: Set<string>;
 }
 
 interface FamilyPlan {
@@ -451,7 +445,7 @@ function getFamily(familyRoot: Constructor, root: Constructor): Family {
 // A step a class below the family's root defines is found through the
 // record's table, since the record's prototype is the family's.
 function addDispatchers(family: Family, hidden: object): void {
-	for (const key of Object.getOwnPropertySymbols(hidden)) {
+	for (const key of internalKeys(hidden)) {
 		if (family.dispatched.has(key)) {
 			continue;
 		}
@@ -471,7 +465,7 @@ function addDispatchers(family: Family, hidden: object): void {
 		} else {
 			Object.defineProperty(family.prototype, key, {
 				value(this: SlotRecord, ...args: unknown[]): unknown {
-					const step = (this[kSteps] as Record<symbol, unknown>)[key] as
+					const step = (this[kSteps] as Record<string, unknown>)[key] as
 						((...stepArgs: unknown[]) => unknown) | undefined;
 					return step === undefined ? undefined : step.apply(this, args);
 				},
@@ -639,7 +633,7 @@ export function isSealed(value: object): boolean {
  */
 export function superStep(
 	type: Constructor,
-	key: symbol,
+	key: string,
 ): (this: object, ...args: unknown[]) => unknown {
 	let steps = superSteps.get(type);
 	if (steps === undefined) {
@@ -659,15 +653,15 @@ export function superStep(
 /** The internal step `key` as `type` defines or inherits it. */
 export function hiddenMember(
 	type: Constructor,
-	key: symbol,
+	key: string,
 ): (this: object, ...args: unknown[]) => unknown {
 	const hidden = hiddenPrototype(type, roots.get(type) ?? rootOf(type) ?? type);
-	const member = (hidden as Record<symbol, unknown>)[key];
+	const member = (hidden as Record<string, unknown>)[key];
 	return member as (this: object, ...args: unknown[]) => unknown;
 }
 
 /**
- * Moves the symbol-keyed members a module added to public prototypes
+ * Moves the internal members a module added to public prototypes
  * after their classes were first constructed. Called once the modules
  * have loaded.
  */
@@ -711,22 +705,21 @@ function hiddenPrototype(type: Constructor, root: Constructor): object {
 	return hidden;
 }
 
-function isMovable(key: symbol): boolean {
-	return !WELL_KNOWN_SYMBOLS.has(key) && Symbol.keyFor(key) === undefined;
+// No Web IDL member's name starts with "_", so none of these is one a
+// page should see.
+function internalKeys(object: object): string[] {
+	return Object.getOwnPropertyNames(object)
+		.filter((key) => key.startsWith("_"));
 }
 
 function hasMovableMembers(prototype: object): boolean {
-	return Object.getOwnPropertySymbols(prototype).some(isMovable);
+	return internalKeys(prototype).length > 0;
 }
 
 function moveMembers(prototype: object, hidden: object): void {
-	for (const key of Object.getOwnPropertySymbols(prototype)) {
-		if (!isMovable(key)) {
-			continue;
-		}
-
+	for (const key of internalKeys(prototype)) {
 		const descriptor = Object.getOwnPropertyDescriptor(prototype, key)!;
 		Object.defineProperty(hidden, key, descriptor);
-		delete (prototype as Record<symbol, unknown>)[key];
+		delete (prototype as Record<string, unknown>)[key];
 	}
 }

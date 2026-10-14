@@ -6,6 +6,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
+import {DOM_INTERFACES} from "../src/generated/domidl.ts";
 import {TermDOM} from "../src/index.ts";
 
 function setup(): {window: any; document: any} {
@@ -211,4 +212,33 @@ test("an Illegal invocation carries no cause", () => {
 	} catch (error) {
 		expect((error as Error).cause).toBe(undefined);
 	}
+});
+
+test("no interface a page can reach shows an internal member", () => {
+	const {window} = setup();
+	const shown: string[] = [];
+	for (const name of Object.getOwnPropertyNames(window)) {
+		const value = window[name];
+		if (typeof value !== "function" || !/^[A-Z]/.test(name)) {
+			continue;
+		}
+		for (const target of [value, value.prototype]) {
+			if (target == null) {
+				continue;
+			}
+			for (const key of Object.getOwnPropertyNames(target)) {
+				if (key.startsWith("_")) {
+					shown.push(`${name}.${key}`);
+				}
+			}
+		}
+	}
+	expect(shown).toEqual([]);
+});
+
+test("no member the specs name starts with an underscore, which internal steps use", () => {
+	const named = Object.entries(DOM_INTERFACES).flatMap(([name, idl]) =>
+		idl.members.map(([key]) => `${name}.${key}`))
+		.filter((member) => member.split(".")[1].startsWith("_"));
+	expect(named).toEqual([]);
 });
