@@ -32126,8 +32126,6 @@ function getSelectionIndex(
 	return last;
 }
 
-// An offset on the seam between two nodes maps to the earlier node's
-// end, which is the same position as the later node's start.
 // An index where one text node ends and the next begins is a point in
 // either. The end of the earlier node is the default; a line start wants
 // the later one.
@@ -33536,8 +33534,7 @@ function walkChildren(walk: TreeWalker, first: boolean): Node | null {
 
 // DOM Standard, "traverse siblings". A walk rooted at a node never
 // visits that node's siblings. Returning one would escape the subtree
-// the walk was scoped to, which is how an empty inline element once
-// measured the width of the sibling after it.
+// the walk was scoped to.
 function walkSiblings(walk: TreeWalker, next: boolean): Node | null {
 	const walkSlots = _(walk);
 	let node = walkSlots.current;
@@ -33671,10 +33668,6 @@ Object.defineProperty(TreeWalker.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// Hover is not a mutation and no attribute records it. The engine
-// writes it here as motion reports arrive, and the `:hover` resolver
-// reads it. Absent means nothing is hovered, because the document has no
-// motion reporting or the pointer left.
 const activeElements = new WeakMap<Document, Element>();
 
 /** Record the element a mouse button is held down on, for `:active`. */
@@ -33713,6 +33706,10 @@ export function isActive(element: Element): boolean {
 	return false;
 }
 
+// Hover is not a mutation and no attribute records it. The engine
+// writes it here as motion reports arrive, and the `:hover` resolver
+// reads it. Absent means nothing is hovered, because the document has no
+// motion reporting or the pointer left.
 const hoveredElements = new WeakMap<Document, Element>();
 
 /**
@@ -34568,9 +34565,10 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 	return true;
 }
 
-// Builds the one document of this realm. It carries the realm's
-// registry. Every document an author builds carries none until a
-// registry claims it, exactly like a document with no browsing context.
+// Parses markup into a document carrying `registry`, which is none unless
+// the caller is making a window's or a frame's document. A document an
+// author builds carries none until a registry claims it, as one with no
+// browsing context does.
 function parseHTMLDocument(
 	html: string,
 	url = "about:blank",
@@ -35773,8 +35771,6 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 	}
 }
 
-// State an attached document accepts only from its engine.
-
 // The lists with a listener, which are the only ones a viewport change
 // has anyone to tell. `matches` reads live, so a list without a listener
 // needs no bookkeeping and is the page's to drop. The resize path is the
@@ -35906,10 +35902,10 @@ export function syncMediaQueries(document: globalThis.Document): void {
 	}
 }
 
-/** What a TermDOM hands the document it draws. */
 /** How pixels reach the terminal, or "none" for not at all. */
 export type GraphicsSetting = "cells" | "none";
 
+/** What a TermDOM hands the document it draws. */
 export interface DocumentEngine {
 	layout: Layout;
 	cascade: Cascade;
@@ -36379,13 +36375,6 @@ export function flushStyle(node: globalThis.Node): boolean {
 }
 
 /**
- * Synchronously settle what a geometry read must see: pending mutations
- * delivered and layout brought up to date. A geometry read needs fresh
- * layout, not fresh pixels. Painting stays with the frame loop, but the
- * drain takes records from the observer callback that would have painted
- * them, so this requests the frame on the caller's behalf.
- */
-/**
  * Scrolls the boxes around an editing host's caret so the caret shows, as
  * a browser does after a key moves it or an edit lands.
  */
@@ -36418,6 +36407,13 @@ export function revealPendingEditingCaret(document: globalThis.Document): void {
 	attachedSlots.extra.layout.revealCaret(node as Node, selection!.focusOffset);
 }
 
+/**
+ * Synchronously settle what a geometry read must see: pending mutations
+ * delivered and layout brought up to date. A geometry read needs fresh
+ * layout, not fresh pixels. Painting stays with the frame loop, but the
+ * drain takes records from the observer callback that would have painted
+ * them, so this requests the frame on the caller's behalf.
+ */
 export function flushLayout(node: globalThis.Node): boolean {
 	const attached = getAttachedDocument(node);
 	if (attached === undefined) {
@@ -36569,7 +36565,7 @@ Object.defineProperty(ClipboardItem.prototype, Symbol.toStringTag, {
 // travels in-band, including across SSH. Terminals without OSC 52 ignore
 // it, and there is no way to detect that, so the promise resolves when
 // the transport has the bytes. readText() queries the same way (OSC 52
-// with `?` as the payload) and resolves with the reply. writeTokenList() and
+// with `?` as the payload) and resolves with the reply. write() and
 // read() are the same two round trips over a ClipboardItem. This is an
 // EventTarget because the interface says so; nothing fires events at it.
 interface ClipboardSlots extends EventTargetSlots {
@@ -36842,7 +36838,7 @@ Object.defineProperty(Permissions.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-// The only one here is Location.ancestorOrigins, which is empty because
+// Only Location.ancestorOrigins makes one, and it is always empty, since
 // a terminal document is not in a frame.
 interface DOMStringListSlots {
 	strings: readonly string[];
@@ -37043,13 +37039,6 @@ function noNavigation(): DOMException {
 		"This DOM displays one document per window and cannot navigate",
 	);
 }
-
-// The window a document is attached to: an EventTarget whose members are the
-// browsing context's, implemented by the engine the document is attached to. A
-// window exists only when attached (a headless document has none), so the
-// members below may expect a mount, and degrade the way the document's own do
-// without one: a viewport of no size, a document scroll at the origin, a query
-// that matches nothing.
 
 // Keyed by the handle requestAnimationFrame returned, so
 // cancelAnimationFrame can cancel. The engine fires them once the frame
@@ -37419,13 +37408,6 @@ function getNamedPropertyValue(
 	return collection;
 }
 
-/**
- * A terminal has one screen and no browsing context, so the window is a
- * plain object rather than a global. It exposes this file's interfaces,
- * the scrolling and sizing the display implements, and the handful of
- * APIs an author reaches for through `window`. The member types are the
- * host's, which is how a caller outside this file sees them.
- */
 // The runtime's clock and random source, which the window's Performance
 // and Crypto read through without handing the runtime's objects out.
 const runtimePerformance = globalThis.performance;
@@ -37780,6 +37762,18 @@ export interface Window {
 	readonly [internals]: WindowSlots;
 }
 
+/**
+ * A terminal has one screen and no browsing context, so the window is a
+ * plain object rather than a global. It exposes this file's interfaces,
+ * the scrolling and sizing the display implements, and the handful of
+ * APIs an author reaches for through `window`. The member types are the
+ * host's, which is how a caller outside this file sees them.
+ *
+ * A window exists only when its document is attached, so its members may
+ * expect a mount, and degrade the way the document's own do without one:
+ * a viewport of no size, a document scroll at the origin, a query that
+ * matches nothing.
+ */
 export class Window extends EventTarget {
 	[index: number]: Window;
 	declare getComputedStyle: (
@@ -38841,9 +38835,6 @@ const platform = {
 	XMLDocument,
 } as const;
 
-// A window starts with its interfaces and the timers any script expects
-// to find. The display fills in the rest (sizing, scrolling, animation
-// frames, the clipboard) as it mounts the document.
 // The runtime's own, as the module found them. installGlobals() puts the
 // window's in their place, and the window's call these.
 // Bound, since a browser's throws when called on anything but its global.
@@ -39009,6 +39000,9 @@ export function clearWindowTimers(window: Window): void {
 	idle?.clear();
 }
 
+// A window starts with its interfaces and the timers any script expects
+// to find. The display fills in the rest (sizing, scrolling, animation
+// frames, the clipboard) as it mounts the document.
 function buildWindow(document: Document): Window {
 	const window = new Window(document) as unknown as Record<string, unknown>;
 	// HTML reports an exception a timer or a microtask lets escape, as it
@@ -39151,11 +39145,6 @@ function startPendingImages(
 	}
 }
 
-/**
- * Parse a document from markup and display it in a window of its own. An
- * XML content type parses as XML, which is what a frame whose src names a
- * .xml, .xhtml or .svg file holds.
- */
 // The classes a window exposes by name. Read when a window is made rather
 // than in the module's interface table: canvas.ts is part of the import
 // cycle through cssvalues, and a table built at module load would read
@@ -39188,6 +39177,11 @@ function getInterfaceObjects(): ReadonlyMap<string, Constructor> {
 	return installInterfaces(getWindowClasses());
 }
 
+/**
+ * Parse a document from markup and display it in a window of its own. An
+ * XML content type parses as XML, which is what a frame whose src names a
+ * .xml, .xhtml or .svg file holds.
+ */
 export function createWindow(
 	source: string,
 	url?: string,
