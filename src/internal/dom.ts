@@ -8933,9 +8933,12 @@ interface DOMTokenListSlots extends LiveListSlots {
 	element: Element;
 	attribute: string;
 	supported: Set<string> | null;
-	_tokens: Step<DOMTokenList["_tokens"]>;
 	_changedMembers: Step<DOMTokenList["_changedMembers"]>;
 	_listMembers: Step<DOMTokenList["_listMembers"]>;
+}
+
+function getTokens(list: DOMTokenList): string[] {
+	return ensureList(list) as unknown as string[];
 }
 
 interface DOMTokenList extends LiveList {
@@ -8963,7 +8966,7 @@ class DOMTokenList implements globalThis.DOMTokenList {
 	}
 
 	get length(): number {
-		return _(this)._tokens.length;
+		return getTokens(this).length;
 	}
 
 	get value(): string {
@@ -8976,25 +8979,19 @@ class DOMTokenList implements globalThis.DOMTokenList {
 		setAttributeOf(slots.element, slots.attribute, String(value));
 	}
 
-	get _tokens(): string[] {
-		return ensureList(
-			ownerOf(this as unknown as Slots<DOMTokenList>),
-		) as unknown as string[];
-	}
-
 	item(index: number): string | null {
-		const tokens = _(this)._tokens;
+		const tokens = getTokens(this);
 		const at = toUnsignedLong(index);
 		return at < tokens.length ? tokens[at] : null;
 	}
 
 	contains(token: string): boolean {
-		return _(this)._tokens.includes(String(token));
+		return getTokens(this).includes(String(token));
 	}
 
 	add(...tokens: string[]): void {
 		validateTokens(tokens);
-		const current = _(this)._tokens.slice();
+		const current = getTokens(this).slice();
 		for (const token of tokens) {
 			if (!current.includes(token)) {
 				current.push(String(token));
@@ -9005,7 +9002,7 @@ class DOMTokenList implements globalThis.DOMTokenList {
 
 	remove(...tokens: string[]): void {
 		validateTokens(tokens);
-		const current = _(this)._tokens.filter(
+		const current = getTokens(this).filter(
 			(each) => !tokens.some((token) => String(token) === each),
 		);
 		writeTokenList(this, current);
@@ -9014,7 +9011,7 @@ class DOMTokenList implements globalThis.DOMTokenList {
 	toggle(token: string, force?: boolean): boolean {
 		validateTokens([token]);
 		const name = String(token);
-		const current = _(this)._tokens.slice();
+		const current = getTokens(this).slice();
 		const index = current.indexOf(name);
 		if (index !== -1) {
 			if (force === undefined || force === false) {
@@ -9036,7 +9033,7 @@ class DOMTokenList implements globalThis.DOMTokenList {
 		validateTokens([token, newToken]);
 		const name = String(token);
 		const replacement = String(newToken);
-		const current = _(this)._tokens.slice();
+		const current = getTokens(this).slice();
 		if (!current.includes(name)) {
 			return false;
 		}
@@ -24616,7 +24613,6 @@ function noValidityFlags(): ValidityFlags {
 
 interface ValidityStateSlots {
 	flags: () => ValidityFlags;
-	_validityFlags: Step<ValidityState["_validityFlags"]>;
 }
 
 interface ValidityState {
@@ -24646,10 +24642,6 @@ class ValidityState {
 		const flags = _(this).flags();
 		return !VALIDITY_FLAG_NAMES.some((name) => flags[name]);
 	}
-
-	get _validityFlags(): ValidityFlags {
-		return (this as unknown as Slots<ValidityState>).flags();
-	}
 }
 
 declareSealedRoot(ValidityState);
@@ -24657,7 +24649,7 @@ declareSealedRoot(ValidityState);
 for (const name of VALIDITY_FLAG_NAMES) {
 	Object.defineProperty(ValidityState.prototype, name, {
 		get(this: ValidityState): boolean {
-			return _(this)._validityFlags[name];
+			return _(this).flags()[name];
 		},
 		enumerable: true,
 		configurable: true,
@@ -33348,11 +33340,6 @@ function traverseIterator(
 	const iteratorSlots = _(iterator);
 	let node: Node | null = iteratorSlots.reference;
 	let before = iteratorSlots.pointerBefore;
-	const state = {
-		whatToShow: iteratorSlots.whatToShow,
-		filter: iteratorSlots.filter,
-		active: iteratorSlots.active,
-	};
 	for (;;) {
 		if (forward) {
 			if (!before) {
@@ -33373,7 +33360,7 @@ function traverseIterator(
 				before = true;
 			}
 		}
-		if (filterNode(state, node as Node) === FILTER_ACCEPT) {
+		if (filterNode(iteratorSlots, node as Node) === FILTER_ACCEPT) {
 			// A filter that removed the node it was filtering leaves the
 			// reference where the pre-removing steps put it. A node outside the
 			// root can never be the reference.
@@ -33433,7 +33420,6 @@ export interface TreeWalkerSlots {
 	whatToShow: number;
 	filter: NodeFilterInput;
 	active: {value: boolean};
-	_state: Step<TreeWalker["_state"]>;
 }
 
 export interface TreeWalker {
@@ -33474,19 +33460,6 @@ export class TreeWalker implements globalThis.TreeWalker {
 		_(this).current = node as Node;
 	}
 
-	get _state(): {
-		whatToShow: number;
-		filter: NodeFilterInput;
-		active: {value: boolean};
-	} {
-		const slots = this as unknown as Slots<TreeWalker>;
-		return {
-			whatToShow: slots.whatToShow,
-			filter: slots.filter,
-			active: slots.active,
-		};
-	}
-
 	parentNode(): globalThis.Node | null {
 		return walkParent(this) as unknown as globalThis.Node | null;
 	}
@@ -33525,7 +33498,7 @@ function walkChildren(walk: TreeWalker, first: boolean): Node | null {
 		? objectOf(_(walkSlots.current).firstChild)
 		: objectOf(_(walkSlots.current).lastChild);
 	while (node !== null) {
-		const result = filterNode(walkSlots._state, node);
+		const result = filterNode(walkSlots, node);
 		if (result === FILTER_ACCEPT) {
 			walkSlots.current = node;
 			return node;
@@ -33575,7 +33548,7 @@ function walkSiblings(walk: TreeWalker, next: boolean): Node | null {
 		let sibling = next ? objectOf(_(node).next) : objectOf(_(node).previous);
 		while (sibling !== null) {
 			node = sibling;
-			const result = filterNode(walkSlots._state, node);
+			const result = filterNode(walkSlots, node);
 			if (result === FILTER_ACCEPT) {
 				walkSlots.current = node;
 				return node;
@@ -33592,7 +33565,7 @@ function walkSiblings(walk: TreeWalker, next: boolean): Node | null {
 			return null;
 		}
 		node = parent;
-		if (filterNode(walkSlots._state, node) === FILTER_ACCEPT) {
+		if (filterNode(walkSlots, node) === FILTER_ACCEPT) {
 			return null;
 		}
 	}
@@ -33603,7 +33576,7 @@ function walkParent(walk: TreeWalker): Node | null {
 	let node: Node | null = walkSlots.current;
 	while (node !== null && node !== walkSlots.root) {
 		node = objectOf(_(node).parent);
-		if (node !== null && filterNode(walkSlots._state, node) === FILTER_ACCEPT) {
+		if (node !== null && filterNode(walkSlots, node) === FILTER_ACCEPT) {
 			walkSlots.current = node;
 			return node;
 		}
@@ -33625,7 +33598,7 @@ function walkNext(walk: TreeWalker): Node | null {
 				break;
 			}
 			node = child;
-			result = filterNode(walkSlots._state, node);
+			result = filterNode(walkSlots, node);
 			if (result === FILTER_ACCEPT) {
 				walkSlots.current = node;
 				return node;
@@ -33647,7 +33620,7 @@ function walkNext(walk: TreeWalker): Node | null {
 			return null;
 		}
 		node = sibling;
-		result = filterNode(walkSlots._state, node);
+		result = filterNode(walkSlots, node);
 		if (result === FILTER_ACCEPT) {
 			walkSlots.current = node;
 			return node;
@@ -33662,7 +33635,7 @@ function walkPrevious(walk: TreeWalker): Node | null {
 		let sibling = objectOf(_(node).previous);
 		while (sibling !== null) {
 			node = sibling;
-			let result = filterNode(walkSlots._state, node);
+			let result = filterNode(walkSlots, node);
 			for (;;) {
 				if (result === FILTER_REJECT) {
 					break;
@@ -33672,7 +33645,7 @@ function walkPrevious(walk: TreeWalker): Node | null {
 					break;
 				}
 				node = child;
-				result = filterNode(walkSlots._state, node);
+				result = filterNode(walkSlots, node);
 			}
 			if (result === FILTER_ACCEPT) {
 				walkSlots.current = node;
@@ -33685,7 +33658,7 @@ function walkPrevious(walk: TreeWalker): Node | null {
 			return null;
 		}
 		node = parent;
-		if (filterNode(walkSlots._state, node) === FILTER_ACCEPT) {
+		if (filterNode(walkSlots, node) === FILTER_ACCEPT) {
 			walkSlots.current = node;
 			return node;
 		}
