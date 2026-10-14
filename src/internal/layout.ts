@@ -14,7 +14,6 @@ import {
 	getTabSize,
 	getUsedOverflow,
 	hasLayoutOrPaintContainment,
-	hasPaintContainment,
 	pxFromCells,
 	toCellBorder,
 	toCellLength,
@@ -4953,8 +4952,8 @@ function hitTestInFlow(
 		// row of the subtree is there at all.
 		if (!contained && !isSplitAroundBlock(element)) {
 			if (
-				getComputedValue(element, "overflow") !== "visible" ||
-				hasPaintContainment(element)
+				getUsedOverflow(element, "x") !== "visible" ||
+				getUsedOverflow(element, "y") !== "visible"
 			) {
 				return null;
 			}

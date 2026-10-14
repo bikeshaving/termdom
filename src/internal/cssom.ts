@@ -3792,7 +3792,7 @@ function hasContainment(element: Element, kinds: Set<string>): boolean {
 		.some((keyword) => kinds.has(keyword));
 }
 
-export function hasPaintContainment(element: Element): boolean {
+function hasPaintContainment(element: Element): boolean {
 	return hasContainment(element, PAINT_CONTAINMENT);
 }
 
