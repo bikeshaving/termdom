@@ -2,6 +2,7 @@ import bidiFactory from "bidi-js";
 
 import * as CSSTree from "./csstree.ts";
 import {
+	attributeOf,
 	type Element,
 	getAttributeList,
 	getAttributeLocalName,
@@ -21,6 +22,7 @@ import {
 	getShadowHost,
 	getUserValidityMatch,
 	getValidityMatch,
+	hasAttributeOf,
 	hasCustomState,
 	hasFocus,
 	hasFocusWithin,
@@ -684,7 +686,7 @@ function compileCompound(
 		!compound.host &&
 		!parts.some((part) => part.type === "TypeSelector")
 	) {
-		compound.tests.push((element) => element.namespaceURI === declared);
+		compound.tests.push((element) => namespaceOf(element) === declared);
 	}
 	return compound;
 }
@@ -705,7 +707,7 @@ function compileSimple(
 			}
 			const folded = toASCIILowercase(id);
 			compound.tests.push((element) => {
-				const value = element.getAttribute("id");
+				const value = attributeOf(element, "id");
 				if (value === null) {
 					return false;
 				}
@@ -722,7 +724,7 @@ function compileSimple(
 			}
 			const folded = toASCIILowercase(name);
 			compound.tests.push((element) => {
-				const value = element.getAttribute("class");
+				const value = attributeOf(element, "class");
 				if (value === null) {
 					return false;
 				}
@@ -910,7 +912,7 @@ function compileAttribute(
 	// Read the attribute the way HTML reads a name. An HTML element in an
 	// HTML document lowercases its attribute names.
 	const read = (element: Element): string | null => {
-		const fold = element.namespaceURI === HTML_NAMESPACE && isHTMLNode(element);
+		const fold = namespaceOf(element) === HTML_NAMESPACE && isHTMLNode(element);
 		const attributes = getAttributeList(element);
 		for (let index = 0; index < attributes.length; index++) {
 			const attribute = attributes[index];
@@ -952,7 +954,7 @@ function compileAttribute(
 		const insensitive =
 			flags === "i" ||
 			(flags === "" &&
-				element.namespaceURI === HTML_NAMESPACE &&
+				namespaceOf(element) === HTML_NAMESPACE &&
 				isHTMLNode(element) &&
 				CASE_INSENSITIVE_ATTRIBUTES.has(folded));
 		const subject = insensitive ? toASCIILowercase(value) : value;
@@ -1258,11 +1260,11 @@ function compilePseudoClass(
 			return;
 		case "required":
 			compound.tests.push((element) =>
-				isRequirable(element) && element.getAttribute("required") !== null);
+				isRequirable(element) && attributeOf(element, "required") !== null);
 			return;
 		case "optional":
 			compound.tests.push((element) =>
-				isRequirable(element) && element.getAttribute("required") === null);
+				isRequirable(element) && attributeOf(element, "required") === null);
 			return;
 		case "read-only":
 			compound.tests.push((element, state) => !isMutable(element, state));
@@ -1572,16 +1574,16 @@ function matchesAnPlusB(step: AnPlusB, position: number): boolean {
 // HTML's a and area with an href, and SVG's a with an href or the older
 // xlink:href.
 function isHyperlink(element: Element): boolean {
-	const name = element.localName;
-	if (element.namespaceURI === HTML_NAMESPACE) {
+	const name = localNameOf(element);
+	if (namespaceOf(element) === HTML_NAMESPACE) {
 		return (
-			(name === "a" || name === "area") && element.getAttribute("href") !== null
+			(name === "a" || name === "area") && attributeOf(element, "href") !== null
 		);
 	}
 	return (
-		element.namespaceURI === SVG_NAMESPACE &&
+		namespaceOf(element) === SVG_NAMESPACE &&
 		name === "a" &&
-		(element.hasAttribute("href") ||
+		(hasAttributeOf(element, "href") ||
 			element.hasAttributeNS(XLINK_NAMESPACE, "href"))
 	);
 }
@@ -1598,8 +1600,8 @@ const DISABLEABLE = new Set([
 
 function isDisableable(element: Element): boolean {
 	return (
-		(element.namespaceURI === HTML_NAMESPACE &&
-			DISABLEABLE.has(element.localName)) || isFormAssociatedCustom(element)
+		(namespaceOf(element) === HTML_NAMESPACE &&
+			DISABLEABLE.has(localNameOf(element))) || isFormAssociatedCustom(element)
 	);
 }
 
@@ -1609,10 +1611,10 @@ function isDisabled(element: Element, _state: MatchState): boolean {
 }
 
 function isRequirable(element: Element): boolean {
-	if (element.namespaceURI !== HTML_NAMESPACE) {
+	if (namespaceOf(element) !== HTML_NAMESPACE) {
 		return false;
 	}
-	const name = element.localName;
+	const name = localNameOf(element);
 	if (name === "select" || name === "textarea") {
 		return true;
 	}
@@ -1626,15 +1628,15 @@ function isRequirable(element: Element): boolean {
 // `:read-write`: a text control the user can type into, or anything an
 // editing host contains.
 function isMutable(element: Element, state: MatchState): boolean {
-	if (element.namespaceURI === HTML_NAMESPACE) {
-		const name = element.localName;
+	if (namespaceOf(element) === HTML_NAMESPACE) {
+		const name = localNameOf(element);
 		if (name === "input" || name === "textarea") {
 			const type = name === "input"
 				? (element as unknown as {type: string}).type
 				: "text";
 			if (READONLY_INPUT_TYPES.has(type)) {
 				return (
-					element.getAttribute("readonly") === null &&
+					attributeOf(element, "readonly") === null &&
 					!isDisabled(element, state)
 				);
 			}
@@ -1645,7 +1647,7 @@ function isMutable(element: Element, state: MatchState): boolean {
 		node !== null;
 		node = parentElement(node)
 	) {
-		const editable = node.getAttribute("contenteditable");
+		const editable = attributeOf(node, "contenteditable");
 		if (editable === null) {
 			continue;
 		}
@@ -1662,10 +1664,10 @@ function isMutable(element: Element, state: MatchState): boolean {
 
 // The elements `:open` and `:closed` apply to.
 function canOpen(element: Element): boolean {
-	if (element.namespaceURI !== HTML_NAMESPACE) {
+	if (namespaceOf(element) !== HTML_NAMESPACE) {
 		return false;
 	}
-	const name = element.localName;
+	const name = localNameOf(element);
 	return (
 		name === "details" ||
 		name === "dialog" ||
@@ -1845,28 +1847,28 @@ function getDeclaredDirection(element: Element): "ltr" | "rtl" | "auto" | null {
 	if (nodeTypeOf(element) !== Node.ELEMENT_NODE) {
 		return null;
 	}
-	const html = element.namespaceURI === HTML_NAMESPACE;
-	const value = toASCIILowercase(element.getAttribute("dir") ?? "");
+	const html = namespaceOf(element) === HTML_NAMESPACE;
+	const value = toASCIILowercase(attributeOf(element, "dir") ?? "");
 	if (html && (value === "ltr" || value === "rtl" || value === "auto")) {
 		return value;
 	}
 	// A bdi with no direction of its own is what `dir=auto` was invented
 	// for. It isolates its content and reads the direction from it.
-	return html && element.localName === "bdi" ? "auto" : null;
+	return html && localNameOf(element) === "bdi" ? "auto" : null;
 }
 
 function getAutoDirection(element: Element): "ltr" | "rtl" {
-	if (element.namespaceURI === HTML_NAMESPACE) {
-		const name = element.localName;
+	if (namespaceOf(element) === HTML_NAMESPACE) {
+		const name = localNameOf(element);
 		if (name === "input") {
-			const type = toASCIILowercase(element.getAttribute("type") ?? "text");
+			const type = toASCIILowercase(attributeOf(element, "type") ?? "text");
 			if (type === "tel") {
 				return "ltr";
 			}
 			if (!AUTO_INPUT_TYPES.has(type)) {
 				return "ltr";
 			}
-			return getFirstStrong(element.getAttribute("value") ?? "");
+			return getFirstStrong(attributeOf(element, "value") ?? "");
 		}
 		if (name === "textarea") {
 			return getFirstStrong(getTextUnder(element, true));
@@ -1895,7 +1897,7 @@ function getTextUnder(element: Element, all: boolean): string {
 		// A child that states its own direction, and one that isolates its
 		// content, both keep their text out of the scan above them.
 		if (
-			OPAQUE_TO_AUTO.has(child.localName) ||
+			OPAQUE_TO_AUTO.has(localNameOf(child)) ||
 			getDeclaredDirection(child) !== null
 		) {
 			continue;
@@ -2132,13 +2134,13 @@ function getSiblingIndex(element: Element, state: MatchState): SiblingIndex {
 // The siblings of the element's type and namespace, in order.
 function getTypeSiblings(element: Element, state: MatchState): Element[] {
 	const siblings = getSiblingIndex(element, state);
-	const key = `${element.namespaceURI ?? ""}|${element.localName}`;
+	const key = `${namespaceOf(element) ?? ""}|${localNameOf(element)}`;
 	let ofType = siblings.byType.get(key);
 	if (ofType === undefined) {
 		ofType = siblings.elements.filter(
 			(sibling) =>
-				sibling.localName === element.localName &&
-				sibling.namespaceURI === element.namespaceURI,
+				localNameOf(sibling) === localNameOf(element) &&
+				namespaceOf(sibling) === namespaceOf(element),
 		);
 		siblings.byType.set(key, ofType);
 	}

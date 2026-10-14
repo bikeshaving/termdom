@@ -16,6 +16,7 @@ import {
 import * as CSSTree from "./csstree.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
+	attributeOf,
 	constructInternal,
 	dispatchAsUserAgent,
 	type Document as DOMDocument,
@@ -41,12 +42,14 @@ import {
 	getRemovedNodes,
 	getShadowRoot,
 	getTopLayer,
+	hasAttributeOf,
 	HTML_NAMESPACE,
 	isButtonInput,
 	isDocumentElement,
 	isUAShadowTree,
 	localNameOf,
 	MATHML_NAMESPACE,
+	namespaceOf,
 	nodeTypeOf,
 	ownerDocumentOf,
 	pseudoElement,
@@ -157,13 +160,13 @@ export function pxFromCells(
 function getElementDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
-	if (element.namespaceURI === MATHML_NAMESPACE) {
+	if (namespaceOf(element) === MATHML_NAMESPACE) {
 		return getMathMLDefaults(element);
 	}
-	if (element.namespaceURI !== HTML_NAMESPACE) {
+	if (namespaceOf(element) !== HTML_NAMESPACE) {
 		return undefined;
 	}
-	const name = element.localName;
+	const name = localNameOf(element);
 	const document = element.ownerDocument;
 	if (document !== null && document.fullscreenElement === element) {
 		const window = document.defaultView;
@@ -200,7 +203,7 @@ function getElementDefaults(
 		// attribute is set, the spec's 20 otherwise. It lives here rather than
 		// in the sheet so the attribute can override the default without a
 		// width the sheet cannot express (there is no attr() length).
-		const size = parseInt(input.getAttribute("size") ?? "", 10);
+		const size = parseInt(attributeOf(input, "size") ?? "", 10);
 		return {width: `${Number.isFinite(size) && size > 0 ? size : 20}ch`};
 	}
 	return undefined;
@@ -212,16 +215,15 @@ function getMathMLDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
 	let defaults: Record<string, string> | undefined;
-	const color = element.getAttribute("mathcolor");
+	const color = attributeOf(element, "mathcolor");
 	if (color !== null && color.trim() !== "") {
 		(defaults ??= {}).color = color.trim();
 	}
-	const background = element.getAttribute("mathbackground");
+	const background = attributeOf(element, "mathbackground");
 	if (background !== null && background.trim() !== "") {
 		(defaults ??= {})["background-color"] = background.trim();
 	}
-	const displaystyle = element
-		.getAttribute("displaystyle")
+	const displaystyle = attributeOf(element, "displaystyle")
 		?.trim()
 		.toLowerCase();
 	if (displaystyle === "true" || displaystyle === "false") {
@@ -461,7 +463,8 @@ function getDefaultMarkerContent(hostElement: Element): string | null {
 // absent on any other.
 function isListItem(element: Element): boolean {
 	return (
-		(element.localName === "li" && element.namespaceURI === HTML_NAMESPACE) ||
+		(localNameOf(element) === "li" &&
+			namespaceOf(element) === HTML_NAMESPACE) ||
 		getComputedValue(element, "display") === "list-item"
 	);
 }
@@ -782,7 +785,7 @@ class CSSStyleDeclaration {
 		if (!slots.element) {
 			return;
 		}
-		const text = slots.element.getAttribute("style") ?? "";
+		const text = attributeOf(slots.element, "style") ?? "";
 		if (text === slots.attributeText) {
 			return;
 		}
@@ -3679,7 +3682,7 @@ function getShadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
 function getTreeCascade(tree: Node): Cascade | undefined {
 	const document = nodeTypeOf(tree) === tree.DOCUMENT_NODE
 		? (tree as Document)
-		: tree.ownerDocument;
+		: ownerDocumentOf(tree);
 	return document ? documentCascades.get(document) : undefined;
 }
 
@@ -4166,9 +4169,9 @@ const UNSHARED_ELEMENTS = new Set(["select", "ul", "ol"]);
 
 function isShareable(element: Element): boolean {
 	return (
-		element.namespaceURI === HTML_NAMESPACE &&
-		!UNSHARED_ELEMENTS.has(element.localName) &&
-		element.getAttribute("dir") !== "auto" &&
+		namespaceOf(element) === HTML_NAMESPACE &&
+		!UNSHARED_ELEMENTS.has(localNameOf(element)) &&
+		attributeOf(element, "dir") !== "auto" &&
 		element.ownerDocument?.fullscreenElement !== element &&
 		getPseudoHost(element) === null
 	);
@@ -4194,7 +4197,7 @@ function getSharedResolved(
 	if (!isShareable(element)) {
 		return new Map();
 	}
-	let key = element.localName;
+	let key = localNameOf(element);
 	for (const rule of rules) {
 		const id = getRuleId(rule);
 		if (id === -1) {
@@ -5048,7 +5051,7 @@ function getInlineDeclarations(
 	if (block === null) {
 		const element = declarationSlots.element;
 		let style = inlineStyles.get(element);
-		if (style === undefined && element.hasAttribute("style")) {
+		if (style === undefined && hasAttributeOf(element, "style")) {
 			getInlineStyle(element);
 			style = inlineStyles.get(element);
 		}
@@ -5366,8 +5369,8 @@ function resolvePropertyValueRaw(
 	// take precedence over anything inherited.
 	const element = declarationSlots.element;
 	const isList =
-		element.namespaceURI === HTML_NAMESPACE &&
-		(element.localName === "ul" || element.localName === "ol");
+		namespaceOf(element) === HTML_NAMESPACE &&
+		(localNameOf(element) === "ul" || localNameOf(element) === "ol");
 
 	// A list's marker gutter is sized to its widest marker rather than
 	// taken from the static table, so it has to be resolved first.
@@ -5381,7 +5384,7 @@ function resolvePropertyValueRaw(
 	// does not leak into a nested one, while an author rule that matches
 	// the nested list still wins because step 2 already returned it.
 	if (property === "list-style-type" && isList) {
-		if (element.localName === "ol") {
+		if (localNameOf(element) === "ol") {
 			return "decimal";
 		}
 		const bullets = ["disc", "circle", "square"];
@@ -5887,13 +5890,13 @@ export function resolveBorderSides(element: Element): BorderSides {
 function getListItemOrdinal(listItem: Element, listParent: Element): number {
 	const items = getListItems(listParent);
 
-	const reversed = listParent.hasAttribute("reversed");
-	const start = parseInt(listParent.getAttribute("start") ?? "", 10);
+	const reversed = hasAttributeOf(listParent, "reversed");
+	const start = parseInt(attributeOf(listParent, "start") ?? "", 10);
 
 	let counter = Number.isFinite(start) ? start : reversed ? items.length : 1;
 
 	for (const item of items) {
-		const value = parseInt(item.getAttribute("value") ?? "", 10);
+		const value = parseInt(attributeOf(item, "value") ?? "", 10);
 		if (Number.isFinite(value)) {
 			counter = value;
 		}
@@ -6093,9 +6096,9 @@ function attachPseudoElementsToElement(
 	if (
 		tags !== null &&
 		!tags.has(element.tagName) &&
-		!element.hasAttribute("part") &&
+		!hasAttributeOf(element, "part") &&
 		pseudoElementCount(element) === 0 &&
-		!(element.getAttribute("style") ?? "").includes("list-item")
+		!(attributeOf(element, "style") ?? "").includes("list-item")
 	) {
 		return;
 	}
@@ -6110,7 +6113,7 @@ const FOCUS_STATES = ["focus", "focus-within", "focus-visible"];
 function isStyleElement(element: Element): boolean {
 	return (
 		element.tagName === "STYLE" ||
-		(element.tagName === "LINK" && element.getAttribute("rel") === "stylesheet")
+		(element.tagName === "LINK" && attributeOf(element, "rel") === "stylesheet")
 	);
 }
 
@@ -6504,7 +6507,7 @@ export class Cascade {
 				// A value written over itself changes no style.
 				if (
 					mutation.oldValue !== null &&
-					mutation.oldValue === element.getAttribute(mutation.attributeName!)
+					mutation.oldValue === attributeOf(element, mutation.attributeName!)
 				) {
 					continue;
 				}
@@ -6945,10 +6948,10 @@ function getHasAnchors(selector: string): string[] {
 
 function couldAnchorHas(cascade: Cascade, element: Element): boolean {
 	const anchors = cascade.hasAnchors;
-	if (anchors.has("*") || anchors.has(element.localName.toLowerCase())) {
+	if (anchors.has("*") || anchors.has(localNameOf(element).toLowerCase())) {
 		return true;
 	}
-	const id = element.getAttribute("id");
+	const id = attributeOf(element, "id");
 	if (id !== null && anchors.has(`#${id}`)) {
 		return true;
 	}
@@ -7294,7 +7297,7 @@ function attributeReachesDescendants(
 		}
 		return inlineChangeReachesDescendants(
 			oldValue,
-			element.getAttribute("style") ?? "",
+			attributeOf(element, "style") ?? "",
 		);
 	}
 	if (name === "class") {
@@ -7306,7 +7309,7 @@ function attributeReachesDescendants(
 		}
 		// With no old value, the classes that LEFT cannot be known.
 		if (oldValue === null) {
-			return element.hasAttribute("class");
+			return hasAttributeOf(element, "class");
 		}
 		// Only the classes that came or went can have changed a match.
 		const before = new Set(oldValue.split(/\s+/));
@@ -7332,7 +7335,7 @@ function attributeReachesDescendants(
 		if (oldValue !== null && cascade.reachingIds.has(oldValue)) {
 			return true;
 		}
-		const id = element.getAttribute("id");
+		const id = attributeOf(element, "id");
 		return id !== null && cascade.reachingIds.has(id);
 	}
 	if (cascade.reachingAttributes.has(name)) {
@@ -7562,7 +7565,7 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 		!(
 			element.parentElement && cascade.counterScopes.has(element.parentElement)
 		) &&
-		!(element.getAttribute("style") ?? "").includes("counter")
+		!(attributeOf(element, "style") ?? "").includes("counter")
 	) {
 		return;
 	}
@@ -7591,7 +7594,7 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 
 	if (element.tagName === "OL" || element.tagName === "UL") {
 		const startValue = element.tagName === "OL"
-			? parseInt(element.getAttribute("start") || "1", 10)
+			? parseInt(attributeOf(element, "start") || "1", 10)
 			: 0;
 		// start - 1, so the first increment gives start.
 		scope.counters["list-item"] = startValue - 1;
@@ -7810,7 +7813,7 @@ function processTransitionStyle(
 	if (!cascade.transitionsExist && !active) {
 		// An inline transition written right before this event may not have
 		// parsed yet. The attribute text is the one place it already shows.
-		const attribute = element.getAttribute("style");
+		const attribute = attributeOf(element, "style");
 		if (!attribute || !attribute.includes("transition")) {
 			return;
 		}
@@ -8359,7 +8362,7 @@ function changeReachesLaterSiblings(
 		return false;
 	}
 	if (attributeName === "id") {
-		const id = element.getAttribute("id");
+		const id = attributeOf(element, "id");
 		return (oldValue !== null && keys.has(`#${oldValue}`)) ||
 			(id !== null && keys.has(`#${id}`)) ||
 			keys.has("[id]");
@@ -8373,7 +8376,7 @@ function isSiblingTested(index: SiblingIndex, element: Element): boolean {
 		return true;
 	}
 	const keys = index.keys;
-	if (keys.has(element.localName)) {
+	if (keys.has(localNameOf(element))) {
 		return true;
 	}
 	for (const name of getClassTokens(element)) {
@@ -8381,7 +8384,7 @@ function isSiblingTested(index: SiblingIndex, element: Element): boolean {
 			return true;
 		}
 	}
-	const id = element.getAttribute("id");
+	const id = attributeOf(element, "id");
 	if (id !== null && keys.has(`#${id}`)) {
 		return true;
 	}
@@ -8524,7 +8527,7 @@ function isPaintOnlyChange(
 			}
 		}
 	} else if (name === "id") {
-		for (const token of [oldValue, element.getAttribute("id")]) {
+		for (const token of [oldValue, attributeOf(element, "id")]) {
 			if (token !== null && token !== "") {
 				keys.push(`#${token}`);
 			}
@@ -9359,10 +9362,10 @@ function couldAnchor(element: Element, anchor: StateAnchor): boolean {
 		return false;
 	}
 	return (
-		(anchor.tag === null || anchor.tag === element.localName) &&
+		(anchor.tag === null || anchor.tag === localNameOf(element)) &&
 		anchor.classes.every((name) => getClassTokens(element).has(name)) &&
 		anchor.ids.every((id) => element.id === id) &&
-		anchor.attributes.every((name) => element.hasAttribute(name))
+		anchor.attributes.every((name) => hasAttributeOf(element, name))
 	);
 }
 
@@ -9792,7 +9795,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	const partPseudos = getPartPseudos(element, root as unknown as Node);
 	const rootNode = root as unknown as Node;
 	const shadowHost = isShadowRoot(root) ? root.host : null;
-	const partNames = (element.getAttribute("part") ?? "")
+	const partNames = (attributeOf(element, "part") ?? "")
 		.split(/\s+/)
 		.filter(Boolean);
 	const matched = getCandidateRules(cascade, element).filter((rule) => {
@@ -9952,7 +9955,7 @@ function getPartPseudos(element: Element, root: Node): string[] {
 	if (!isUAShadowTree(root)) {
 		return [];
 	}
-	const part = element.getAttribute("part");
+	const part = attributeOf(element, "part");
 	if (part === null) {
 		return [];
 	}
@@ -10144,7 +10147,7 @@ function pseudoRuleCouldMatch(
 			element.tagName === "LI" ||
 			element.tagName === "SUMMARY" ||
 			cascade.listItemRulesExist ||
-			(element.getAttribute("style") ?? "").includes("list-item")
+			(attributeOf(element, "style") ?? "").includes("list-item")
 		);
 	}
 	const rules = cascade.pseudoRulesByType.get(pseudoType);
@@ -10170,14 +10173,14 @@ function pseudoRuleCouldMatch(
 // whatever its case.
 function subjectCouldMatch(element: Element, rule: ParsedCSSRule): boolean {
 	if (rule.ofPart) {
-		return element.hasAttribute("part");
+		return hasAttributeOf(element, "part");
 	}
 	if (rule.reachesHost) {
 		return true;
 	}
 	const tag = rule.subjectTag;
 	if (tag !== undefined) {
-		const local = element.localName;
+		const local = localNameOf(element);
 		if (local !== tag && local.toLowerCase() !== tag) {
 			return false;
 		}

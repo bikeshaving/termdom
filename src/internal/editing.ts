@@ -12,7 +12,9 @@ import {
 	constructInternal,
 	dispatchAsUserAgent,
 	getFocusedElement,
+	localNameOf,
 	nodeTypeOf,
+	ownerDocumentOf,
 	revealEditingCaret,
 } from "./dom.ts";
 import {getNextGraphemeBoundary, getPreviousGraphemeBoundary} from "./text.ts";
@@ -143,7 +145,7 @@ export function getEditingHost(
 			return null;
 		}
 	}
-	const document = node.ownerDocument;
+	const document = ownerDocumentOf(node);
 	const body = document === null ? null : document.body;
 	if (document === null || body === null || document.designMode !== "on") {
 		return null;
@@ -545,7 +547,7 @@ function insertEditingParagraph(
 			point = {node: block, offset: block.childNodes.length};
 		}
 	}
-	if (block.localName === "li" && !hasRenderedContent(block)) {
+	if (localNameOf(block) === "li" && !hasRenderedContent(block)) {
 		return leaveList(selection, block);
 	}
 	const document = host.ownerDocument;
@@ -601,7 +603,7 @@ function leaveList(
 	const block = document.createElement("div");
 	list.parentNode.insertBefore(block, list.nextSibling);
 	if (item.nextSibling !== null) {
-		const rest = document.createElement(list.localName);
+		const rest = document.createElement(localNameOf(list));
 		while (item.nextSibling !== null) {
 			rest.appendChild(item.nextSibling);
 		}
@@ -620,7 +622,7 @@ function leaveList(
 // item split into their own kind; a heading does too, except at its end,
 // where what follows a heading is body text.
 function getSeparatorTag(block: globalThis.Element, atEnd: boolean): string {
-	const tag = block.localName;
+	const tag = localNameOf(block);
 	if (tag === "li" || tag === "p") {
 		return tag;
 	}
@@ -1002,7 +1004,7 @@ function getBlockContainer(
 		element !== null;
 		element = element.parentElement
 	) {
-		if (element === host || BLOCK_TAGS.has(element.localName)) {
+		if (element === host || BLOCK_TAGS.has(localNameOf(element))) {
 			return element;
 		}
 	}
@@ -1152,7 +1154,7 @@ function isSpace(character: string): boolean {
 
 function isBreak(node: globalThis.Node): boolean {
 	return nodeTypeOf(node) === ELEMENT_NODE &&
-		(node as globalThis.Element).localName === "br";
+		localNameOf((node as globalThis.Element)) === "br";
 }
 
 function isBlockElement(
@@ -1161,12 +1163,12 @@ function isBlockElement(
 ): boolean {
 	return node === host ||
 		(nodeTypeOf(node) === ELEMENT_NODE &&
-			BLOCK_TAGS.has((node as globalThis.Element).localName));
+			BLOCK_TAGS.has(localNameOf((node as globalThis.Element))));
 }
 
 function isAtomic(node: globalThis.Node): boolean {
 	const element = node as globalThis.Element;
-	return ATOMIC_TAGS.has(element.localName) ||
+	return ATOMIC_TAGS.has(localNameOf(element)) ||
 		(element as globalThis.HTMLElement).contentEditable === "false";
 }
 

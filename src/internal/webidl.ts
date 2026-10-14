@@ -400,6 +400,7 @@ function wrapAttribute(
 		return type;
 	};
 	const fixedGet = resolve.fixed?.get;
+	const fixedSet = resolve.fixed?.set;
 	const check = member.checks[0] ?? null;
 	const get = {
 		[name](this: unknown): unknown {
@@ -453,6 +454,17 @@ function wrapAttribute(
 					}
 					if (typeof value === "object" && value !== null) {
 						value = String(value);
+					}
+				}
+				if (fixedSet !== undefined) {
+					fixedSet.call(this, value);
+					return;
+				}
+				if (resolve.direct !== undefined) {
+					const direct = resolve.direct(type)?.set;
+					if (direct !== undefined) {
+						direct.call(this, value);
+						return;
 					}
 				}
 				const setter = resolve.enter(type, this)?.set;
@@ -933,7 +945,13 @@ function createInterfaceObject(
 }
 
 // The unforgeable members, and a global's, belong to each object.
+let lastSealedType: Constructor | null = null;
+let lastSealedMembers: Array<[string, PropertyDescriptor]> | null = null;
+
 function defineInstanceMembers(target: object, type: Constructor): void {
+	if (type === lastSealedType && lastSealedMembers === null) {
+		return;
+	}
 	let list = instanceMembersOfType.get(type);
 	if (list === undefined) {
 		const found: Array<[string, PropertyDescriptor]> = [];
@@ -943,6 +961,8 @@ function defineInstanceMembers(target: object, type: Constructor): void {
 		list = found.length === 0 ? null : found;
 		instanceMembersOfType.set(type, list);
 	}
+	lastSealedType = type;
+	lastSealedMembers = list;
 	if (list !== null) {
 		for (const [key, descriptor] of list) {
 			Object.defineProperty(target, key, descriptor);

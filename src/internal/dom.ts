@@ -454,7 +454,7 @@ export function getTextControlSelectionRange(
  */
 export function revealTextControlCaret(document: globalThis.Document): void {
 	const active = document.activeElement;
-	if (!active || active.localName !== "input" || !isTextControl(active)) {
+	if (!active || localNameOf(active) !== "input" || !isTextControl(active)) {
 		return;
 	}
 	const valueText = getTextControlValueText(active);
@@ -551,7 +551,7 @@ function getTextSelectionRange(
 
 /** A node's document, as the tree-building code below needs it. */
 function getUADocument(node: globalThis.Node): globalThis.Document {
-	return (node as Node).ownerDocument as unknown as globalThis.Document;
+	return ownerDocumentOf((node as Node)) as unknown as globalThis.Document;
 }
 
 /** A textControl's value and selection after an editing key. */
@@ -2855,10 +2855,11 @@ function getEventView(
 	slots: EventSlots,
 ): {scrollX: number; scrollY: number} | null {
 	const target = slots.state.target as Node | null;
-	if (target === null || target.ownerDocument === null) {
+	const document = target === null ? null : ownerDocumentOf(target);
+	if (document === null) {
 		return null;
 	}
-	const view = _(target.ownerDocument).extra.defaultView;
+	const view = _(document).extra.defaultView;
 	return (view ?? null) as {scrollX: number; scrollY: number} | null;
 }
 
@@ -5178,7 +5179,7 @@ function handlerAttributeChanged(
 ): void {
 	const forwarded =
 		FORWARDED_HANDLER_ATTRIBUTES.has(localName) &&
-		(element.localName === "body" || element.localName === "frameset");
+		(localNameOf(element) === "body" || localNameOf(element) === "frameset");
 	const target: EventTarget | null = forwarded
 		? (_(_(element).document).extra.defaultView as unknown as EventTarget |
 			null)
@@ -5631,7 +5632,7 @@ function runActivationBehavior(target: EventTarget, event: Event): void {
 	if (
 		(target instanceof HTMLAnchorElement ||
 			target instanceof HTMLAreaElement) &&
-		target.hasAttribute("href")
+		hasAttributeOf(target, "href")
 	) {
 		const url = (target as unknown as {href: string}).href;
 		if (isFragmentNavigation(_(target).document, url)) {
@@ -5684,7 +5685,7 @@ export function getKeyboardActivation(
 		const type = (element as HTMLInputElement).type;
 		return BUTTON_INPUT_TYPES.has(type) ? {enter: true, space: true} : null;
 	}
-	if (tag === "A" && element.hasAttribute("href")) {
+	if (tag === "A" && hasAttributeOf(element, "href")) {
 		return {enter: true, space: false};
 	}
 	if (tag === "SUMMARY") {
@@ -5713,7 +5714,7 @@ function isDetailsSummary(target: EventTarget): target is HTMLElement {
 
 function toggleTheDetails(summary: HTMLElement): void {
 	const details = objectOf(_(summary).parent) as HTMLDetailsElement;
-	details.toggleAttribute("open", !details.hasAttribute("open"));
+	details.toggleAttribute("open", !hasAttributeOf(details, "open"));
 }
 
 const DIALOG_COMMANDS = new Set(["close", "request-close", "show-modal"]);
@@ -5780,7 +5781,7 @@ function runCommand(button: HTMLButtonElement, target: Element): void {
 		return;
 	}
 	const dialog = target as HTMLDialogElement;
-	const open = dialog.hasAttribute("open");
+	const open = hasAttributeOf(dialog, "open");
 	if (command === "close" && open) {
 		dialog.close(button.value);
 	} else if (command === "request-close" && open) {
@@ -8736,12 +8737,12 @@ class HTMLCollection {
 		const key = String(name);
 		for (const item of ensureList(this)) {
 			const element = item as Element;
-			if (element.getAttribute("id") === key) {
+			if (attributeOf(element, "id") === key) {
 				return element;
 			}
 			if (
-				element.namespaceURI === HTML_NAMESPACE &&
-				element.getAttribute("name") === key
+				namespaceOf(element) === HTML_NAMESPACE &&
+				attributeOf(element, "name") === key
 			) {
 				return element;
 			}
@@ -8772,12 +8773,12 @@ class HTMLCollection {
 		const named = new Map<string, Node>();
 		for (const item of items) {
 			const element = item as Element;
-			const id = element.getAttribute("id");
+			const id = attributeOf(element, "id");
 			if (id !== null && id !== "" && !named.has(id)) {
 				named.set(id, element);
 			}
-			if (element.namespaceURI === HTML_NAMESPACE) {
-				const name = element.getAttribute("name");
+			if (namespaceOf(element) === HTML_NAMESPACE) {
+				const name = attributeOf(element, "name");
 				if (name !== null && name !== "" && !named.has(name)) {
 					named.set(name, element);
 				}
@@ -9084,7 +9085,7 @@ export function getClassTokens(
 	const elementSlots = _(element);
 	let tokens = elementSlots.classTokens;
 	if (tokens === null) {
-		const value = element.getAttribute("class");
+		const value = attributeOf(element, "class");
 		const names = value === null ? [] : splitOnASCIIWhitespace(value);
 		tokens = names.length === 0 ? NO_CLASS_TOKENS : new Set(names);
 		elementSlots.classTokens = tokens;
@@ -9112,7 +9113,7 @@ function createClassNameCollection(
 			const isQuirks = _(rootSlots.document).extra.mode === "quirks";
 			let tokens: ReadonlySet<string>;
 			if (isQuirks) {
-				const value = element.getAttribute("class");
+				const value = attributeOf(element, "class");
 				if (value === null) {
 					return false;
 				}
@@ -9186,7 +9187,7 @@ class DOMTokenList implements globalThis.DOMTokenList {
 
 	get value(): string {
 		const slots = _(this);
-		return slots.element.getAttribute(slots.attribute) ?? "";
+		return attributeOf(slots.element, slots.attribute) ?? "";
 	}
 
 	set value(value: string) {
@@ -9297,7 +9298,7 @@ class DOMTokenList implements globalThis.DOMTokenList {
 
 	[kListMembers](this: Slots<DOMTokenList>): Node[] {
 		const slots = this;
-		const value = slots.element.getAttribute(slots.attribute);
+		const value = attributeOf(slots.element, slots.attribute);
 		const tokens = value === null ? [] : splitOnASCIIWhitespace(value);
 		const ordered: string[] = [];
 		for (const token of tokens) {
@@ -9859,7 +9860,7 @@ export class DocumentFragment
 		}
 		for (const node of descendants(this)) {
 			if (nodeTypeOf(node) === ELEMENT_NODE) {
-				if ((node as Element).getAttribute("id") === id) {
+				if (attributeOf((node as Element), "id") === id) {
 					return node as unknown as globalThis.HTMLElement;
 				}
 			}
@@ -11821,7 +11822,7 @@ function collectRenderedText(
 		getComputedValue(element, "visibility") === "visible";
 	const around = !shown
 		? 0
-		: element.localName === "p" && element.namespaceURI === HTML_NAMESPACE
+		: localNameOf(element) === "p" && namespaceOf(element) === HTML_NAMESPACE
 			? 2
 			: isBlockLevelDisplay(display) ? 1 : 0;
 	if (around > 0) {
@@ -11829,8 +11830,8 @@ function collectRenderedText(
 	}
 	if (
 		shown &&
-		element.localName === "math" &&
-		element.namespaceURI === MATHML_NAMESPACE
+		localNameOf(element) === "math" &&
+		namespaceOf(element) === MATHML_NAMESPACE
 	) {
 		items.push(linearizeMath(element as unknown as globalThis.Element));
 	} else {
@@ -12739,7 +12740,7 @@ function getFocusDelegate(element: Element): Element | null {
 		if (area === null) {
 			continue;
 		}
-		if (candidate.hasAttribute("autofocus")) {
+		if (hasAttributeOf(candidate, "autofocus")) {
 			return area;
 		}
 		first ??= area;
@@ -12759,10 +12760,10 @@ function isFocusableArea(element: Element): boolean {
 	if (isInertTree(element)) {
 		return false;
 	}
-	if (element.hasAttribute("tabindex")) {
+	if (hasAttributeOf(element, "tabindex")) {
 		return true;
 	}
-	if (element.hasAttribute("contenteditable")) {
+	if (hasAttributeOf(element, "contenteditable")) {
 		return true;
 	}
 	return getDefaultTabIndex(element) >= 0;
@@ -13009,7 +13010,7 @@ Object.defineProperties(HTMLElement.prototype, {
 function isInertTree(element: Element): boolean {
 	let node: Element | null = element;
 	while (node !== null) {
-		if (node.hasAttribute("inert")) {
+		if (hasAttributeOf(node, "inert")) {
 			return true;
 		}
 		const parent = node.parentElement as unknown as Element | null;
@@ -13215,8 +13216,8 @@ export class SVGElement extends Element {
 			const node = objectOf(nodeSlots);
 			if (
 				node instanceof Element &&
-				node.namespaceURI === SVG_NAMESPACE &&
-				node.localName === "svg"
+				namespaceOf(node) === SVG_NAMESPACE &&
+				localNameOf(node) === "svg"
 			) {
 				return node as unknown as globalThis.SVGSVGElement;
 			}
@@ -15273,7 +15274,7 @@ function getDocumentBaseURL(document: Document): string {
 		if (_(element).localName !== "base") {
 			continue;
 		}
-		const href = element.getAttribute("href");
+		const href = attributeOf(element, "href");
 		if (href === null) {
 			continue;
 		}
@@ -15661,7 +15662,7 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 };
 
 function getHyperlinkURL(element: Element): URL | null {
-	const value = element.getAttribute("href");
+	const value = attributeOf(element, "href");
 	if (value === null) {
 		return null;
 	}
@@ -16397,7 +16398,7 @@ class HTMLDetailsElement extends HTMLElement {
 		if (content === null) {
 			return;
 		}
-		const display = ownerOf(this).hasAttribute("open") ? "block" : "none";
+		const display = hasAttributeOf(ownerOf(this), "open") ? "block" : "none";
 		if (content.style.display !== display) {
 			content.style.display = display;
 		}
@@ -16429,7 +16430,7 @@ class HTMLDetailsElement extends HTMLElement {
 			slots.extra.stateAtQueue = oldValue === null ? "closed" : "open";
 			queueMicrotask(() => {
 				slots.extra.toggleQueued = false;
-				const now = ownerOf(this).hasAttribute("open") ? "open" : "closed";
+				const now = hasAttributeOf(ownerOf(this), "open") ? "open" : "closed";
 				if (now === slots.extra.stateAtQueue) {
 					return;
 				}
@@ -16710,7 +16711,7 @@ function focusDialog(dialog: HTMLDialogElement): void {
 		if (!isFocusableArea(element)) {
 			continue;
 		}
-		if (element.hasAttribute("autofocus")) {
+		if (hasAttributeOf(element, "autofocus")) {
 			(element as HTMLElement).focus();
 			return;
 		}
@@ -16732,7 +16733,7 @@ function closeDialog(
 	dialog: HTMLDialogElement,
 	returnValue: string | undefined,
 ): void {
-	if (!dialog.hasAttribute("open")) {
+	if (!hasAttributeOf(dialog, "open")) {
 		return;
 	}
 	const dialogSlots = _(dialog);
@@ -17112,8 +17113,8 @@ function submitForm(
 			setUserValidity(control, true);
 		}
 		const validates =
-			!form.hasAttribute("novalidate") &&
-			!(submitter !== null && submitter.hasAttribute("formnovalidate"));
+			!hasAttributeOf(form, "novalidate") &&
+			!(submitter !== null && hasAttributeOf(submitter, "formnovalidate"));
 		if (validates) {
 			const invalid = controls.filter((control) => !checkValidity(control));
 			if (invalid.length > 0) {
@@ -17134,7 +17135,7 @@ function submitForm(
 	}
 	// A dialog form's submission closes its dialog with the submitter's
 	// value, and sends nothing.
-	const method = submitter !== null && submitter.hasAttribute("formmethod")
+	const method = submitter !== null && hasAttributeOf(submitter, "formmethod")
 		? (submitter as HTMLButtonElement).formMethod
 		: form.method;
 	if (method === "dialog") {
@@ -17769,7 +17770,7 @@ function appendSubmissionValue(entries: FormDataEntry[], field: Element): void {
 		entries.push(...reported);
 		return;
 	}
-	const name = field.getAttribute("name");
+	const name = attributeOf(field, "name");
 	if (name === null || name === "") {
 		return;
 	}
@@ -17804,7 +17805,7 @@ function appendFieldEntries(
 			return;
 		}
 		if (type === "image") {
-			const given = field.getAttribute("name");
+			const given = attributeOf(field, "name");
 			const prefix = given === null || given === "" ? "" : `${given}.`;
 			entries.push(createEntry(`${prefix}x`, "0"));
 			entries.push(createEntry(`${prefix}y`, "0"));
@@ -17815,7 +17816,7 @@ function appendFieldEntries(
 		appendSubmissionValue(entries, field);
 		return;
 	}
-	const name = field.getAttribute("name");
+	const name = attributeOf(field, "name");
 	if (name === null || name === "") {
 		return;
 	}
@@ -17830,7 +17831,7 @@ function appendFieldEntries(
 	if (field instanceof HTMLInputElement) {
 		const type = field.type;
 		if (type === "checkbox" || type === "radio") {
-			entries.push(createEntry(name, field.getAttribute("value") ?? "on"));
+			entries.push(createEntry(name, attributeOf(field, "value") ?? "on"));
 			return;
 		}
 		if (type === "file") {
@@ -17874,7 +17875,7 @@ function appendFieldEntries(
 }
 
 function appendDirectionEntry(entries: FormDataEntry[], field: Element): void {
-	const dirname = field.getAttribute("dirname");
+	const dirname = attributeOf(field, "dirname");
 	if (dirname !== null && dirname !== "") {
 		entries.push(createEntry(dirname, getDirectionality(field)));
 	}
@@ -17958,8 +17959,8 @@ class HTMLFormControlsCollection
 		for (const item of items) {
 			const element = item as Element;
 			for (const key of [
-				element.getAttribute("id"),
-				element.getAttribute("name"),
+				attributeOf(element, "id"),
+				attributeOf(element, "name"),
 			]) {
 				if (key === null || key === "") {
 					continue;
@@ -17996,7 +17997,7 @@ function createMatchingCollection(
 	for (const item of ensureList(collection)) {
 		const element = item as Element;
 		if (
-			element.getAttribute("id") === key || element.getAttribute("name") === key
+			attributeOf(element, "id") === key || attributeOf(element, "name") === key
 		) {
 			matches.push(element);
 		}
@@ -18029,7 +18030,7 @@ class RadioNodeList extends NodeList {
 			if (node.type !== "radio" || !node.checked) {
 				continue;
 			}
-			return node.getAttribute("value") ?? "on";
+			return attributeOf(node, "value") ?? "on";
 		}
 		return "";
 	}
@@ -18043,7 +18044,7 @@ class RadioNodeList extends NodeList {
 			if (node.type !== "radio") {
 				continue;
 			}
-			if ((node.getAttribute("value") ?? "on") !== wanted) {
+			if ((attributeOf(node, "value") ?? "on") !== wanted) {
 				continue;
 			}
 			node.checked = true;
@@ -18272,7 +18273,7 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 	if (!frame.isConnected || frameSlots.extra.contentDocument !== null) {
 		return;
 	}
-	const srcdoc = frame.getAttribute("srcdoc");
+	const srcdoc = attributeOf(frame, "srcdoc");
 	const registry = createWindowRegistry();
 	const contentDocument = parseHTMLDocument(
 		srcdoc ?? "",
@@ -18508,7 +18509,7 @@ class HTMLImageElement extends HTMLElement {
 	// box. Its UA shadow tree holds the text, built the first time it can
 	// be needed.
 	[kEnsureUAShadowTree]?(this: Slots<HTMLImageElement>): void {
-		const alt = ownerOf(this).getAttribute("alt") ?? "";
+		const alt = attributeOf(ownerOf(this), "alt") ?? "";
 		const slots = this;
 		const text = slots.extra.altText;
 		if (text !== null) {
@@ -18602,7 +18603,7 @@ function readImageDimension(
 			return Math.round(pxFromCells(cells, vertical, image as unknown as Node));
 		}
 	}
-	const attribute = parseInt(image.getAttribute(axis) ?? "", 10);
+	const attribute = parseInt(attributeOf(image, axis) ?? "", 10);
 	if (Number.isFinite(attribute) && attribute >= 0) {
 		return attribute;
 	}
@@ -18646,8 +18647,8 @@ function updateImageData(image: HTMLImageElement): void {
 			domError("EncodingError", "The image's source changed before it decoded"),
 		);
 	}
-	const srcset = image.getAttribute("srcset");
-	const src = image.getAttribute("src");
+	const srcset = attributeOf(image, "srcset");
+	const src = attributeOf(image, "src");
 	const chosen =
 		(srcset !== null && srcset.trim() !== "" ? pickSourceSet(srcset) : null) ??
 		src;
@@ -19079,7 +19080,7 @@ export class HTMLInputElement extends HTMLElement {
 				continue;
 			}
 			const element = node as Element;
-			if (element.getAttribute("id") !== id) {
+			if (attributeOf(element, "id") !== id) {
 				continue;
 			}
 			return element instanceof HTMLDataListElement ? element : null;
@@ -19555,10 +19556,10 @@ export class HTMLInputElement extends HTMLElement {
 		const slots = this;
 		slots.extra.value = sanitizeInputValue(
 			ownerOf(this),
-			ownerOf(this).getAttribute("value") ?? "",
+			attributeOf(ownerOf(this), "value") ?? "",
 		);
 		slots.extra.dirtyValue = false;
-		slots.extra.checked = ownerOf(this).hasAttribute("checked");
+		slots.extra.checked = hasAttributeOf(ownerOf(this), "checked");
 		slots.extra.dirtyChecked = false;
 		slots.extra.indeterminate = false;
 		syncUAShadowTree(ownerOf(this));
@@ -19626,7 +19627,7 @@ export class HTMLInputElement extends HTMLElement {
 			return;
 		}
 		const value = slots[kUAValue];
-		const placeholder = ownerOf(this).getAttribute("placeholder") ?? "";
+		const placeholder = attributeOf(ownerOf(this), "placeholder") ?? "";
 		// A password puts one bullet per code unit into the shadow tree, never
 		// the real value. So what lays out, paints and can be selected is only
 		// the mask, and the value stays in .value alone. Offsets stay 1:1 with
@@ -19780,9 +19781,9 @@ function getInputKind(input: HTMLInputElement): InputKind {
 // none reads as empty while it draws its default label, as in a browser.
 function getInputButtonLabel(input: HTMLInputElement): string {
 	if (input.type === "image") {
-		return input.getAttribute("alt") ?? "Submit";
+		return attributeOf(input, "alt") ?? "Submit";
 	}
-	const value = input.getAttribute("value");
+	const value = attributeOf(input, "value");
 	if (value !== null) {
 		return value;
 	}
@@ -19902,7 +19903,7 @@ function stepInput(input: HTMLInputElement, steps: number): void {
 	if (input.type !== "number" && input.type !== "range") {
 		throw domError("InvalidStateError", "This input type does not step");
 	}
-	const stepAttribute = input.getAttribute("step")?.trim();
+	const stepAttribute = attributeOf(input, "step")?.trim();
 	if (stepAttribute !== undefined && /^any$/i.test(stepAttribute)) {
 		throw domError(
 			"InvalidStateError",
@@ -19929,13 +19930,13 @@ function getSteppedValue(
 	input: HTMLInputElement,
 	steps: number,
 ): string | null {
-	const stepAttribute = input.getAttribute("step")?.trim();
+	const stepAttribute = attributeOf(input, "step")?.trim();
 	const step = stepAttribute === undefined || /^any$/i.test(stepAttribute)
 		? 1
 		: (parseFloatingPoint(stepAttribute) ?? 1);
 	const spacing = step > 0 ? step : 1;
-	const min = parseFloatingPoint(input.getAttribute("min")?.trim() ?? "");
-	const max = parseFloatingPoint(input.getAttribute("max")?.trim() ?? "");
+	const min = parseFloatingPoint(attributeOf(input, "min")?.trim() ?? "");
+	const max = parseFloatingPoint(attributeOf(input, "max")?.trim() ?? "");
 	const inputSlots = _(input);
 	const current = parseFloatingPoint(inputSlots[kUAValue]) ?? 0;
 	const base = min ?? 0;
@@ -19958,7 +19959,7 @@ function getSteppedValue(
 	}
 	const places = Math.max(
 		getDecimalPlaces(stepAttribute),
-		getDecimalPlaces(input.getAttribute("min")),
+		getDecimalPlaces(attributeOf(input, "min")),
 		getDecimalPlaces(inputSlots[kUAValue]),
 	);
 	return String(Number(next.toFixed(Math.min(places, 20))));
@@ -19978,7 +19979,7 @@ function sanitizeInputValue(input: HTMLInputElement, value: string): string {
 		case "url":
 			return trimASCIIWhitespace(stripped);
 		case "email":
-			if (input.hasAttribute("multiple")) {
+			if (hasAttributeOf(input, "multiple")) {
 				return stripped
 					.split(",")
 					.map((part) => trimASCIIWhitespace(part))
@@ -20012,14 +20013,14 @@ function sanitizeInputValue(input: HTMLInputElement, value: string): string {
 
 // A range's max below its min leaves the range a single point, the min.
 function getRangeBounds(input: HTMLInputElement): {min: number; max: number} {
-	const min = parseFloatingPoint(input.getAttribute("min") ?? "") ?? 0;
-	const max = parseFloatingPoint(input.getAttribute("max") ?? "") ?? 100;
+	const min = parseFloatingPoint(attributeOf(input, "min") ?? "") ?? 0;
+	const max = parseFloatingPoint(attributeOf(input, "max") ?? "") ?? 100;
 	return {min, max: Math.max(min, max)};
 }
 
 function clampRangeValue(input: HTMLInputElement, value: string): number {
-	const min = parseFloatingPoint(input.getAttribute("min") ?? "") ?? 0;
-	const max = parseFloatingPoint(input.getAttribute("max") ?? "") ?? 100;
+	const min = parseFloatingPoint(attributeOf(input, "min") ?? "") ?? 0;
+	const max = parseFloatingPoint(attributeOf(input, "max") ?? "") ?? 100;
 	const number = parseFloatingPoint(value);
 	const middle = max < min ? min : min + (max - min) / 2;
 	if (number === null) {
@@ -20036,7 +20037,7 @@ function clampRangeValue(input: HTMLInputElement, value: string): number {
 
 // A range's step, 1 unless it names another, and null for "any".
 function getRangeStep(input: HTMLInputElement): number | null {
-	const attribute = input.getAttribute("step")?.trim();
+	const attribute = attributeOf(input, "step")?.trim();
 	if (attribute !== undefined && /^any$/i.test(attribute)) {
 		return null;
 	}
@@ -20057,8 +20058,8 @@ function snapRangeValue(input: HTMLInputElement, number: number): string {
 		}
 	}
 	const places = Math.max(
-		getDecimalPlaces(input.getAttribute("step")),
-		getDecimalPlaces(input.getAttribute("min")),
+		getDecimalPlaces(attributeOf(input, "step")),
+		getDecimalPlaces(attributeOf(input, "min")),
 	);
 	return String(Number(value.toFixed(Math.min(places, 20))));
 }
@@ -20180,7 +20181,7 @@ export function commitRangeThumb(element: globalThis.Element): void {
 
 /** The group is defined by the input's name, form and tree. */
 function getRadioGroup(input: HTMLInputElement): HTMLInputElement[] {
-	const name = input.getAttribute("name");
+	const name = attributeOf(input, "name");
 	if (name === null || name === "") {
 		return [input];
 	}
@@ -20194,7 +20195,7 @@ function getRadioGroup(input: HTMLInputElement): HTMLInputElement[] {
 		if (node.type !== "radio") {
 			continue;
 		}
-		if (node.getAttribute("name") !== name) {
+		if (attributeOf(node, "name") !== name) {
 			continue;
 		}
 		if (getFormOwner(node) !== owner) {
@@ -20232,7 +20233,7 @@ export class HTMLLabelElement extends HTMLElement {
 					continue;
 				}
 				const element = node as Element;
-				if (element.getAttribute("id") !== id) {
+				if (attributeOf(element, "id") !== id) {
 					continue;
 				}
 				return isLabelable(element) ? (element as HTMLElement) : null;
@@ -20810,13 +20811,13 @@ class HTMLMetaElement extends HTMLElement {
 	// element is inserted into a document as a child of its head.
 	override [kInsertionSteps](this: Slots<HTMLMetaElement>): void {
 		superStep(HTMLMetaElement, kInsertionSteps).call(this);
-		const content = ownerOf(this).getAttribute("content");
+		const content = attributeOf(ownerOf(this), "content");
 		if (
 			ownerOf(this).isConnected &&
 			ownerOf(this).parentNode?.nodeType === ELEMENT_NODE &&
-			(ownerOf(this).parentNode as Element).localName === "head" &&
-			(ownerOf(this).parentNode as Element).namespaceURI === HTML_NAMESPACE &&
-			ownerOf(this).getAttribute("http-equiv")?.toLowerCase() ===
+			localNameOf((ownerOf(this).parentNode as Element)) === "head" &&
+			namespaceOf((ownerOf(this).parentNode as Element)) === HTML_NAMESPACE &&
+			attributeOf(ownerOf(this), "http-equiv")?.toLowerCase() ===
 				"content-security-policy" &&
 			content
 		) {
@@ -20999,7 +21000,7 @@ class HTMLMeterElement extends HTMLElement {
 		setGaugeFill(bar, span > 0 ? (ownerOf(this).value - min) / span : 0);
 		const barLevel = getMeterLevel(ownerOf(this))!;
 		const part = `bar ${barLevel}`;
-		if (bar.getAttribute("part") !== part) {
+		if (attributeOf(bar, "part") !== part) {
 			bar.setAttribute("part", part);
 		}
 	}
@@ -21226,7 +21227,7 @@ class HTMLOptionElement extends HTMLElement {
 		if (select === null) {
 			return;
 		}
-		if (slots[kSelectedness] && !select.hasAttribute("multiple")) {
+		if (slots[kSelectedness] && !hasAttributeOf(select, "multiple")) {
 			for (const option of getOptions(select)) {
 				if (option !== this) {
 					_(option)[kSelectedness] = false;
@@ -22043,7 +22044,7 @@ export class HTMLSelectElement extends HTMLElement {
 
 	[kResetControl]?(this: Slots<HTMLSelectElement>): void {
 		for (const option of getOptions(ownerOf(this))) {
-			_(option)[kSelectedness] = option.hasAttribute("selected");
+			_(option)[kSelectedness] = hasAttributeOf(option, "selected");
 			_(option).extra.optionDirty = false;
 		}
 		askForAReset(ownerOf(this));
@@ -22237,7 +22238,7 @@ function syncPickerRows(
 			...(row.disabled ? ["disabled"] : []),
 			...(row.grouped ? ["grouped"] : []),
 		].join(" ");
-		if (node.getAttribute("part") !== part) {
+		if (attributeOf(node, "part") !== part) {
 			node.setAttribute("part", part);
 		}
 		if (node.textContent !== row.label) {
@@ -22361,7 +22362,7 @@ function getOptions(select: Element): HTMLOptionElement[] {
 }
 
 function getDisplaySize(select: HTMLSelectElement): number {
-	const value = select.getAttribute("size");
+	const value = attributeOf(select, "size");
 	const parsed = value === null ? null : parseNonNegativeInteger(value);
 	return parsed === null || parsed === 0 ? 1 : parsed;
 }
@@ -22373,7 +22374,7 @@ function askForAReset(select: HTMLSelectElement): void {
 	const options = getOptions(select);
 	const selected = options.filter((option) => _(option)[kSelectedness]);
 	if (
-		!select.hasAttribute("multiple") &&
+		!hasAttributeOf(select, "multiple") &&
 		getDisplaySize(select) === 1 &&
 		selected.length === 0
 	) {
@@ -22383,7 +22384,7 @@ function askForAReset(select: HTMLSelectElement): void {
 		}
 		return;
 	}
-	if (selected.length >= 2 && !select.hasAttribute("multiple")) {
+	if (selected.length >= 2 && !hasAttributeOf(select, "multiple")) {
 		for (let index = 0; index < selected.length - 1; index++) {
 			_(selected[index])[kSelectedness] = false;
 		}
@@ -22544,7 +22545,8 @@ class HTMLTableElement extends HTMLElement {
 	set tHead(value: Element | null) {
 		if (
 			value !== null &&
-			!(value instanceof HTMLTableSectionElement && value.localName === "thead")
+			!(value instanceof HTMLTableSectionElement &&
+				localNameOf(value) === "thead")
 		) {
 			throw new TypeError("That is not a table head");
 		}
@@ -22577,7 +22579,8 @@ class HTMLTableElement extends HTMLElement {
 	set tFoot(value: Element | null) {
 		if (
 			value !== null &&
-			!(value instanceof HTMLTableSectionElement && value.localName === "tfoot")
+			!(value instanceof HTMLTableSectionElement &&
+				localNameOf(value) === "tfoot")
 		) {
 			throw new TypeError("That is not a table foot");
 		}
@@ -23419,7 +23422,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 		}
 		const attached = getAttachedDocument(ownerOf(this))!;
 		const value = slots[kUAValue];
-		const placeholder = ownerOf(this).getAttribute("placeholder") ?? "";
+		const placeholder = attributeOf(ownerOf(this), "placeholder") ?? "";
 		let changed = false;
 		if (slots.extra.valueText!.data !== value) {
 			slots.extra.valueText!.data = value;
@@ -23680,7 +23683,7 @@ function getPopoverAttributeState(element: Element): "auto" | "manual" | null {
 	if (_(element).namespace !== HTML_NAMESPACE) {
 		return null;
 	}
-	return getPopoverValueState(element.getAttribute("popover"));
+	return getPopoverValueState(attributeOf(element, "popover"));
 }
 
 function getPopoverValueState(value: string | null): "auto" | "manual" | null {
@@ -24116,7 +24119,7 @@ function popoverFocusingSteps(element: Element): void {
 		focusDialog(element);
 		return;
 	}
-	if (element.hasAttribute("autofocus")) {
+	if (hasAttributeOf(element, "autofocus")) {
 		(element as HTMLElement).focus();
 		return;
 	}
@@ -24125,7 +24128,7 @@ function popoverFocusingSteps(element: Element): void {
 			continue;
 		}
 		const descendant = node as Element;
-		if (!descendant.hasAttribute("autofocus")) {
+		if (!hasAttributeOf(descendant, "autofocus")) {
 			continue;
 		}
 		if (!isFocusableArea(descendant)) {
@@ -24199,7 +24202,7 @@ function getAttributeElement(node: Node, attribute: string): Element | null {
 			root = getRoot(host);
 		}
 	}
-	const id = element.getAttribute(attribute);
+	const id = attributeOf(element, attribute);
 	if (id === null) {
 		return null;
 	}
@@ -24286,7 +24289,7 @@ function popoverTargetActivationBehavior(node: Element, target: unknown): void {
 		return;
 	}
 	const action = toASCIILowercase(
-		node.getAttribute("popovertargetaction") ?? "toggle",
+		attributeOf(node, "popovertargetaction") ?? "toggle",
 	);
 	const showing = isShowingPopover(popover);
 	if (action === "show" && showing) {
@@ -24692,7 +24695,7 @@ function syncDataset(map: DOMStringMap): void {
 		const attribute = getDatasetAttributeName(name);
 		Object.defineProperty(map, name, {
 			get(this: DOMStringMap): string {
-				return mapSlots.datasetElement.getAttribute(attribute) as string;
+				return attributeOf(mapSlots.datasetElement, attribute) as string;
 			},
 			set: wrapWithReactions(
 				function (this: DOMStringMap, value: unknown): void {
@@ -24802,7 +24805,7 @@ function isLabelable(element: Element): boolean {
 	}
 	return (
 		_(element).localName !== "input" ||
-		toASCIILowercase(element.getAttribute("type") ?? "") !== "hidden"
+		toASCIILowercase(attributeOf(element, "type") ?? "") !== "hidden"
 	);
 }
 
@@ -24819,7 +24822,7 @@ export function isActuallyDisabled(element: Element): boolean {
 	if (
 		elementSlots.localName === "option" || elementSlots.localName === "optgroup"
 	) {
-		if (element.hasAttribute("disabled")) {
+		if (hasAttributeOf(element, "disabled")) {
 			return true;
 		}
 		const parent = objectOf(elementSlots.parent);
@@ -24827,7 +24830,7 @@ export function isActuallyDisabled(element: Element): boolean {
 			elementSlots.localName === "option" &&
 			parent !== null &&
 			isHTMLElementNamed(parent, "optgroup") &&
-			(parent as Element).hasAttribute("disabled")
+			hasAttributeOf((parent as Element), "disabled")
 		) {
 			return true;
 		}
@@ -24846,7 +24849,7 @@ export function isActuallyDisabled(element: Element): boolean {
 		}
 		return false;
 	}
-	if (element.hasAttribute("disabled")) {
+	if (hasAttributeOf(element, "disabled")) {
 		return true;
 	}
 	if (elementSlots.localName === "fieldset") {
@@ -24866,7 +24869,7 @@ function isDisabledByFieldSet(element: Element): boolean {
 			continue;
 		}
 		const fieldset = node as Element;
-		if (!fieldset.hasAttribute("disabled")) {
+		if (!hasAttributeOf(fieldset, "disabled")) {
 			continue;
 		}
 		const legend = getFirstChildElement(fieldset, "legend");
@@ -24888,8 +24891,8 @@ function getFormOwner(element: Element): HTMLFormElement | null {
 	if (!isFormAssociated(element)) {
 		return null;
 	}
-	if (isListed(element) && element.hasAttribute("form")) {
-		const id = element.getAttribute("form") as string;
+	if (isListed(element) && hasAttributeOf(element, "form")) {
+		const id = attributeOf(element, "form") as string;
 		if (id === "") {
 			return null;
 		}
@@ -24902,7 +24905,7 @@ function getFormOwner(element: Element): HTMLFormElement | null {
 				continue;
 			}
 			const candidate = node as Element;
-			if (candidate.getAttribute("id") !== id) {
+			if (attributeOf(candidate, "id") !== id) {
 				continue;
 			}
 			return candidate instanceof HTMLFormElement ? candidate : null;
@@ -24962,7 +24965,7 @@ function syncFormDisabled(element: Element): void {
 		return;
 	}
 	const disabled =
-		element.hasAttribute("disabled") || isDisabledByFieldSet(element);
+		hasAttributeOf(element, "disabled") || isDisabledByFieldSet(element);
 	if (_(internals).formDisabled === disabled) {
 		return;
 	}
@@ -25391,7 +25394,7 @@ Object.defineProperty(ElementInternals.prototype, Symbol.toStringTag, {
 for (const [property, attribute] of ARIA_STRING_REFLECTIONS) {
 	Object.defineProperty(ElementInternals.prototype, property, {
 		get(this: ElementInternals): string | null {
-			return _(this).elementInternalsTarget.getAttribute(attribute);
+			return attributeOf(_(this).elementInternalsTarget, attribute);
 		},
 		set(this: ElementInternals, value: unknown): void {
 			const slots = _(this);
@@ -25427,7 +25430,7 @@ function getARIATargetsFromAttribute(
 	element: Element,
 	attribute: string,
 ): Element[] | null {
-	const value = element.getAttribute(attribute);
+	const value = attributeOf(element, attribute);
 	// No attribute and no elements passed means no reflected target at all,
 	// which reads back as null rather than an empty list.
 	if (value === null) {
@@ -25440,7 +25443,7 @@ function getARIATargetsFromAttribute(
 			if (nodeTypeOf(node) !== ELEMENT_NODE) {
 				continue;
 			}
-			if ((node as Element).getAttribute("id") !== id) {
+			if (attributeOf((node as Element), "id") !== id) {
 				continue;
 			}
 			found.push(node as Element);
@@ -25644,7 +25647,7 @@ function willValidate(element: Element): boolean {
 		if (UNSUBMITTABLE_INPUT_TYPES.has(type)) {
 			return false;
 		}
-		if (READONLY_INPUT_TYPES.has(type) && element.hasAttribute("readonly")) {
+		if (READONLY_INPUT_TYPES.has(type) && hasAttributeOf(element, "readonly")) {
 			return false;
 		}
 	} else if (element instanceof HTMLButtonElement) {
@@ -25654,7 +25657,7 @@ function willValidate(element: Element): boolean {
 	} else if (
 		(element instanceof HTMLTextAreaElement ||
 			elementSlots.internals !== null) &&
-		element.hasAttribute("readonly")
+		hasAttributeOf(element, "readonly")
 	) {
 		// A textarea and a form-associated custom element honor readonly;
 		// a button or a checkbox does not.
@@ -25761,8 +25764,8 @@ function collectInputValidity(
 ): void {
 	const type = input.type;
 	const value = input.value;
-	const multiple = input.hasAttribute("multiple");
-	if (input.hasAttribute("required") && REQUIRED_INPUT_TYPES.has(type)) {
+	const multiple = hasAttributeOf(input, "multiple");
+	if (hasAttributeOf(input, "required") && REQUIRED_INPUT_TYPES.has(type)) {
 		if (type === "checkbox") {
 			flags.valueMissing = !input.checked;
 		} else if (type === "radio") {
@@ -25783,7 +25786,7 @@ function collectInputValidity(
 	} else if (type === "url" && value !== "") {
 		flags.typeMismatch = !URL.canParse(value);
 	}
-	const pattern = input.getAttribute("pattern");
+	const pattern = attributeOf(input, "pattern");
 	if (pattern !== null && value !== "" && PATTERN_INPUT_TYPES.has(type)) {
 		const values = type === "email" && multiple
 			? value.split(",").map((v) => v.trim())
@@ -25797,7 +25800,7 @@ function collectInputValidity(
 }
 
 function isRadioGroupChecked(input: HTMLInputElement): boolean {
-	const name = input.getAttribute("name");
+	const name = attributeOf(input, "name");
 	if (name === null || name === "") {
 		return input.checked;
 	}
@@ -25806,7 +25809,7 @@ function isRadioGroupChecked(input: HTMLInputElement): boolean {
 		if (
 			node instanceof HTMLInputElement &&
 			node.type === "radio" &&
-			node.getAttribute("name") === name &&
+			attributeOf(node, "name") === name &&
 			getFormOwner(node) === form &&
 			node.checked
 		) {
@@ -25830,7 +25833,7 @@ function matchesPattern(pattern: string, value: string): boolean {
 }
 
 function parseLengthAttribute(element: Element, name: string): number | null {
-	const value = element.getAttribute(name);
+	const value = attributeOf(element, name);
 	const parsed = value === null ? null : parseInteger(value);
 	return parsed !== null && parsed >= 0 ? parsed : null;
 }
@@ -25847,7 +25850,7 @@ function collectLengthValidity(
 }
 
 function parseNumberAttribute(element: Element, name: string): number | null {
-	const value = element.getAttribute(name);
+	const value = attributeOf(element, name);
 	if (value === null) {
 		return null;
 	}
@@ -25922,11 +25925,11 @@ function collectRangeValidity(
 	if (number === null) {
 		return;
 	}
-	const min = getInputValueNumber(type, input.getAttribute("min") ?? "");
-	const max = getInputValueNumber(type, input.getAttribute("max") ?? "");
+	const min = getInputValueNumber(type, attributeOf(input, "min") ?? "");
+	const max = getInputValueNumber(type, attributeOf(input, "max") ?? "");
 	flags.rangeUnderflow = min !== null && number < min;
 	flags.rangeOverflow = max !== null && number > max;
-	const stepAttribute = input.getAttribute("step");
+	const stepAttribute = attributeOf(input, "step");
 	if (stepAttribute !== null && stepAttribute.trim().toLowerCase() === "any") {
 		return;
 	}
@@ -25936,7 +25939,7 @@ function collectRangeValidity(
 		rules.scale;
 	const base =
 		min ??
-		getInputValueNumber(type, input.getAttribute("value") ?? "") ??
+		getInputValueNumber(type, attributeOf(input, "value") ?? "") ??
 		rules.defaultBase;
 	const quotient = (number - base) / step;
 	flags.stepMismatch =
@@ -25948,7 +25951,7 @@ function collectSelectValidity(
 	select: HTMLSelectElement,
 	flags: ValidityFlags,
 ): void {
-	if (!select.hasAttribute("required")) {
+	if (!hasAttributeOf(select, "required")) {
 		return;
 	}
 	const options = getOptions(select);
@@ -25958,7 +25961,7 @@ function collectSelectValidity(
 		return;
 	}
 	const placeholder =
-		!select.hasAttribute("multiple") &&
+		!hasAttributeOf(select, "multiple") &&
 		select.size <= 1 &&
 		options.length > 0 &&
 		objectOf(_(options[0]).parent) === select &&
@@ -25973,7 +25976,7 @@ function collectTextAreaValidity(
 	flags: ValidityFlags,
 ): void {
 	const value = textarea.value;
-	flags.valueMissing = textarea.hasAttribute("required") && value === "";
+	flags.valueMissing = hasAttributeOf(textarea, "required") && value === "";
 	if (_(textarea).extra.dirty) {
 		collectLengthValidity(textarea, value, flags);
 	}
@@ -26022,10 +26025,10 @@ function getValidationMessage(element: Element): string {
 		return "Please lengthen this text.";
 	}
 	if (flags.rangeUnderflow) {
-		return `Value must be greater than or equal to ${element.getAttribute("min")}.`;
+		return `Value must be greater than or equal to ${attributeOf(element, "min")}.`;
 	}
 	if (flags.rangeOverflow) {
-		return `Value must be less than or equal to ${element.getAttribute("max")}.`;
+		return `Value must be less than or equal to ${attributeOf(element, "max")}.`;
 	}
 	if (flags.stepMismatch) {
 		return "Please enter a valid value.";
@@ -27776,7 +27779,7 @@ export class Document extends Node implements globalThis.Document {
 		return getDocumentCollection(
 			this,
 			"anchors",
-			(e) => e instanceof HTMLAnchorElement && e.hasAttribute("name"),
+			(e) => e instanceof HTMLAnchorElement && hasAttributeOf(e, "name"),
 			"name",
 		) as unknown as HTMLCollectionOf<globalThis.HTMLAnchorElement>;
 	}
@@ -27826,7 +27829,7 @@ export class Document extends Node implements globalThis.Document {
 			"links",
 			(e) =>
 				(e instanceof HTMLAnchorElement || e instanceof HTMLAreaElement) &&
-				e.hasAttribute("href"),
+				hasAttributeOf(e, "href"),
 			"href",
 		) as unknown as HTMLCollectionOf<
 			globalThis.HTMLAnchorElement | globalThis.HTMLAreaElement
@@ -28179,8 +28182,8 @@ export class Document extends Node implements globalThis.Document {
 						}
 						const element = child as Element;
 						if (
-							element.namespaceURI === HTML_NAMESPACE &&
-							element.getAttribute("name") === name
+							namespaceOf(element) === HTML_NAMESPACE &&
+							attributeOf(element, "name") === name
 						) {
 							matches.push(child);
 						}
@@ -28869,13 +28872,13 @@ const ALL_NAMED_ELEMENTS = new Set([
 ]);
 
 function isAllNamed(element: Element, name: string): boolean {
-	if (element.getAttribute("id") === name) {
+	if (attributeOf(element, "id") === name) {
 		return true;
 	}
 	return (
-		element.namespaceURI === HTML_NAMESPACE &&
-		ALL_NAMED_ELEMENTS.has(element.localName) &&
-		element.getAttribute("name") === name
+		namespaceOf(element) === HTML_NAMESPACE &&
+		ALL_NAMED_ELEMENTS.has(localNameOf(element)) &&
+		attributeOf(element, "name") === name
 	);
 }
 
@@ -28961,11 +28964,11 @@ class HTMLAllCollection {
 		const named = new Map<string, Node>();
 		for (const item of items) {
 			const element = item as Element;
-			const id = element.getAttribute("id");
+			const id = attributeOf(element, "id");
 			if (id !== null && id !== "" && !named.has(id)) {
 				named.set(id, element);
 			}
-			const name = element.getAttribute("name");
+			const name = attributeOf(element, "name");
 			if (
 				name !== null &&
 				name !== "" &&
@@ -29224,7 +29227,7 @@ function extractIs(options: {is?: string} | string | undefined): string | null {
 }
 
 function addToIdMap(document: Document, element: Element): void {
-	const id = element.getAttribute("id");
+	const id = attributeOf(element, "id");
 	if (id !== null && id !== "") {
 		addIdEntry(document, id, element);
 	}
@@ -29235,7 +29238,7 @@ function addToIdMap(document: Document, element: Element): void {
 }
 
 function removeFromIdMap(document: Document, element: Element): void {
-	const id = element.getAttribute("id");
+	const id = attributeOf(element, "id");
 	if (id !== null && id !== "") {
 		removeIdEntry(document, id, element);
 	}
@@ -29320,7 +29323,7 @@ function getExposedName(element: Element): string | null {
 	if (!isNamedByName(element)) {
 		return null;
 	}
-	const name = element.getAttribute("name");
+	const name = attributeOf(element, "name");
 	return name === null || name === "" ? null : name;
 }
 
@@ -31184,7 +31187,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (context === null) {
 			const document = start instanceof Document
 				? start
-				: (start.ownerDocument as Document | null);
+				: (ownerDocumentOf(start) as Document | null);
 			context = (document?.body ?? document?.documentElement ?? null) as
 			Element | null;
 		}
@@ -32393,7 +32396,7 @@ function isPaintedText(node: Text, layout: Layout | null): boolean {
 
 function isLineBreakElement(node: Node): node is Element {
 	return nodeTypeOf(node) === ELEMENT_NODE &&
-		(node as Element).localName === "br";
+		localNameOf((node as Element)) === "br";
 }
 
 // The nearest ancestor that is not laid out inline, which is the block
@@ -32466,7 +32469,7 @@ function getSelectionTextNodes(
 					nodes.push(child);
 				}
 			} else if (nodeTypeOf(child) === ELEMENT_NODE) {
-				const name = (child as Element).localName;
+				const name = localNameOf((child as Element));
 				if (name !== "script" && name !== "style" && name !== "template") {
 					collect(child);
 				}
@@ -34261,7 +34264,7 @@ export function hasFocus(element: Element): boolean {
 }
 
 export function getPartNames(element: Element): string[] {
-	const value = element.getAttribute("part");
+	const value = attributeOf(element, "part");
 	return value === null ? [] : splitOnASCIIWhitespace(value);
 }
 
@@ -34286,15 +34289,15 @@ export function isTargetElement(element: Element): boolean {
 	} catch (_err) {
 		// A fragment that is not valid percent-encoding is used as-is.
 	}
-	const id = element.getAttribute("id");
+	const id = attributeOf(element, "id");
 	if (id === decoded || id === fragment) {
 		return true;
 	}
 	// The `a` element's name attribute is the old way to write an anchor.
 	return (
-		element.namespaceURI === HTML_NAMESPACE &&
-		element.localName === "a" &&
-		element.getAttribute("name") === decoded
+		namespaceOf(element) === HTML_NAMESPACE &&
+		localNameOf(element) === "a" &&
+		attributeOf(element, "name") === decoded
 	);
 }
 
@@ -34363,15 +34366,15 @@ const PLACEHOLDER_INPUT_TYPES = new Set([
 ]);
 
 export function isPlaceholderShown(element: Element): boolean {
-	if (element.namespaceURI !== HTML_NAMESPACE) {
+	if (namespaceOf(element) !== HTML_NAMESPACE) {
 		return false;
 	}
-	const name = element.localName;
+	const name = localNameOf(element);
 	if (name !== "input" && name !== "textarea") {
 		return false;
 	}
 	// An empty placeholder is still the one presented, as browsers match it.
-	const placeholder = element.getAttribute("placeholder");
+	const placeholder = attributeOf(element, "placeholder");
 	if (placeholder === null || /[\r\n]/.test(placeholder)) {
 		return false;
 	}
@@ -34384,28 +34387,28 @@ export function isPlaceholderShown(element: Element): boolean {
 }
 
 function getInputTypeValue(element: Element): string {
-	return toASCIILowercase(element.getAttribute("type") ?? "text");
+	return toASCIILowercase(attributeOf(element, "type") ?? "text");
 }
 
 export function isDefaultControl(element: Element): boolean {
-	if (element.namespaceURI !== HTML_NAMESPACE) {
+	if (namespaceOf(element) !== HTML_NAMESPACE) {
 		return false;
 	}
-	const name = element.localName;
+	const name = localNameOf(element);
 	if (name === "option") {
-		return element.getAttribute("selected") !== null;
+		return attributeOf(element, "selected") !== null;
 	}
 	if (name === "input") {
 		const type = getInputTypeValue(element);
 		if (type === "checkbox" || type === "radio") {
-			return element.getAttribute("checked") !== null;
+			return attributeOf(element, "checked") !== null;
 		}
 	}
 	if (name !== "button" && name !== "input") {
 		return false;
 	}
 	const type = name === "button"
-		? toASCIILowercase(element.getAttribute("type") ?? "submit")
+		? toASCIILowercase(attributeOf(element, "type") ?? "submit")
 		: getInputTypeValue(element);
 	if (type !== "submit" && type !== "image") {
 		return false;
@@ -34420,9 +34423,9 @@ export function isDefaultControl(element: Element): boolean {
 	) as unknown as Iterable<
 		Element
 	>) {
-		const local = candidate.localName;
+		const local = localNameOf(candidate);
 		const kind = local === "button"
-			? toASCIILowercase(candidate.getAttribute("type") ?? "submit")
+			? toASCIILowercase(attributeOf(candidate, "type") ?? "submit")
 			: getInputTypeValue(candidate);
 		if (kind === "submit" || kind === "image") {
 			return candidate === element;
@@ -34433,13 +34436,13 @@ export function isDefaultControl(element: Element): boolean {
 
 /** Whether `:open` matches. */
 export function isOpenElement(element: Element): boolean {
-	if (element.namespaceURI !== HTML_NAMESPACE) {
+	if (namespaceOf(element) !== HTML_NAMESPACE) {
 		return false;
 	}
-	switch (element.localName) {
+	switch (localNameOf(element)) {
 		case "details":
 		case "dialog":
-			return element.getAttribute("open") !== null;
+			return attributeOf(element, "open") !== null;
 		case "select":
 			return (_(element as HTMLSelectElement).extra.pickerHighlight != null);
 		default:
@@ -34522,10 +34525,10 @@ export function isDefinedElement(element: Element): boolean {
 // document's, not the flat tree's, so a heading slotted somewhere keeps
 // its level.
 export function getHeadingLevel(element: Element): number | null {
-	if (element.namespaceURI !== HTML_NAMESPACE) {
+	if (namespaceOf(element) !== HTML_NAMESPACE) {
 		return null;
 	}
-	const match = /^h([1-6])$/.exec(element.localName);
+	const match = /^h([1-6])$/.exec(localNameOf(element));
 	if (match === null) {
 		return null;
 	}
@@ -34539,17 +34542,17 @@ function getHeadingOffset(element: Element): number {
 		node !== null;
 		node = node.parentElement as Element | null
 	) {
-		if (node.namespaceURI !== HTML_NAMESPACE) {
+		if (namespaceOf(node) !== HTML_NAMESPACE) {
 			continue;
 		}
-		const attribute = node.getAttribute("headingoffset");
+		const attribute = attributeOf(node, "headingoffset");
 		const value = attribute === null
 			? null
 			: parseNonNegativeInteger(attribute);
 		if (value !== null) {
 			offset += value;
 		}
-		if (node.hasAttribute("headingreset")) {
+		if (hasAttributeOf(node, "headingreset")) {
 			break;
 		}
 	}
@@ -34563,13 +34566,13 @@ export function hasCustomState(element: Element, name: string): boolean {
 }
 
 export function isCheckedControl(element: Element): boolean {
-	if (element.namespaceURI !== HTML_NAMESPACE) {
+	if (namespaceOf(element) !== HTML_NAMESPACE) {
 		return false;
 	}
-	if (element.localName === "option") {
+	if (localNameOf(element) === "option") {
 		return (element as unknown as HTMLOptionElement).selected;
 	}
-	if (element.localName !== "input") {
+	if (localNameOf(element) !== "input") {
 		return false;
 	}
 	const type = getInputTypeValue(element);
@@ -34582,13 +34585,13 @@ export function isCheckedControl(element: Element): boolean {
 // A checkbox whose indeterminate IDL attribute is set, a radio button
 // whose group has nothing checked, and a progress bar with no value.
 export function isIndeterminateControl(element: Element): boolean {
-	if (element.namespaceURI !== HTML_NAMESPACE) {
+	if (namespaceOf(element) !== HTML_NAMESPACE) {
 		return false;
 	}
-	if (element.localName === "progress") {
-		return !element.hasAttribute("value");
+	if (localNameOf(element) === "progress") {
+		return !hasAttributeOf(element, "value");
 	}
-	if (element.localName !== "input") {
+	if (localNameOf(element) !== "input") {
 		return false;
 	}
 	const type = getInputTypeValue(element);
@@ -34624,10 +34627,10 @@ function getValidityOwners(element: Element): Element[] {
 // not apply to. A form or a fieldset is invalid when anything it holds
 // that is being validated is.
 export function getValidityMatch(element: Element): "valid" | "invalid" | null {
-	if (element.namespaceURI !== HTML_NAMESPACE) {
+	if (namespaceOf(element) !== HTML_NAMESPACE) {
 		return null;
 	}
-	const name = element.localName;
+	const name = localNameOf(element);
 	if (name === "form" || name === "fieldset") {
 		const controls = name === "form"
 			? getListedElements(element as unknown as HTMLFormElement)
@@ -34670,8 +34673,8 @@ export function getRangeMatch(element: Element): "in" | "out" | null {
 	}
 	const limited =
 		type === "range" ||
-		getInputValueNumber(type, element.getAttribute("min") ?? "") !== null ||
-		getInputValueNumber(type, element.getAttribute("max") ?? "") !== null;
+		getInputValueNumber(type, attributeOf(element, "min") ?? "") !== null ||
+		getInputValueNumber(type, attributeOf(element, "max") ?? "") !== null;
 	if (!limited) {
 		return null;
 	}
@@ -34951,7 +34954,7 @@ function connectShadowRoot(root: ShadowRoot): void {
 }
 
 function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
-	const named = template.getAttribute("shadowrootmode");
+	const named = attributeOf(template, "shadowrootmode");
 	if (named === null) {
 		return false;
 	}
@@ -34968,14 +34971,14 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 		attachShadowRoot(
 			host as Element,
 			mode,
-			template.hasAttribute("shadowrootclonable"),
-			template.hasAttribute("shadowrootserializable"),
-			template.hasAttribute("shadowrootdelegatesfocus"),
+			hasAttributeOf(template, "shadowrootclonable"),
+			hasAttributeOf(template, "shadowrootserializable"),
+			hasAttributeOf(template, "shadowrootdelegatesfocus"),
 			"named",
 			// A declarative shadow root that names a registry attribute is
 			// scoped to a registry it has not been given yet, so it starts with
 			// none.
-			template.hasAttribute("shadowrootcustomelementregistry")
+			hasAttributeOf(template, "shadowrootcustomelementregistry")
 				? null
 				: _(_((host as Element)).document).registry,
 		);
@@ -36678,7 +36681,7 @@ function handleMutationRecords(
 			return true;
 		}
 		const target = record.target as Element;
-		return record.oldValue !== target.getAttribute(record.attributeName);
+		return record.oldValue !== attributeOf(target, record.attributeName);
 	});
 	if (relevant.length === 0) {
 		return;
@@ -36762,7 +36765,7 @@ function dropUnfocusableFocus(document: Document): void {
 		node = flatParentElement(node)
 	) {
 		if (
-			node.hasAttribute("inert") ||
+			hasAttributeOf(node, "inert") ||
 			getComputedValue(node as Element, "display") === "none"
 		) {
 			(active as globalThis.HTMLElement).blur();
@@ -37853,7 +37856,7 @@ function getNamedPropertyValue(
 			document,
 			null,
 			(element) =>
-				element.getAttribute("id") === name || getExposedName(element) === name,
+				attributeOf(element, "id") === name || getExposedName(element) === name,
 		);
 		cache.set(key, collection);
 	}
@@ -39664,6 +39667,23 @@ export function ownerDocumentOf(node: globalThis.Node): Document | null {
 /** The element's localName, read without going through its binding. */
 export function localNameOf(element: globalThis.Element): string {
 	return _(element as Element).localName;
+}
+
+/** The element's attribute's value, read without going through its binding. */
+export function attributeOf(
+	element: globalThis.Element,
+	qualifiedName: string,
+): string | null {
+	const attribute = getAttributeByName(element as Element, qualifiedName);
+	return attribute === null ? null : _(attribute).extra.value;
+}
+
+/** Whether the element has the attribute, without going through its binding. */
+export function hasAttributeOf(
+	element: globalThis.Element,
+	qualifiedName: string,
+): boolean {
+	return getAttributeByName(element as Element, qualifiedName) !== null;
 }
 
 /** The element's namespaceURI, read without going through its binding. */
