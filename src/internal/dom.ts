@@ -14947,6 +14947,18 @@ function parseURL(value: string, base: string): string | null {
 	}
 }
 
+// A URL attribute as its reflecting property reads it: resolved against
+// the document's base URL, the trimmed text when that fails, and "" when
+// the attribute is absent.
+function getURLAttribute(element: Element, attribute: string): string {
+	const value = attributeOf(element, attribute);
+	if (value === null) {
+		return "";
+	}
+	const trimmed = trimASCIIWhitespace(value);
+	return parseURL(trimmed, getDocumentBaseURL(_(element).document)) ?? trimmed;
+}
+
 // The href of the first base element that has one, resolved against the
 // document's URL. Falls back to the document's URL when there is no such
 // element or its href does not parse.
@@ -15049,13 +15061,7 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 			break;
 		case "url":
 			get = function (this: Element): string {
-				const value = attributeOf(this, attribute);
-				if (value === null) {
-					return "";
-				}
-				const trimmed = trimASCIIWhitespace(value);
-				return parseURL(trimmed, getDocumentBaseURL(_(this).document)) ??
-					trimmed;
+				return getURLAttribute(this, attribute);
 			};
 			set = function (this: Element, value: unknown): void {
 				setAttributeOf(this, attribute, String(value));
@@ -15252,12 +15258,7 @@ function createHyperlinkPart(
 const hyperlinkMembers: PropertyDescriptorMap = {
 	href: {
 		get(this: Element): string {
-			const value = attributeOf(this, "href");
-			if (value === null) {
-				return "";
-			}
-			const trimmed = trimASCIIWhitespace(value);
-			return parseURL(trimmed, getDocumentBaseURL(_(this).document)) ?? trimmed;
+			return getURLAttribute(this, "href");
 		},
 		set(this: Element, value: string): void {
 			setAttributeOf(this, "href", String(value));
@@ -15338,12 +15339,7 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 	),
 	toString: {
 		value: function toString(this: Element): string {
-			const value = attributeOf(this, "href");
-			if (value === null) {
-				return "";
-			}
-			const trimmed = trimASCIIWhitespace(value);
-			return parseURL(trimmed, getDocumentBaseURL(_(this).document)) ?? trimmed;
+			return getURLAttribute(this, "href");
 		},
 		writable: true,
 		enumerable: true,
@@ -22325,15 +22321,8 @@ function getChildElementsNamed(parent: Node, localName: string): Element[] {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = objectOf(nodeSlots);
-		if (nodeTypeOf(node) !== ELEMENT_NODE) {
-			continue;
-		}
-		const element = node as Element;
-		if (
-			_(element).namespace === HTML_NAMESPACE &&
-			_(element).localName === localName
-		) {
-			found.push(element);
+		if (isHTMLElementNamed(node, localName)) {
+			found.push(node as Element);
 		}
 	}
 	return found;
@@ -28375,15 +28364,10 @@ function getDocumentCollection(
 	let collection = collections.get(kind);
 	if (collection === undefined) {
 		collection = live(
-			new HTMLCollection(() => {
-				const found: Element[] = [];
-				for (const node of descendants(document)) {
-					if (nodeTypeOf(node) === ELEMENT_NODE && match(node as Element)) {
-						found.push(node as Element);
-					}
-				}
-				return found;
-			}, document, null, watched),
+			new HTMLCollection(() =>
+				getDescendantElements(document, []).filter(
+					match,
+				), document, null, watched),
 		);
 		collections.set(kind, collection);
 	}
@@ -31347,6 +31331,25 @@ interface SelectionSlots {
 	direction: "forwards" | "backwards" | "directionless";
 }
 
+function collapseSelectionToEdge(selection: Selection, start: boolean): void {
+	const slots = _(selection);
+	const range = slots.range;
+	if (range === null) {
+		throw domError("InvalidStateError", "The selection has no range");
+	}
+	const rangeSlots = _(range);
+	const point: [Node, number] = start
+		? [rangeSlots.startNode, rangeSlots.startOffset]
+		: [rangeSlots.endNode, rangeSlots.endOffset];
+	associateSelectionRange(
+		selection,
+		createRangeBetween(selection, point, point),
+		point,
+		point,
+		slots.direction,
+	);
+}
+
 interface Selection {
 	readonly [internals]: SelectionSlots;
 }
@@ -31601,35 +31604,11 @@ class Selection implements globalThis.Selection {
 	}
 
 	collapseToStart(): void {
-		const slots = _(this);
-		const range = slots.range;
-		if (range === null) {
-			throw domError("InvalidStateError", "The selection has no range");
-		}
-		const point: [Node, number] = [_(range).startNode, _(range).startOffset];
-		associateSelectionRange(
-			this,
-			createRangeBetween(this, point, point),
-			point,
-			point,
-			slots.direction,
-		);
+		collapseSelectionToEdge(this, true);
 	}
 
 	collapseToEnd(): void {
-		const slots = _(this);
-		const range = slots.range;
-		if (range === null) {
-			throw domError("InvalidStateError", "The selection has no range");
-		}
-		const point: [Node, number] = [_(range).endNode, _(range).endOffset];
-		associateSelectionRange(
-			this,
-			createRangeBetween(this, point, point),
-			point,
-			point,
-			slots.direction,
-		);
+		collapseSelectionToEdge(this, false);
 	}
 
 	extend(node: Node, offset = 0): void {
