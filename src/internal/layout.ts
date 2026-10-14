@@ -52,7 +52,6 @@ import {
 	type FlexDirection,
 	type Gutter,
 	isContainingBlock,
-	isDefined,
 	type Justify,
 	LayoutNode,
 	type PositionType,
@@ -4742,13 +4741,13 @@ function stickyShiftAlong(
 	endInset: number,
 ): number {
 	let shift = 0;
-	if (isDefined(startInset)) {
+	if (!Number.isNaN(startInset)) {
 		const wanted = portStart + startInset;
 		if (position < wanted) {
 			shift = Math.min(wanted - position, containerEnd - (position + size));
 		}
 	}
-	if (isDefined(endInset)) {
+	if (!Number.isNaN(endInset)) {
 		const wanted = portStart + portSize - endInset - size;
 		if (position + shift > wanted) {
 			shift = Math.max(wanted - position, containerStart - position);
