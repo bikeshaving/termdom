@@ -10,7 +10,8 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {createWindow, type Document} from "../src/internal/dom.ts";
+import type {Document} from "../src/internal/dom.ts";
+import {createWindow} from "../src/internal/window.ts";
 
 // The interfaces script sees are a window's, so the events the tests
 // dispatch are built with a window's constructors.

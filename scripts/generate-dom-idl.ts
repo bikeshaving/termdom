@@ -18,7 +18,7 @@ import {fileURLToPath} from "node:url";
 
 import {parse} from "webidl2";
 
-import {getWindowInterfaceNames} from "../src/internal/dom.ts";
+import {getWindowInterfaceNames} from "../src/internal/window.ts";
 
 const require = createRequire(import.meta.url);
 const idlDir = dirname(require.resolve("@webref/idl/package.json"));

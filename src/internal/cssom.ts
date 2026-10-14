@@ -45,6 +45,7 @@ import {
 	releaseRemovedNodes,
 	reobserveShadowRoot,
 	setAttributeOf,
+	setStyleHooks,
 	styleElementCount,
 	TransitionEvent,
 	type Window,
@@ -10479,3 +10480,20 @@ export function styleShadowAttached(root: ShadowRoot): void {
 		.get((root.host as Element).ownerDocument as object)
 		?.registerShadowRoot(root);
 }
+
+setStyleHooks({
+	adoptStyleSheets,
+	getAdoptedStyleSheets,
+	getBoxModel,
+	getComputedValue,
+	getInlineStyle,
+	getStyleSheets,
+	getWhiteSpace,
+	handleFocusChange,
+	handleMutations,
+	handleStateChange,
+	mediaQueryMatches,
+	styleAttributeChanged,
+	styleElementSheet,
+	styleShadowAttached,
+});

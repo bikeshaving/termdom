@@ -4,7 +4,8 @@ import {inspect} from "node:util";
 
 import {expect, test} from "@b9g/libuild/test";
 
-import {createWindow, type Element} from "../src/internal/dom.ts";
+import type {Element} from "../src/internal/dom.ts";
+import {createWindow} from "../src/internal/window.ts";
 
 function asElement(value: unknown): Element {
 	return value as Element;

@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {createWindow} from "../src/internal/dom.ts";
+import {createWindow} from "../src/internal/window.ts";
 import {MockProcess, nextFrame, until} from "./test-utils";
 
 function filler(rows: number): string {
