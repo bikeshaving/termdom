@@ -461,7 +461,9 @@ export class Painter {
 	 * The buffer rows a journalled element scroll covers, or null when the
 	 * terminal cannot shift them. DECSTBM margins are horizontal, so a scroll
 	 * shift is the region's full width or nothing. Content overlapping the
-	 * shift is dragged along and the diff repairs it.
+	 * shift is dragged along and the diff repairs it. A box narrower than the
+	 * terminal shifts only when repairing what lies beside it costs less than
+	 * repainting the box.
 	 */
 	resolveScrollShift(
 		regionHeight: number,
@@ -489,9 +491,6 @@ export class Painter {
 		const border = getCellBorderWidths(record.element);
 		const left = rect.left + border.left;
 		const right = rect.left + rect.width - border.right;
-		if (left > 0 || right < framebuffer.cols) {
-			return null;
-		}
 
 		// Layout rows are document rows. Buffer rows are the document
 		// scroll's. A fixed box is laid out in viewport rows and the paint
@@ -507,7 +506,14 @@ export class Painter {
 		if (end - top <= Math.abs(record.delta)) {
 			return null;
 		}
-		return {delta: record.delta, top, end};
+		const delta = record.delta;
+		if (
+			(left > 0 || right < framebuffer.cols) &&
+			!framebuffer.insetShiftPays({delta, top, end, left, right})
+		) {
+			return null;
+		}
+		return {delta, top, end};
 	}
 
 	/**

@@ -2,6 +2,7 @@ import {describe, expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {transportFromProcess} from "../src/internal/exchange.ts";
+import {encodePNG} from "../src/internal/images.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 /**
@@ -322,4 +323,165 @@ test("a scroll and a change in one frame leave the screen as a fresh frame would
 	expect(lines(terminal.getPlainText())).toEqual(lines(fresh.getPlainText()));
 	dom.dispose();
 	again.dispose();
+});
+
+/** A terminal that keeps the bytes TermDOM writes as well as the screen. */
+function recordedTerminal(
+	rows: number,
+	cols: number,
+): {process: MockProcess; taken: () => string} {
+	const process = new MockProcess({rows, cols});
+	const write = process.stdout.write.bind(process.stdout);
+	let output = "";
+	(process.stdout as any).write = (chunk: any, ...rest: any[]) => {
+		output += String(chunk);
+		return write(chunk, ...rest);
+	};
+	return {
+		process,
+		taken: () => {
+			const taken = output;
+			output = "";
+			return taken;
+		},
+	};
+}
+
+/** The screen a fresh TermDOM shows for `html` with the pane at `top`. */
+async function freshScreen(
+	html: string,
+	rows: number,
+	cols: number,
+	top: number,
+): Promise<string> {
+	const fresh = new MockProcess({rows, cols});
+	const dom = new TermDOM({transport: transportFromProcess(fresh as any)});
+	dom.attach();
+	dom.document.body.innerHTML = html;
+	await nextFrame(dom);
+	dom.document.getElementById("pane")!.scrollTop = top;
+	await nextFrame(dom);
+	const screen = fresh.getScreenContents();
+	dom.dispose();
+	return screen;
+}
+
+/** A pane beside a column `labelWidth` wide of per-row labels. */
+function besidePane(
+	labelWidth: number,
+	label: (row: number) => string,
+	item: (row: number) => string,
+): string {
+	const labels = Array.from({length: 9}, (_, i) => `<div>${label(i)}</div>`)
+		.join("");
+	const items = Array.from({length: 40}, (_, i) => `<div>${item(i)}</div>`)
+		.join("");
+	return (
+		"<div style=\"display:flex\">" +
+		`<div style="width:${labelWidth}ch">${labels}</div>` +
+		"<div id=\"pane\" style=\"flex:1;height:9em;overflow-y:scroll\">" +
+		`${items}</div></div>`
+	);
+}
+
+const SHIFTED_BAND = /\x1b\[1;9r\x1b\[1;1H\x1b\[\d+[LM]\x1b\[r/;
+
+describe("inset element scroll", () => {
+	test("a pane beside other content shifts, and the diff repairs its side", async () => {
+		const html = besidePane(
+			4,
+			(row) => `L${row}`,
+			(row) =>
+				`${row} ` +
+				"abcdefghijklmnopqrstuvwxyz".slice(row % 26) +
+				"abcdefghijklmnopqrstuvwxyz".slice(0, row % 26),
+		);
+		const terminal = recordedTerminal(12, 40);
+		const dom = new TermDOM({
+			transport: transportFromProcess(terminal.process as any),
+		});
+		dom.attach();
+		dom.document.body.innerHTML = html;
+		await nextFrame(dom);
+		const pane = dom.document.getElementById("pane")!;
+		for (const top of [3, 1, 6]) {
+			terminal.taken();
+			pane.scrollTop = top;
+			await nextFrame(dom);
+			expect(terminal.taken()).toMatch(SHIFTED_BAND);
+			expect(terminal.process.getScreenContents()).toBe(
+				await freshScreen(html, 12, 40, top),
+			);
+		}
+		const lines = terminal.process
+			.getPlainText()
+			.split("\n")
+			.map((line: string) => line.trimEnd());
+		expect(lines[0]).toBe("L0  6 ghijklmnopqrstuvwxyzabcdef");
+		expect(lines[8]).toBe("L8  14 opqrstuvwxyzabcdefghijklmn");
+		dom.dispose();
+	});
+
+	test("a pane under wide changing content beside it repaints instead", async () => {
+		const html = besidePane(
+			32,
+			(row) => `${row} ` + "ABCDEFGHIJKLMNOPQRSTUVWXYZ".slice(row, row + 26),
+			(row) => `r${row}`,
+		);
+		const terminal = recordedTerminal(12, 40);
+		const dom = new TermDOM({
+			transport: transportFromProcess(terminal.process as any),
+		});
+		dom.attach();
+		dom.document.body.innerHTML = html;
+		await nextFrame(dom);
+		terminal.taken();
+
+		dom.document.getElementById("pane")!.scrollTop = 3;
+		await nextFrame(dom);
+
+		expect(terminal.taken()).not.toMatch(/\x1b\[\d+;\d+r/);
+		expect(terminal.process.getScreenContents()).toBe(
+			await freshScreen(html, 12, 40, 3),
+		);
+		dom.dispose();
+	});
+
+	test("an image in an inset pane scrolls for a fraction of its repaint", async () => {
+		const width = 304;
+		const height = 384;
+		const data = new Uint8ClampedArray(width * height * 4);
+		for (let y = 0; y < height; y++) {
+			for (let x = 0; x < width; x++) {
+				data.set([x % 256, y % 256, (x * y) % 256, 255], (y * width + x) * 4);
+			}
+		}
+		let binary = "";
+		for (const byte of encodePNG({width, height, data})) {
+			binary += String.fromCharCode(byte);
+		}
+		const src = `data:image/png;base64,${btoa(binary)}`;
+		const html =
+			"<div id=\"pane\" style=\"margin-left:2ch;height:12em;overflow-y:scroll\">" +
+			`<img src="${src}" style="display:block;width:38ch"></div>`;
+		const terminal = recordedTerminal(12, 40);
+		const dom = new TermDOM({
+			transport: transportFromProcess(terminal.process as any),
+			csp: "img-src data:",
+		});
+		dom.attach();
+		dom.document.body.innerHTML = html;
+		const image = dom.document.querySelector("img")!;
+		await image.decode();
+		await nextFrame(dom);
+		const painted = terminal.taken().length;
+
+		dom.document.getElementById("pane")!.scrollTop = 1;
+		await nextFrame(dom);
+
+		const scrolled = terminal.taken();
+		expect(scrolled).toMatch(/\x1b\[1;12r\x1b\[1;1H\x1b\[1M\x1b\[r/);
+		expect(scrolled.length).toBeLessThan(painted / 4);
+		dom.dispose();
+	});
 });
