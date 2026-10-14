@@ -5878,10 +5878,10 @@ interface LiveCollection {
 // than proxy traps, so they are observable without reading the
 // collection. So once a collection has been read, every relevant change
 // must notify it, and each collection updates as cheaply as it can. A
-// collection listing what one node contains registers on that node under
-// kLiveLists. A collection whose members can be anywhere in the document
-// (a form's controls, for example) registers on the document under
-// kDocumentWideLists.
+// collection listing what one node contains registers in that node's
+// liveLists. A collection whose members can be anywhere in the document
+// (a form's controls, for example) registers in the document's
+// documentWideLists.
 
 // A collection stays registered for its owner's lifetime, so this only
 // grows. A change in a document that never registered a collection skips
