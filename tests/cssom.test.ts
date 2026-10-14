@@ -547,3 +547,44 @@ test("text the CSS parsers cannot judge passes through as authored", () => {
 
 	dom.dispose();
 });
+
+test("an @import or @namespace out of its place at the top of a sheet is dropped", () => {
+	const {dom} = makeDOM();
+	const names = (text: string): string[] => {
+		const style = dom.document.createElement("style");
+		style.textContent = text;
+		dom.document.head.append(style);
+		const rules = [...style.sheet!.cssRules].map((rule) =>
+			rule.constructor.name);
+		style.remove();
+		return rules;
+	};
+	expect(names("a {} @import url(x.css); @namespace url(y); b {}"))
+		.toEqual(["CSSStyleRule", "CSSStyleRule"]);
+	expect(names("@namespace url(y); @import url(x.css);"))
+		.toEqual(["CSSNamespaceRule"]);
+	expect(names("@layer a; @import url(x.css); @namespace url(y);"))
+		.toEqual(["CSSLayerStatementRule", "CSSImportRule", "CSSNamespaceRule"]);
+	expect(names("@import url(x.css); @layer a; @namespace url(y);"))
+		.toEqual(["CSSImportRule", "CSSLayerStatementRule"]);
+	expect(names("@media all { @import url(x.css); @namespace url(y); }"))
+		.toEqual(["CSSMediaRule"]);
+	dom.dispose();
+});
+
+test("a namespace prefix declared after a style rule does not apply", async () => {
+	const {dom} = makeDOM("<p>text</p>");
+	const style = dom.document.createElement("style");
+	style.textContent =
+		"@namespace h url(http://www.w3.org/1999/xhtml); h|p { color: red } " +
+		"b {} @namespace q url(http://www.w3.org/1999/xhtml); q|p { color: blue }";
+	dom.document.head.append(style);
+	await nextFrame(dom);
+	expect(
+		dom.document.defaultView!.getComputedStyle(
+			dom.document.querySelector("p")!,
+		).color,
+	).toBe("rgb(255, 0, 0)");
+	expect(style.sheet!.cssRules.length).toBe(3);
+	dom.dispose();
+});
