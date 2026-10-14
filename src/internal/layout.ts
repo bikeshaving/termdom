@@ -4919,8 +4919,8 @@ function hitTestInFlow(
 			) {
 				return null;
 			}
-			const node = layout.getLayoutNode(element);
-			const extent = node === null ? undefined : layout.paintExtent(node);
+			const node = getLayoutNode(layout, element);
+			const extent = node === null ? undefined : paintExtent(node);
 			if (extent === undefined || y < extent.top || y >= extent.bottom) {
 				return null;
 			}
@@ -4930,9 +4930,9 @@ function hitTestInFlow(
 	// long list is not walked whole for every pointer move. Paint extents
 	// are unscrolled document rows, so only an unscrolled element asks.
 	const candidates =
-		layout.scrolledAncestorRows(element) === 0 &&
+		scrolledAncestorRows(layout, element) === 0 &&
 		getScrollOffset(element, "top") === 0
-			? layout.getVisibleChildren(element, y, y + 1)
+			? getVisibleChildren(layout, element, y, y + 1)
 			: null;
 	const children: Element[] = [];
 	for (const child of candidates ?? flowContent(element)) {
@@ -5333,23 +5333,6 @@ export class Layout {
 		return this.geometryMoved;
 	}
 
-	adoptTerminalReordering(): void {
-		if (this.terminalReordersText) {
-			this.invalidate();
-			return;
-		}
-		this.terminalReordersText = true;
-		// Every measured line was built for the other contract.
-		this.invalidateTextMeasurement();
-	}
-
-	invalidateTextMeasurement(): void {
-		this.invalidate();
-		for (const layoutNode of this.measureNodes) {
-			layoutNode.invalidate();
-		}
-	}
-
 	// The engine keeps no copy of the size. The root it sizes here is the
 	// copy, and the document holds the one everything else reads.
 	resize(width: number, height: number): void {
@@ -5364,10 +5347,6 @@ export class Layout {
 
 		this.invalidateFrame();
 		this.performLayout();
-	}
-
-	framePainted(): void {
-		this.geometryMoved = false;
 	}
 
 	performLayout(): void {
@@ -5479,76 +5458,6 @@ export class Layout {
 		this.dirtyRunContainers = new Set();
 	}
 
-	// Membership gates. A positioned inline run member owns no box of its
-	// own, and no layer would ever paint it, so it stays with its run.
-	hoistedToLayer(element: Element): boolean {
-		return isPositioned(element) && this.positionedElements.has(element);
-	}
-
-	// The children whose paint extent could intersect rows [top, bottom),
-	// found by binary search. Culling a long list cost O(total children)
-	// per frame instead of O(visible). Null when the search cannot be
-	// trusted (children[] not sorted by extent top), in which case callers
-	// walk every child.
-	getVisibleChildren(
-		element: Element,
-		top: number,
-		bottom: number,
-	): Node[] | null {
-		const layoutNode = this.nodeMap.get(element);
-		if (
-			!layoutNode ||
-			// A measure-function leaf never decomposes into layout children, so
-			// empty children[] means "not decomposed," not "nothing to paint."
-			layoutNode.measure !== null ||
-			extents.get(layoutNode)?.unstackedChildren !== 0 ||
-			layoutNode.style.displayType !== "block" ||
-			// Cheap proxy for "every DOM child has exactly one children[]
-			// entry". A run member owns no layout node, and a pseudo-element is a
-			// box-tree child with no childNodes entry. Uncounted, an element
-			// whose one child is text and whose ::before heads the run collides
-			// at one and one, and the fast path paints the pseudo alone.
-			element.childNodes.length + pseudoElementCount(element) !==
-			layoutNode.children.length ||
-			// A host's childNodes are its LIGHT children, unrelated to the
-			// composed ones the layout tree holds. The counts collide by
-			// accident. Hosts always take the walker.
-			getShadowRoot(element) !== null ||
-			// A broken inline's boxes are children[] entries whose DOM node
-			// lives a level DOWN. `<span>a<div/><span>c</span></span>d<input>`
-			// collides at three and three, and the fast path dropped the text
-			// and the input after the fragments.
-			this.boxes.get(element)?.holdsFragments === true
-		) {
-			return null;
-		}
-
-		const children = layoutNode.children;
-		let lo = 0;
-		let hi = children.length;
-		while (lo < hi) {
-			const mid = (lo + hi) >>> 1;
-			if (extents.get(children[mid])!.bottom <= top) {
-				lo = mid + 1;
-			} else {
-				hi = mid;
-			}
-		}
-
-		const result: Node[] = [];
-		for (let i = lo; i < children.length; i++) {
-			const child = children[i];
-			if (extents.get(child)!.top >= bottom) {
-				break;
-			}
-			const domNode = child.owner as Node | undefined;
-			if (domNode) {
-				result.push(domNode);
-			}
-		}
-		return result;
-	}
-
 	gridTracks(element: Element, rows: boolean): number[] | null {
 		const layoutNode = getContainerLayoutNode(this, element);
 		if (!layoutNode) {
@@ -5584,56 +5493,6 @@ export class Layout {
 			}
 		}
 		return height;
-	}
-
-	/** The cells a <math> element paints, laid out if no pass has yet. */
-	getMathBox(element: Element): MathBox {
-		return this.mathBoxes.get(element) ?? measureMath(this, element);
-	}
-
-	// Where a <math> element's cells start, in document coordinates: its
-	// content box, with the cells placed in it by text-align.
-	getMathOrigin(element: Element): {x: number; y: number} | null {
-		const rect = this.getRect(element);
-		if (rect === null) {
-			return null;
-		}
-		const box = this.getMathBox(element);
-		const model = getBoxModel(element);
-		const contentWidth =
-			Math.round(rect.width) -
-			model.borderLeftWidth -
-			model.borderRightWidth -
-			model.paddingLeft -
-			model.paddingRight;
-		return {
-			x:
-				Math.round(rect.left) +
-				model.borderLeftWidth +
-				model.paddingLeft +
-				getMathAlignOffset(
-					contentWidth - box.width,
-					getComputedValue(element, "text-align"),
-				),
-			y: Math.round(rect.top) + model.borderTopWidth + model.paddingTop,
-		};
-	}
-
-	// The rectangles of the cells inside a <math> element that render a
-	// node's text, in document coordinates.
-	getMathNodeRects(math: Element, node: Node): DOMRect[] {
-		const origin = this.getMathOrigin(math);
-		if (origin === null) {
-			return [];
-		}
-		return getMathCellRects(this.getMathBox(math), node).map((rect) =>
-			new this.domRect(
-				origin.x + rect.x,
-				origin.y + rect.y,
-				rect.width,
-				rect.height,
-			),
-		);
 	}
 
 	contentRect(element: Element): DOMRect | null {
@@ -5845,15 +5704,6 @@ export class Layout {
 		);
 	}
 
-	// Paint extents are cached in unscrolled layout rows, so viewport culling
-	// of a scrolled subtree compares against the viewport moved by this amount
-	// rather than recomputing extents per scroll.
-	scrolledAncestorRows(element: Element): number {
-		const layoutNode =
-			this.nodeMap.get(element) ?? runLayoutNode(this, element);
-		return layoutNode ? -getScrollShift(this, layoutNode).y : 0;
-	}
-
 	getRect(element: Element): DOMRect | null {
 		const display = getLayoutDisplay(element);
 
@@ -5866,7 +5716,7 @@ export class Layout {
 		// An element inside <math> covers the cells that render its text.
 		const math = getEnclosingMath(element);
 		if (math !== null && math !== element) {
-			const rects = this.getMathNodeRects(math, element);
+			const rects = getMathNodeRects(this, math, element);
 			return rects.length === 0 ? null : unionRects(this, rects);
 		}
 
@@ -5938,7 +5788,7 @@ export class Layout {
 	getRects(node: Node): DOMRect[] {
 		const math = getEnclosingMath(node);
 		if (math !== null && math !== node) {
-			return this.getMathNodeRects(math, node);
+			return getMathNodeRects(this, math, node);
 		}
 		// Everything but true inline content is an atomic box with one rect,
 		// inline-block included. An <input> has no text runs at all, and
@@ -5961,7 +5811,7 @@ export class Layout {
 	// line.
 	getRangeRects(range: Range): DOMRect[] {
 		if (!range.collapsed) {
-			return this.getRangeSpans(range).map((run) => run.rect);
+			return getRangeSpans(this, range).map((run) => run.rect);
 		}
 		const caret = this.getCaretRect(range.startContainer, range.startOffset);
 		return caret === null ? [] : [caret];
@@ -5999,25 +5849,6 @@ export class Layout {
 			: getCaretRectInFragment(this, point[0], point[1]);
 	}
 
-	// The text lets a caller repaint the run in the selection style.
-	// getRangeRects is this without the text.
-	getRangeSpans(range: Range): Array<{rect: DOMRect; text: string}> {
-		if (range.collapsed) {
-			return [];
-		}
-		const runs: Array<{rect: DOMRect; text: string}> = [];
-		for (const textNode of rangeTextNodes(this, range)) {
-			const from = range.startContainer === textNode ? range.startOffset : 0;
-			const to = range.endContainer === textNode
-				? range.endOffset
-				: textNode.data.length;
-			if (to > from) {
-				runs.push(...getSelectionSpans(this, textNode, from, to));
-			}
-		}
-		return runs;
-	}
-
 	// One text node's share of the work above. A highlight narrows its
 	// ranges to the node it is painting over, and has no live range to
 	// hand getRangeSpans.
@@ -6027,44 +5858,6 @@ export class Layout {
 		to: number,
 	): Array<{rect: DOMRect; text: string}> {
 		return to > from ? getSelectionSpans(this, textNode, from, to) : [];
-	}
-
-	// The offsets the cells above actually cover, since a cell holds a
-	// whole cluster.
-	snapToClusters(
-		textNode: Text,
-		from: number,
-		to: number,
-	): {from: number; to: number} {
-		let start = from;
-		let end = to;
-		const whiteSpace = getWhiteSpace(textNode);
-		for (const fragment of this.lineFragments(textNode)) {
-			const {text, offsets} = renderWhiteSpaceOffsets(
-				textNode.data.slice(fragment.startOffset, fragment.endOffset),
-				whiteSpace,
-			);
-			const clusterStarts = getClusterStarts(text);
-			for (let i = 0; i < text.length; i++) {
-				const dataOffset = fragment.startOffset + getDataOffset(offsets, i);
-				if (dataOffset < from || dataOffset >= to) {
-					continue;
-				}
-				const before = clusterStarts.at(i);
-				start = Math.min(
-					start,
-					fragment.startOffset + getDataOffset(offsets, before),
-				);
-				const after = clusterStarts.after(i + 1);
-				end = Math.max(
-					end,
-					after < text.length
-						? fragment.startOffset + getDataOffset(offsets, after)
-						: fragment.endOffset,
-				);
-			}
-		}
-		return {from: start, to: end};
 	}
 
 	// The text a text node's boxes show, in logical order, as innerText
@@ -6178,10 +5971,10 @@ export class Layout {
 		// Math has no text runs. Its cells know what text they render.
 		const math = getEnclosingMath(root);
 		if (math !== null) {
-			const origin = this.getMathOrigin(math);
+			const origin = getMathOrigin(this, math);
 			return origin === null
 				? null
-				: findMathPosition(this.getMathBox(math), x - origin.x, y - origin.y);
+				: findMathPosition(getMathBox(this, math), x - origin.x, y - origin.y);
 		}
 		let best: {node: Text; offset: number; distance: number} | null = null;
 		let nearest: {node: Text; fragment: LineFragment; rows: number} | null =
@@ -6232,105 +6025,6 @@ export class Layout {
 		return {node: nearest.node, offset: found.offset};
 	}
 
-	// Positioned elements under their nearest stacking-context ancestor,
-	// bucketed into the CSS paint layers: negative-z, z:auto/0, positive-z.
-	// Walks only the positioned registry, so O(positioned x depth) per
-	// frame, never O(document). The painter walks these forward and
-	// hit-testing in reverse.
-	collectStackingLayers(
-		topLayer: Set<Element>,
-	): Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}> {
-		const layers = new Map<
-			Element,
-			{neg: Element[]; zero: Element[]; pos: Element[]}
-		>();
-		// A stray frame can fire after the window is torn down.
-		const body = this.window.document?.body;
-		if (!body) {
-			return layers;
-		}
-		for (const element of this.positionedElements) {
-			if (!element.isConnected || element === body) {
-				continue;
-			}
-			// Painted above everything.
-			if (topLayer.has(element)) {
-				continue;
-			}
-			// The registry is a superset. Re-check before trusting membership.
-			if (!isPositioned(element)) {
-				continue;
-			}
-			let root: Element = body;
-			for (
-				let ancestor = flatParentElement(element);
-				ancestor;
-				ancestor = flatParentElement(ancestor)
-			) {
-				if (isStackingContext(ancestor)) {
-					root = ancestor;
-					break;
-				}
-			}
-			let bucket = layers.get(root);
-			if (!bucket) {
-				bucket = {neg: [], zero: [], pos: []};
-				layers.set(root, bucket);
-			}
-			const z = getZIndexValue(element);
-			if (z === "auto" || z === 0) {
-				bucket.zero.push(element);
-			} else if (z < 0) {
-				bucket.neg.push(element);
-			} else {
-				bucket.pos.push(element);
-			}
-		}
-		// 4: b follows a.
-		const treeOrder = (a: Element, b: Element) =>
-			a.compareDocumentPosition(b) & 4 ? -1 : 1;
-		for (const bucket of layers.values()) {
-			const byZ = (a: Element, b: Element) => {
-				const za = getZIndexValue(a) as number;
-				const zb = getZIndexValue(b) as number;
-				return za !== zb ? za - zb : treeOrder(a, b);
-			};
-			bucket.neg.sort(byZ);
-			bucket.zero.sort(treeOrder);
-			bucket.pos.sort(byZ);
-		}
-		return layers;
-	}
-
-	/**
-	 * The viewport rows covered by fixed boxes as wide as the viewport, as
-	 * [top, bottom) pairs: a header or a status bar the document scrolls
-	 * under.
-	 */
-	fullWidthFixedRows(cols: number): Array<[number, number]> {
-		const rows: Array<[number, number]> = [];
-		for (const element of this.positionedElements) {
-			if (
-				!element.isConnected ||
-				getPosition(element) !== "fixed" ||
-				!this.isInFixedSpace(element)
-			) {
-				continue;
-			}
-			const rect = this.getRect(element);
-			if (
-				rect === null ||
-				rect.height <= 0 ||
-				Math.round(rect.left) > 0 ||
-				Math.round(rect.left + rect.width) < cols
-			) {
-				continue;
-			}
-			rows.push([Math.round(rect.top), Math.round(rect.top + rect.height)]);
-		}
-		return rows;
-	}
-
 	// The inverse of the paint order collectStackingLayers produces. A
 	// positioned box is probed at its CONTEXT, not through its parents, so a
 	// box hanging outside its parent's rect is still clickable.
@@ -6341,7 +6035,7 @@ export class Layout {
 		topLayer: Set<Element>,
 		documentScrollTop: number,
 	): Element | null {
-		const layers = this.collectStackingLayers(topLayer);
+		const layers = collectStackingLayers(this, topLayer);
 		const document = this.window.document;
 		if (!document?.body) {
 			return null;
@@ -6440,33 +6134,358 @@ export class Layout {
 		return false;
 	}
 
-	/** The layout node an element's principal box was laid out as, if any. */
-	getLayoutNode(element: Element): LayoutNode | null {
-		return this.nodeMap.get(element) ?? null;
-	}
-
-	/** The rows a node's subtree can paint, in document rows. */
-	paintExtent(node: LayoutNode): Extent | undefined {
-		return extents.get(node);
-	}
-
-	/**
-	 * The box whose lines a layout node lays out, when it is a run's. Null
-	 * for a principal box's node.
-	 */
-	getRun(node: LayoutNode): Box | null {
-		const owner = node.owner as Node | null;
-		if (owner === null) {
-			return null;
-		}
-		const box = getBox(this, owner);
-		return box !== null && box.layoutNode === node ? box : null;
-	}
-
 	/** The principal box of an element, or null before its container derived one. */
 	getBox(element: Element): Box | null {
 		return this.boxes.get(element) ?? null;
 	}
+}
+
+export function adoptTerminalReordering(layout: Layout): void {
+	if (layout.terminalReordersText) {
+		layout.invalidate();
+		return;
+	}
+	layout.terminalReordersText = true;
+	// Every measured line was built for the other contract.
+	invalidateTextMeasurement(layout);
+}
+
+export function invalidateTextMeasurement(layout: Layout): void {
+	layout.invalidate();
+	for (const layoutNode of layout.measureNodes) {
+		layoutNode.invalidate();
+	}
+}
+
+export function framePainted(layout: Layout): void {
+	layout.geometryMoved = false;
+}
+
+// Membership gates. A positioned inline run member owns no box of its
+// own, and no layer would ever paint it, so it stays with its run.
+export function hoistedToLayer(layout: Layout, element: Element): boolean {
+	return isPositioned(element) && layout.positionedElements.has(element);
+}
+
+// The children whose paint extent could intersect rows [top, bottom),
+// found by binary search. Culling a long list cost O(total children)
+// per frame instead of O(visible). Null when the search cannot be
+// trusted (children[] not sorted by extent top), in which case callers
+// walk every child.
+function getVisibleChildren(
+	layout: Layout,
+	element: Element,
+	top: number,
+	bottom: number,
+): Node[] | null {
+	const layoutNode = layout.nodeMap.get(element);
+	if (
+		!layoutNode ||
+		// A measure-function leaf never decomposes into layout children, so
+		// empty children[] means "not decomposed," not "nothing to paint."
+		layoutNode.measure !== null ||
+		extents.get(layoutNode)?.unstackedChildren !== 0 ||
+		layoutNode.style.displayType !== "block" ||
+		// Cheap proxy for "every DOM child has exactly one children[]
+		// entry". A run member owns no layout node, and a pseudo-element is a
+		// box-tree child with no childNodes entry. Uncounted, an element
+		// whose one child is text and whose ::before heads the run collides
+		// at one and one, and the fast path paints the pseudo alone.
+		element.childNodes.length + pseudoElementCount(element) !==
+		layoutNode.children.length ||
+		// A host's childNodes are its LIGHT children, unrelated to the
+		// composed ones the layout tree holds. The counts collide by
+		// accident. Hosts always take the walker.
+		getShadowRoot(element) !== null ||
+		// A broken inline's boxes are children[] entries whose DOM node
+		// lives a level DOWN. `<span>a<div/><span>c</span></span>d<input>`
+		// collides at three and three, and the fast path dropped the text
+		// and the input after the fragments.
+		layout.boxes.get(element)?.holdsFragments === true
+	) {
+		return null;
+	}
+
+	const children = layoutNode.children;
+	let lo = 0;
+	let hi = children.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		if (extents.get(children[mid])!.bottom <= top) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
+		}
+	}
+
+	const result: Node[] = [];
+	for (let i = lo; i < children.length; i++) {
+		const child = children[i];
+		if (extents.get(child)!.top >= bottom) {
+			break;
+		}
+		const domNode = child.owner as Node | undefined;
+		if (domNode) {
+			result.push(domNode);
+		}
+	}
+	return result;
+}
+
+/** The cells a <math> element paints, laid out if no pass has yet. */
+export function getMathBox(layout: Layout, element: Element): MathBox {
+	return layout.mathBoxes.get(element) ?? measureMath(layout, element);
+}
+
+// Where a <math> element's cells start, in document coordinates: its
+// content box, with the cells placed in it by text-align.
+function getMathOrigin(
+	layout: Layout,
+	element: Element,
+): {x: number; y: number} | null {
+	const rect = layout.getRect(element);
+	if (rect === null) {
+		return null;
+	}
+	const box = getMathBox(layout, element);
+	const model = getBoxModel(element);
+	const contentWidth =
+		Math.round(rect.width) -
+		model.borderLeftWidth -
+		model.borderRightWidth -
+		model.paddingLeft -
+		model.paddingRight;
+	return {
+		x:
+			Math.round(rect.left) +
+			model.borderLeftWidth +
+			model.paddingLeft +
+			getMathAlignOffset(
+				contentWidth - box.width,
+				getComputedValue(element, "text-align"),
+			),
+		y: Math.round(rect.top) + model.borderTopWidth + model.paddingTop,
+	};
+}
+
+// The rectangles of the cells inside a <math> element that render a
+// node's text, in document coordinates.
+function getMathNodeRects(
+	layout: Layout,
+	math: Element,
+	node: Node,
+): DOMRect[] {
+	const origin = getMathOrigin(layout, math);
+	if (origin === null) {
+		return [];
+	}
+	return getMathCellRects(getMathBox(layout, math), node).map((rect) =>
+		new layout.domRect(
+			origin.x + rect.x,
+			origin.y + rect.y,
+			rect.width,
+			rect.height,
+		),
+	);
+}
+
+// Paint extents are cached in unscrolled layout rows, so viewport culling
+// of a scrolled subtree compares against the viewport moved by this amount
+// rather than recomputing extents per scroll.
+export function scrolledAncestorRows(layout: Layout, element: Element): number {
+	const layoutNode =
+		layout.nodeMap.get(element) ?? runLayoutNode(layout, element);
+	return layoutNode ? -getScrollShift(layout, layoutNode).y : 0;
+}
+
+// The text lets a caller repaint the run in the selection style.
+// getRangeRects is this without the text.
+function getRangeSpans(
+	layout: Layout,
+	range: Range,
+): Array<{rect: DOMRect; text: string}> {
+	if (range.collapsed) {
+		return [];
+	}
+	const runs: Array<{rect: DOMRect; text: string}> = [];
+	for (const textNode of rangeTextNodes(layout, range)) {
+		const from = range.startContainer === textNode ? range.startOffset : 0;
+		const to = range.endContainer === textNode
+			? range.endOffset
+			: textNode.data.length;
+		if (to > from) {
+			runs.push(...getSelectionSpans(layout, textNode, from, to));
+		}
+	}
+	return runs;
+}
+
+// The offsets the cells above actually cover, since a cell holds a
+// whole cluster.
+export function snapToClusters(
+	layout: Layout,
+	textNode: Text,
+	from: number,
+	to: number,
+): {from: number; to: number} {
+	let start = from;
+	let end = to;
+	const whiteSpace = getWhiteSpace(textNode);
+	for (const fragment of layout.lineFragments(textNode)) {
+		const {text, offsets} = renderWhiteSpaceOffsets(
+			textNode.data.slice(fragment.startOffset, fragment.endOffset),
+			whiteSpace,
+		);
+		const clusterStarts = getClusterStarts(text);
+		for (let i = 0; i < text.length; i++) {
+			const dataOffset = fragment.startOffset + getDataOffset(offsets, i);
+			if (dataOffset < from || dataOffset >= to) {
+				continue;
+			}
+			const before = clusterStarts.at(i);
+			start = Math.min(
+				start,
+				fragment.startOffset + getDataOffset(offsets, before),
+			);
+			const after = clusterStarts.after(i + 1);
+			end = Math.max(
+				end,
+				after < text.length
+					? fragment.startOffset + getDataOffset(offsets, after)
+					: fragment.endOffset,
+			);
+		}
+	}
+	return {from: start, to: end};
+}
+
+// Positioned elements under their nearest stacking-context ancestor,
+// bucketed into the CSS paint layers: negative-z, z:auto/0, positive-z.
+// Walks only the positioned registry, so O(positioned x depth) per
+// frame, never O(document). The painter walks these forward and
+// hit-testing in reverse.
+export function collectStackingLayers(
+	layout: Layout,
+	topLayer: Set<Element>,
+): Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}> {
+	const layers = new Map<
+		Element,
+		{neg: Element[]; zero: Element[]; pos: Element[]}
+	>();
+	// A stray frame can fire after the window is torn down.
+	const body = layout.window.document?.body;
+	if (!body) {
+		return layers;
+	}
+	for (const element of layout.positionedElements) {
+		if (!element.isConnected || element === body) {
+			continue;
+		}
+		// Painted above everything.
+		if (topLayer.has(element)) {
+			continue;
+		}
+		// The registry is a superset. Re-check before trusting membership.
+		if (!isPositioned(element)) {
+			continue;
+		}
+		let root: Element = body;
+		for (
+			let ancestor = flatParentElement(element);
+			ancestor;
+			ancestor = flatParentElement(ancestor)
+		) {
+			if (isStackingContext(ancestor)) {
+				root = ancestor;
+				break;
+			}
+		}
+		let bucket = layers.get(root);
+		if (!bucket) {
+			bucket = {neg: [], zero: [], pos: []};
+			layers.set(root, bucket);
+		}
+		const z = getZIndexValue(element);
+		if (z === "auto" || z === 0) {
+			bucket.zero.push(element);
+		} else if (z < 0) {
+			bucket.neg.push(element);
+		} else {
+			bucket.pos.push(element);
+		}
+	}
+	// 4: b follows a.
+	const treeOrder = (a: Element, b: Element) =>
+		a.compareDocumentPosition(b) & 4 ? -1 : 1;
+	for (const bucket of layers.values()) {
+		const byZ = (a: Element, b: Element) => {
+			const za = getZIndexValue(a) as number;
+			const zb = getZIndexValue(b) as number;
+			return za !== zb ? za - zb : treeOrder(a, b);
+		};
+		bucket.neg.sort(byZ);
+		bucket.zero.sort(treeOrder);
+		bucket.pos.sort(byZ);
+	}
+	return layers;
+}
+
+/**
+ * The viewport rows covered by fixed boxes as wide as the viewport, as
+ * [top, bottom) pairs: a header or a status bar the document scrolls
+ * under.
+ */
+export function fullWidthFixedRows(
+	layout: Layout,
+	cols: number,
+): Array<[number, number]> {
+	const rows: Array<[number, number]> = [];
+	for (const element of layout.positionedElements) {
+		if (
+			!element.isConnected ||
+			getPosition(element) !== "fixed" ||
+			!layout.isInFixedSpace(element)
+		) {
+			continue;
+		}
+		const rect = layout.getRect(element);
+		if (
+			rect === null ||
+			rect.height <= 0 ||
+			Math.round(rect.left) > 0 ||
+			Math.round(rect.left + rect.width) < cols
+		) {
+			continue;
+		}
+		rows.push([Math.round(rect.top), Math.round(rect.top + rect.height)]);
+	}
+	return rows;
+}
+
+/** The layout node an element's principal box was laid out as, if any. */
+export function getLayoutNode(
+	layout: Layout,
+	element: Element,
+): LayoutNode | null {
+	return layout.nodeMap.get(element) ?? null;
+}
+
+/** The rows a node's subtree can paint, in document rows. */
+export function paintExtent(node: LayoutNode): Extent | undefined {
+	return extents.get(node);
+}
+
+/**
+ * The box whose lines a layout node lays out, when it is a run's. Null
+ * for a principal box's node.
+ */
+export function getRun(layout: Layout, node: LayoutNode): Box | null {
+	const owner = node.owner as Node | null;
+	if (owner === null) {
+		return null;
+	}
+	const box = getBox(layout, owner);
+	return box !== null && box.layoutNode === node ? box : null;
 }
 
 // "auto" stays distinct from 0. It paints in the same layer but does
