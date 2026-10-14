@@ -1,8 +1,8 @@
 import {blendColor, getColorAlpha, TRANSPARENCY_UNIT} from "./cssvalues.ts";
 import type {ColorDepth, Exchange} from "./exchange.ts";
 import {
+	getGraphemes,
 	getStringWidth,
-	graphemeSegmenter,
 	isControlByte,
 	isWidthUncertain,
 	PRINTABLE_ASCII,
@@ -129,66 +129,61 @@ function getUnderlineCodes(style: UnderlineStyle): string[] {
 class FrameWriter {
 	colorDepth: ColorDepth;
 
-	out: string[];
+	out: string;
 
 	constructor(colorDepth: ColorDepth) {
 		this.colorDepth = colorDepth;
-		this.out = [];
+		this.out = "";
 	}
 
-	// Most takes hold one piece or none.
 	take(): string {
-		const out = this.out;
-		if (out.length === 0) {
-			return "";
-		}
-		const taken = out.length === 1 ? out[0] : out.join("");
-		out.length = 0;
+		const taken = this.out;
+		this.out = "";
 		return taken;
 	}
 
 	carriageReturn(): this {
-		this.out.push("\r");
+		this.out += "\r";
 		return this;
 	}
 
 	newLine(rows = 1): this {
-		this.out.push("\r\n".repeat(rows));
+		this.out += "\r\n".repeat(rows);
 		return this;
 	}
 
 	cursorTo(row: number, col: number): this {
-		this.out.push(`\x1b[${row};${col}H`);
+		this.out += `\x1b[${row};${col}H`;
 		return this;
 	}
 
 	cursorForward(columns: number): this {
-		this.out.push(`\x1b[${columns}C`);
+		this.out += `\x1b[${columns}C`;
 		return this;
 	}
 
 	cursorDown(rows: number): this {
-		this.out.push(`\x1b[${rows}B`);
+		this.out += `\x1b[${rows}B`;
 		return this;
 	}
 
 	saveCursor(): this {
-		this.out.push("\x1b7");
+		this.out += "\x1b7";
 		return this;
 	}
 
 	restoreCursor(): this {
-		this.out.push("\x1b8");
+		this.out += "\x1b8";
 		return this;
 	}
 
 	eraseToLineEnd(): this {
-		this.out.push("\x1b[K");
+		this.out += "\x1b[K";
 		return this;
 	}
 
 	eraseBelow(): this {
-		this.out.push("\x1b[J");
+		this.out += "\x1b[J";
 		return this;
 	}
 
@@ -197,41 +192,43 @@ class FrameWriter {
 	 * measures cursor moves from the top margin.
 	 */
 	setScrollRegion(top: number, bottom: number): this {
-		this.out.push(`\x1b[?6l\x1b[${top};${bottom}r`);
+		this.out += `\x1b[?6l\x1b[${top};${bottom}r`;
 		return this;
 	}
 
 	resetScrollRegion(): this {
-		this.out.push("\x1b[r");
+		this.out += "\x1b[r";
 		return this;
 	}
 
 	deleteLines(count: number): this {
-		this.out.push(`\x1b[${count}M`);
+		this.out += `\x1b[${count}M`;
 		return this;
 	}
 
 	insertLines(count: number): this {
-		this.out.push(`\x1b[${count}L`);
+		this.out += `\x1b[${count}L`;
 		return this;
 	}
 
 	resetStyle(): this {
-		this.out.push("\x1b[0m");
+		this.out += "\x1b[0m";
 		return this;
 	}
 
 	style(run: StyleSpan): this {
 		const escape = createStyleEscape(run, this.colorDepth);
-		if (escape !== "") {
-			this.out.push(escape);
-		}
+		this.out += escape;
 		return this;
 	}
 
 	text(glyphs: string): this {
-		if (PRINTABLE_ASCII.test(glyphs)) {
-			this.out.push(glyphs);
+		if (
+			glyphs.length === 1
+				? glyphs >= " " && glyphs <= "~"
+				: PRINTABLE_ASCII.test(glyphs)
+		) {
+			this.out += glyphs;
 			return this;
 		}
 		let safe = "";
@@ -244,7 +241,7 @@ class FrameWriter {
 			}
 			safe += char;
 		}
-		this.out.push(safe);
+		this.out += safe;
 		return this;
 	}
 }
@@ -1204,8 +1201,8 @@ export class CellContext {
 			return {width: text.length};
 		}
 		let width = 0;
-		for (const segment of graphemeSegmenter.segment(text)) {
-			width += getStringWidth(segment.segment);
+		for (const grapheme of getGraphemes(text)) {
+			width += getStringWidth(grapheme);
 		}
 		return {width};
 	}
@@ -1224,9 +1221,7 @@ export class CellContext {
 			return;
 		}
 
-		for (const segment of graphemeSegmenter.segment(text)) {
-			const char = segment.segment;
-
+		for (const char of getGraphemes(text)) {
 			// Never write a control char to a cell. A cell is a column, and a
 			// control byte must be rejected before it takes one, or it survives
 			// to the output as a raw escape byte (injection from untrusted

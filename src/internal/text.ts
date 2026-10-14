@@ -96,6 +96,20 @@ export const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
 // Bounded, so a stream of unique strings (a logger) cannot grow it.
 const widthCache = new LRUCache<string, number>(2 ** 14);
 
+const graphemeCache = new LRUCache<string, string[]>(2 ** 12);
+
+// The same array for the same short text, so a caller must not change it.
+export function getGraphemes(text: string): string[] {
+	let graphemes = graphemeCache.get(text);
+	if (graphemes === undefined) {
+		graphemes = Array.from(graphemeSegmenter.segment(text), (s) => s.segment);
+		if (text.length <= 256) {
+			graphemeCache.set(text, graphemes);
+		}
+	}
+	return graphemes;
+}
+
 // Advances the attached terminal reported that disagree with the tables
 // (Terminal.app advances ☀️ one cell and ⛅️ two, and no rule separates
 // them). Not a cache: a measurement of the one terminal, written once,
