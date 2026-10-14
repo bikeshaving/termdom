@@ -114,16 +114,12 @@ export function resolveValue(
 	}
 }
 
-export function isDefined(n: number): boolean {
-	return !Number.isNaN(n);
-}
-
 function resolveMargin(value: CSSValues.Value, ownerWidth: number): number {
 	if (value.unit === "auto") {
 		return 0;
 	}
 	const resolved = resolveValue(value, ownerWidth);
-	return isDefined(resolved) ? resolved : 0;
+	return !Number.isNaN(resolved) ? resolved : 0;
 }
 
 function isRow(axis: FlexDirection): boolean {
@@ -593,43 +589,43 @@ export class LayoutNode {
 	}
 
 	getComputedWidth(): number {
-		return isDefined(this.result.width) ? this.result.width : 0;
+		return !Number.isNaN(this.result.width) ? this.result.width : 0;
 	}
 
 	getComputedHeight(): number {
-		return isDefined(this.result.height) ? this.result.height : 0;
+		return !Number.isNaN(this.result.height) ? this.result.height : 0;
 	}
 
 	performLayout(ownerWidth: number, ownerHeight: number): void {
 		const width = resolveValue(this.style.width, ownerWidth);
 		const height = resolveValue(this.style.height, ownerHeight);
 
-		let availableWidth = isDefined(width) ? width : ownerWidth;
-		let widthSpace: AvailableSpace = isDefined(availableWidth)
+		let availableWidth = !Number.isNaN(width) ? width : ownerWidth;
+		let widthSpace: AvailableSpace = !Number.isNaN(availableWidth)
 			? "definite"
 			: "indefinite";
 		// A sizing keyword on a root turns the owner's width from the used
 		// width into a probe: zero for min-content, a ceiling for fit-content,
 		// and no request at all for max-content.
-		if (!isDefined(width) && this.style.widthSizing !== "none") {
+		if (Number.isNaN(width) && this.style.widthSizing !== "none") {
 			if (this.style.widthSizing === "min-content") {
 				availableWidth = 0;
 				widthSpace = "shrink-to-fit";
 			} else if (this.style.widthSizing === "max-content") {
 				availableWidth = NaN;
 				widthSpace = "indefinite";
-			} else if (isDefined(availableWidth)) {
+			} else if (!Number.isNaN(availableWidth)) {
 				widthSpace = "shrink-to-fit";
 			}
 		}
-		const availableHeight = isDefined(height) ? height : ownerHeight;
+		const availableHeight = !Number.isNaN(height) ? height : ownerHeight;
 
 		layoutNode(
 			this,
 			availableWidth,
 			availableHeight,
 			widthSpace,
-			isDefined(availableHeight) ? "definite" : "indefinite",
+			!Number.isNaN(availableHeight) ? "definite" : "indefinite",
 			ownerWidth,
 			ownerHeight,
 			true,
@@ -857,14 +853,14 @@ function resolveFlexGrow(node: LayoutNode): number {
 	if (!node.parent) {
 		return 0;
 	}
-	return isDefined(node.style.flexGrow) ? node.style.flexGrow : 0;
+	return !Number.isNaN(node.style.flexGrow) ? node.style.flexGrow : 0;
 }
 
 function resolveFlexShrink(node: LayoutNode): number {
 	if (!node.parent) {
 		return 0;
 	}
-	if (isDefined(node.style.flexShrink)) {
+	if (!Number.isNaN(node.style.flexShrink)) {
 		return node.style.flexShrink;
 	}
 	return 1;
@@ -960,7 +956,8 @@ function getEdgePaddingAndBorder(
 ): number {
 	const padding = resolveValue(node.style.padding[edge], ownerWidth);
 	return (
-		(isDefined(padding) ? Math.max(padding, 0) : 0) + node.style.border[edge]
+		(!Number.isNaN(padding) ? Math.max(padding, 0) : 0) +
+		node.style.border[edge]
 	);
 }
 
@@ -1011,10 +1008,10 @@ function boundAxisWithinMinMax(
 	);
 
 	let bounded = value;
-	if (isDefined(max) && max >= 0 && bounded > max) {
+	if (!Number.isNaN(max) && max >= 0 && bounded > max) {
 		bounded = max;
 	}
-	if (isDefined(min) && min >= 0 && bounded < min) {
+	if (!Number.isNaN(min) && min >= 0 && bounded < min) {
 		bounded = min;
 	}
 	return bounded;
@@ -1044,7 +1041,7 @@ function constrainMaxSizeForMode(
 		isRow(axis) ? node.style.maxWidth : node.style.maxHeight,
 		ownerAxisSize,
 	);
-	if (!isDefined(max)) {
+	if (Number.isNaN(max)) {
 		return;
 	}
 
@@ -1053,7 +1050,7 @@ function constrainMaxSizeForMode(
 		// `definite` to `shrink-to-fit` tells an empty box it is
 		// shrink-wrapped, and it collapses to zero instead of taking the size
 		// flex just resolved for it.
-		mode.value = isDefined(mode.value) ? Math.min(mode.value, max) : max;
+		mode.value = !Number.isNaN(mode.value) ? Math.min(mode.value, max) : max;
 	} else {
 		mode.value = max;
 		mode.mode = "shrink-to-fit";
@@ -1106,7 +1103,7 @@ function layoutMeasuredContent(
 	const marginRow = getAxisMargin(node, "row", ownerWidth);
 	const marginColumn = getAxisMargin(node, "column", ownerWidth);
 
-	const innerWidth = isDefined(availableWidth)
+	const innerWidth = !Number.isNaN(availableWidth)
 		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
 		: NaN;
 
@@ -1198,7 +1195,7 @@ function computeFlexBasisForChild(
 		ownerHeight,
 	);
 
-	if (isDefined(resolvedBasis) && isDefined(mainAxisSize)) {
+	if (!Number.isNaN(resolvedBasis) && !Number.isNaN(mainAxisSize)) {
 		child.result.computedFlexBasis = Math.max(
 			resolvedBasis,
 			getAxisPaddingAndBorder(child, mainAxis, ownerWidth),
@@ -1238,11 +1235,11 @@ function computeFlexBasisForChild(
 		childHeight.mode = "definite";
 	}
 
-	if (!isDefined(childWidth.value) && isDefined(width)) {
+	if (Number.isNaN(childWidth.value) && !Number.isNaN(width)) {
 		childWidth.value = width;
 		childWidth.mode = "shrink-to-fit";
 	}
-	if (!isDefined(childHeight.value) && isDefined(height)) {
+	if (Number.isNaN(childHeight.value) && !Number.isNaN(height)) {
 		childHeight.value = height;
 		childHeight.mode = "shrink-to-fit";
 	}
@@ -1250,7 +1247,7 @@ function computeFlexBasisForChild(
 	const stretch = getAlignSelf(node, child) === "stretch";
 	if (
 		!mainIsRow &&
-		isDefined(width) &&
+		!Number.isNaN(width) &&
 		widthSpace === "definite" &&
 		stretch &&
 		childWidth.mode !== "definite"
@@ -1260,7 +1257,7 @@ function computeFlexBasisForChild(
 	}
 	if (
 		mainIsRow &&
-		isDefined(height) &&
+		!Number.isNaN(height) &&
 		heightSpace === "definite" &&
 		stretch &&
 		childHeight.mode !== "definite"
@@ -1335,10 +1332,10 @@ function layoutFlexbox(
 	const paddingBorderMain = mainIsRow ? paddingBorderRow : paddingBorderColumn;
 	const paddingBorderCross = mainIsRow ? paddingBorderColumn : paddingBorderRow;
 
-	const innerWidth = isDefined(availableWidth)
+	const innerWidth = !Number.isNaN(availableWidth)
 		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
 		: NaN;
-	const innerHeight = isDefined(availableHeight)
+	const innerHeight = !Number.isNaN(availableHeight)
 		? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
 		: NaN;
 
@@ -1420,7 +1417,7 @@ function layoutFlexbox(
 
 			if (
 				wrap &&
-				isDefined(innerMain) &&
+				!Number.isNaN(innerMain) &&
 				line.items.length > 0 &&
 				line.sizeConsumed + precedingGap + basis + childMarginMain > innerMain
 			) {
@@ -1442,7 +1439,7 @@ function layoutFlexbox(
 
 	for (const line of lines) {
 		const lineGap = mainGap * Math.max(0, line.items.length - 1);
-		const mainForItems = isDefined(innerMain)
+		const mainForItems = !Number.isNaN(innerMain)
 			? Math.max(0, innerMain - lineGap)
 			: innerMain;
 
@@ -1489,7 +1486,7 @@ function layoutFlexbox(
 		// Only a definite cross size fills the line. An `shrink-to-fit` bound
 		// treated as definite becomes the container's content size, then its
 		// basis above.
-		if (!wrap && isDefined(innerCross) && crossSpace === "definite") {
+		if (!wrap && !Number.isNaN(innerCross) && crossSpace === "definite") {
 			lineCross = Math.max(lineCross, innerCross);
 		}
 		line.crossDim = lineCross;
@@ -1648,7 +1645,7 @@ function getRelativeOffset(
 		node.style.position[getLeadingEdge(axis)],
 		axisSize,
 	);
-	if (isDefined(leading)) {
+	if (!Number.isNaN(leading)) {
 		return leading;
 	}
 
@@ -1656,7 +1653,7 @@ function getRelativeOffset(
 		node.style.position[getTrailingEdge(axis)],
 		axisSize,
 	);
-	if (isDefined(trailing)) {
+	if (!Number.isNaN(trailing)) {
 		return -trailing;
 	}
 
@@ -1695,7 +1692,7 @@ function resolveFlexibleLengths(
 			mainOwnerSize,
 		);
 		const floor = child.result.automaticMinimumSize;
-		return isDefined(floor) ? Math.max(bounded, floor) : bounded;
+		return !Number.isNaN(floor) ? Math.max(bounded, floor) : bounded;
 	};
 
 	for (let i = 0; i < count; i++) {
@@ -1710,7 +1707,7 @@ function resolveFlexibleLengths(
 		}
 	};
 
-	if (!isDefined(innerMain)) {
+	if (Number.isNaN(innerMain)) {
 		commit();
 		return;
 	}
@@ -1838,8 +1835,10 @@ function getAutoMinimumMainSize(
 	// The cross axis keeps its real size. A column item's min-content
 	// height depends on its width, and unlimited width puts its text on one
 	// line.
-	const crossAvailable = isDefined(innerCross) ? innerCross : NaN;
-	const crossAvailableSpace = isDefined(innerCross) ? crossSpace : "indefinite";
+	const crossAvailable = !Number.isNaN(innerCross) ? innerCross : NaN;
+	const crossAvailableSpace = !Number.isNaN(innerCross)
+		? crossSpace
+		: "indefinite";
 
 	layoutNode(
 		child,
@@ -1857,13 +1856,13 @@ function getAutoMinimumMainSize(
 	// Never past a specified size or the item's own maximum.
 	const size = mainIsRow ? child.style.width : child.style.height;
 	const specified = resolveValue(size, mainOwnerSize);
-	if (isDefined(specified)) {
+	if (!Number.isNaN(specified)) {
 		floor = Math.min(floor, specified);
 	}
 
 	const maxSize = mainIsRow ? child.style.maxWidth : child.style.maxHeight;
 	const max = resolveValue(maxSize, mainOwnerSize);
-	if (isDefined(max)) {
+	if (!Number.isNaN(max)) {
 		floor = Math.min(floor, max);
 	}
 
@@ -1915,7 +1914,7 @@ function layoutFlexItem(
 		)
 		: NaN;
 
-	if (isDefined(crossTarget)) {
+	if (!Number.isNaN(crossTarget)) {
 		// Unclamped, `min-width` did nothing on a column container's items.
 		const bounded = boundAxisWithinMinMax(
 			child,
@@ -1931,7 +1930,9 @@ function layoutFlexItem(
 			childHeight.mode = "definite";
 		}
 	} else if (
-		align === "stretch" && isDefined(innerCross) && crossSpace === "definite"
+		align === "stretch" &&
+		!Number.isNaN(innerCross) &&
+		crossSpace === "definite"
 	) {
 		// Only against a definite cross size. Stretching to a bound makes every
 		// item's basis the whole container. positionCrossAxis stretches the
@@ -1945,7 +1946,7 @@ function layoutFlexItem(
 		}
 	} else {
 		const available = isRow(cross) ? innerWidth : innerHeight;
-		if (isDefined(available)) {
+		if (!Number.isNaN(available)) {
 			if (isRow(cross)) {
 				childWidth.value = available;
 				childWidth.mode = "shrink-to-fit";
@@ -2020,7 +2021,7 @@ function positionMainAxis(
 			getAxisMargin(child, mainAxis, ownerWidth);
 	}
 
-	const free = isDefined(innerMain) ? innerMain - contentMain : 0;
+	const free = !Number.isNaN(innerMain) ? innerMain - contentMain : 0;
 
 	// Auto margins take the free space before justify-content does.
 	let autoMarginCount = 0;
@@ -2127,7 +2128,7 @@ function positionCrossAxis(
 	const crossIsRow = isRow(cross);
 	const crossGap = getAxisGap(node, cross);
 
-	const freeCross = isDefined(containerInnerCross)
+	const freeCross = !Number.isNaN(containerInnerCross)
 		? containerInnerCross - totalCrossDim
 		: 0;
 
@@ -2349,9 +2350,9 @@ function layoutAbsoluteChild(
 	const autoTop = child.style.margin.top.unit === "auto";
 	const autoBottom = child.style.margin.bottom.unit === "auto";
 	const shrinkAcross =
-		isDefined(left) && isDefined(right) && autoLeft && autoRight;
+		!Number.isNaN(left) && !Number.isNaN(right) && autoLeft && autoRight;
 	const shrinkDown =
-		isDefined(top) && isDefined(bottom) && autoTop && autoBottom;
+		!Number.isNaN(top) && !Number.isNaN(bottom) && autoTop && autoBottom;
 
 	const childWidth = {value: NaN, mode: "indefinite" as AvailableSpace};
 	const childHeight = {value: NaN, mode: "indefinite" as AvailableSpace};
@@ -2363,10 +2364,10 @@ function layoutAbsoluteChild(
 	} else if (shrinkAcross) {
 		childWidth.value = blockWidth - left - right;
 		childWidth.mode = "shrink-to-fit";
-	} else if (isDefined(left) && isDefined(right)) {
+	} else if (!Number.isNaN(left) && !Number.isNaN(right)) {
 		childWidth.value = blockWidth - left - right - marginLeft - marginRight;
 		childWidth.mode = "definite";
-	} else if (isDefined(blockWidth)) {
+	} else if (!Number.isNaN(blockWidth)) {
 		childWidth.value = blockWidth;
 		// `stretch` fills the alignment container when size and both insets are
 		// auto (css-align-3 §5.2). Only a grid area has one.
@@ -2382,10 +2383,10 @@ function layoutAbsoluteChild(
 	} else if (shrinkDown) {
 		childHeight.value = blockHeight - top - bottom;
 		childHeight.mode = "shrink-to-fit";
-	} else if (isDefined(top) && isDefined(bottom)) {
+	} else if (!Number.isNaN(top) && !Number.isNaN(bottom)) {
 		childHeight.value = blockHeight - top - bottom - marginTop - marginBottom;
 		childHeight.mode = "definite";
-	} else if (isDefined(blockHeight)) {
+	} else if (!Number.isNaN(blockHeight)) {
 		childHeight.value = blockHeight;
 		childHeight.mode =
 			area &&
@@ -2406,8 +2407,8 @@ function layoutAbsoluteChild(
 	);
 
 	const getStaticPosition =
-		(!isDefined(left) && !isDefined(right)) ||
-		(!isDefined(top) && !isDefined(bottom))
+		(Number.isNaN(left) && Number.isNaN(right)) ||
+		(Number.isNaN(top) && Number.isNaN(bottom))
 			? (child.staticPosition?.(node) ?? null)
 			: null;
 
@@ -2416,9 +2417,9 @@ function layoutAbsoluteChild(
 	if (shrinkAcross) {
 		const free = blockWidth - left - right - child.result.width;
 		child.result.left = blockLeft + left + Math.max(free, 0) / 2;
-	} else if (isDefined(left)) {
+	} else if (!Number.isNaN(left)) {
 		child.result.left = blockLeft + left + marginLeft;
-	} else if (isDefined(right)) {
+	} else if (!Number.isNaN(right)) {
 		child.result.left =
 			blockLeft + blockWidth - child.result.width - right - marginRight;
 	} else if (getStaticPosition) {
@@ -2445,9 +2446,9 @@ function layoutAbsoluteChild(
 	if (shrinkDown) {
 		const free = blockHeight - top - bottom - child.result.height;
 		child.result.top = blockTop + top + Math.max(free, 0) / 2;
-	} else if (isDefined(top)) {
+	} else if (!Number.isNaN(top)) {
 		child.result.top = blockTop + top + marginTop;
-	} else if (isDefined(bottom)) {
+	} else if (!Number.isNaN(bottom)) {
 		child.result.top =
 			blockTop + blockHeight - child.result.height - bottom - marginBottom;
 	} else if (getStaticPosition) {
@@ -2865,7 +2866,7 @@ function resolveFixedColumnWidths(
 			continue;
 		}
 		const width = resolveValue(cell.node.style.width, available);
-		if (isDefined(width)) {
+		if (!Number.isNaN(width)) {
 			for (let i = 0; i < cell.colSpan; i++) {
 				widths[cell.column + i] = Math.max(0, width) / cell.colSpan;
 			}
@@ -2875,7 +2876,7 @@ function resolveFixedColumnWidths(
 	let sized = 0;
 	let unsized = 0;
 	for (const width of widths) {
-		if (isDefined(width)) {
+		if (!Number.isNaN(width)) {
 			sized += width;
 		} else {
 			unsized++;
@@ -2885,7 +2886,7 @@ function resolveFixedColumnWidths(
 	const left = Math.max(0, available - sized);
 	for (let i = 0; i < columnCount; i++) {
 		if (unsized > 0) {
-			if (!isDefined(widths[i])) {
+			if (Number.isNaN(widths[i])) {
 				widths[i] = left / unsized;
 			}
 		} else {
@@ -2926,14 +2927,14 @@ function resolveColumnWidths(
 			const styleWidth = resolveValue(node.style.width, percentBasis);
 			let minWidth: number;
 			let maxWidth: number;
-			if (isDefined(styleWidth) && node.style.width.unit === "percent") {
+			if (!Number.isNaN(styleWidth) && node.style.width.unit === "percent") {
 				minWidth = getIntrinsicCellWidth(node, true, ownerWidth, ownerHeight);
 				maxWidth = Math.max(styleWidth, minWidth);
 				if (cell.colSpan === 1) {
 					fixed[cell.column] = true;
 					percent[cell.column] = true;
 				}
-			} else if (isDefined(styleWidth)) {
+			} else if (!Number.isNaN(styleWidth)) {
 				// css-tables-3 §3.9.2: a cell's width is the width it would
 				// like. The column still shrinks to its content's minimum when
 				// the table has less room.
@@ -2984,7 +2985,7 @@ function resolveColumnWidths(
 	const target = widthIsDefinite
 		? available
 		: Math.min(
-			Math.max(totalMin, isDefined(available) ? available : totalMax),
+			Math.max(totalMin, !Number.isNaN(available) ? available : totalMax),
 			totalMax,
 		);
 
@@ -3167,11 +3168,12 @@ function layoutTable(
 			? 1
 			: 0;
 
-	const innerWidth = isDefined(availableWidth)
+	const innerWidth = !Number.isNaN(availableWidth)
 		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
 		: NaN;
 
-	const widthIsDefinite = widthSpace === "definite" && isDefined(innerWidth);
+	const widthIsDefinite =
+		widthSpace === "definite" && !Number.isNaN(innerWidth);
 
 	// Fixed layout needs the table's own width, so a table whose width is
 	// auto is laid out automatically whatever it asks for.
@@ -3183,7 +3185,7 @@ function layoutTable(
 			: resolveColumnWidths(
 				cells,
 				columnCount,
-				isDefined(innerWidth) ? innerWidth + columnOverlap : NaN,
+				!Number.isNaN(innerWidth) ? innerWidth + columnOverlap : NaN,
 				widthIsDefinite,
 				ownerWidth,
 				ownerHeight,
@@ -3472,7 +3474,8 @@ function isIntrinsicBreadth(
 	breadth: CSSValues.TrackBreadth,
 	ownerSize: number,
 ): boolean {
-	return breadth.kind !== "flex" && !isDefined(trackLength(breadth, ownerSize));
+	return breadth.kind !== "flex" &&
+		Number.isNaN(trackLength(breadth, ownerSize));
 }
 
 // For counting repeat(auto-fill) repetitions.
@@ -3481,22 +3484,22 @@ function getDefiniteTrackSize(
 	ownerSize: number,
 ): number {
 	const max = trackLength(size.max, ownerSize);
-	if (isDefined(max)) {
+	if (!Number.isNaN(max)) {
 		return Math.max(0, max);
 	}
 	const min = trackLength(size.min, ownerSize);
-	return isDefined(min) ? Math.max(0, min) : 0;
+	return !Number.isNaN(min) ? Math.max(0, min) : 0;
 }
 
 function createTrack(size: CSSValues.TrackSize, ownerSize: number): GridTrack {
 	const min = trackLength(size.min, ownerSize);
 	const max = trackLength(size.max, ownerSize);
-	const base = isDefined(min) ? Math.max(0, min) : 0;
-	const limit = isDefined(max) ? Math.max(0, max) : Infinity;
+	const base = !Number.isNaN(min) ? Math.max(0, min) : 0;
+	const limit = !Number.isNaN(max) ? Math.max(0, max) : Infinity;
 	let fitContentLimit = Infinity;
 	if (size.fitContent) {
 		const clamp = resolveValue(size.fitContent, ownerSize);
-		if (isDefined(clamp)) {
+		if (!Number.isNaN(clamp)) {
 			fitContentLimit = Math.max(0, clamp);
 		}
 	}
@@ -3562,7 +3565,7 @@ function expandTrackList(
 			repeatSum += getDefiniteTrackSize(track.size, ownerSize);
 		}
 		const perRepetition = repeatSum + autoPart.repeat.tracks.length * gap;
-		if (isDefined(availableSpace) && perRepetition > 0) {
+		if (!Number.isNaN(availableSpace) && perRepetition > 0) {
 			// n repetitions and the fixed tracks together take
 			//   fixedSum + n*repeatSum + (fixedCount + n*repeatTracks - 1)*gap
 			// which must not exceed the space; solved for n.
@@ -4137,7 +4140,7 @@ function getMinimumContribution(
 		sizing.columns ? child.style.minWidth : child.style.minHeight,
 		sizing.ownerSize,
 	);
-	if (isDefined(specified)) {
+	if (!Number.isNaN(specified)) {
 		return (
 			Math.max(
 				specified,
@@ -4148,7 +4151,7 @@ function getMinimumContribution(
 	const minContent = getGridItemContribution(sizing, item, true);
 	if (end - start === 1) {
 		const max = trackLength(sizing.tracks[start].size.max, sizing.ownerSize);
-		if (isDefined(max)) {
+		if (!Number.isNaN(max)) {
 			return Math.min(minContent, Math.max(0, max));
 		}
 	}
@@ -4500,7 +4503,7 @@ function sizeTracks(sizing: TrackSizing): void {
 	resolveIntrinsicTrackSizes(sizing);
 
 	// §12.6.
-	if (isDefined(availableSpace)) {
+	if (!Number.isNaN(availableSpace)) {
 		let used = gaps;
 		for (const track of tracks) {
 			used += track.base;
@@ -4550,7 +4553,7 @@ function sizeTracks(sizing: TrackSizing): void {
 			.map((_, index) => index)
 			.filter((index) => !tracks[index].collapsed);
 		let frSize: number;
-		if (isDefined(availableSpace)) {
+		if (!Number.isNaN(availableSpace)) {
 			frSize = findFrSize(tracks, all, availableSpace - gaps);
 		} else {
 			// §12.7.1, indefinite: the largest any one flexible track demands.
@@ -4594,7 +4597,7 @@ function sizeTracks(sizing: TrackSizing): void {
 	}
 
 	// §12.8.
-	if (sizing.stretchesAutoTracks && isDefined(availableSpace)) {
+	if (sizing.stretchesAutoTracks && !Number.isNaN(availableSpace)) {
 		const stretchable = tracks.filter(
 			(track) => !track.collapsed && track.size.max.kind === "auto",
 		);
@@ -4915,18 +4918,19 @@ function layoutGrid(
 	const contentLeft = getEdgePaddingAndBorder(node, "left", ownerWidth);
 	const contentTop = getEdgePaddingAndBorder(node, "top", ownerWidth);
 
-	const innerWidth = isDefined(availableWidth)
+	const innerWidth = !Number.isNaN(availableWidth)
 		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
 		: NaN;
-	const innerHeight = isDefined(availableHeight)
+	const innerHeight = !Number.isNaN(availableHeight)
 		? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
 		: NaN;
 
 	const columnGap = node.style.gap["column"];
 	const rowGap = node.style.gap["row"];
 
-	const definiteWidth = widthSpace === "definite" && isDefined(innerWidth);
-	const definiteHeight = heightSpace === "definite" && isDefined(innerHeight);
+	const definiteWidth = widthSpace === "definite" && !Number.isNaN(innerWidth);
+	const definiteHeight =
+		heightSpace === "definite" && !Number.isNaN(innerHeight);
 
 	const children: LayoutNode[] = [];
 	for (const child of node.children) {
@@ -5139,7 +5143,7 @@ function layoutGrid(
 	// A shrink-to-fit grid that overflows its bound is re-sized against it.
 	if (
 		widthSpace === "shrink-to-fit" &&
-		isDefined(innerWidth) &&
+		!Number.isNaN(innerWidth) &&
 		columnsTotal > innerWidth + EPSILON
 	) {
 		columnTracks = sizeColumns(innerWidth);
@@ -5187,7 +5191,7 @@ function layoutGrid(
 	let rowsTotal = getTotal(rowTracks, rowGap);
 	if (
 		heightSpace === "shrink-to-fit" &&
-		isDefined(innerHeight) &&
+		!Number.isNaN(innerHeight) &&
 		rowsTotal > innerHeight + EPSILON
 	) {
 		rowTracks = sizeRows(innerHeight);
@@ -5506,7 +5510,7 @@ function layoutBlockChild(
 			) + marginRow;
 		childWidth.mode = "definite";
 	} else if (
-		isDefined(child.style.aspectRatio) &&
+		!Number.isNaN(child.style.aspectRatio) &&
 		child.style.aspectRatio > 0 &&
 		isStyleDimensionDefined(child, "column", ownerHeight)
 	) {
@@ -5523,7 +5527,7 @@ function layoutBlockChild(
 		childWidth.mode = "shrink-to-fit";
 	} else if (child.style.widthSizing === "max-content") {
 		// An undefined request measures the content unbroken.
-	} else if (isDefined(contentWidth)) {
+	} else if (!Number.isNaN(contentWidth)) {
 		// A non-filling child's `shrink-to-fit` request is already fit-content.
 		childWidth.value = contentWidth;
 		childWidth.mode = fill ? "definite" : "shrink-to-fit";
@@ -5595,7 +5599,7 @@ function layoutBlock(
 		inFlow.push(child);
 	}
 
-	const innerWidth = isDefined(availableWidth)
+	const innerWidth = !Number.isNaN(availableWidth)
 		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
 		: NaN;
 	// The children's containing block is the content box (css2 §10.1),
@@ -5795,20 +5799,20 @@ function layoutNode(
 	// off the settled request and back onto the derived one. min/max on the
 	// derived axis still clamp in setMeasuredSize.
 	const ratio = node.style.aspectRatio;
-	if (isDefined(ratio) && ratio > 0) {
+	if (!Number.isNaN(ratio) && ratio > 0) {
 		const marginRow = getAxisMargin(node, "row", ownerWidth);
 		const marginColumn = getAxisMargin(node, "column", ownerWidth);
 		if (
 			widthSpace === "definite" &&
 			heightSpace !== "definite" &&
-			isDefined(availableWidth)
+			!Number.isNaN(availableWidth)
 		) {
 			availableHeight = (availableWidth - marginRow) / ratio + marginColumn;
 			heightSpace = "definite";
 		} else if (
 			heightSpace === "definite" &&
 			widthSpace !== "definite" &&
-			isDefined(availableHeight)
+			!Number.isNaN(availableHeight)
 		) {
 			availableWidth = (availableHeight - marginColumn) * ratio + marginRow;
 			widthSpace = "definite";
@@ -6105,7 +6109,7 @@ function layoutNodeImpl(
 
 function getPadding(node: LayoutNode, edge: Edge, ownerWidth: number): number {
 	const padding = resolveValue(node.style.padding[edge], ownerWidth);
-	return isDefined(padding) ? Math.max(padding, 0) : 0;
+	return !Number.isNaN(padding) ? Math.max(padding, 0) : 0;
 }
 
 // Snap to whole cells from rounded absolute EDGES, not rounded widths:
@@ -6121,8 +6125,8 @@ function roundToGrid(
 ): void {
 	const nodeLeft = node.result.left;
 	const nodeTop = node.result.top;
-	const nodeWidth = isDefined(node.result.width) ? node.result.width : 0;
-	const nodeHeight = isDefined(node.result.height) ? node.result.height : 0;
+	const nodeWidth = !Number.isNaN(node.result.width) ? node.result.width : 0;
+	const nodeHeight = !Number.isNaN(node.result.height) ? node.result.height : 0;
 
 	const absLeft = absoluteLeft + nodeLeft;
 	const absTop = absoluteTop + nodeTop;
@@ -6151,7 +6155,7 @@ function roundValue(
 	forceCeil: boolean,
 	forceFloor: boolean,
 ): number {
-	if (!isDefined(value)) {
+	if (Number.isNaN(value)) {
 		return value;
 	}
 
