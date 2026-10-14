@@ -42,7 +42,6 @@ import {
 	type internals,
 	seal,
 	type Slots,
-	type Step,
 } from "./slots.ts";
 import {getStringWidth, graphemeSegmenter, toVisualOrder} from "./text.ts";
 
@@ -155,8 +154,6 @@ export class ImageData {
 }
 
 declareSealedRoot(ImageData);
-
-const kColorAt = Symbol("colorAt");
 
 export interface ImageBitmapSlots {
 	bitmapData: Bitmap | null;
@@ -435,8 +432,6 @@ interface Subpath {
 	points: number[];
 	closed: boolean;
 }
-
-const kSubpaths = Symbol("subpaths");
 
 class PathBuilder {
 	subpaths: Subpath[];
@@ -786,7 +781,6 @@ interface DOMPointInit {
 
 export interface Path2DSlots {
 	builder: PathBuilder;
-	[kSubpaths]: Step<Path2D[typeof kSubpaths]>;
 }
 
 export interface Path2D {
@@ -803,10 +797,6 @@ export class Path2D {
 		} else if (typeof path === "string") {
 			parseSVGPath(path, this);
 		}
-	}
-
-	get [kSubpaths](): Subpath[] {
-		return (this as unknown as Slots<Path2D>).builder.subpaths;
 	}
 
 	addPath(path: Path2D, transform?: Partial<CanvasMatrix>): void {
@@ -1457,7 +1447,6 @@ function pathPolygons(subpaths: Subpath[]): number[][] {
 export interface CanvasGradientSlots {
 	stops: Array<{offset: number; color: RGBA}>;
 	position: (x: number, y: number) => number;
-	[kColorAt]: Step<CanvasGradient[typeof kColorAt]>;
 }
 
 export interface CanvasGradient {
@@ -1488,44 +1477,47 @@ export class CanvasGradient {
 		}
 		slots.stops.splice(index, 0, {offset, color: parsed});
 	}
+}
 
-	/** The color at a user-space point, or null where the gradient has none. */
-	[kColorAt](this: Slots<CanvasGradient>, x: number, y: number): RGBA | null {
-		const slots = this;
-		const stops = slots.stops;
-		if (stops.length === 0) {
-			return {r: 0, g: 0, b: 0, a: 0};
-		}
-		const t = slots.position(x, y);
-		if (Number.isNaN(t)) {
-			return null;
-		}
-		if (t <= stops[0].offset) {
-			return stops[0].color;
-		}
-		const last = stops[stops.length - 1];
-		if (t >= last.offset) {
-			return last.color;
-		}
-		for (let i = 1; i < stops.length; i++) {
-			const a = stops[i - 1];
-			const b = stops[i];
-			if (t <= b.offset) {
-				const span = b.offset - a.offset;
-				const u = span === 0 ? 1 : (t - a.offset) / span;
-				// HTML interpolates the four channels as they are, without
-				// premultiplying.
-				const mix = (p: number, q: number) => p + (q - p) * u;
-				return {
-					r: mix(a.color.r, b.color.r),
-					g: mix(a.color.g, b.color.g),
-					b: mix(a.color.b, b.color.b),
-					a: mix(a.color.a, b.color.a),
-				};
-			}
-		}
+/** The color at a user-space point, or null where the gradient has none. */
+function getGradientColor(
+	slots: Slots<CanvasGradient>,
+	x: number,
+	y: number,
+): RGBA | null {
+	const stops = slots.stops;
+	if (stops.length === 0) {
+		return {r: 0, g: 0, b: 0, a: 0};
+	}
+	const t = slots.position(x, y);
+	if (Number.isNaN(t)) {
+		return null;
+	}
+	if (t <= stops[0].offset) {
+		return stops[0].color;
+	}
+	const last = stops[stops.length - 1];
+	if (t >= last.offset) {
 		return last.color;
 	}
+	for (let i = 1; i < stops.length; i++) {
+		const a = stops[i - 1];
+		const b = stops[i];
+		if (t <= b.offset) {
+			const span = b.offset - a.offset;
+			const u = span === 0 ? 1 : (t - a.offset) / span;
+			// HTML interpolates the four channels as they are, without
+			// premultiplying.
+			const mix = (p: number, q: number) => p + (q - p) * u;
+			return {
+				r: mix(a.color.r, b.color.r),
+				g: mix(a.color.g, b.color.g),
+				b: mix(a.color.b, b.color.b),
+				a: mix(a.color.a, b.color.a),
+			};
+		}
+	}
+	return last.color;
 }
 
 declareSealedRoot(CanvasGradient);
@@ -1535,7 +1527,6 @@ export interface CanvasPatternSlots {
 	repeatX: boolean;
 	repeatY: boolean;
 	patternTransform: Matrix;
-	[kColorAt]: Step<CanvasPattern[typeof kColorAt]>;
 }
 
 export interface CanvasPattern {
@@ -1564,35 +1555,43 @@ export class CanvasPattern {
 			transform?.f ?? 0,
 		];
 	}
+}
 
-	[kColorAt](this: Slots<CanvasPattern>, x: number, y: number): RGBA {
-		const slots = this;
-		const inverse = invert(slots.patternTransform);
-		if (inverse !== null) {
-			[x, y] = apply(inverse, x, y);
-		}
-		const bitmap = slots.patternBitmap;
-		const {width, height, data} = bitmap;
-		// The pattern tiles at the image's natural size.
-		let px = Math.floor((x * width) / naturalWidthOf(bitmap));
-		let py = Math.floor((y * height) / naturalHeightOf(bitmap));
-		if (slots.repeatX) {
-			px = ((px % width) + width) % width;
-		}
-		if (slots.repeatY) {
-			py = ((py % height) + height) % height;
-		}
-		if (px < 0 || py < 0 || px >= width || py >= height) {
-			return {r: 0, g: 0, b: 0, a: 0};
-		}
-		const at = (py * width + px) * 4;
-		return {
-			r: data[at],
-			g: data[at + 1],
-			b: data[at + 2],
-			a: data[at + 3] / 255,
-		};
+function getPatternColor(
+	slots: Slots<CanvasPattern>,
+	x: number,
+	y: number,
+): RGBA {
+	const inverse = invert(slots.patternTransform);
+	if (inverse !== null) {
+		[x, y] = apply(inverse, x, y);
 	}
+	const bitmap = slots.patternBitmap;
+	const {width, height, data} = bitmap;
+	// The pattern tiles at the image's natural size.
+	let px = Math.floor((x * width) / naturalWidthOf(bitmap));
+	let py = Math.floor((y * height) / naturalHeightOf(bitmap));
+	if (slots.repeatX) {
+		px = ((px % width) + width) % width;
+	}
+	if (slots.repeatY) {
+		py = ((py % height) + height) % height;
+	}
+	if (px < 0 || py < 0 || px >= width || py >= height) {
+		return {r: 0, g: 0, b: 0, a: 0};
+	}
+	const at = (py * width + px) * 4;
+	return {r: data[at], g: data[at + 1], b: data[at + 2], a: data[at + 3] / 255};
+}
+
+function getPaintColor(
+	paint: CanvasGradient | CanvasPattern,
+	x: number,
+	y: number,
+): RGBA | null {
+	return paint instanceof CanvasGradient
+		? getGradientColor(_(paint), x, y)
+		: getPatternColor(_(paint), x, y);
 }
 
 declareSealedRoot(CanvasPattern);
@@ -1785,17 +1784,6 @@ interface CanvasHost {
 	direction(): "ltr" | "rtl";
 }
 
-const kSetMatrix = Symbol("setMatrix");
-const kSubpathsFor = Symbol("subpathsFor");
-const kReadPathArgs = Symbol("readPathArgs");
-const kStrokeStyle = Symbol("strokeStyle");
-const kScale = Symbol("scale");
-const kRectMask = Symbol("rectMask");
-const kPaint = Symbol("paint");
-const kDropText = Symbol("dropText");
-const kCoverText = Symbol("coverText");
-const kDrawText = Symbol("drawText");
-
 // The host getContext() is making a context for. A context made any other
 // way has none, and its constructor is illegal, as a browser's is.
 let constructingHost: CanvasHost | GridHost | null = null;
@@ -1827,16 +1815,6 @@ export interface CanvasRenderingContext2DSlots {
 	state: State;
 	stack: State[];
 	path: PathBuilder;
-	[kSetMatrix]: Step<CanvasRenderingContext2D[typeof kSetMatrix]>;
-	[kSubpathsFor]: Step<CanvasRenderingContext2D[typeof kSubpathsFor]>;
-	[kReadPathArgs]: Step<CanvasRenderingContext2D[typeof kReadPathArgs]>;
-	[kStrokeStyle]: Step<CanvasRenderingContext2D[typeof kStrokeStyle]>;
-	[kScale]: Step<CanvasRenderingContext2D[typeof kScale]>;
-	[kRectMask]: Step<CanvasRenderingContext2D[typeof kRectMask]>;
-	[kPaint]: Step<CanvasRenderingContext2D[typeof kPaint]>;
-	[kDropText]: Step<CanvasRenderingContext2D[typeof kDropText]>;
-	[kCoverText]: Step<CanvasRenderingContext2D[typeof kCoverText]>;
-	[kDrawText]: Step<CanvasRenderingContext2D[typeof kDrawText]>;
 }
 
 export interface CanvasRenderingContext2D {
@@ -2102,21 +2080,22 @@ export class CanvasRenderingContext2D {
 
 	scale(x: number, y: number): void {
 		const slots = _(this);
-		slots[kSetMatrix](multiply(slots.state.transform, [x, 0, 0, y, 0, 0]));
+		setMatrix(slots, multiply(slots.state.transform, [x, 0, 0, y, 0, 0]));
 	}
 
 	rotate(angle: number): void {
 		const cos = Math.cos(angle);
 		const sin = Math.sin(angle);
 		const slots = _(this);
-		slots[kSetMatrix](
+		setMatrix(
+			slots,
 			multiply(slots.state.transform, [cos, sin, -sin, cos, 0, 0]),
 		);
 	}
 
 	translate(x: number, y: number): void {
 		const slots = _(this);
-		slots[kSetMatrix](multiply(slots.state.transform, [1, 0, 0, 1, x, y]));
+		setMatrix(slots, multiply(slots.state.transform, [1, 0, 0, 1, x, y]));
 	}
 
 	transform(
@@ -2128,7 +2107,7 @@ export class CanvasRenderingContext2D {
 		f: number,
 	): void {
 		const slots = _(this);
-		slots[kSetMatrix](multiply(slots.state.transform, [a, b, c, d, e, f]));
+		setMatrix(slots, multiply(slots.state.transform, [a, b, c, d, e, f]));
 	}
 
 	setTransform(
@@ -2141,9 +2120,9 @@ export class CanvasRenderingContext2D {
 	): void {
 		const slots = _(this);
 		if (typeof a === "number") {
-			slots[kSetMatrix]([a, b!, c!, d!, e!, f!]);
+			setMatrix(slots, [a, b!, c!, d!, e!, f!]);
 		} else {
-			slots[kSetMatrix]([
+			setMatrix(slots, [
 				a?.a ?? 1,
 				a?.b ?? 0,
 				a?.c ?? 0,
@@ -2155,7 +2134,7 @@ export class CanvasRenderingContext2D {
 	}
 
 	resetTransform(): void {
-		_(this)[kSetMatrix]([1, 0, 0, 1, 0, 0]);
+		setMatrix(_(this), [1, 0, 0, 1, 0, 0]);
 	}
 
 	getTransform(): CanvasMatrix {
@@ -2343,15 +2322,15 @@ export class CanvasRenderingContext2D {
 
 	fill(pathOrRule?: Path2D | FillRule, rule?: FillRule): void {
 		const slots = _(this);
-		const args = slots[kReadPathArgs](pathOrRule, rule);
+		const args = readPathArgs(pathOrRule, rule);
 		const bitmap = slots.host.bitmap();
 		const mask = rasterize(
-			pathPolygons(slots[kSubpathsFor](args.path)),
+			pathPolygons(subpathsFor(slots, args.path)),
 			bitmap.width,
 			bitmap.height,
 			args.rule,
 		);
-		slots[kPaint](mask, slots.state.fillStyle);
+		paintMask(slots, mask, slots.state.fillStyle);
 	}
 
 	stroke(path?: Path2D): void {
@@ -2359,23 +2338,23 @@ export class CanvasRenderingContext2D {
 		const bitmap = slots.host.bitmap();
 		const mask = rasterize(
 			strokePolygons(
-				slots[kSubpathsFor](path),
-				slots[kStrokeStyle](),
-				slots[kScale](),
+				subpathsFor(slots, path),
+				getStrokeStyle(slots),
+				getTransformScale(slots),
 			),
 			bitmap.width,
 			bitmap.height,
 			"nonzero",
 		);
-		slots[kPaint](mask, slots.state.strokeStyle);
+		paintMask(slots, mask, slots.state.strokeStyle);
 	}
 
 	clip(pathOrRule?: Path2D | FillRule, rule?: FillRule): void {
 		const slots = _(this);
-		const args = slots[kReadPathArgs](pathOrRule, rule);
+		const args = readPathArgs(pathOrRule, rule);
 		const bitmap = slots.host.bitmap();
 		const mask = rasterize(
-			pathPolygons(slots[kSubpathsFor](args.path)),
+			pathPolygons(subpathsFor(slots, args.path)),
 			bitmap.width,
 			bitmap.height,
 			args.rule,
@@ -2415,7 +2394,7 @@ export class CanvasRenderingContext2D {
 		// The point is in canvas coordinates, unaffected by the transform.
 		let winding = 0;
 		let crossings = 0;
-		for (const points of pathPolygons(_(this)[kSubpathsFor](path))) {
+		for (const points of pathPolygons(subpathsFor(_(this), path))) {
 			const count = points.length / 2;
 			for (let i = 0; i < count; i++) {
 				const ax = points[i * 2];
@@ -2447,9 +2426,9 @@ export class CanvasRenderingContext2D {
 		}
 		const slots = _(this);
 		for (const points of strokePolygons(
-			slots[kSubpathsFor](path),
-			slots[kStrokeStyle](),
-			slots[kScale](),
+			subpathsFor(slots, path),
+			getStrokeStyle(slots),
+			getTransformScale(slots),
 		)) {
 			let inside = false;
 			const count = points.length / 2;
@@ -2476,7 +2455,7 @@ export class CanvasRenderingContext2D {
 			return;
 		}
 		const slots = _(this);
-		slots[kPaint](slots[kRectMask](x, y, w, h), slots.state.fillStyle);
+		paintMask(slots, getRectMask(slots, x, y, w, h), slots.state.fillStyle);
 	}
 
 	strokeRect(x: number, y: number, w: number, h: number): void {
@@ -2489,12 +2468,16 @@ export class CanvasRenderingContext2D {
 		builder.rect(x, y, w, h);
 		const bitmap = slots.host.bitmap();
 		const mask = rasterize(
-			strokePolygons(builder.subpaths, slots[kStrokeStyle](), slots[kScale]()),
+			strokePolygons(
+				builder.subpaths,
+				getStrokeStyle(slots),
+				getTransformScale(slots),
+			),
 			bitmap.width,
 			bitmap.height,
 			"nonzero",
 		);
-		slots[kPaint](mask, slots.state.strokeStyle);
+		paintMask(slots, mask, slots.state.strokeStyle);
 	}
 
 	clearRect(x: number, y: number, w: number, h: number): void {
@@ -2502,7 +2485,7 @@ export class CanvasRenderingContext2D {
 			return;
 		}
 		const slots = _(this);
-		const mask = slots[kRectMask](x, y, w, h);
+		const mask = getRectMask(slots, x, y, w, h);
 		const clip = slots.state.clip;
 		const data = slots.host.bitmap().data;
 		for (let i = 0; i < mask.length; i++) {
@@ -2517,7 +2500,7 @@ export class CanvasRenderingContext2D {
 				data[at] = data[at + 1] = data[at + 2] = 0;
 			}
 		}
-		slots[kDropText](mask, 0.5);
+		dropText(slots, mask, 0.5);
 		slots.host.changed();
 	}
 
@@ -2655,7 +2638,7 @@ export class CanvasRenderingContext2D {
 		};
 		// Large downscales average the source area a pixel covers, so a
 		// photo drawn small does not alias.
-		const scale = slots[kScale]();
+		const scale = getTransformScale(slots);
 		const shrinkX = Math.abs(sw / (dw * scale));
 		const shrinkY = Math.abs(sh / (dh * scale));
 		const average = smooth && (shrinkX > 2 || shrinkY > 2);
@@ -2710,7 +2693,7 @@ export class CanvasRenderingContext2D {
 			}
 		}
 		if (operation === "source-over" || operation === "copy") {
-			slots[kDropText](mask, 0.5);
+			dropText(slots, mask, 0.5);
 		}
 		slots.host.changed();
 	}
@@ -2802,12 +2785,12 @@ export class CanvasRenderingContext2D {
 
 	fillText(text: string, x: number, y: number, _maxWidth?: number): void {
 		const slots = _(this);
-		slots[kDrawText](String(text), x, y, slots.state.fillStyle);
+		drawContextText(slots, String(text), x, y, slots.state.fillStyle);
 	}
 
 	strokeText(text: string, x: number, y: number, _maxWidth?: number): void {
 		const slots = _(this);
-		slots[kDrawText](String(text), x, y, slots.state.strokeStyle);
+		drawContextText(slots, String(text), x, y, slots.state.strokeStyle);
 	}
 
 	/** Widths in canvas pixels: a cell's width in pixels for each column. */
@@ -2838,289 +2821,277 @@ export class CanvasRenderingContext2D {
 	}
 
 	drawFocusIfNeeded(): void {}
+}
 
-	[kSetMatrix](this: Slots<CanvasRenderingContext2D>, m: Matrix): void {
-		if (!isFiniteAll(...m)) {
-			return;
-		}
-		const slots = this;
-		slots.state.transform = m;
-		slots.path.transform = m;
+function setMatrix(slots: Slots<CanvasRenderingContext2D>, m: Matrix): void {
+	if (!isFiniteAll(...m)) {
+		return;
 	}
+	slots.state.transform = m;
+	slots.path.transform = m;
+}
 
-	// A Path2D's points are in user space and go through the transform
-	// when it is used; the current path's went through as they were added.
-	[kSubpathsFor](
-		this: Slots<CanvasRenderingContext2D>,
-		path?: Path2D,
-	): Subpath[] {
-		const slots = this;
-		if (path === undefined) {
-			return slots.path.subpaths;
-		}
-		const builder = new PathBuilder();
-		builder.append(_(path)[kSubpaths], slots.state.transform);
-		return builder.subpaths;
+// A Path2D's points are in user space and go through the transform
+// when it is used; the current path's went through as they were added.
+function subpathsFor(
+	slots: Slots<CanvasRenderingContext2D>,
+	path?: Path2D,
+): Subpath[] {
+	if (path === undefined) {
+		return slots.path.subpaths;
 	}
+	const builder = new PathBuilder();
+	builder.append(_(path).builder.subpaths, slots.state.transform);
+	return builder.subpaths;
+}
 
-	[kReadPathArgs](
-		pathOrRule?: Path2D | FillRule,
-		maybeRule?: FillRule,
-	): {path: Path2D | undefined; rule: FillRule} {
-		if (pathOrRule instanceof Path2D) {
-			return {
-				path: pathOrRule,
-				rule: maybeRule === "evenodd" ? "evenodd" : "nonzero",
+function readPathArgs(
+	pathOrRule?: Path2D | FillRule,
+	maybeRule?: FillRule,
+): {path: Path2D | undefined; rule: FillRule} {
+	if (pathOrRule instanceof Path2D) {
+		return {
+			path: pathOrRule,
+			rule: maybeRule === "evenodd" ? "evenodd" : "nonzero",
+		};
+	}
+	return {
+		path: undefined,
+		rule: pathOrRule === "evenodd" ? "evenodd" : "nonzero",
+	};
+}
+
+function getStrokeStyle(slots: Slots<CanvasRenderingContext2D>): StrokeStyle {
+	const scale = getTransformScale(slots);
+	return {
+		width: slots.state.lineWidth,
+		cap: slots.state.lineCap,
+		join: slots.state.lineJoin,
+		miterLimit: slots.state.miterLimit,
+		dash: slots.state.lineDash.map((value) => value * scale),
+		dashOffset: slots.state.lineDashOffset * scale,
+	};
+}
+
+// How much the transform scales lengths, for line widths and dashes.
+function getTransformScale(slots: Slots<CanvasRenderingContext2D>): number {
+	const m = slots.state.transform;
+	return Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+}
+
+function getRectMask(
+	slots: Slots<CanvasRenderingContext2D>,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+): Float32Array {
+	const builder = new PathBuilder();
+	builder.transform = slots.state.transform;
+	builder.rect(x, y, w, h);
+	const bitmap = slots.host.bitmap();
+	return rasterize(
+		pathPolygons(builder.subpaths),
+		bitmap.width,
+		bitmap.height,
+		"nonzero",
+	);
+}
+
+function paintMask(
+	slots: Slots<CanvasRenderingContext2D>,
+	mask: Float32Array,
+	paint: Paint,
+): void {
+	const bitmap = slots.host.bitmap();
+	const {width, height, data} = bitmap;
+	const operation = slots.state.globalCompositeOperation;
+	const unbounded = UNBOUNDED.has(operation);
+	const alpha = slots.state.globalAlpha;
+	const clip = slots.state.clip;
+	const solid = typeof paint === "string" ? parseCanvasColor(paint) : null;
+	const inverse = typeof paint === "string"
+		? null
+		: invert(slots.state.transform);
+	for (let y = 0; y < height; y++) {
+		for (let x = 0; x < width; x++) {
+			const i = y * width + x;
+			const clipCover = clip === null ? 1 : clip[i];
+			if (clipCover <= 0) {
+				continue;
+			}
+			const cover = mask[i];
+			if (cover <= 0 && !unbounded) {
+				continue;
+			}
+			let color: RGBA | null = solid;
+			if (color === null && cover > 0 && inverse !== null) {
+				const [ux, uy] = apply(inverse, x + 0.5, y + 0.5);
+				color = getPaintColor(paint as CanvasGradient | CanvasPattern, ux, uy);
+			}
+			const sa = color === null ? 0 : color.a * alpha * cover;
+			if (clipCover < 1) {
+				// Blend the result back toward the old pixel where the clip
+				// only partly covers it.
+				const before = [
+					data[i * 4],
+					data[i * 4 + 1],
+					data[i * 4 + 2],
+					data[i * 4 + 3],
+				];
+				composite(
+					data,
+					i * 4,
+					color?.r ?? 0,
+					color?.g ?? 0,
+					color?.b ?? 0,
+					sa,
+					operation,
+				);
+				for (let c = 0; c < 4; c++) {
+					data[i * 4 + c] =
+						before[c] + (data[i * 4 + c] - before[c]) * clipCover;
+				}
+			} else {
+				composite(
+					data,
+					i * 4,
+					color?.r ?? 0,
+					color?.g ?? 0,
+					color?.b ?? 0,
+					sa,
+					operation,
+				);
+			}
+		}
+	}
+	if (operation === "source-over") {
+		coverText(
+			slots,
+			mask,
+			(x, y) =>
+				solid ??
+			(inverse === null
+				? null
+				: getPaintColor(
+					paint as CanvasGradient | CanvasPattern,
+					...apply(inverse, x + 0.5, y + 0.5),
+				)),
+			alpha,
+		);
+	} else if (operation === "copy") {
+		dropText(slots, mask, 0.5);
+	}
+	slots.host.changed();
+}
+
+// Translucent paint over text blends the text toward the paint, as it
+// would blend the text's pixels in a browser, so drawing a dim fill
+// every frame fades text out over several frames.
+function coverText(
+	slots: Slots<CanvasRenderingContext2D>,
+	mask: Float32Array,
+	colorAt: (x: number, y: number) => RGBA | null,
+	alpha: number,
+): void {
+	const bitmap = slots.host.bitmap();
+	if (bitmap.width === 0 || bitmap.height === 0) {
+		return;
+	}
+	slots.text = slots.text.filter((run) => {
+		const x = Math.min(bitmap.width - 1, Math.max(0, Math.floor(run.x)));
+		const y = Math.min(bitmap.height - 1, Math.max(0, Math.floor(run.y)));
+		const cover = mask[y * bitmap.width + x];
+		if (cover <= 0) {
+			return true;
+		}
+		const paint = colorAt(x, y);
+		const amount = paint === null ? 0 : paint.a * alpha * cover;
+		run.covered = 1 - (1 - run.covered) * (1 - amount);
+		if (run.covered >= 0.5) {
+			return false;
+		}
+		if (paint !== null) {
+			run.color = {
+				r: run.color.r + (paint.r - run.color.r) * amount,
+				g: run.color.g + (paint.g - run.color.g) * amount,
+				b: run.color.b + (paint.b - run.color.b) * amount,
+				a: run.color.a,
 			};
 		}
-		return {
-			path: undefined,
-			rule: pathOrRule === "evenodd" ? "evenodd" : "nonzero",
-		};
-	}
+		return true;
+	});
+}
 
-	[kStrokeStyle](this: Slots<CanvasRenderingContext2D>): StrokeStyle {
-		const slots = this;
-		const scale = slots[kScale]();
-		return {
-			width: slots.state.lineWidth,
-			cap: slots.state.lineCap,
-			join: slots.state.lineJoin,
-			miterLimit: slots.state.miterLimit,
-			dash: slots.state.lineDash.map((value) => value * scale),
-			dashOffset: slots.state.lineDashOffset * scale,
-		};
+// Text under the shape painted last is covered, as it would be
+// in pixels.
+function dropText(
+	slots: Slots<CanvasRenderingContext2D>,
+	mask: Float32Array,
+	threshold: number,
+): void {
+	const bitmap = slots.host.bitmap();
+	if (bitmap.width === 0 || bitmap.height === 0) {
+		return;
 	}
+	// An anchor on or past an edge (right-aligned text at the canvas's
+	// width, say) is read at the nearest pixel inside, so clearing the
+	// canvas clears it too.
+	slots.text = slots.text.filter((run) => {
+		const x = Math.min(bitmap.width - 1, Math.max(0, Math.floor(run.x)));
+		const y = Math.min(bitmap.height - 1, Math.max(0, Math.floor(run.y)));
+		return mask[y * bitmap.width + x] < threshold;
+	});
+}
 
-	// How much the transform scales lengths, for line widths and dashes.
-	[kScale](this: Slots<CanvasRenderingContext2D>): number {
-		const m = this.state.transform;
-		return Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+function drawContextText(
+	slots: Slots<CanvasRenderingContext2D>,
+	text: string,
+	x: number,
+	y: number,
+	paint: Paint,
+): void {
+	if (!isFiniteAll(x, y)) {
+		return;
 	}
-
-	[kRectMask](
-		this: Slots<CanvasRenderingContext2D>,
-		x: number,
-		y: number,
-		w: number,
-		h: number,
-	): Float32Array {
-		const builder = new PathBuilder();
-		const slots = this;
-		builder.transform = slots.state.transform;
-		builder.rect(x, y, w, h);
-		const bitmap = slots.host.bitmap();
-		return rasterize(
-			pathPolygons(builder.subpaths),
-			bitmap.width,
-			bitmap.height,
-			"nonzero",
-		);
+	const [px, py] = apply(slots.state.transform, x, y);
+	const color = typeof paint === "string"
+		? parseCanvasColor(paint)
+		: getPaintColor(paint as CanvasGradient | CanvasPattern, x, y);
+	if (color === null || color.a * slots.state.globalAlpha === 0) {
+		return;
 	}
-
-	[kPaint](
-		this: Slots<CanvasRenderingContext2D>,
-		mask: Float32Array,
-		paint: Paint,
-	): void {
-		const slots = this;
-		const bitmap = slots.host.bitmap();
-		const {width, height, data} = bitmap;
-		const operation = slots.state.globalCompositeOperation;
-		const unbounded = UNBOUNDED.has(operation);
-		const alpha = slots.state.globalAlpha;
-		const clip = slots.state.clip;
-		const solid = typeof paint === "string" ? parseCanvasColor(paint) : null;
-		const inverse = typeof paint === "string"
-			? null
-			: invert(slots.state.transform);
-		for (let y = 0; y < height; y++) {
-			for (let x = 0; x < width; x++) {
-				const i = y * width + x;
-				const clipCover = clip === null ? 1 : clip[i];
-				if (clipCover <= 0) {
-					continue;
-				}
-				const cover = mask[i];
-				if (cover <= 0 && !unbounded) {
-					continue;
-				}
-				let color: RGBA | null = solid;
-				if (color === null && cover > 0 && inverse !== null) {
-					const [ux, uy] = apply(inverse, x + 0.5, y + 0.5);
-					color = _((paint as CanvasGradient | CanvasPattern))[kColorAt](
-						ux,
-						uy,
-					);
-				}
-				const sa = color === null ? 0 : color.a * alpha * cover;
-				if (clipCover < 1) {
-					// Blend the result back toward the old pixel where the clip
-					// only partly covers it.
-					const before = [
-						data[i * 4],
-						data[i * 4 + 1],
-						data[i * 4 + 2],
-						data[i * 4 + 3],
-					];
-					composite(
-						data,
-						i * 4,
-						color?.r ?? 0,
-						color?.g ?? 0,
-						color?.b ?? 0,
-						sa,
-						operation,
-					);
-					for (let c = 0; c < 4; c++) {
-						data[i * 4 + c] =
-							before[c] + (data[i * 4 + c] - before[c]) * clipCover;
-					}
-				} else {
-					composite(
-						data,
-						i * 4,
-						color?.r ?? 0,
-						color?.g ?? 0,
-						color?.b ?? 0,
-						sa,
-						operation,
-					);
-				}
-			}
-		}
-		if (operation === "source-over") {
-			slots[kCoverText](
-				mask,
-				(x, y) =>
-					solid ??
-				(inverse === null
-					? null
-					: _((paint as CanvasGradient | CanvasPattern))[kColorAt](
-						...apply(inverse, x + 0.5, y + 0.5),
-					)),
-				alpha,
-			);
-		} else if (operation === "copy") {
-			slots[kDropText](mask, 0.5);
-		}
-		slots.host.changed();
-	}
-
-	// Translucent paint over text blends the text toward the paint, as it
-	// would blend the text's pixels in a browser, so drawing a dim fill
-	// every frame fades text out over several frames.
-	[kCoverText](
-		this: Slots<CanvasRenderingContext2D>,
-		mask: Float32Array,
-		colorAt: (x: number, y: number) => RGBA | null,
-		alpha: number,
-	): void {
-		const slots = this;
-		const bitmap = slots.host.bitmap();
-		if (bitmap.width === 0 || bitmap.height === 0) {
-			return;
-		}
-		slots.text = slots.text.filter((run) => {
-			const x = Math.min(bitmap.width - 1, Math.max(0, Math.floor(run.x)));
-			const y = Math.min(bitmap.height - 1, Math.max(0, Math.floor(run.y)));
-			const cover = mask[y * bitmap.width + x];
-			if (cover <= 0) {
-				return true;
-			}
-			const paint = colorAt(x, y);
-			const amount = paint === null ? 0 : paint.a * alpha * cover;
-			run.covered = 1 - (1 - run.covered) * (1 - amount);
-			if (run.covered >= 0.5) {
-				return false;
-			}
-			if (paint !== null) {
-				run.color = {
-					r: run.color.r + (paint.r - run.color.r) * amount,
-					g: run.color.g + (paint.g - run.color.g) * amount,
-					b: run.color.b + (paint.b - run.color.b) * amount,
-					a: run.color.a,
-				};
-			}
-			return true;
-		});
-	}
-
-	// Text under the shape painted last is covered, as it would be
-	// in pixels.
-	[kDropText](
-		this: Slots<CanvasRenderingContext2D>,
-		mask: Float32Array,
-		threshold: number,
-	): void {
-		const slots = this;
-		const bitmap = slots.host.bitmap();
-		if (bitmap.width === 0 || bitmap.height === 0) {
-			return;
-		}
-		// An anchor on or past an edge (right-aligned text at the canvas's
-		// width, say) is read at the nearest pixel inside, so clearing the
-		// canvas clears it too.
-		slots.text = slots.text.filter((run) => {
-			const x = Math.min(bitmap.width - 1, Math.max(0, Math.floor(run.x)));
-			const y = Math.min(bitmap.height - 1, Math.max(0, Math.floor(run.y)));
-			return mask[y * bitmap.width + x] < threshold;
-		});
-	}
-
-	[kDrawText](
-		this: Slots<CanvasRenderingContext2D>,
-		text: string,
-		x: number,
-		y: number,
-		paint: Paint,
-	): void {
-		if (!isFiniteAll(x, y)) {
-			return;
-		}
-		const slots = this;
-		const [px, py] = apply(slots.state.transform, x, y);
-		const color = typeof paint === "string"
-			? parseCanvasColor(paint)
-			: _((paint as CanvasGradient | CanvasPattern))[kColorAt](x, y);
-		if (color === null || color.a * slots.state.globalAlpha === 0) {
-			return;
-		}
-		// "inherit" takes the canvas's direction as the text is drawn.
-		const direction = slots.state.direction === "inherit"
-			? slots.host.direction()
-			: slots.state.direction;
-		const rtl = direction === "rtl";
-		const align = slots.state.textAlign;
-		const resolved = align === "center"
-			? "center"
-			: align === "right" ||
-				(align === "end" && !rtl) ||
-				(align === "start" && rtl)
-				? "right"
-				: "left";
-		const words = slots.state.font.toLowerCase().split(/\s+/);
-		const run: CanvasTextRun = {
-			text: toVisualOrder(
-				text.replace(/[\t\n\f\r]/g, " "),
-				rtl ? "rtl" : "ltr",
-			),
-			x: px,
-			y: py,
-			align: resolved,
-			baseline: slots.state.textBaseline,
-			color: {...color, a: color.a * slots.state.globalAlpha},
-			covered: 0,
-			bold: words.some(
-				(word) => word === "bold" ||
-					word === "bolder" ||
-				(/^\d+$/.test(word) && Number(word) >= 600),
-			),
-			italic: words.includes("italic") || words.includes("oblique"),
-		};
-		slots.text.push(run);
-		slots.host.changed();
-	}
+	// "inherit" takes the canvas's direction as the text is drawn.
+	const direction = slots.state.direction === "inherit"
+		? slots.host.direction()
+		: slots.state.direction;
+	const rtl = direction === "rtl";
+	const align = slots.state.textAlign;
+	const resolved = align === "center"
+		? "center"
+		: align === "right" ||
+			(align === "end" && !rtl) ||
+			(align === "start" && rtl)
+			? "right"
+			: "left";
+	const words = slots.state.font.toLowerCase().split(/\s+/);
+	const run: CanvasTextRun = {
+		text: toVisualOrder(text.replace(/[\t\n\f\r]/g, " "), rtl ? "rtl" : "ltr"),
+		x: px,
+		y: py,
+		align: resolved,
+		baseline: slots.state.textBaseline,
+		color: {...color, a: color.a * slots.state.globalAlpha},
+		covered: 0,
+		bold: words.some(
+			(word) => word === "bold" ||
+				word === "bolder" ||
+			(/^\d+$/.test(word) && Number(word) >= 600),
+		),
+		italic: words.includes("italic") || words.includes("oblique"),
+	};
+	slots.text.push(run);
+	slots.host.changed();
 }
 
 declareSealedRoot(CanvasRenderingContext2D);
@@ -3177,10 +3148,6 @@ interface GridHost {
 	drawsPixels(): boolean;
 }
 
-const kResolveDirection = Symbol("resolveDirection");
-const kTextColor = Symbol("textColor");
-const kRect = Symbol("rect");
-
 type GridTextAlign = "start" | "end" | "left" | "right" | "center";
 type GridDirection = "ltr" | "rtl" | "inherit";
 type GridLineStyle = LineStyle["style"] | "none";
@@ -3220,9 +3187,6 @@ export interface CanvasCellGridContextSlots {
 	gridHost: GridHost;
 	gridState: GridState;
 	gridStack: GridState[];
-	[kResolveDirection]: Step<CanvasCellGridContext[typeof kResolveDirection]>;
-	[kTextColor]: Step<CanvasCellGridContext[typeof kTextColor]>;
-	[kRect]: Step<CanvasCellGridContext[typeof kRect]>;
 }
 
 export interface CanvasCellGridContext {
@@ -3412,7 +3376,7 @@ export class CanvasCellGridContext {
 
 	fillRect(x: number, y: number, w: number, h: number): void {
 		const slots = _(this);
-		const rect = slots[kRect](x, y, w, h);
+		const rect = getGridRect(x, y, w, h);
 		const fill = toGridFill(slots.gridState.fillStyle);
 		if (rect === null || fill === undefined) {
 			return;
@@ -3424,7 +3388,7 @@ export class CanvasCellGridContext {
 
 	clearRect(x: number, y: number, w: number, h: number): void {
 		const slots = _(this);
-		const rect = slots[kRect](x, y, w, h);
+		const rect = getGridRect(x, y, w, h);
 		if (rect === null) {
 			return;
 		}
@@ -3442,12 +3406,12 @@ export class CanvasCellGridContext {
 			return;
 		}
 		const slots = _(this);
-		const color = slots[kTextColor](slots.gridState.fillStyle);
+		const color = getGridTextColor(slots.gridState.fillStyle);
 		if (color === undefined || (maxWidth !== undefined && !(maxWidth > 0))) {
 			return;
 		}
 		const cells = slots.gridHost.cells();
-		const rtl = slots[kResolveDirection]() === "rtl";
+		const rtl = resolveGridDirection(slots) === "rtl";
 		const clusters = [
 			...graphemeSegmenter.segment(
 				toVisualOrder(
@@ -3529,7 +3493,7 @@ export class CanvasCellGridContext {
 			return;
 		}
 		const slots = _(this);
-		const color = slots[kTextColor](slots.gridState.strokeStyle);
+		const color = getGridTextColor(slots.gridState.strokeStyle);
 		const style = slots.gridState.lineStyle;
 		if (color === undefined || style === "none" || style === "hidden") {
 			return;
@@ -3554,8 +3518,8 @@ export class CanvasCellGridContext {
 	/** A box on the cells `w` by `h` from (x, y), in strokeStyle and lineStyle. */
 	strokeRect(x: number, y: number, w: number, h: number): void {
 		const slots = _(this);
-		const rect = slots[kRect](x, y, w, h);
-		const color = slots[kTextColor](slots.gridState.strokeStyle);
+		const rect = getGridRect(x, y, w, h);
+		const color = getGridTextColor(slots.gridState.strokeStyle);
 		const style = slots.gridState.lineStyle;
 		if (
 			rect === null ||
@@ -3585,7 +3549,7 @@ export class CanvasCellGridContext {
 	measureText(text: string): {width: number} {
 		const slots = _(this);
 		return slots.gridHost.cells()
-			.measureText(toVisualOrder(String(text), slots[kResolveDirection]()));
+			.measureText(toVisualOrder(String(text), resolveGridDirection(slots)));
 	}
 
 	/**
@@ -3740,47 +3704,48 @@ export class CanvasCellGridContext {
 		slots.gridStack = [];
 		slots.gridHost.changed();
 	}
+}
 
-	[kResolveDirection](this: Slots<CanvasCellGridContext>): "ltr" | "rtl" {
-		const slots = this;
-		const {direction} = slots.gridState;
-		return direction === "inherit" ? slots.gridHost.direction() : direction;
-	}
+function resolveGridDirection(
+	slots: Slots<CanvasCellGridContext>,
+): "ltr" | "rtl" {
+	const {direction} = slots.gridState;
+	return direction === "inherit" ? slots.gridHost.direction() : direction;
+}
 
-	// A kept color as a glyph's color: a cell color, null for the
-	// terminal's own text color, or undefined for one too transparent to
-	// show, as a 2d context's text under half opaque does not.
-	[kTextColor](value: string): number | null | undefined {
-		const system = getSystemColor(value);
-		if (system !== null) {
-			return system.cell === 0 ? null : system.cell;
-		}
-		const color = parseCanvasColor(value)!;
-		if (color.a < 0.5) {
-			return undefined;
-		}
-		return toCellColor((color.r << 16) | (color.g << 8) | color.b);
+// A kept color as a glyph's color: a cell color, null for the
+// terminal's own text color, or undefined for one too transparent to
+// show, as a 2d context's text under half opaque does not.
+function getGridTextColor(value: string): number | null | undefined {
+	const system = getSystemColor(value);
+	if (system !== null) {
+		return system.cell === 0 ? null : system.cell;
 	}
+	const color = parseCanvasColor(value)!;
+	if (color.a < 0.5) {
+		return undefined;
+	}
+	return toCellColor((color.r << 16) | (color.g << 8) | color.b);
+}
 
-	[kRect](
-		x: number,
-		y: number,
-		w: number,
-		h: number,
-	): [number, number, number, number] | null {
-		if (!isFiniteAll(x, y, w, h)) {
-			return null;
-		}
-		if (w < 0) {
-			x += w;
-			w = -w;
-		}
-		if (h < 0) {
-			y += h;
-			h = -h;
-		}
-		return [Math.round(x), Math.round(y), Math.round(x + w), Math.round(y + h)];
+function getGridRect(
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+): [number, number, number, number] | null {
+	if (!isFiniteAll(x, y, w, h)) {
+		return null;
 	}
+	if (w < 0) {
+		x += w;
+		w = -w;
+	}
+	if (h < 0) {
+		y += h;
+		h = -h;
+	}
+	return [Math.round(x), Math.round(y), Math.round(x + w), Math.round(y + h)];
 }
 
 declareSealedRoot(CanvasCellGridContext);
