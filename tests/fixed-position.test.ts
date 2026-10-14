@@ -238,3 +238,184 @@ test("a document scroll shifts only the rows between full-width fixed bars", asy
 	dom.dispose();
 	again.dispose();
 });
+
+// A mail client draws each message below header lines it vouches for.
+// The message must not be able to paint a fixed box over them.
+const HEADERS = "<div>From: alice</div><div>Checked: pass</div>";
+const FAKE = Array.from({length: 5}, () => "<div>XXXXXXXXXXXXXXXXXXXX</div>")
+	.join("");
+
+test("contain: paint holds a fixed box at its corner and clips it", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		HEADERS +
+		"<div id=\"host\" style=\"contain:paint;position:relative;margin-left:4ch;" +
+		"width:12ch;height:5px;border:1px solid\">" +
+		"<div id=\"fake\" style=\"position:fixed;top:0;left:0;width:20ch\">" +
+		FAKE +
+		"</div></div><div>after</div>";
+	await nextFrame(dom);
+	const rows = terminal.getVisibleText().split("\n");
+	expect(rows[0]).toContain("From: alice");
+	expect(rows[1]).toContain("Checked: pass");
+	expect(rows[3].slice(0, 16)).toBe("    │XXXXXXXXXX│");
+	expect(rows[5].slice(0, 16)).toBe("    │XXXXXXXXXX│");
+	expect(rows[6]).not.toContain("X");
+	expect(rows[7]).toContain("after");
+	const fake = dom.document.getElementById("fake")!;
+	const rect = fake.getBoundingClientRect();
+	expect(rect.left).toBe(5);
+	expect(rect.top).toBe(3);
+	expect(fake.offsetParent).toBe(dom.document.getElementById("host"));
+	expect(dom.window.getComputedStyle(fake).top).toBe("0px");
+	dom.dispose();
+});
+
+test("contain: paint on a shadow host holds a fixed box in its shadow tree", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		HEADERS +
+		"<mail-view style=\"display:block;contain:paint;position:relative;" +
+		"margin-left:4ch;width:12ch;height:3px\"></mail-view><div>after</div>";
+	const view = dom.document.querySelector("mail-view")!;
+	view.attachShadow({mode: "open"}).innerHTML =
+		"<div id=\"fake\" style=\"position:fixed;top:0;left:0;width:20ch\">" +
+		FAKE +
+		"</div>";
+	await nextFrame(dom);
+	const rows = terminal.getVisibleText().split("\n");
+	expect(rows[0]).toContain("From: alice");
+	expect(rows[1]).toContain("Checked: pass");
+	expect(rows[2].slice(0, 16)).toBe("    XXXXXXXXXXXX");
+	expect(rows[4].slice(0, 16)).toBe("    XXXXXXXXXXXX");
+	expect(rows[5]).toContain("after");
+	expect(rows[5]).not.toContain("X");
+	const fake = view.shadowRoot!.getElementById("fake")!;
+	expect(fake.getBoundingClientRect().top).toBe(2);
+	expect(fake.getBoundingClientRect().left).toBe(4);
+	dom.dispose();
+});
+
+for (const style of [
+	"contain:layout",
+	"transform:translate(0)",
+	"filter:opacity(1)",
+	"will-change:transform",
+]) {
+	test(`${style} gives a fixed box a containing block`, async () => {
+		const terminal = new MockProcess({cols: 30, rows: 10});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML =
+			HEADERS +
+			`<div id="host" style="${style};margin-left:4ch;width:12ch;height:3px">` +
+			"<div id=\"fake\" style=\"position:fixed;top:1px;left:2ch\">FAKE</div>" +
+			"</div>";
+		await nextFrame(dom);
+		const rows = terminal.getVisibleText().split("\n");
+		expect(rows[0]).toContain("From: alice");
+		expect(rows[1]).toContain("Checked: pass");
+		expect(rows[3].slice(0, 10)).toBe("      FAKE");
+		const fake = dom.document.getElementById("fake")!;
+		expect(fake.getBoundingClientRect().top).toBe(3);
+		expect(fake.getBoundingClientRect().left).toBe(6);
+		expect(fake.offsetParent).toBe(dom.document.getElementById("host"));
+		dom.dispose();
+	});
+}
+
+test("a transform gives an absolute box a containing block without position", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"position:relative\"><div>top</div>" +
+		"<div id=\"host\" style=\"transform:translate(0);margin-left:4ch\">" +
+		"<div id=\"abs\" style=\"position:absolute;top:0;left:1ch\">ABS</div>host" +
+		"</div></div>";
+	await nextFrame(dom);
+	const abs = dom.document.getElementById("abs")!;
+	expect(abs.getBoundingClientRect().top).toBe(1);
+	expect(abs.getBoundingClientRect().left).toBe(5);
+	expect(abs.offsetParent).toBe(dom.document.getElementById("host"));
+	dom.dispose();
+});
+
+test("without containment a fixed box still takes the viewport", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		HEADERS +
+		"<div style=\"position:relative;margin-left:4ch;width:12ch;height:3px;" +
+		"overflow:hidden\">" +
+		"<div id=\"fake\" style=\"position:fixed;top:0;left:0\">FAKE</div></div>";
+	await nextFrame(dom);
+	const rows = terminal.getVisibleText().split("\n");
+	expect(rows[0].startsWith("FAKE")).toBe(true);
+	const fake = dom.document.getElementById("fake")!;
+	expect(fake.getBoundingClientRect().top).toBe(0);
+	expect(fake.getBoundingClientRect().left).toBe(0);
+	expect(fake.offsetParent).toBe(null);
+	dom.dispose();
+});
+
+test("a fixed box follows its containing block in and out", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		HEADERS +
+		"<div id=\"host\" style=\"margin-left:4ch;width:12ch;height:3px\">" +
+		"<div id=\"fake\" style=\"position:fixed;top:0;left:0\">FAKE</div></div>";
+	await nextFrame(dom);
+	const host = dom.document.getElementById("host")!;
+	const fake = dom.document.getElementById("fake")!;
+	expect(fake.getBoundingClientRect().top).toBe(0);
+	host.style.contain = "paint";
+	await nextFrame(dom);
+	expect(fake.getBoundingClientRect().top).toBe(2);
+	expect(fake.getBoundingClientRect().left).toBe(4);
+	expect(terminal.getVisibleText().split("\n")[0]).toContain("From: alice");
+	host.style.contain = "";
+	await nextFrame(dom);
+	expect(fake.getBoundingClientRect().top).toBe(0);
+	expect(terminal.getVisibleText().split("\n")[0].startsWith("FAKE")).toBe(
+		true,
+	);
+	dom.dispose();
+});
+
+test("a contained fixed box scrolls with the document", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		HEADERS +
+		"<div style=\"contain:paint\">" +
+		"<div id=\"fake\" style=\"position:fixed;top:0;left:0\">FAKE</div>" +
+		Array.from({length: 30}, (_, i) => `<div>row ${i}</div>`).join("") +
+		"</div>";
+	await nextFrame(dom);
+	dom.window.scrollBy(0, 1);
+	await nextFrame(dom);
+	const rows = terminal.getVisibleText().split("\n");
+	expect(rows[0]).toContain("Checked: pass");
+	expect(rows[1].startsWith("FAKE")).toBe(true);
+	expect(dom.document.getElementById("fake")!.getBoundingClientRect().top)
+		.toBe(1);
+	dom.dispose();
+});
+
+test("contain: paint clips content that overflows it", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"contain:paint;width:6ch;height:2px;white-space:nowrap\">" +
+		"<div>line 0 is long</div><div>line 1</div><div>line 2</div>" +
+		"<div>line 3</div></div><div>after</div>";
+	await nextFrame(dom);
+	const rows = terminal.getVisibleText().split("\n");
+	expect(rows[0].trimEnd()).toBe("line 0");
+	expect(rows[1].trimEnd()).toBe("line 1");
+	expect(rows[2].trimEnd()).toBe("after");
+	expect(terminal.getVisibleText()).not.toContain("line 2");
+	dom.dispose();
+});

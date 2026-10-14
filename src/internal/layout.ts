@@ -1,6 +1,7 @@
 import LineBreaker from "linebreak";
 
 import {
+	establishesFixedContainingBlock,
 	getBoxModel,
 	getCellBlockMargin,
 	getCellBlockSize,
@@ -9,7 +10,11 @@ import {
 	getComputedValue,
 	getDeclaredDisplay,
 	getWhiteSpace as getElementWhiteSpace,
+	getFixedContainingBlock,
 	getTabSize,
+	getUsedOverflow,
+	hasLayoutOrPaintContainment,
+	hasPaintContainment,
 	pxFromCells,
 	toCellBorder,
 	toCellLength,
@@ -42,7 +47,7 @@ import {
 	type Edge,
 	type FlexDirection,
 	type Gutter,
-	isContainingBlockType,
+	isContainingBlock,
 	isDefined,
 	type Justify,
 	LayoutNode,
@@ -89,8 +94,13 @@ const POSITIONS = new Set<string>([
 	"sticky",
 ]);
 
+// A fixed box an ancestor contains is laid out, scrolled and clipped as
+// an absolute one in that ancestor.
 function getPosition(element: Element): Position {
 	const value = getComputedValue(element, "position");
+	if (value === "fixed" && getFixedContainingBlock(element) !== null) {
+		return "absolute";
+	}
 	return POSITIONS.has(value) ? (value as Position) : "static";
 }
 
@@ -98,7 +108,8 @@ export function isPositioned(element: Element): boolean {
 	return getPosition(element) !== "static";
 }
 
-// fixed is approximated as absolute against the initial containing block.
+// Unless an ancestor contains it, fixed is approximated as absolute
+// against the initial containing block.
 function isOutOfFlow(node: Node): boolean {
 	if (node.nodeType !== node.ELEMENT_NODE) {
 		return false;
@@ -1221,10 +1232,9 @@ function styleLayoutNodeProperties(
 	}
 
 	const display = getLayoutDisplay(element);
-	const overflow = getComputedValue(element, "overflow");
 	style.clipsOverflow =
-		(getComputedValue(element, "overflow-x") || overflow) !== "visible" ||
-		(getComputedValue(element, "overflow-y") || overflow) !== "visible";
+		getUsedOverflow(element, "x") !== "visible" ||
+		getUsedOverflow(element, "y") !== "visible";
 	// A blockified inline's width applies like any block's. Forced
 	// auto, `<span style="width:30ch">` in a flex row came out as wide as its
 	// text.
@@ -1470,16 +1480,19 @@ function styleLayoutNodeProperties(
 	// Only block and list-item join the formatting context around them
 	// (css2 §8.3.1, §9.4.1). BODY is the box the document scroll measures the
 	// document by, so margins stop there rather than escaping into the
-	// viewport.
+	// viewport. Layout and paint containment give a box its own context
+	// (css-contain-2 §3.2).
 	style.blockFormattingContext =
 		element === element.ownerDocument?.documentElement ||
 		element.tagName === "BODY" ||
 		(display !== "block" && display !== "list-item") ||
 		getComputedValue(element, "overflow") !== "visible" ||
 		isOutOfFlow(element) ||
+		hasLayoutOrPaintContainment(element) ||
 		parentIsFlex;
 
 	const position = getPosition(element);
+	style.containsPositioned = establishesFixedContainingBlock(element);
 	// How the stacking-context painter finds positioned boxes without an
 	// O(document) sweep per frame.
 	if (positionedElements) {
@@ -2544,7 +2557,10 @@ function getContainingBlockLayoutNode(
 		ancestor;
 		ancestor = flatParentElement(ancestor)
 	) {
-		if (getPosition(ancestor) !== "static") {
+		if (
+			getPosition(ancestor) !== "static" ||
+			establishesFixedContainingBlock(ancestor)
+		) {
 			const layoutNode = layout[kNodeMap].get(ancestor);
 			// A measure-function node cannot take flex children, so a
 			// positioned inline-block cannot serve, and the hoist keeps
@@ -4777,9 +4793,9 @@ function stickyShiftAlong(
 // containing block chain move it by their scroll offsets, and a sticky
 // box in that chain, itself included, is shifted to hold its insets. An
 // in-flow box is contained by its parent, so every ancestor is in the
-// chain. An absolute box is contained by the nearest positioned
-// ancestor, so the scrollers below that leave it alone. A fixed box is
-// contained by the viewport, so none of them move it.
+// chain. An absolute box is contained by the nearest positioned or
+// containing ancestor, so the scrollers below that leave it alone. A
+// fixed box is contained by the viewport, so none of them move it.
 function getScrollShift(
 	layout: Layout,
 	layoutNode: LayoutNode,
@@ -4800,9 +4816,7 @@ function getScrollShift(
 		let next: LayoutNode | null = current.parent;
 		if (type === "absolute") {
 			while (
-				next !== null &&
-				next.parent !== null &&
-				!isContainingBlockType(next.style.positionType)
+				next !== null && next.parent !== null && !isContainingBlock(next.style)
 			) {
 				next = next.parent;
 			}
@@ -4938,7 +4952,10 @@ function hitTestInFlow(
 		// the pointer can still reach. The paint extent says whether any
 		// row of the subtree is there at all.
 		if (!contained && !isSplitAroundBlock(element)) {
-			if (getComputedValue(element, "overflow") !== "visible") {
+			if (
+				getComputedValue(element, "overflow") !== "visible" ||
+				hasPaintContainment(element)
+			) {
 				return null;
 			}
 			const node = layout.getLayoutNode(element);
@@ -5728,12 +5745,12 @@ export class Layout {
 		};
 	}
 
-	// CSSOM View's offsetParent: the nearest flat-tree ancestor that is
-	// positioned, the body, or a table cell or table, skipping one the
-	// element cannot see from its own tree (a slotted node's ancestors
-	// inside the shadow tree). A fixed box's offsets are viewport offsets,
-	// so a fixed ancestor ends the walk with null; transforms do not
-	// render here, so nothing else gives a fixed box a containing block.
+	// CSSOM View's offsetParent: the nearest flat-tree ancestor that
+	// contains positioned boxes, the body, or a table cell or table,
+	// skipping one the element cannot see from its own tree (a slotted
+	// node's ancestors inside the shadow tree). A fixed box no ancestor
+	// contains has viewport offsets and so no offsetParent, and a fixed
+	// ancestor the element cannot see ends the walk with null.
 	offsetParent(element: Element): Element | null {
 		if (!element.isConnected || !isInFlatTree(element)) {
 			return null;
@@ -5743,7 +5760,10 @@ export class Layout {
 		if (element === body || element === document.documentElement) {
 			return null;
 		}
-		if (getComputedValue(element, "position") === "fixed") {
+		if (
+			getComputedValue(element, "position") === "fixed" &&
+			getFixedContainingBlock(element) === null
+		) {
 			return null;
 		}
 		for (
@@ -5752,17 +5772,21 @@ export class Layout {
 			ancestor = flatParentElement(ancestor)
 		) {
 			const position = getComputedValue(ancestor, "position");
-			if (position === "fixed") {
-				return null;
+			if (!isShadowIncludingAncestor(ancestor, element)) {
+				if (position === "fixed") {
+					return null;
+				}
+				continue;
 			}
 			const name = ancestor.localName;
-			const candidate =
+			if (
 				(position !== "" && position !== "static") ||
+				establishesFixedContainingBlock(ancestor) ||
 				ancestor === body ||
 				name === "td" ||
 				name === "th" ||
-				name === "table";
-			if (candidate && isShadowIncludingAncestor(ancestor, element)) {
+				name === "table"
+			) {
 				return ancestor;
 			}
 		}
@@ -6546,6 +6570,13 @@ function applyRestyles(layout: Layout): void {
 				continue;
 			}
 			const layoutNode = layout[kNodeMap].get(element);
+			if (
+				layoutNode !== undefined &&
+				layoutNode.style.containsPositioned !==
+					establishesFixedContainingBlock(element)
+			) {
+				invalidateOutOfFlowDescendants(layout, element);
+			}
 			// A pseudo-element's style is the host's to change, and its box is
 			// the host's child, so a host with any takes the full path.
 			const probe =
@@ -6605,6 +6636,25 @@ function applyRestyles(layout: Layout): void {
 				layout[kDirtyRunContainers].add(element);
 			}
 		}
+	}
+}
+
+// The box an out-of-flow descendant hangs from, and for a fixed one its
+// position type, depend on every ancestor between, so an element that
+// starts or stops containing them sends each back to be placed again.
+function invalidateOutOfFlowDescendants(
+	layout: Layout,
+	element: Element,
+): void {
+	for (const child of flatChildren(element)) {
+		if (child.nodeType !== child.ELEMENT_NODE) {
+			continue;
+		}
+		if (isOutOfFlow(child)) {
+			layout[kRestyled].add(child as Element);
+			invalidateNode(layout, child);
+		}
+		invalidateOutOfFlowDescendants(layout, child as Element);
 	}
 }
 
