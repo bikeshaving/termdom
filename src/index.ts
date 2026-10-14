@@ -60,7 +60,12 @@ import {
 } from "./internal/images.ts";
 import {Input} from "./internal/input.ts";
 import {Layout} from "./internal/layout.ts";
-import {Painter} from "./internal/painter.ts";
+import {
+	paint,
+	Painter,
+	resolveDocumentScrollBand,
+	resolveScrollShift,
+} from "./internal/painter.ts";
 import {
 	answerRequest,
 	checkInlineHandler,
@@ -1484,7 +1489,7 @@ function renderStatic(termDOM: TermDOM, lineEnding: "\n" | "\r\n"): string {
 	return termDOMSlots.framebuffer.renderStatic(
 		termDOMSlots.layout.documentPaintHeight(),
 		lineEnding,
-		(context) => termDOMSlots.painter.paint(context),
+		(context) => paint(termDOMSlots.painter, context),
 	);
 }
 
@@ -1593,10 +1598,11 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// The document scroll has nothing to move in fullscreen. A scroll box
 	// inside it still does, under DECSTBM margins.
 	const shift =
-		termDOMSlots.painter.resolveScrollShift(regionHeight, journalled) ??
+		resolveScrollShift(termDOMSlots.painter, regionHeight, journalled) ??
 		(fullscreen || termDOMSlots.framebuffer.journal.frameScroll === 0
 			? null
-			: termDOMSlots.painter.resolveDocumentScrollBand(
+			: resolveDocumentScrollBand(
+				termDOMSlots.painter,
 				regionHeight,
 				termDOMSlots.framebuffer.journal.frameScroll,
 			));
@@ -1609,7 +1615,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		delta: shift ? shift.delta : fullscreen ? 0 : clamped.frameScroll,
 		shift: shift ?? undefined,
 	});
-	termDOMSlots.painter.paint(context);
+	paint(termDOMSlots.painter, context);
 	const ansi = termDOMSlots.framebuffer.endFrame();
 	termDOMSlots.layout.framePainted();
 

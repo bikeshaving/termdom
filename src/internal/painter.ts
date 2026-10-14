@@ -456,136 +456,138 @@ export class Painter {
 		this.framebuffer = framebuffer;
 		this.topLayer = getTopLayer(document) as unknown as Set<Element>;
 	}
+}
 
-	/**
-	 * The buffer rows a journalled element scroll covers, or null when the
-	 * terminal cannot shift them. DECSTBM margins are horizontal, so a scroll
-	 * shift is the region's full width or nothing. Content overlapping the
-	 * shift is dragged along and the diff repairs it. A box narrower than the
-	 * terminal shifts only when repairing what lies beside it costs less than
-	 * repainting the box.
-	 */
-	resolveScrollShift(
-		regionHeight: number,
-		record: {element: Element; delta: number} | null,
-	): {delta: number; top: number; end: number} | null {
-		const framebuffer = this.framebuffer;
-		const layout = this.layout;
-		if (
-			record === null ||
-			record.delta === 0 ||
-			// One scroll shift per frame. The document scroll's region already
-			// contains this box.
-			framebuffer.journal.frameScroll !== 0 ||
-			hasPaintedHighlights(this.document) ||
-			!record.element.isConnected
-		) {
-			return null;
-		}
-		const rect = layout.getRect(record.element);
-		if (rect === null) {
-			return null;
-		}
-
-		// The scroll port is the padding box.
-		const border = getCellBorderWidths(record.element);
-		const left = rect.left + border.left;
-		const right = rect.left + rect.width - border.right;
-
-		// Layout rows are document rows. Buffer rows are the document
-		// scroll's. A fixed box is laid out in viewport rows and the paint
-		// cancels the document scroll for it.
-		const lift = layout.isInFixedSpace(record.element)
-			? 0
-			: framebuffer.scrollTop;
-		const top = Math.max(0, Math.round(rect.top + border.top) - lift);
-		const end = Math.min(
-			regionHeight,
-			Math.round(rect.top + rect.height - border.bottom) - lift,
-		);
-		if (end - top <= Math.abs(record.delta)) {
-			return null;
-		}
-		const delta = record.delta;
-		if (
-			(left > 0 || right < framebuffer.cols) &&
-			!framebuffer.insetShiftPays({delta, top, end, left, right})
-		) {
-			return null;
-		}
-		return {delta, top, end};
+/**
+ * The buffer rows a journalled element scroll covers, or null when the
+ * terminal cannot shift them. DECSTBM margins are horizontal, so a scroll
+ * shift is the region's full width or nothing. Content overlapping the
+ * shift is dragged along and the diff repairs it. A box narrower than the
+ * terminal shifts only when repairing what lies beside it costs less than
+ * repainting the box.
+ */
+export function resolveScrollShift(
+	painter: Painter,
+	regionHeight: number,
+	record: {element: Element; delta: number} | null,
+): {delta: number; top: number; end: number} | null {
+	const framebuffer = painter.framebuffer;
+	const layout = painter.layout;
+	if (
+		record === null ||
+		record.delta === 0 ||
+		// One scroll shift per frame. The document scroll's region already
+		// contains this box.
+		framebuffer.journal.frameScroll !== 0 ||
+		hasPaintedHighlights(painter.document) ||
+		!record.element.isConnected
+	) {
+		return null;
+	}
+	const rect = layout.getRect(record.element);
+	if (rect === null) {
+		return null;
 	}
 
-	/**
-	 * The rows a document scroll shifts: the region, less the full-width
-	 * fixed bars at its top and bottom edges, which stay where they are on
-	 * screen. Null when no bar trims it.
-	 */
-	resolveDocumentScrollBand(
-		regionHeight: number,
-		delta: number,
-	): {delta: number; top: number; end: number} | null {
-		const bars = this.layout.fullWidthFixedRows(this.framebuffer.cols);
-		if (bars.length === 0) {
-			return null;
-		}
-		let top = 0;
-		let end = regionHeight;
-		for (let trimmed = true; trimmed;) {
-			trimmed = false;
-			for (const [barTop, barBottom] of bars) {
-				if (barTop <= top && barBottom > top) {
-					top = barBottom;
-					trimmed = true;
-				}
-				if (barTop < end && barBottom >= end) {
-					end = barTop;
-					trimmed = true;
-				}
-			}
-		}
-		if ((top === 0 && end === regionHeight) || end - top <= Math.abs(delta)) {
-			return null;
-		}
-		return {delta, top, end};
-	}
+	// The scroll port is the padding box.
+	const border = getCellBorderWidths(record.element);
+	const left = rect.left + border.left;
+	const right = rect.left + rect.width - border.right;
 
-	paint(ctx: CellContext): void {
-		this.renderedOutsideMarkers = new WeakSet<Element>();
-		this.scrolledRows = 0;
-		this.highlightedText = collectHighlightedText(this.document);
-		this.paintedText.clear();
-		this.highlightStyles = new Map();
-		const layers = this.layout.collectStackingLayers(this.topLayer);
-		// From the body, the root stacking context's content. A body that
-		// is inline, inline-block or display: contents puts its content in
-		// the root element's boxes rather than its own, so painting starts
-		// at the root.
-		const document = this.document;
-		const bodyDisplay = getDeclaredDisplay(document.body as Element);
-		const fromRoot =
-			document.documentElement !== null &&
-			(bodyDisplay === "contents" || bodyDisplay.startsWith("inline"));
-		renderStackingContext(
-			this,
-			(fromRoot ? document.documentElement : document.body) as Element,
-			ctx,
-			layers,
-		);
-		const rendered = renderedTopLayer(this.document) as unknown as Element[];
-		for (const element of rendered) {
-			const previousClip = ctx.clipRect;
-			ctx.clipRect = null;
-			// Entered from outside its ancestor chain, so seed the culling
-			// shift.
-			this.scrolledRows = this.layout.scrolledAncestorRows(element);
-			try {
-				renderBackdrop(element, ctx);
-				renderStackingContext(this, element, ctx, layers);
-			} finally {
-				ctx.clipRect = previousClip;
-				this.scrolledRows = 0;
+	// Layout rows are document rows. Buffer rows are the document
+	// scroll's. A fixed box is laid out in viewport rows and the paint
+	// cancels the document scroll for it.
+	const lift = layout.isInFixedSpace(record.element)
+		? 0
+		: framebuffer.scrollTop;
+	const top = Math.max(0, Math.round(rect.top + border.top) - lift);
+	const end = Math.min(
+		regionHeight,
+		Math.round(rect.top + rect.height - border.bottom) - lift,
+	);
+	if (end - top <= Math.abs(record.delta)) {
+		return null;
+	}
+	const delta = record.delta;
+	if (
+		(left > 0 || right < framebuffer.cols) &&
+		!framebuffer.insetShiftPays({delta, top, end, left, right})
+	) {
+		return null;
+	}
+	return {delta, top, end};
+}
+
+/**
+ * The rows a document scroll shifts: the region, less the full-width
+ * fixed bars at its top and bottom edges, which stay where they are on
+ * screen. Null when no bar trims it.
+ */
+export function resolveDocumentScrollBand(
+	painter: Painter,
+	regionHeight: number,
+	delta: number,
+): {delta: number; top: number; end: number} | null {
+	const bars = painter.layout.fullWidthFixedRows(painter.framebuffer.cols);
+	if (bars.length === 0) {
+		return null;
+	}
+	let top = 0;
+	let end = regionHeight;
+	for (let trimmed = true; trimmed;) {
+		trimmed = false;
+		for (const [barTop, barBottom] of bars) {
+			if (barTop <= top && barBottom > top) {
+				top = barBottom;
+				trimmed = true;
 			}
+			if (barTop < end && barBottom >= end) {
+				end = barTop;
+				trimmed = true;
+			}
+		}
+	}
+	if ((top === 0 && end === regionHeight) || end - top <= Math.abs(delta)) {
+		return null;
+	}
+	return {delta, top, end};
+}
+
+export function paint(painter: Painter, ctx: CellContext): void {
+	painter.renderedOutsideMarkers = new WeakSet<Element>();
+	painter.scrolledRows = 0;
+	painter.highlightedText = collectHighlightedText(painter.document);
+	painter.paintedText.clear();
+	painter.highlightStyles = new Map();
+	const layers = painter.layout.collectStackingLayers(painter.topLayer);
+	// From the body, the root stacking context's content. A body that
+	// is inline, inline-block or display: contents puts its content in
+	// the root element's boxes rather than its own, so painting starts
+	// at the root.
+	const document = painter.document;
+	const bodyDisplay = getDeclaredDisplay(document.body as Element);
+	const fromRoot =
+		document.documentElement !== null &&
+		(bodyDisplay === "contents" || bodyDisplay.startsWith("inline"));
+	renderStackingContext(
+		painter,
+		(fromRoot ? document.documentElement : document.body) as Element,
+		ctx,
+		layers,
+	);
+	const rendered = renderedTopLayer(painter.document) as unknown as Element[];
+	for (const element of rendered) {
+		const previousClip = ctx.clipRect;
+		ctx.clipRect = null;
+		// Entered from outside its ancestor chain, so seed the culling
+		// shift.
+		painter.scrolledRows = painter.layout.scrolledAncestorRows(element);
+		try {
+			renderBackdrop(element, ctx);
+			renderStackingContext(painter, element, ctx, layers);
+		} finally {
+			ctx.clipRect = previousClip;
+			painter.scrolledRows = 0;
 		}
 	}
 }
