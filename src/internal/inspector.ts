@@ -8,9 +8,9 @@ import {
 	Element,
 	type Node,
 	NodeList,
-	nodeTypeOf,
 	Text,
 } from "./dom.ts";
+import {nodeTypeOf} from "./tree.ts";
 
 const colors = {
 	attr: "\x1b[36m",
