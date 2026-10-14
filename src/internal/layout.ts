@@ -4792,10 +4792,14 @@ function getScrollShift(
 		if (next === null) {
 			break;
 		}
-		const scroller = getScrollOwner(layout, next);
-		if (scroller !== null) {
-			x -= getScrollOffset(scroller, "left");
-			y -= getScrollOffset(scroller, "top");
+		const owner = next.owner as Node | undefined;
+		if (owner && nodeTypeOf(owner) === owner.ELEMENT_NODE) {
+			const left = getScrollOffset(owner as Element, "left");
+			const top = getScrollOffset(owner as Element, "top");
+			if ((left !== 0 || top !== 0) && !isRootBox(layout, owner as Element)) {
+				x -= left;
+				y -= top;
+			}
 		}
 		current = next;
 	}
