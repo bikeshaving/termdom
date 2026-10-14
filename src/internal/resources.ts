@@ -7,7 +7,12 @@
  * Each redirect is checked against the policy again and followed on the
  * network. Only a document that is itself a file: URL loads file: URLs.
  */
-import {createFetchEvent, DOMException, getFetchResponse} from "./dom.ts";
+import {
+	createFetchEvent,
+	getFetchResponse,
+	getMetaPolicyTexts,
+	setRequestDestination,
+} from "./dom.ts";
 import {splitOnASCIIWhitespace} from "./text.ts";
 
 // A load goes to the global fetch, so a program that replaces it to mock
@@ -31,21 +36,6 @@ function networkFetch(request: Request): Promise<Response> {
 }
 
 export {ExtendableEvent, FetchEvent, type FetchEventInit} from "./dom.ts";
-
-/**
- * Gives a request its Fetch destination, such as "image", which a
- * runtime's Request leaves empty.
- */
-export function setRequestDestination(
-	request: Request,
-	destination: RequestDestination,
-): void {
-	Object.defineProperty(request, "destination", {
-		value: destination,
-		enumerable: true,
-		configurable: true,
-	});
-}
 
 /** What a load knows of what asked for it. */
 interface RequestContext {
@@ -325,30 +315,22 @@ function whileNotAborted<T>(
 	});
 }
 
-// The policies a page stated for itself with <meta> in its head.
-const documentPolicies = new WeakMap<object, ContentSecurityPolicy[]>();
+const metaPolicies = new Map<string, ContentSecurityPolicy>();
 
-/**
- * A `<meta http-equiv="Content-Security-Policy">` inserted as a child of
- * a head (HTML §4.2.5.3): its policy holds for the document from then on,
- * whatever later becomes of the element. A meta policy cannot report,
- * frame or sandbox, so those directives are dropped.
- */
-export function addDocumentPolicy(document: object, content: string): void {
-	const policy = parseContentSecurityPolicy(content);
-	for (const directive of ["report-uri", "frame-ancestors", "sandbox"]) {
-		policy.directives.delete(directive);
-	}
-	const policies = documentPolicies.get(document);
-	if (policies === undefined) {
-		documentPolicies.set(document, [policy]);
-	} else {
-		policies.push(policy);
-	}
-}
-
+// The policies a page stated for itself with <meta> in its head. A meta
+// policy cannot report, frame or sandbox, so those directives are dropped.
 function getDocumentPolicies(document: object): ContentSecurityPolicy[] {
-	return documentPolicies.get(document) ?? [];
+	return getMetaPolicyTexts(document).map((content) => {
+		let policy = metaPolicies.get(content);
+		if (policy === undefined) {
+			policy = parseContentSecurityPolicy(content);
+			for (const directive of ["report-uri", "frame-ancestors", "sandbox"]) {
+				policy.directives.delete(directive);
+			}
+			metaPolicies.set(content, policy);
+		}
+		return policy;
+	});
 }
 
 // ---------------------------------------------------------------------------

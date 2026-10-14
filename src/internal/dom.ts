@@ -85,11 +85,7 @@ import {
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
 import {linearizeMath} from "./mathml.ts";
-import {
-	addDocumentPolicy,
-	type ResourceLoader,
-	setRequestDestination,
-} from "./resources.ts";
+import type {ResourceLoader} from "./resources.ts";
 import {
 	_,
 	_maybe,
@@ -39232,4 +39228,41 @@ export function getEditingHost(
 		return null;
 	}
 	return containsOf(body, node) ? body : null;
+}
+
+// The policies a page stated for itself with <meta> in its head.
+const metaPolicyTexts = new WeakMap<object, string[]>();
+
+/**
+ * A `<meta http-equiv="Content-Security-Policy">` inserted as a child of
+ * a head (HTML §4.2.5.3): its policy holds for the document from then on,
+ * whatever later becomes of the element.
+ */
+function addDocumentPolicy(document: object, content: string): void {
+	const texts = metaPolicyTexts.get(document);
+	if (texts === undefined) {
+		metaPolicyTexts.set(document, [content]);
+	} else {
+		texts.push(content);
+	}
+}
+
+/** The policy texts the document's <meta> elements stated, in order. */
+export function getMetaPolicyTexts(document: object): readonly string[] {
+	return metaPolicyTexts.get(document) ?? [];
+}
+
+/**
+ * Gives a request its Fetch destination, such as "image", which a
+ * runtime's Request leaves empty.
+ */
+export function setRequestDestination(
+	request: Request,
+	destination: RequestDestination,
+): void {
+	Object.defineProperty(request, "destination", {
+		value: destination,
+		enumerable: true,
+		configurable: true,
+	});
 }
