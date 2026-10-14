@@ -1,0 +1,32 @@
+name: Benchmarks
+
+on:
+  pull_request:
+
+# Shared runners are too noisy to fail a pull request on a number, so the
+# comparison is a report in the job summary, not a check.
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+
+      - run: bun install --frozen-lockfile
+
+      - name: Compare with the base branch
+        run: |
+          {
+            echo "## Benchmarks: median CPU time, base against this pull request"
+            echo
+            node bench/run.ts --runs 3 --against "origin/${{ github.base_ref }}" --markdown
+          } >> "$GITHUB_STEP_SUMMARY"
