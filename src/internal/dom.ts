@@ -37,6 +37,10 @@ import {
 	getInlineStyle,
 	getStyleSheets,
 	getWhiteSpace,
+	handleFocusChange,
+	handleMutations,
+	handleStateChange,
+	mediaQueryMatches,
 	pxFromCells,
 	styleAttributeChanged,
 	styleElementSheet,
@@ -7348,7 +7352,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 					: nodeTypeOf(parent) === ELEMENT_NODE ? (parent as Element) : null;
 				const attached = getAttachedDocument(document);
 				if (left !== null && attached !== undefined) {
-					_(attached).extra.cascade.handleFocusChange(left);
+					handleFocusChange(_(attached).extra.cascade, left);
 				}
 				break;
 			}
@@ -12176,7 +12180,7 @@ export class HTMLElement extends Element {
 		if (attached === undefined) {
 			return;
 		}
-		_(attached).extra.cascade.handleFocusChange(this, null);
+		handleFocusChange(_(attached).extra.cascade, this, null);
 		_(attached).extra.framebuffer.invalidate();
 		void _(attached).extra.render();
 		dispatchAsUserAgent(
@@ -12337,7 +12341,7 @@ function runFocusingSteps(element: HTMLElement): void {
 	// :focus rules match live and a focus move is not a mutation, so both
 	// elements' resolved styles are stale whether or not a listener changes
 	// anything.
-	_(attached).extra.cascade.handleFocusChange(previous, element);
+	handleFocusChange(_(attached).extra.cascade, previous, element);
 	_(attached).extra.framebuffer.invalidate();
 	void _(attached).extra.render();
 	// An edit the user made in the control focus is leaving is committed
@@ -23273,7 +23277,7 @@ function stateChanged(element: Element, states: readonly string[]): void {
 	if (attached === undefined) {
 		return;
 	}
-	_(attached).extra.cascade.handleStateChange(element, states);
+	handleStateChange(_(attached).extra.cascade, element, states);
 	_(attached).extra.framebuffer.invalidate();
 	queueMicrotask(() => {
 		void _(attached).extra.render();
@@ -35696,7 +35700,7 @@ class MediaQueryList extends EventTarget {
 		const attached = getAttachedDocument(_(this).mediaQueryDocument);
 		return (
 			attached !== undefined &&
-			_(attached).extra.cascade.mediaQueryMatches(this.media)
+			mediaQueryMatches(_(attached).extra.cascade, this.media)
 		);
 	}
 
@@ -36155,7 +36159,7 @@ function handleMutationRecords(
 			ensureUAShadowTrees(added);
 		}
 	}
-	_(attached).extra.cascade.handleMutations(relevant);
+	handleMutations(_(attached).extra.cascade, relevant);
 	_(attached).extra.layout.handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
 	dropUnfocusableFocus(document);

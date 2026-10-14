@@ -1,4 +1,11 @@
-import {type Cascade, getComputedValue, pxFromCells} from "./cssom.ts";
+import {
+	type Cascade,
+	getComputedValue,
+	handleActiveChange,
+	handleFocusChange,
+	handleHoverChange,
+	pxFromCells,
+} from "./cssom.ts";
 import {
 	attributeOf,
 	commitRangeThumb,
@@ -481,7 +488,7 @@ export class Input {
 		if (target !== previous) {
 			this.hoverElement = target;
 			setHoveredElement(this.document, target);
-			this.cascade.handleHoverChange(previous, target);
+			handleHoverChange(this.cascade, previous, target);
 			const getChain = (element: Element | null): Element[] => {
 				const chain: Element[] = [];
 				for (
@@ -1162,7 +1169,7 @@ function setPressed(input: Input, target: Element | null): void {
 		return;
 	}
 	setActiveElement(document, target);
-	input.cascade.handleActiveChange(previous, target);
+	handleActiveChange(input.cascade, previous, target);
 	requestRender(document);
 }
 
@@ -1185,7 +1192,7 @@ function dispatchPress(
 	input.popoverPressTarget = lightDismissPress(target);
 	input.textControlDragAnchor = null;
 	if (setDocumentFocusVisible(input.document, false)) {
-		input.cascade.handleFocusChange(getFocusedElement(input.document));
+		handleFocusChange(input.cascade, getFocusedElement(input.document));
 		requestRender(input.document);
 	}
 	const mousedown = constructInternal(() =>
@@ -1382,7 +1389,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	const keyCode = getLegacyKeyCode(keyName);
 
 	if (setDocumentFocusVisible(input.document, true)) {
-		input.cascade.handleFocusChange(getFocusedElement(input.document));
+		handleFocusChange(input.cascade, getFocusedElement(input.document));
 		requestRender(input.document);
 	}
 

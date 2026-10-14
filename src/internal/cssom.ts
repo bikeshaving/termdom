@@ -533,7 +533,7 @@ function getListGutterWidth(listElement: Element): number {
 				continue;
 			}
 			const marker = cascade
-				? cascade.getMarkerContent(child)
+				? getMarkerContent(cascade, child)
 				: CSSValues.withMarkerSeparator(getListMarker(child, listElement));
 			if (!marker) {
 				continue;
@@ -3932,7 +3932,7 @@ export function getComputedValue(
 		? _(getPseudoDeclaration(cascade, element, pseudoElement))._computedValue(
 			property,
 		)
-		: cascade.computedSlotsFor(element)._computedValue(property);
+		: computedSlotsFor(cascade, element)._computedValue(property);
 }
 
 // A box with nothing to contain or transform: no box at all, or a plain
@@ -4227,7 +4227,7 @@ function getResolvedValues(
 	if (cascade.getStyleKey(element) === null) {
 		return null;
 	}
-	return cascade.computedSlotsFor(element).resolved;
+	return computedSlotsFor(cascade, element).resolved;
 }
 
 function getSharedResolved(
@@ -6437,249 +6437,6 @@ export class Cascade {
 		}
 	}
 
-	handleMutations(mutations: MutationRecord[]): void {
-		const Node = this.window.Node;
-		let shouldSyncStylesheets = false;
-		let removedElements = false;
-		const changedParents = new Set<Element>();
-
-		// A :has() anchor sits above what changed it, or before it among its
-		// siblings for :has(+ x) and :has(~ x), and the rule can style the
-		// anchor's descendants too. So each such element a :has() could be
-		// tested on restyles, with everything under it.
-		if (this.hasRulesExist) {
-			const anchors = new Set<Element>();
-			for (const mutation of mutations) {
-				const start = nodeTypeOf(mutation.target) === 1
-					? (mutation.target as Element)
-					: mutation.target.parentElement;
-				for (
-					let ancestor: Element | null = start;
-					ancestor;
-					ancestor = flatParentElement(ancestor)
-				) {
-					for (
-						let element: Element | null = ancestor;
-						element !== null;
-						element = this.hasSiblingRules
-							? element.previousElementSibling
-							: null
-					) {
-						if (!anchors.has(element) && couldAnchorHas(this, element)) {
-							anchors.add(element);
-							invalidateSubtree(this, element);
-						}
-					}
-				}
-			}
-		}
-
-		// A root's sheets sync once a batch, after its records: each sync
-		// restyles the whole tree, and a page that fills its sheets a rule at
-		// a time sent a record per rule.
-		const rootsToSync = new Set<ShadowRoot>();
-		for (const mutation of mutations) {
-			if (mutation.type === "childList") {
-				// A <style>'s children ARE its stylesheet text. A shadow
-				// sheet's sync stays inside its root.
-				if ((mutation.target as Element).tagName === "STYLE") {
-					reparseOwnerText(getSheet(mutation.target as Element));
-					const styleRoot = mutation.target.getRootNode();
-					if (isShadowRoot(styleRoot)) {
-						rootsToSync.add(styleRoot);
-					} else {
-						shouldSyncStylesheets = true;
-					}
-				}
-				// A list's gutter is derived from its items' markers, so a
-				// change to the ITEMS invalidates the list: a wider marker added
-				// later overran the gutter the original items set. A change
-				// inside an item's content moves no marker.
-				if (mutationChangesListItems(mutation)) {
-					invalidateEnclosingList(this, mutation.target);
-				}
-
-				for (const node of getAddedNodes(mutation)) {
-					if (nodeTypeOf(node) === Node.ELEMENT_NODE) {
-						const element = node as Element;
-						if (isStyleElement(element)) {
-							const addedRoot = element.tagName === "STYLE"
-								? element.getRootNode()
-								: null;
-							if (addedRoot !== null && isShadowRoot(addedRoot)) {
-								rootsToSync.add(addedRoot);
-							} else {
-								shouldSyncStylesheets = true;
-							}
-						} else {
-							// A detached tree's pseudo-elements and shadow roots wait
-							// for the record that brings it into the document. Its
-							// styles still answer getComputedStyle.
-							const connected = isConnectedNode(element);
-							const elements: Element[] = [];
-							for (
-								let next: DOMNode | null = element as unknown as DOMNode;
-								next !== null;
-								next = nextInTree(next, element as unknown as DOMNode)
-							) {
-								if (nodeTypeOf(next) === Node.ELEMENT_NODE) {
-									elements.push(next as unknown as Element);
-								}
-							}
-							for (const each of elements) {
-								invalidateElementCaches(this, each);
-								if (connected) {
-									attachPseudoElementsToElement(this, each);
-									registerConnectedShadowRoots(this, each);
-								}
-							}
-						}
-					}
-				}
-
-				for (const node of getRemovedNodes(mutation)) {
-					if (nodeTypeOf(node) === Node.ELEMENT_NODE) {
-						const element = node as Element;
-						if (isStyleElement(element)) {
-							shouldSyncStylesheets = true;
-						}
-						removedElements = true;
-					}
-				}
-				// A child that came or went changes what `li + li`,
-				// `:first-child` and `:empty` match on the children around it
-				// and on the parent, none of which the mutation names. Once
-				// per parent per batch: appending n children one at a time
-				// is n records against the same parent.
-				if (
-					nodeTypeOf(mutation.target) === Node.ELEMENT_NODE &&
-					getSiblingIndex(this, mutation.target as Element)?.reachesSiblings
-				) {
-					changedParents.add(mutation.target as Element);
-				}
-			} else if (mutation.type === "attributes") {
-				const element = mutation.target as Element;
-				// A value written over itself changes no style.
-				if (
-					mutation.oldValue !== null &&
-					mutation.oldValue === attributeOf(element, mutation.attributeName!)
-				) {
-					continue;
-				}
-				// A change to keys whose rules declare only paint properties
-				// leaves every box where it was. The styles are dropped so the
-				// next read resolves them, and layout is not told.
-				const notifyLayout = !isPaintOnlyChange(
-					this,
-					element,
-					mutation.attributeName!,
-					mutation.oldValue,
-				);
-				// Only a change the sheets USE that way reaches descendants.
-				// When no rule tests the class outside its own subject and none
-				// declares an inherited property, descendant styles are
-				// unchanged.
-				const subjects = mutation.attributeName === "class"
-					? classChangeSubjects(this, element, mutation.oldValue)
-					: null;
-				if (subjects !== null) {
-					invalidateElementCaches(this, element, notifyLayout);
-					attachPseudoElementsToElement(this, element);
-					if (subjects.length > 0) {
-						for (const descendant of element.querySelectorAll("*")) {
-							const parent = descendant.parentElement;
-							if (
-								subjects.some(
-									(anchor) =>
-										couldAnchor(descendant, anchor) ||
-										// A display change blockifies the changed element's
-										// own children, and those of anyone else it anchors.
-										(anchor.children === true &&
-											parent !== null &&
-											(parent === element || couldAnchor(parent, anchor))),
-								)
-							) {
-								invalidateElementCaches(this, descendant, notifyLayout);
-								attachPseudoElementsToElement(this, descendant);
-							}
-						}
-					}
-				} else if (
-					attributeReachesDescendants(
-						this,
-						element,
-						mutation.attributeName!,
-						mutation.oldValue,
-					)
-				) {
-					invalidateSubtree(this, element, notifyLayout);
-				} else {
-					invalidateElementCaches(this, element, notifyLayout);
-					attachPseudoElementsToElement(this, element);
-				}
-				if (!notifyLayout) {
-					this.layout.invalidateFrame();
-				}
-				// `.on ~ .light` matches a FOLLOWING sibling whose cached
-				// styles know nothing of this change.
-				if (
-					changeReachesLaterSiblings(
-						getSiblingIndex(this, element),
-						element,
-						mutation.attributeName!,
-						mutation.oldValue,
-					)
-				) {
-					for (
-						let sibling = element.nextElementSibling;
-						sibling;
-						sibling = sibling.nextElementSibling
-					) {
-						invalidateSibling(this, sibling);
-					}
-				}
-			} else if (mutation.type === "characterData") {
-				const owner = mutation.target.parentElement;
-				if (owner?.tagName === "STYLE") {
-					reparseOwnerText(getSheet(owner));
-					const ownerRoot = owner.getRootNode();
-					if (isShadowRoot(ownerRoot)) {
-						rootsToSync.add(ownerRoot);
-					} else {
-						shouldSyncStylesheets = true;
-					}
-				}
-			}
-		}
-		for (const root of rootsToSync) {
-			syncShadowRoot(this, root);
-		}
-
-		for (const parent of changedParents) {
-			invalidateChildren(this, parent);
-		}
-		// What left the document is let go: elements given a pseudo-element,
-		// and shadow roots with their rules. A host connected again registers
-		// its root on the way in.
-		if (removedElements) {
-			for (const host of this.pseudoHosts) {
-				if (!host.isConnected) {
-					this.pseudoHosts.delete(host);
-				}
-			}
-			for (const root of this.shadowRoots) {
-				if (!root.host.isConnected) {
-					this.shadowRoots.delete(root);
-					forgetShadowRoot(this, root);
-				}
-			}
-			releaseRemovedNodes(this.document);
-		}
-		if (shouldSyncStylesheets) {
-			this.syncStylesheets();
-		}
-	}
-
 	// user-select, with `auto` resolved through the parent per css-ui-4.
 	// `text`, `all` and `contain` all behave as plain isSelectable. Nothing
 	// implements the shapes `all` and `contain` ask for yet.
@@ -6698,95 +6455,11 @@ export class Cascade {
 		return true;
 	}
 
-	// Focus is not a mutation, and nothing else invalidates. The cached
-	// declarations of the two moved elements hold rule sets matched BEFORE
-	// the move, so a :focus rule would never apply or stop applying.
-	handleFocusChange(...elements: Array<Element | null>): void {
-		if (FOCUS_STATES.some((state) => this.hasStates.has(state))) {
-			restyleAll(this);
-			return;
-		}
-		for (const element of elements) {
-			// The whole flat-tree chain can observe focus (:focus-within,
-			// :host(:focus)), so every element on it goes stale together.
-			for (
-				let node: Element | null = element; node; node = flatParentElement(node)
-			) {
-				invalidateForState(this, node, FOCUS_STATES);
-			}
-		}
-	}
-
-	// State no attribute or tree records changed: a checkbox was checked, a
-	// custom element defined, a popover shown. `states` names the
-	// pseudo-classes that read it. A rule can test the state on the element
-	// itself, on an ancestor of what it styles, or before a sibling
-	// combinator, so the element's subtree and its later siblings restyle.
-	// One that tests it inside :has() can style anything, so everything
-	// restyles.
-	handleStateChange(element: Element, states: readonly string[]): void {
-		if (states.some((state) => this.hasStates.has(state))) {
-			restyleAll(this);
-			return;
-		}
-		invalidateForState(this, element, states);
-		// No mutation record describes the change, so the frame that decides
-		// whether anything needs painting is notified here.
-		this.layout.invalidateFrame();
-	}
-
-	// The same staleness a focus move leaves, scoped to the symmetric
-	// difference of the two flat-tree chains. The shared ancestors above the
-	// fork were hovered before and are hovered still.
-	handleHoverChange(previous: Element | null, next: Element | null): void {
-		chainStateChange(this, previous, next, "hover");
-	}
-
-	// The same for the element a mouse button is held down on, which with
-	// its ancestors is :active.
-	handleActiveChange(previous: Element | null, next: Element | null): void {
-		chainStateChange(this, previous, next, "active");
-	}
-
-	// A dirty sheet list parses first, so a value read between frames still
-	// describes the current document.
-	hoverRulesExist(): boolean {
-		parseStylesheetsIfStale(this);
-		return this.hoverRulesDeclared;
-	}
-
 	// The internal read path: no pseudo parsing, no being-rendered check, no
 	// resolved-value branch. Called thousands of times per frame, so it does
 	// the least it can.
 	declarationFor(element: Element): ComputedStyleDeclaration {
-		return ownerOf(this.computedSlotsFor(element));
-	}
-
-	// The slots of the declaration, which the cache holds, so a read of a
-	// computed value looks nothing up.
-	computedSlotsFor(element: Element): Slots<ComputedStyleDeclaration> {
-		let slots = this.computedStyleCache.get(element);
-		if (!slots) {
-			parseStylesheetsIfStale(this);
-			const fresh = _(
-				new ComputedStyleDeclaration(
-					element,
-					getCascadeRules(this, element),
-					this,
-				),
-			);
-			slots = fresh;
-			this.computedStyleCache.set(element, fresh);
-			// Building a fresh declaration is the other form of the style
-			// change event _syncResolved sees.
-			processTransitionStyle(
-				this,
-				element,
-				(property) => fresh._baseValue(property),
-				"",
-			);
-		}
-		return slots;
+		return ownerOf(computedSlotsFor(this, element));
 	}
 
 	/**
@@ -6797,74 +6470,11 @@ export class Cascade {
 		if (getPseudoHost(element) !== null || isTransitioning(this, element)) {
 			return null;
 		}
-		const declarationSlots = this.computedSlotsFor(element);
+		const declarationSlots = computedSlotsFor(this, element);
 		if (!this.currentDeclarations.has(declarationSlots)) {
 			declarationSlots._syncResolved();
 		}
 		return declarationSlots.styleVersion;
-	}
-
-	/**
-	 * The properties a pseudo-element's own rules set on this element, empty
-	 * when no rule reaches it. Unlike getComputedValue, this does not fill in
-	 * the originating element's inherited values.
-	 */
-	declaredPseudoProperties(
-		element: Element,
-		pseudoElement: string,
-	): Set<string> {
-		parseStylesheetsIfStale(this);
-		return new Set(
-			Object.keys(computePseudoElementStyle(this, element, pseudoElement)),
-		);
-	}
-
-	// Public because window.matchMedia uses the SAME evaluator @media
-	// does, so a stylesheet and a script can never disagree. A query that
-	// does not parse is `not all`, and the rest of its list still counts.
-	mediaQueryMatches(mediaText: string): boolean {
-		const text = mediaText.trim();
-		if (!text) {
-			return true;
-		}
-		const queries = CSSValues.parseMediaQueryList(text);
-		if (queries) {
-			return queries.some((query) => mediaQueryNodeMatches(this, query));
-		}
-		return CSSValues.splitMediaQueryList(text).some((piece) => {
-			const parsed = CSSValues.parseMediaQueryList(piece);
-			return parsed?.length === 1 && mediaQueryNodeMatches(this, parsed[0]);
-		});
-	}
-
-	/** The text a list item's marker draws, or null when it draws none. */
-	getMarkerContent(hostElement: Element): string | null {
-		if (!hostElement || nodeTypeOf(hostElement) !== hostElement.ELEMENT_NODE) {
-			return null;
-		}
-
-		const computedStyle = this.declarationFor(hostElement);
-		const display = _(computedStyle)._computedValue("display");
-
-		if (display !== "list-item") {
-			return null;
-		}
-
-		const styles = computePseudoElementStyle(this, hostElement, "::marker");
-		let content = styles.content;
-
-		if (!content || content === "none" || content === "normal") {
-			content = getDefaultMarkerContent(hostElement) ?? content;
-		}
-		if (!content || content === "none" || content === "normal") {
-			return null;
-		}
-
-		let textContent = CSSValues.unquoteContent(content);
-
-		textContent = resolveCounterFunction(this, hostElement, textContent);
-
-		return textContent;
 	}
 
 	syncStylesheets(): void {
@@ -6883,20 +6493,438 @@ export class Cascade {
 			this.layout.invalidate(body);
 		}
 	}
+}
 
-	// The document is being torn down.
-	dispose(): void {
-		this.computedStyleCache = new WeakMap();
-		this.hasResults = null;
-		this.pseudoElementStyleCache = new WeakMap();
-		this.counterScopes = new WeakMap();
-		if (this.transitionTimer !== null) {
-			clearTimeout(this.transitionTimer);
-			this.transitionTimer = null;
+export function handleMutations(
+	cascade: Cascade,
+	mutations: MutationRecord[],
+): void {
+	const Node = cascade.window.Node;
+	let shouldSyncStylesheets = false;
+	let removedElements = false;
+	const changedParents = new Set<Element>();
+
+	// A :has() anchor sits above what changed it, or before it among its
+	// siblings for :has(+ x) and :has(~ x), and the rule can style the
+	// anchor's descendants too. So each such element a :has() could be
+	// tested on restyles, with everything under it.
+	if (cascade.hasRulesExist) {
+		const anchors = new Set<Element>();
+		for (const mutation of mutations) {
+			const start = nodeTypeOf(mutation.target) === 1
+				? (mutation.target as Element)
+				: mutation.target.parentElement;
+			for (
+				let ancestor: Element | null = start;
+				ancestor;
+				ancestor = flatParentElement(ancestor)
+			) {
+				for (
+					let element: Element | null = ancestor;
+					element !== null;
+					element = cascade.hasSiblingRules
+						? element.previousElementSibling
+						: null
+				) {
+					if (!anchors.has(element) && couldAnchorHas(cascade, element)) {
+						anchors.add(element);
+						invalidateSubtree(cascade, element);
+					}
+				}
+			}
 		}
-		this.activeTransitions.clear();
-		this.transitionEvents = [];
 	}
+
+	// A root's sheets sync once a batch, after its records: each sync
+	// restyles the whole tree, and a page that fills its sheets a rule at
+	// a time sent a record per rule.
+	const rootsToSync = new Set<ShadowRoot>();
+	for (const mutation of mutations) {
+		if (mutation.type === "childList") {
+			// A <style>'s children ARE its stylesheet text. A shadow
+			// sheet's sync stays inside its root.
+			if ((mutation.target as Element).tagName === "STYLE") {
+				reparseOwnerText(getSheet(mutation.target as Element));
+				const styleRoot = mutation.target.getRootNode();
+				if (isShadowRoot(styleRoot)) {
+					rootsToSync.add(styleRoot);
+				} else {
+					shouldSyncStylesheets = true;
+				}
+			}
+			// A list's gutter is derived from its items' markers, so a
+			// change to the ITEMS invalidates the list: a wider marker added
+			// later overran the gutter the original items set. A change
+			// inside an item's content moves no marker.
+			if (mutationChangesListItems(mutation)) {
+				invalidateEnclosingList(cascade, mutation.target);
+			}
+
+			for (const node of getAddedNodes(mutation)) {
+				if (nodeTypeOf(node) === Node.ELEMENT_NODE) {
+					const element = node as Element;
+					if (isStyleElement(element)) {
+						const addedRoot = element.tagName === "STYLE"
+							? element.getRootNode()
+							: null;
+						if (addedRoot !== null && isShadowRoot(addedRoot)) {
+							rootsToSync.add(addedRoot);
+						} else {
+							shouldSyncStylesheets = true;
+						}
+					} else {
+						// A detached tree's pseudo-elements and shadow roots wait
+						// for the record that brings it into the document. Its
+						// styles still answer getComputedStyle.
+						const connected = isConnectedNode(element);
+						const elements: Element[] = [];
+						for (
+							let next: DOMNode | null = element as unknown as DOMNode;
+							next !== null;
+							next = nextInTree(next, element as unknown as DOMNode)
+						) {
+							if (nodeTypeOf(next) === Node.ELEMENT_NODE) {
+								elements.push(next as unknown as Element);
+							}
+						}
+						for (const each of elements) {
+							invalidateElementCaches(cascade, each);
+							if (connected) {
+								attachPseudoElementsToElement(cascade, each);
+								registerConnectedShadowRoots(cascade, each);
+							}
+						}
+					}
+				}
+			}
+
+			for (const node of getRemovedNodes(mutation)) {
+				if (nodeTypeOf(node) === Node.ELEMENT_NODE) {
+					const element = node as Element;
+					if (isStyleElement(element)) {
+						shouldSyncStylesheets = true;
+					}
+					removedElements = true;
+				}
+			}
+			// A child that came or went changes what `li + li`,
+			// `:first-child` and `:empty` match on the children around it
+			// and on the parent, none of which the mutation names. Once
+			// per parent per batch: appending n children one at a time
+			// is n records against the same parent.
+			if (
+				nodeTypeOf(mutation.target) === Node.ELEMENT_NODE &&
+				getSiblingIndex(cascade, mutation.target as Element)?.reachesSiblings
+			) {
+				changedParents.add(mutation.target as Element);
+			}
+		} else if (mutation.type === "attributes") {
+			const element = mutation.target as Element;
+			// A value written over itself changes no style.
+			if (
+				mutation.oldValue !== null &&
+				mutation.oldValue === attributeOf(element, mutation.attributeName!)
+			) {
+				continue;
+			}
+			// A change to keys whose rules declare only paint properties
+			// leaves every box where it was. The styles are dropped so the
+			// next read resolves them, and layout is not told.
+			const notifyLayout = !isPaintOnlyChange(
+				cascade,
+				element,
+				mutation.attributeName!,
+				mutation.oldValue,
+			);
+			// Only a change the sheets USE that way reaches descendants.
+			// When no rule tests the class outside its own subject and none
+			// declares an inherited property, descendant styles are
+			// unchanged.
+			const subjects = mutation.attributeName === "class"
+				? classChangeSubjects(cascade, element, mutation.oldValue)
+				: null;
+			if (subjects !== null) {
+				invalidateElementCaches(cascade, element, notifyLayout);
+				attachPseudoElementsToElement(cascade, element);
+				if (subjects.length > 0) {
+					for (const descendant of element.querySelectorAll("*")) {
+						const parent = descendant.parentElement;
+						if (
+							subjects.some(
+								(anchor) =>
+									couldAnchor(descendant, anchor) ||
+									// A display change blockifies the changed element's
+									// own children, and those of anyone else it anchors.
+									(anchor.children === true &&
+										parent !== null &&
+										(parent === element || couldAnchor(parent, anchor))),
+							)
+						) {
+							invalidateElementCaches(cascade, descendant, notifyLayout);
+							attachPseudoElementsToElement(cascade, descendant);
+						}
+					}
+				}
+			} else if (
+				attributeReachesDescendants(
+					cascade,
+					element,
+					mutation.attributeName!,
+					mutation.oldValue,
+				)
+			) {
+				invalidateSubtree(cascade, element, notifyLayout);
+			} else {
+				invalidateElementCaches(cascade, element, notifyLayout);
+				attachPseudoElementsToElement(cascade, element);
+			}
+			if (!notifyLayout) {
+				cascade.layout.invalidateFrame();
+			}
+			// `.on ~ .light` matches a FOLLOWING sibling whose cached
+			// styles know nothing of this change.
+			if (
+				changeReachesLaterSiblings(
+					getSiblingIndex(cascade, element),
+					element,
+					mutation.attributeName!,
+					mutation.oldValue,
+				)
+			) {
+				for (
+					let sibling = element.nextElementSibling;
+					sibling;
+					sibling = sibling.nextElementSibling
+				) {
+					invalidateSibling(cascade, sibling);
+				}
+			}
+		} else if (mutation.type === "characterData") {
+			const owner = mutation.target.parentElement;
+			if (owner?.tagName === "STYLE") {
+				reparseOwnerText(getSheet(owner));
+				const ownerRoot = owner.getRootNode();
+				if (isShadowRoot(ownerRoot)) {
+					rootsToSync.add(ownerRoot);
+				} else {
+					shouldSyncStylesheets = true;
+				}
+			}
+		}
+	}
+	for (const root of rootsToSync) {
+		syncShadowRoot(cascade, root);
+	}
+
+	for (const parent of changedParents) {
+		invalidateChildren(cascade, parent);
+	}
+	// What left the document is let go: elements given a pseudo-element,
+	// and shadow roots with their rules. A host connected again registers
+	// its root on the way in.
+	if (removedElements) {
+		for (const host of cascade.pseudoHosts) {
+			if (!host.isConnected) {
+				cascade.pseudoHosts.delete(host);
+			}
+		}
+		for (const root of cascade.shadowRoots) {
+			if (!root.host.isConnected) {
+				cascade.shadowRoots.delete(root);
+				forgetShadowRoot(cascade, root);
+			}
+		}
+		releaseRemovedNodes(cascade.document);
+	}
+	if (shouldSyncStylesheets) {
+		cascade.syncStylesheets();
+	}
+}
+
+// Focus is not a mutation, and nothing else invalidates. The cached
+// declarations of the two moved elements hold rule sets matched BEFORE
+// the move, so a :focus rule would never apply or stop applying.
+export function handleFocusChange(
+	cascade: Cascade,
+	...elements: Array<Element | null>
+): void {
+	if (FOCUS_STATES.some((state) => cascade.hasStates.has(state))) {
+		restyleAll(cascade);
+		return;
+	}
+	for (const element of elements) {
+		// The whole flat-tree chain can observe focus (:focus-within,
+		// :host(:focus)), so every element on it goes stale together.
+		for (
+			let node: Element | null = element; node; node = flatParentElement(node)
+		) {
+			invalidateForState(cascade, node, FOCUS_STATES);
+		}
+	}
+}
+
+// State no attribute or tree records changed: a checkbox was checked, a
+// custom element defined, a popover shown. `states` names the
+// pseudo-classes that read it. A rule can test the state on the element
+// itself, on an ancestor of what it styles, or before a sibling
+// combinator, so the element's subtree and its later siblings restyle.
+// One that tests it inside :has() can style anything, so everything
+// restyles.
+export function handleStateChange(
+	cascade: Cascade,
+	element: Element,
+	states: readonly string[],
+): void {
+	if (states.some((state) => cascade.hasStates.has(state))) {
+		restyleAll(cascade);
+		return;
+	}
+	invalidateForState(cascade, element, states);
+	// No mutation record describes the change, so the frame that decides
+	// whether anything needs painting is notified here.
+	cascade.layout.invalidateFrame();
+}
+
+// The same staleness a focus move leaves, scoped to the symmetric
+// difference of the two flat-tree chains. The shared ancestors above the
+// fork were hovered before and are hovered still.
+export function handleHoverChange(
+	cascade: Cascade,
+	previous: Element | null,
+	next: Element | null,
+): void {
+	chainStateChange(cascade, previous, next, "hover");
+}
+
+// The same for the element a mouse button is held down on, which with
+// its ancestors is :active.
+export function handleActiveChange(
+	cascade: Cascade,
+	previous: Element | null,
+	next: Element | null,
+): void {
+	chainStateChange(cascade, previous, next, "active");
+}
+
+// A dirty sheet list parses first, so a value read between frames still
+// describes the current document.
+export function hoverRulesExist(cascade: Cascade): boolean {
+	parseStylesheetsIfStale(cascade);
+	return cascade.hoverRulesDeclared;
+}
+
+// The slots of the declaration, which the cache holds, so a read of a
+// computed value looks nothing up.
+function computedSlotsFor(
+	cascade: Cascade,
+	element: Element,
+): Slots<ComputedStyleDeclaration> {
+	let slots = cascade.computedStyleCache.get(element);
+	if (!slots) {
+		parseStylesheetsIfStale(cascade);
+		const fresh = _(
+			new ComputedStyleDeclaration(
+				element,
+				getCascadeRules(cascade, element),
+				cascade,
+			),
+		);
+		slots = fresh;
+		cascade.computedStyleCache.set(element, fresh);
+		// Building a fresh declaration is the other form of the style
+		// change event _syncResolved sees.
+		processTransitionStyle(
+			cascade,
+			element,
+			(property) => fresh._baseValue(property),
+			"",
+		);
+	}
+	return slots;
+}
+
+/**
+ * The properties a pseudo-element's own rules set on this element, empty
+ * when no rule reaches it. Unlike getComputedValue, this does not fill in
+ * the originating element's inherited values.
+ */
+export function declaredPseudoProperties(
+	cascade: Cascade,
+	element: Element,
+	pseudoElement: string,
+): Set<string> {
+	parseStylesheetsIfStale(cascade);
+	return new Set(
+		Object.keys(computePseudoElementStyle(cascade, element, pseudoElement)),
+	);
+}
+
+// Public because window.matchMedia uses the SAME evaluator @media
+// does, so a stylesheet and a script can never disagree. A query that
+// does not parse is `not all`, and the rest of its list still counts.
+export function mediaQueryMatches(
+	cascade: Cascade,
+	mediaText: string,
+): boolean {
+	const text = mediaText.trim();
+	if (!text) {
+		return true;
+	}
+	const queries = CSSValues.parseMediaQueryList(text);
+	if (queries) {
+		return queries.some((query) => mediaQueryNodeMatches(cascade, query));
+	}
+	return CSSValues.splitMediaQueryList(text).some((piece) => {
+		const parsed = CSSValues.parseMediaQueryList(piece);
+		return parsed?.length === 1 && mediaQueryNodeMatches(cascade, parsed[0]);
+	});
+}
+
+/** The text a list item's marker draws, or null when it draws none. */
+export function getMarkerContent(
+	cascade: Cascade,
+	hostElement: Element,
+): string | null {
+	if (!hostElement || nodeTypeOf(hostElement) !== hostElement.ELEMENT_NODE) {
+		return null;
+	}
+
+	const computedStyle = cascade.declarationFor(hostElement);
+	const display = _(computedStyle)._computedValue("display");
+
+	if (display !== "list-item") {
+		return null;
+	}
+
+	const styles = computePseudoElementStyle(cascade, hostElement, "::marker");
+	let content = styles.content;
+
+	if (!content || content === "none" || content === "normal") {
+		content = getDefaultMarkerContent(hostElement) ?? content;
+	}
+	if (!content || content === "none" || content === "normal") {
+		return null;
+	}
+
+	let textContent = CSSValues.unquoteContent(content);
+
+	textContent = resolveCounterFunction(cascade, hostElement, textContent);
+
+	return textContent;
+}
+
+// The document is being torn down.
+export function dispose(cascade: Cascade): void {
+	cascade.computedStyleCache = new WeakMap();
+	cascade.hasResults = null;
+	cascade.pseudoElementStyleCache = new WeakMap();
+	cascade.counterScopes = new WeakMap();
+	if (cascade.transitionTimer !== null) {
+		clearTimeout(cascade.transitionTimer);
+		cascade.transitionTimer = null;
+	}
+	cascade.activeTransitions.clear();
+	cascade.transitionEvents = [];
 }
 
 // Null for a box that generated no grid. The resolved value then stays
@@ -8852,7 +8880,7 @@ function parseStyleSheet(
 		if (container.disabled) {
 			return;
 		}
-		if (!cascade.mediaQueryMatches(container.media.mediaText)) {
+		if (!mediaQueryMatches(cascade, container.media.mediaText)) {
 			return;
 		}
 	}
@@ -8860,7 +8888,7 @@ function parseStyleSheet(
 		if (rule instanceof CSSStyleRule) {
 			parseStyleRule(cascade, rule, scope, uaOrigin, context);
 		} else if (rule instanceof CSSMediaRule) {
-			if (cascade.mediaQueryMatches(rule.conditionText)) {
+			if (mediaQueryMatches(cascade, rule.conditionText)) {
 				parseStyleSheet(cascade, rule, scope, uaOrigin, context);
 			}
 		} else if (rule instanceof CSSSupportsRule) {
@@ -9402,7 +9430,7 @@ function parseNestedRules(
 		} else if (rule instanceof CSSStyleRule) {
 			parseStyleRule(cascade, rule, scope, uaOriginSheet, context, parent);
 		} else if (rule instanceof CSSMediaRule) {
-			if (cascade.mediaQueryMatches(rule.conditionText)) {
+			if (mediaQueryMatches(cascade, rule.conditionText)) {
 				parseNestedRules(cascade, rule, parent, scope, uaOriginSheet, context);
 			}
 		} else if (rule instanceof CSSSupportsRule) {
@@ -10163,8 +10191,7 @@ function computePseudoElementStyle(
 			if (!CSSValues.hasSlotAliases(name)) {
 				continue;
 			}
-			direction ??= cascade
-				.computedSlotsFor(element)
+			direction ??= computedSlotsFor(cascade, element)
 				._computedValue("direction");
 			for (const other of CSSValues.getSlotNames(name, direction)) {
 				computedStyle[other] = value;
