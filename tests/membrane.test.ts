@@ -1,17 +1,12 @@
 /**
  * What a page, or the program embedding TermDOM, can reach holds nothing of
- * the engine's: no symbol-keyed state or steps on any object or prototype
- * but the runtime's own. Where the runtime has a class, the page gets it;
- * where it has none, the sealed one stands in.
+ * the engine's: no internal state or steps on any object or prototype but
+ * the runtime's own. Where the runtime has a class, the page gets it.
  */
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {
-	SealedAbortController,
-	SealedAbortSignal,
-	SealedDOMException,
-} from "../src/internal/dom.ts";
+import {SealedAbortController, SealedAbortSignal} from "../src/internal/dom.ts";
 import {MockProcess} from "./test-utils.js";
 
 function create(html = ""): TermDOM {
@@ -150,28 +145,6 @@ test("a window's DOMException is the runtime's where the runtime has one", () =>
 	const window = dom.window as unknown as Global;
 	expect(window.DOMException).toBe(globalThis.DOMException);
 	expect(() => document(dom).querySelector("::bad")).toThrow(DOMException);
-	dom.dispose();
-});
-
-test("the sealed DOMException is an Error with WebIDL's members", () => {
-	const dom = create();
-	const DOMException =
-		SealedDOMException as unknown as typeof globalThis.DOMException;
-	const error = new DOMException("gone", "NotFoundError");
-	expect(error).toBeInstanceOf(Error);
-	expect(Object.getPrototypeOf(DOMException.prototype)).toBe(Error.prototype);
-	expect([error.name, error.message, error.code]).toEqual([
-		"NotFoundError",
-		"gone",
-		8,
-	]);
-	expect(new DOMException().name).toBe("Error");
-	expect(new DOMException("x", "Unlisted").code).toBe(0);
-	expect([DOMException.NOT_FOUND_ERR, error.NOT_FOUND_ERR]).toEqual([8, 8]);
-	expect(String(error)).toBe("NotFoundError: gone");
-	expect(Object.prototype.toString.call(error)).toBe("[object DOMException]");
-	const name = Object.getOwnPropertyDescriptor(DOMException.prototype, "name")!;
-	expect(() => name.get!.call({})).toThrow(TypeError);
 	dom.dispose();
 });
 

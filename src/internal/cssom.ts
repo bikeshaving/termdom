@@ -580,10 +580,6 @@ function createCSSNamespace(document: Document): typeof CSSNamespace {
 
 const inlineStyles = new WeakMap<Element, CSSStyleDeclaration>();
 
-const kComputedValue = Symbol("computedValue");
-const kCustomProperties = Symbol("customProperties");
-const kSync = Symbol("sync");
-
 // Declarations are stored as longhands. A shorthand write expands and a
 // shorthand read reconstructs. An element-owned block and the `style`
 // attribute are one store seen from two sides: a property write
@@ -612,7 +608,7 @@ interface CSSStyleDeclarationSlots {
 	block: CSSValues.DeclarationBlock | null;
 	// How many numeric index properties currently name a declaration.
 	indexed: number;
-	[kSync]: Step<CSSStyleDeclaration[typeof kSync]>;
+	_sync: Step<CSSStyleDeclaration["_sync"]>;
 }
 
 interface CSSStyleDeclaration {
@@ -658,7 +654,7 @@ class CSSStyleDeclaration {
 			syncViewIndices(this);
 			return slots.viewOf.length;
 		}
-		slots[kSync]!();
+		slots._sync!();
 		return slots.declarations.length;
 	}
 
@@ -667,7 +663,7 @@ class CSSStyleDeclaration {
 		if (slots.viewOf !== undefined) {
 			return slots.viewOf.cssText;
 		}
-		slots[kSync]!();
+		slots._sync!();
 		return serializeDeclarations(this);
 	}
 
@@ -677,7 +673,7 @@ class CSSStyleDeclaration {
 			slots.viewOf.cssText = text;
 			return;
 		}
-		slots[kSync]!();
+		slots._sync!();
 		slots.declarations = [];
 		slots.byName.clear();
 		for (const declaration of CSSValues.parseDeclarationText(text ?? "")) {
@@ -700,7 +696,7 @@ class CSSStyleDeclaration {
 		if (slots.viewOf !== undefined) {
 			return slots.viewOf.item(index);
 		}
-		slots[kSync]!();
+		slots._sync!();
 		return slots.declarations[index]?.name ?? "";
 	}
 
@@ -710,7 +706,7 @@ class CSSStyleDeclaration {
 			syncViewIndices(this);
 			return slots.viewOf[Symbol.iterator]();
 		}
-		slots[kSync]!();
+		slots._sync!();
 		return slots.declarations.map((entry) => entry.name)[Symbol.iterator]();
 	}
 
@@ -719,7 +715,7 @@ class CSSStyleDeclaration {
 		if (slots.viewOf !== undefined) {
 			return slots.viewOf.getPropertyValue(property);
 		}
-		slots[kSync]!();
+		slots._sync!();
 		const name = CSSValues.normalizePropertyName(property);
 		const declared = findDeclaration(this, name);
 		if (declared) {
@@ -734,7 +730,7 @@ class CSSStyleDeclaration {
 		if (slots.viewOf !== undefined) {
 			return slots.viewOf.getPropertyPriority(property);
 		}
-		slots[kSync]!();
+		slots._sync!();
 		const name = CSSValues.normalizePropertyName(property);
 		const declared = findDeclaration(this, name);
 		if (declared) {
@@ -756,7 +752,7 @@ class CSSStyleDeclaration {
 			slots.viewOf.setProperty(property, value, priority);
 			return;
 		}
-		slots[kSync]!();
+		slots._sync!();
 		const name = CSSValues.normalizePropertyName(property);
 		if (!isSupportedDeclaration(this, name)) {
 			return;
@@ -787,7 +783,7 @@ class CSSStyleDeclaration {
 		if (slots.viewOf !== undefined) {
 			return slots.viewOf.removeProperty(property);
 		}
-		slots[kSync]!();
+		slots._sync!();
 		const name = CSSValues.normalizePropertyName(property);
 		const previous = this.getPropertyValue(name);
 		let changed = removeDeclaration(this, name);
@@ -804,7 +800,7 @@ class CSSStyleDeclaration {
 	 * Reparse the `style` attribute if it changed since this object last wrote
 	 * it.
 	 */
-	[kSync]?(this: Slots<CSSStyleDeclaration>): void {
+	_sync?(this: Slots<CSSStyleDeclaration>): void {
 		const slots = this;
 		if (!slots.element) {
 			return;
@@ -841,7 +837,7 @@ function getDeclarationBlock(
 	style: CSSStyleDeclaration,
 ): CSSValues.DeclarationBlock {
 	const styleSlots = _(style);
-	styleSlots[kSync]!();
+	styleSlots._sync!();
 	if (styleSlots.declarations.length === 0) {
 		return EMPTY_DECLARATIONS;
 	}
@@ -2824,7 +2820,7 @@ interface CSSStyleSheetSlots {
 	title: string | null;
 	// The owner node's text CSSStyleSheet sheet last parsed.
 	text: string | null;
-	[kSync]: Step<CSSStyleSheet[typeof kSync]>;
+	_sync: Step<CSSStyleSheet["_sync"]>;
 }
 
 interface CSSStyleSheet {
@@ -2862,7 +2858,7 @@ class CSSStyleSheet {
 
 	get cssRules(): CSSRuleList {
 		const slots = _(this);
-		slots[kSync]!();
+		slots._sync!();
 		return slots.ruleList;
 	}
 
@@ -2923,7 +2919,7 @@ class CSSStyleSheet {
 			throw typeError("insertRule requires a rule", this);
 		}
 		const slots = _(this);
-		slots[kSync]!();
+		slots._sync!();
 		if (index > slots.rules.length) {
 			throw domException(
 				`Cannot insert at index ${index}`,
@@ -2953,7 +2949,7 @@ class CSSStyleSheet {
 			throw typeError("deleteRule requires an index", this);
 		}
 		const slots = _(this);
-		slots[kSync]!();
+		slots._sync!();
 		if (index >= slots.rules.length) {
 			throw domException(
 				`Cannot delete at index ${index}`,
@@ -2990,7 +2986,7 @@ class CSSStyleSheet {
 	}
 
 	removeRule(index = 0): void {
-		_(this)[kSync]!();
+		_(this)._sync!();
 		if (index >= this.cssRules.length) {
 			throw domException(
 				`Cannot delete at index ${index}`,
@@ -3032,7 +3028,7 @@ class CSSStyleSheet {
 	}
 
 	// Reparse the owner element's text if it changed.
-	[kSync]?(this: Slots<CSSStyleSheet>): void {
+	_sync?(this: Slots<CSSStyleSheet>): void {
 		const slots = this;
 		const node = slots.ownerNode;
 		if (!node || node.tagName !== "STYLE") {
@@ -3888,7 +3884,7 @@ function getUAStyleSheet(): CSSStyleSheet {
 interface MeasuredSlots {
 	element: Element;
 	cascade: Cascade | null;
-	[kComputedValue](property: string): string;
+	_computedValue(property: string): string;
 }
 
 interface MeasuredDeclaration {
@@ -3933,10 +3929,10 @@ export function getComputedValue(
 		return "";
 	}
 	return pseudoElement
-		? _(getPseudoDeclaration(cascade, element, pseudoElement))[kComputedValue](
+		? _(getPseudoDeclaration(cascade, element, pseudoElement))._computedValue(
 			property,
 		)
-		: cascade.computedSlotsFor(element)[kComputedValue](property);
+		: cascade.computedSlotsFor(element)._computedValue(property);
 }
 
 // A box with nothing to contain or transform: no box at all, or a plain
@@ -4085,10 +4081,6 @@ function defineLonghandIndices(prototype: object): void {
 		});
 	}
 }
-
-const kSyncResolved = Symbol("syncResolved");
-const kUsedValue = Symbol("usedValue");
-const kBaseValue = Symbol("baseValue");
 
 // Writing a computed style is an error, not a no-op. It throws the
 // document's own DOMException, since one from another global is not
@@ -4323,11 +4315,11 @@ interface ComputedStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	// for the paint style to be derived again.
 	styleVersion: object;
 	custom: string[] | null;
-	[kCustomProperties]: Step<ComputedStyleDeclaration[typeof kCustomProperties]>;
-	[kUsedValue]: Step<ComputedStyleDeclaration[typeof kUsedValue]>;
-	[kBaseValue]: Step<ComputedStyleDeclaration[typeof kBaseValue]>;
-	[kSyncResolved]: Step<ComputedStyleDeclaration[typeof kSyncResolved]>;
-	[kComputedValue]: Step<ComputedStyleDeclaration[typeof kComputedValue]>;
+	_customProperties: Step<ComputedStyleDeclaration["_customProperties"]>;
+	_usedValue: Step<ComputedStyleDeclaration["_usedValue"]>;
+	_baseValue: Step<ComputedStyleDeclaration["_baseValue"]>;
+	_syncResolved: Step<ComputedStyleDeclaration["_syncResolved"]>;
+	_computedValue: Step<ComputedStyleDeclaration["_computedValue"]>;
 }
 
 interface ComputedStyleDeclaration {
@@ -4384,16 +4376,16 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		const current = slots.cascade?.currentDeclarations;
 		if (current !== undefined && !current.has(slots)) {
-			slots[kSyncResolved]();
+			slots._syncResolved();
 		}
 		// A flow-relative longhand resolves as the physical longhand it maps
 		// to: same slot, same measurement, same result.
 		property = toPhysicalProperty(this, property);
 		if (slots.cascade && USED_VALUE_PROPERTIES.has(property)) {
-			return slots[kUsedValue](property);
+			return slots._usedValue(property);
 		}
 		if (slots.cascade && MIN_SIZE_PROPERTIES.has(property)) {
-			return getResolvedMinSize(this, slots[kComputedValue](property));
+			return getResolvedMinSize(this, slots._computedValue(property));
 		}
 		if (slots.cascade && USED_TRACK_PROPERTIES.has(property)) {
 			const tracks = usedGridTracks(
@@ -4413,9 +4405,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 				this.getPropertyValue(longhand),
 			);
 		}
-		let computed = slots[kComputedValue](property);
+		let computed = slots._computedValue(property);
 		if (AUTO_COLOR_PROPERTIES.has(property) && computed === "auto") {
-			computed = slots[kComputedValue]("color");
+			computed = slots._computedValue("color");
 		}
 		// A system color computes as its keyword, and reads back as the color
 		// it stands for here.
@@ -4454,7 +4446,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		return [...CSS_LONGHANDS, ...getCustomNames(this)][Symbol.iterator]();
 	}
 
-	[kCustomProperties](this: Slots<ComputedStyleDeclaration>): string[] {
+	_customProperties(this: Slots<ComputedStyleDeclaration>): string[] {
 		const names: string[] = [];
 		for (const rule of this.cssRules) {
 			for (const name of Object.keys(rule.declarations)) {
@@ -4476,10 +4468,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	// Measured through the same flush a geometry read takes, and memoized
 	// behind it, so a property-heavy caller measures once per layout. The
 	// memo belongs to the cascade, which lets a flush drop every one.
-	[kUsedValue](
-		this: Slots<ComputedStyleDeclaration>,
-		property: string,
-	): string {
+	_usedValue(this: Slots<ComputedStyleDeclaration>, property: string): string {
 		const slots = this;
 		const cascade = slots.cascade!;
 		const used = getUsedValues(cascade, ownerOf(this));
@@ -4488,7 +4477,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			return memoized;
 		}
 
-		const computed = slots[kComputedValue](property);
+		const computed = slots._computedValue(property);
 		const value = measureUsedValue(ownerOf(this), property, computed);
 		used.set(property, value);
 		return value;
@@ -4497,17 +4486,14 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	// The cascade's value before a running transition overrides it, meaning
 	// the after-change style. An interpolated value moves every frame and
 	// must never enter the memo.
-	[kBaseValue](
-		this: Slots<ComputedStyleDeclaration>,
-		property: string,
-	): string {
+	_baseValue(this: Slots<ComputedStyleDeclaration>, property: string): string {
 		const slots = this;
 		let value = slots.resolved.get(property);
 		if (value === undefined) {
 			const longhands = CSSValues.getLonghands(property);
 			value = longhands
 				? CSSValues.resolveShorthand(property, longhands, (longhand) =>
-					slots[kBaseValue](longhand),
+					slots._baseValue(longhand),
 				)
 				: getAbsolutizedValue(
 					ownerOf(this),
@@ -4520,7 +4506,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 
 	// Reads call this only when the cascade no longer vouches for this
 	// declaration. It runs under every property read of every element.
-	[kSyncResolved](this: Slots<ComputedStyleDeclaration>): void {
+	_syncResolved(this: Slots<ComputedStyleDeclaration>): void {
 		const slots = this;
 		if (!slots.cascade) {
 			return;
@@ -4547,21 +4533,21 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		processTransitionStyle(
 			slots.cascade,
 			slots.element,
-			(property) => slots[kBaseValue](property),
+			(property) => slots._baseValue(property),
 			"",
 		);
 	}
 
-	[kComputedValue](
+	_computedValue(
 		this: Slots<ComputedStyleDeclaration>,
 		property: string,
 	): string {
 		const slots = this;
 		const current = slots.cascade?.currentDeclarations;
 		if (current !== undefined && !current.has(this)) {
-			slots[kSyncResolved]();
+			slots._syncResolved();
 		}
-		const value = slots[kBaseValue](property);
+		const value = slots._baseValue(property);
 		const cascade = slots.cascade;
 		if (cascade !== null && cascade.activeTransitions.size > 0) {
 			const transitional = getTransitionValue(
@@ -4632,7 +4618,7 @@ function getLengthContext(
 	const font = CSSValues.getFontSize(
 		own
 			? parent ? getComputedValue(parent, "font-size") : ""
-			: declarationSlots[kComputedValue]("font-size"),
+			: declarationSlots._computedValue("font-size"),
 		initial,
 	);
 	const root = getRootFontSize(declaration, own);
@@ -4711,7 +4697,7 @@ function getRootFontSize(
 		!root || (ownFontSize && root === declarationSlots.element)
 			? ""
 			: root === declarationSlots.element
-				? declarationSlots[kComputedValue]("font-size")
+				? declarationSlots._computedValue("font-size")
 				: getComputedValue(root, "font-size"),
 		getCellSize(declarationSlots.element).height,
 	);
@@ -4727,7 +4713,7 @@ function toPhysicalProperty(
 	return (
 		CSSValues.getPhysicalProperty(
 			property,
-			_(declaration)[kComputedValue]("direction"),
+			_(declaration)._computedValue("direction"),
 		) ?? property
 	);
 }
@@ -4742,7 +4728,7 @@ function measureUsedValue(
 	// A border with no style draws nothing and takes no space, whatever
 	// width it declares.
 	if (property.startsWith("border-") && property.endsWith("-width")) {
-		const style = _(declaration)[kComputedValue](
+		const style = _(declaration)._computedValue(
 			`${property.slice(0, -"-width".length)}-style`,
 		);
 		if (!style || style === "none" || style === "hidden") {
@@ -4773,7 +4759,7 @@ function measureUsedValue(
 		const border = vertical ? rect.height : rect.width;
 		// The used value of width is the box box-sizing names, so a
 		// border-box element reads its border box (css-sizing-3 §3.1).
-		if (_(declaration)[kComputedValue]("box-sizing") === "border-box") {
+		if (_(declaration)._computedValue("box-sizing") === "border-box") {
 			return CSSValues.getUsedLength(Math.max(0, border));
 		}
 		const edges =
@@ -4843,7 +4829,7 @@ function getUsedInset(
 
 	const opposite = OPPOSITE_INSET[property];
 	const other = CSSValues.getInsetLength(
-		_(declaration)[kComputedValue](opposite),
+		_(declaration)._computedValue(opposite),
 		basis,
 	);
 	// A relatively positioned box is offset from where it already was, so
@@ -5004,7 +4990,7 @@ function getResolvedMinSize(
 			return "0px";
 		}
 	}
-	if (declarationSlots[kComputedValue]("aspect-ratio") !== "auto") {
+	if (declarationSlots._computedValue("aspect-ratio") !== "auto") {
 		return "auto";
 	}
 	const parent = flatParentElement(declarationSlots.element);
@@ -5266,7 +5252,7 @@ function resolvePropertyValue(
 	if (
 		property === "text-align" &&
 		CSSValues.getLegacyAlignment(value) !== null &&
-		/^(?:inline-)?table$/.test(declarationSlots[kComputedValue]("display"))
+		/^(?:inline-)?table$/.test(declarationSlots._computedValue("display"))
 	) {
 		return "start";
 	}
@@ -5327,7 +5313,7 @@ function resolveCascadedValue(
 		// on.
 		return property === "color"
 			? (resolveFromParent(declaration, "color") ?? "")
-			: _(declaration)[kComputedValue]("color");
+			: _(declaration)._computedValue("color");
 	}
 	return value;
 }
@@ -5348,7 +5334,7 @@ function resolvePropertyValueRaw(
 			name === property ||
 			CSSValues.getPhysicalProperty(
 				name,
-				(direction ??= declarationSlots[kComputedValue]("direction")),
+				(direction ??= declarationSlots._computedValue("direction")),
 			) === property;
 
 	const inline = getInlineDeclarations(declaration);
@@ -5483,7 +5469,7 @@ function getCustomNames(computed: ComputedStyleDeclaration): string[] {
 	const computedSlots = _(computed);
 	const current = computedSlots.cascade?.currentDeclarations;
 	if (current !== undefined && !current.has(computedSlots)) {
-		computedSlots[kSyncResolved]();
+		computedSlots._syncResolved();
 	}
 	if (computedSlots.custom) {
 		return computedSlots.custom;
@@ -5495,7 +5481,7 @@ function getCustomNames(computed: ComputedStyleDeclaration): string[] {
 		element = flatParentElement(element)
 	) {
 		const declaration = computedSlots.cascade?.declarationFor(element);
-		for (const name of _maybe(declaration)?.[kCustomProperties]() ?? []) {
+		for (const name of _maybe(declaration)?._customProperties() ?? []) {
 			names.add(name);
 		}
 	}
@@ -5518,10 +5504,10 @@ interface PseudoStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	cascade: Cascade | null;
 	nodeResolved: Map<string, string>;
 	boxView: MeasuredDeclaration | null;
-	[kSyncResolved]: Step<PseudoStyleDeclaration[typeof kSyncResolved]>;
-	[kBaseValue]: Step<PseudoStyleDeclaration[typeof kBaseValue]>;
-	[kUsedValue]: Step<PseudoStyleDeclaration[typeof kUsedValue]>;
-	[kComputedValue]: Step<PseudoStyleDeclaration[typeof kComputedValue]>;
+	_syncResolved: Step<PseudoStyleDeclaration["_syncResolved"]>;
+	_baseValue: Step<PseudoStyleDeclaration["_baseValue"]>;
+	_usedValue: Step<PseudoStyleDeclaration["_usedValue"]>;
+	_computedValue: Step<PseudoStyleDeclaration["_computedValue"]>;
 }
 
 interface PseudoStyleDeclaration {
@@ -5568,12 +5554,12 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		const slots = _(this);
 		const current = slots.cascade?.currentDeclarations;
 		if (current !== undefined && !current.has(slots)) {
-			slots[kSyncResolved]();
+			slots._syncResolved();
 		}
 		let value = slots.nodeResolved.get(property);
 		if (value === undefined) {
 			value =
-				slots[kBaseValue](property) ||
+				slots._baseValue(property) ||
 				CSSValues.getComputedValueEntry(
 					property,
 					getInitialStyle(null, property),
@@ -5590,13 +5576,13 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			flushCascadeStyle(slots.cascade);
 		}
 		const computed =
-			slots[kComputedValue](property) ||
+			slots._computedValue(property) ||
 			CSSValues.getComputedValueEntry(
 				property,
 				getInitialStyle(null, property),
 			);
 		if (slots.cascade && USED_VALUE_PROPERTIES.has(property)) {
-			return slots[kUsedValue](property, computed);
+			return slots._usedValue(property, computed);
 		}
 		return computed;
 	}
@@ -5617,7 +5603,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		return CSS_LONGHANDS[index] ?? "";
 	}
 
-	[kSyncResolved](this: Slots<PseudoStyleDeclaration>): void {
+	_syncResolved(this: Slots<PseudoStyleDeclaration>): void {
 		// Before the work, because resolving below reads back through this
 		// declaration.
 		const slots = this;
@@ -5644,21 +5630,21 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			processTransitionStyle(
 				slots.cascade,
 				slots.element,
-				(property) => slots[kBaseValue](property),
+				(property) => slots._baseValue(property),
 				slots.pseudoElement,
 			);
 		}
 	}
 
 	// The cascade's declarations alone, with no transition overriding them.
-	[kBaseValue](this: Slots<PseudoStyleDeclaration>, property: string): string {
+	_baseValue(this: Slots<PseudoStyleDeclaration>, property: string): string {
 		const slots = this;
 		let value = slots.resolved.get(property);
 		if (value === undefined) {
 			const longhands = CSSValues.getLonghands(property);
 			value = longhands && slots.pseudoDeclarations[property] === undefined
 				? CSSValues.serializeShorthandValue(property, longhands, (longhand) =>
-					slots[kBaseValue](longhand) || CSS_INITIAL_VALUES[longhand] || "")
+					slots._baseValue(longhand) || CSS_INITIAL_VALUES[longhand] || "")
 				: CSSValues.getComputedValueEntry(
 					property,
 					slots.pseudoDeclarations[property] ?? "",
@@ -5672,7 +5658,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// through the same arithmetic as an element's metrics. A pseudo-element
 	// never given a node uses the percentage resolution below, against the
 	// box it would be in.
-	[kUsedValue](
+	_usedValue(
 		this: Slots<PseudoStyleDeclaration>,
 		property: string,
 		computed: string,
@@ -5724,16 +5710,16 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	// The engine's read. An empty result means no rule reached the
 	// pseudo-element, which is what the ::selection and ::marker painters
 	// check.
-	[kComputedValue](
+	_computedValue(
 		this: Slots<PseudoStyleDeclaration>,
 		property: string,
 	): string {
 		const slots = this;
 		const current = slots.cascade?.currentDeclarations;
 		if (current !== undefined && !current.has(this)) {
-			slots[kSyncResolved]();
+			slots._syncResolved();
 		}
-		const value = slots[kBaseValue](property);
+		const value = slots._baseValue(property);
 		const transitional = getPseudoTransitionValue(ownerOf(this), property);
 		return transitional ?? value;
 	}
@@ -5781,7 +5767,7 @@ function getBoxView(
 		adoptSlots(measured, {
 			element: node,
 			cascade: declarationSlots.cascade,
-			[kComputedValue]: (property: string): string =>
+			_computedValue: (property: string): string =>
 				declaration.nodeValue(property),
 		});
 		view = measured as MeasuredDeclaration;
@@ -6120,9 +6106,9 @@ function shouldCreatePseudoElement(
 ): boolean {
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(element);
-		const display = _(computedStyle)[kComputedValue]("display");
+		const display = _(computedStyle)._computedValue("display");
 		const listStylePosition =
-			_(computedStyle)[kComputedValue]("list-style-position") || "outside";
+			_(computedStyle)._computedValue("list-style-position") || "outside";
 
 		if (display === "list-item" && listStylePosition !== "outside") {
 			return true;
@@ -6204,7 +6190,7 @@ export class Cascade {
 
 	// The slots of every declaration resolved against the current cascade.
 	// Dropping one, or replacing the set, sends it back through
-	// kSyncResolved on its next read. Weak, so a declaration nobody holds
+	// _syncResolved on its next read. Weak, so a declaration nobody holds
 	// costs nothing.
 	currentDeclarations: WeakSet<object>;
 
@@ -6794,11 +6780,11 @@ export class Cascade {
 			slots = fresh;
 			this.computedStyleCache.set(element, fresh);
 			// Building a fresh declaration is the other form of the style
-			// change event kSyncResolved sees.
+			// change event _syncResolved sees.
 			processTransitionStyle(
 				this,
 				element,
-				(property) => fresh[kBaseValue](property),
+				(property) => fresh._baseValue(property),
 				"",
 			);
 		}
@@ -6815,7 +6801,7 @@ export class Cascade {
 		}
 		const declarationSlots = this.computedSlotsFor(element);
 		if (!this.currentDeclarations.has(declarationSlots)) {
-			declarationSlots[kSyncResolved]();
+			declarationSlots._syncResolved();
 		}
 		return declarationSlots.styleVersion;
 	}
@@ -6860,7 +6846,7 @@ export class Cascade {
 		}
 
 		const computedStyle = this.declarationFor(hostElement);
-		const display = _(computedStyle)[kComputedValue]("display");
+		const display = _(computedStyle)._computedValue("display");
 
 		if (display !== "list-item") {
 			return null;
@@ -7228,7 +7214,7 @@ function pseudoDeclarationsFor(
 	const hostStyleSlots = _(hostStyle);
 	for (const property of inheritedProperties) {
 		if (!declarations[property]) {
-			const inherited = hostStyleSlots[kComputedValue](property);
+			const inherited = hostStyleSlots._computedValue(property);
 			if (inherited) {
 				declarations[property] = inherited;
 			}
@@ -7236,7 +7222,7 @@ function pseudoDeclarationsFor(
 	}
 	// A pseudo-element of a flex or grid container is one of its items,
 	// and an item's display isBlockified, including the initial `inline`.
-	if (ITEM_DISPLAYS.has(hostStyleSlots[kComputedValue]("display"))) {
+	if (ITEM_DISPLAYS.has(hostStyleSlots._computedValue("display"))) {
 		declarations.display = CSSValues.getBlockifiedDisplay(
 			declarations.display || getInitialStyle(null, "display"),
 		);
@@ -7513,7 +7499,7 @@ function getPseudoDeclaration(
 	processTransitionStyle(
 		cascade,
 		element,
-		(property) => _(declaration)[kBaseValue](property),
+		(property) => _(declaration)._baseValue(property),
 		pseudoElement,
 	);
 	return declaration;
@@ -7643,9 +7629,9 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 	}
 	for (const element of listItems) {
 		const computedStyle = cascade.declarationFor(element);
-		const display = _(computedStyle)[kComputedValue]("display");
+		const display = _(computedStyle)._computedValue("display");
 		const listStylePosition =
-			_(computedStyle)[kComputedValue]("list-style-position") || "outside";
+			_(computedStyle)._computedValue("list-style-position") || "outside";
 
 		if (display === "list-item" && listStylePosition !== "outside") {
 			attachPseudoElementToElementForType(cascade, element, "::marker");
@@ -7686,9 +7672,9 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 
 	const computedStyle = cascade.declarationFor(element);
 	const computedStyleSlots = _(computedStyle);
-	const counterReset = computedStyleSlots[kComputedValue]("counter-reset");
+	const counterReset = computedStyleSlots._computedValue("counter-reset");
 	const counterIncrement =
-		computedStyleSlots[kComputedValue]("counter-increment");
+		computedStyleSlots._computedValue("counter-increment");
 
 	const parentElement = element.parentElement;
 	const parentScope = parentElement
@@ -10179,8 +10165,9 @@ function computePseudoElementStyle(
 			if (!CSSValues.hasSlotAliases(name)) {
 				continue;
 			}
-			direction ??=
-				cascade.computedSlotsFor(element)[kComputedValue]("direction");
+			direction ??= cascade
+				.computedSlotsFor(element)
+				._computedValue("direction");
 			for (const other of CSSValues.getSlotNames(name, direction)) {
 				computedStyle[other] = value;
 			}
@@ -10200,11 +10187,11 @@ function getPseudoContent(
 
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(hostElement);
-		const display = _(computedStyle)[kComputedValue]("display");
+		const display = _(computedStyle)._computedValue("display");
 
 		if (display === "list-item") {
 			const listStylePosition =
-				_(computedStyle)[kComputedValue]("list-style-position") || "outside";
+				_(computedStyle)._computedValue("list-style-position") || "outside";
 
 			if (listStylePosition === "outside") {
 				return null;
@@ -10361,9 +10348,9 @@ function attachPseudoElementToElementForType(
 
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(element);
-		const display = _(computedStyle)[kComputedValue]("display");
+		const display = _(computedStyle)._computedValue("display");
 		const listStylePosition =
-			_(computedStyle)[kComputedValue]("list-style-position") || "outside";
+			_(computedStyle)._computedValue("list-style-position") || "outside";
 
 		if (display !== "list-item") {
 			return;

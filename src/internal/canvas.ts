@@ -280,12 +280,8 @@ function copyRect(
 	}
 }
 
-// The platform's DOMException where there is one, which every runtime
-// this engine supports has.
 function domException(name: string, message: string): Error {
-	const Constructor = (globalThis as {DOMException?: typeof DOMException})
-		.DOMException;
-	return Constructor ? new Constructor(message, name) : new Error(message);
+	return new DOMException(message, name);
 }
 
 // ---------------------------------------------------------------------------
