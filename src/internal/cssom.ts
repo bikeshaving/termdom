@@ -44,12 +44,14 @@ import {
 	hasAttributeOf,
 	HTML_NAMESPACE,
 	isButtonInput,
+	isConnectedNode,
 	isDocumentElement,
 	isShadowRoot,
 	isUAShadowTree,
 	localNameOf,
 	MATHML_NAMESPACE,
 	namespaceOf,
+	nextInTree,
 	nodeTypeOf,
 	ownerDocumentOf,
 	pseudoElement,
@@ -6526,15 +6528,26 @@ export class Cascade {
 								shouldSyncStylesheets = true;
 							}
 						} else {
-							invalidateElementCaches(this, element);
-							attachPseudoElementsToElement(this, element);
-							registerConnectedShadowRoots(this, element);
-
-							const childElements = element.querySelectorAll("*");
-							for (const childElement of childElements) {
-								invalidateElementCaches(this, childElement);
-								attachPseudoElementsToElement(this, childElement);
-								registerConnectedShadowRoots(this, childElement);
+							// A detached tree's pseudo-elements and shadow roots wait
+							// for the record that brings it into the document. Its
+							// styles still answer getComputedStyle.
+							const connected = isConnectedNode(element);
+							const elements: Element[] = [];
+							for (
+								let next: DOMNode | null = element as unknown as DOMNode;
+								next !== null;
+								next = nextInTree(next, element as unknown as DOMNode)
+							) {
+								if (nodeTypeOf(next) === Node.ELEMENT_NODE) {
+									elements.push(next as unknown as Element);
+								}
+							}
+							for (const each of elements) {
+								invalidateElementCaches(this, each);
+								if (connected) {
+									attachPseudoElementsToElement(this, each);
+									registerConnectedShadowRoots(this, each);
+								}
 							}
 						}
 					}

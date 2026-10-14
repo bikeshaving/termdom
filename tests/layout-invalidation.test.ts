@@ -880,3 +880,36 @@ test("a subtree changed while out of the document lays out its changes when it r
 	]);
 	dom.dispose();
 });
+
+test("pseudo-elements built while a tree is detached show once it is inserted", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<style>.tag::before { content: '> ' } .warm { color: red }</style>";
+	await nextFrame(dom);
+	const box = document.createElement("div");
+	const list = document.createElement("ul");
+	box.append(list);
+	const item = document.createElement("li");
+	item.textContent = "item";
+	list.append(item);
+	const tag = document.createElement("p");
+	tag.className = "tag";
+	tag.textContent = "tagged";
+	box.append(tag);
+	const warm = document.createElement("div");
+	warm.className = "warm";
+	const moved = document.createElement("span");
+	moved.textContent = "moved";
+	box.append(moved);
+	warm.append(moved);
+	box.append(warm);
+	document.body.append(box);
+	await nextFrame(dom);
+	const text = terminal.getPlainText();
+	expect(text).toContain("• item");
+	expect(text).toContain("> tagged");
+	expect(text).toContain("moved");
+	dom.dispose();
+});
