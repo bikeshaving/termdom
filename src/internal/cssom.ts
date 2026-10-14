@@ -9802,10 +9802,12 @@ interface RuleIndex {
 	rules: ParsedCSSRule[];
 	length: number;
 	keyed: Map<string, number[]>;
-	unkeyed: ParsedCSSRule[];
+	// The rest by the element name their subject requires, so a span never
+	// tries the rules for inputs and table cells.
+	tagged: Map<string, number[]>;
 	unkeyedPositions: number[];
-	// Candidates by the id and classes that chose them, since elements
-	// alike in both, like an editor's lines, try the same rules.
+	// Candidates by the name, id and classes that chose them, since elements
+	// alike in those, like an editor's lines, try the same rules.
 	candidates: Map<string, ParsedCSSRule[]>;
 }
 
@@ -9825,23 +9827,26 @@ function getRuleIndex(cascade: Cascade): RuleIndex {
 		rules,
 		length: rules.length,
 		keyed: new Map(),
-		unkeyed: [],
+		tagged: new Map(),
 		unkeyedPositions: [],
 		candidates: new Map(),
 	};
 	for (const [position, rule] of rules.entries()) {
 		// A pseudo-element's rule matches through its host, and a :host rule
 		// through the tree's host, so neither is filed under the element.
-		if (
-			rule.subjectKey === undefined || rule.pseudoElement || rule.reachesHost
-		) {
-			index.unkeyed.push(rule);
+		if (rule.pseudoElement || rule.reachesHost) {
 			index.unkeyedPositions.push(position);
 			continue;
 		}
-		const bucket = index.keyed.get(rule.subjectKey);
+		const key = rule.subjectKey ?? rule.subjectTag;
+		if (key === undefined) {
+			index.unkeyedPositions.push(position);
+			continue;
+		}
+		const buckets = rule.subjectKey === undefined ? index.tagged : index.keyed;
+		const bucket = buckets.get(key);
 		if (bucket === undefined) {
-			index.keyed.set(rule.subjectKey, [position]);
+			buckets.set(key, [position]);
 		} else {
 			bucket.push(position);
 		}
@@ -9874,10 +9879,8 @@ function getCandidateRules(
 	const index = getRuleIndex(cascade);
 	const id = getIdValue(element);
 	const classes = getClassTokens(element);
-	if (id === null && classes.size === 0) {
-		return index.unkeyed;
-	}
-	let key = id === null ? "" : `#${id}`;
+	const tag = localNameOf(element);
+	let key = id === null ? tag : `${tag} #${id}`;
 	for (const name of classes) {
 		key += ` .${name}`;
 	}
@@ -9886,6 +9889,14 @@ function getCandidateRules(
 		return candidates;
 	}
 	const positions = new Set(index.unkeyedPositions);
+	// A foreign element's name keeps its case, and a type selector may
+	// still match it lowercased, as isRuleMatch allows.
+	const lower = tag.toLowerCase();
+	for (const name of lower === tag ? [tag] : [tag, lower]) {
+		for (const position of index.tagged.get(name) ?? []) {
+			positions.add(position);
+		}
+	}
 	if (id !== null) {
 		for (const position of index.keyed.get(`#${id}`) ?? []) {
 			positions.add(position);
@@ -9918,15 +9929,19 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 		.filter(Boolean);
 	const matched = getCandidateRules(cascade, element).filter((rule) => {
 		if (rule.pseudoElement) {
+			if (shadowHost === null) {
+				return false;
+			}
 			// ::part(name) matches the shadow's HOST, and its declarations
 			// cascade onto the part element. This is the standard CSS Shadow
 			// Parts crossing. A built-in control's parts are the UA's, as in
 			// every browser, and a page reaches them only through the
 			// pseudo-elements above.
-			const partArg = rule.pseudoElement.match(/^::part\((.+)\)$/);
+			const partArg = rule.pseudoElement.startsWith("::part(")
+				? rule.pseudoElement.match(/^::part\((.+)\)$/)
+				: null;
 			if (partArg) {
 				return (
-					shadowHost !== null &&
 					(rule.uaOrigin || !isUAShadowTree(root)) &&
 					splitOnASCIIWhitespace(partArg[1])
 						.every((name) => partNames.includes(name)) &&
@@ -9937,7 +9952,6 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 				);
 			}
 			return (
-				shadowHost !== null &&
 				partPseudos.includes(rule.pseudoElement) &&
 				isRuleMatch(shadowHost, rule)
 			);
