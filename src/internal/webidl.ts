@@ -845,6 +845,27 @@ export function installInterfaces(
 	return interfaceObjects;
 }
 
+// Every window wraps the same operations, so each is parsed once.
+const windowOperations = new Map<string, Member | null>();
+
+function getWindowOperation(name: string): Member | null {
+	let member = windowOperations.get(name);
+	if (member === undefined) {
+		const text = DOM_INTERFACES.Window?.members.find(([key]) => key === name);
+		if (text === undefined || !text[1].startsWith("o")) {
+			member = null;
+		} else {
+			const classes = new Map<string, Constructor>();
+			for (const [type, interfaceName] of interfaceNames) {
+				classes.set(interfaceName, type);
+			}
+			member = parseMember(text[1], classes);
+		}
+		windowOperations.set(name, member);
+	}
+	return member;
+}
+
 /**
  * `implementation` as the member `name` of `window`, with the checks
  * Window's operation of that name makes. Called without an object, as a
@@ -855,15 +876,10 @@ export function windowMember(
 	name: string,
 	implementation: (...args: never[]) => unknown,
 ): (...args: unknown[]) => unknown {
-	const text = DOM_INTERFACES.Window?.members.find(([key]) => key === name);
-	if (text === undefined || !text[1].startsWith("o")) {
+	const member = getWindowOperation(name);
+	if (member === null) {
 		return implementation as (...args: unknown[]) => unknown;
 	}
-	const classes = new Map<string, Constructor>();
-	for (const [type, interfaceName] of interfaceNames) {
-		classes.set(interfaceName, type);
-	}
-	const member = parseMember(text[1], classes);
 	const wrapper = {
 		[name](this: unknown, ...args: unknown[]): unknown {
 			if (this != null && this !== window) {
