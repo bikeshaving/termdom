@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {Framebuffer, replaced} from "../src/internal/framebuffer.ts";
+import {drawText, Framebuffer, replaced} from "../src/internal/framebuffer.ts";
 import {MockProcess, nextFrame, renderFrame} from "./test-utils.js";
 
 test("line clearing removes terminal artifacts from previous commands", async () => {
@@ -144,7 +144,7 @@ test("a screen reset clears stale rows without a screen-qualifying erase", async
 			{offset: 0, cursorRow: 0, regionRows: 5},
 			(ctx) => {
 				for (let i = 0; i < 5; i++) {
-					ctx.drawText(`stale row ${i}`, 0, i);
+					drawText(ctx, `stale row ${i}`, 0, i);
 				}
 			},
 		),
@@ -158,8 +158,8 @@ test("a screen reset clears stale rows without a screen-qualifying erase", async
 		framebuffer,
 		{offset: 0, cursorRow: 0, regionRows: 3},
 		(ctx) => {
-			ctx.drawText("fresh top", 0, 0);
-			ctx.drawText("fresh mid", 0, 2);
+			drawText(ctx, "fresh top", 0, 0);
+			drawText(ctx, "fresh mid", 0, 2);
 		},
 	);
 	expect(out).not.toContain("\x1b[2J");

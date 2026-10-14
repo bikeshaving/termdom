@@ -41,9 +41,14 @@ import {getEditingCaretPoint} from "./editing.ts";
 import {
 	type CellContext,
 	type CellStyle,
+	drawBox,
+	drawDecoration,
+	drawRect,
+	drawText,
 	type Framebuffer,
 	insetShiftPays,
 	type LineStyle,
+	setCaret,
 } from "./framebuffer.ts";
 import {
 	type Gradient,
@@ -76,7 +81,11 @@ import {
 	scrolledAncestorRows,
 	snapToClusters,
 } from "./layout.ts";
-import type {LayoutNode} from "./layoutsolver.ts";
+import {
+	getComputedHeight,
+	getComputedWidth,
+	type LayoutNode,
+} from "./layoutsolver.ts";
 import {
 	getMathAlignOffset,
 	isBlankCell,
@@ -626,7 +635,7 @@ function renderBackdrop(element: Element, ctx: CellContext): void {
 		return;
 	}
 	// The viewport in document coordinates.
-	ctx.drawRect(0, -ctx.viewportOffset, ctx.cols, ctx.rows, fill);
+	drawRect(ctx, 0, -ctx.viewportOffset, ctx.cols, ctx.rows, fill);
 }
 
 // CSS layer order: the root's box, negative-z contexts, in-flow
@@ -738,8 +747,8 @@ function paintBlock(
 	const rect: Rect = {
 		left: origin.x,
 		top: origin.y,
-		width: node.getComputedWidth(),
-		height: node.getComputedHeight(),
+		width: getComputedWidth(node),
+		height: getComputedHeight(node),
 	};
 	paintBox(painter, style, [rect], rect, ctx);
 	if (style.visible) {
@@ -940,7 +949,7 @@ function paintOverflowMarkers(
 			continue;
 		}
 		if (markers.left !== "" && span.left < clip.left) {
-			ctx.drawText(markers.left, clip.left, row, style.cell);
+			drawText(ctx, markers.left, clip.left, row, style.cell);
 		}
 		if (
 			markers.right !== "" &&
@@ -948,7 +957,7 @@ function paintOverflowMarkers(
 			Number.isFinite(clip.right)
 		) {
 			const width = ctx.measureText(markers.right).width;
-			ctx.drawText(markers.right, clip.right - width, row, style.cell);
+			drawText(ctx, markers.right, clip.right - width, row, style.cell);
 		}
 	}
 }
@@ -1047,7 +1056,8 @@ function paintBox(
 	}
 	if (style.fill !== null) {
 		for (const fragment of fragments) {
-			ctx.drawRect(
+			drawRect(
+				ctx,
 				Math.round(fragment.left),
 				Math.round(fragment.top),
 				Math.round(fragment.width),
@@ -1071,7 +1081,8 @@ function paintBox(
 		}
 	}
 	if (style.border !== null) {
-		ctx.drawBox(
+		drawBox(
+			ctx,
 			Math.round(rect.left),
 			Math.round(rect.top),
 			Math.round(rect.width),
@@ -1100,7 +1111,7 @@ function paintOutline(
 		const ring =
 			(line: LineStyle["style"] | undefined): LineStyle | undefined =>
 				line && {style: line, color};
-		ctx.drawBox(
+		drawBox(ctx,
 			Math.round(rect.left),
 			Math.round(rect.top),
 			Math.round(rect.width),
@@ -1118,13 +1129,13 @@ function paintOutline(
 		);
 	} else {
 		for (const fragment of fragments) {
-			ctx.drawDecoration(
+			drawDecoration(ctx,
 				Math.round(fragment.left),
 				Math.round(fragment.top),
 				Math.round(fragment.width),
 				{overline: true, fg: color},
 			);
-			ctx.drawDecoration(
+			drawDecoration(ctx,
 				Math.round(fragment.left),
 				Math.round(fragment.top + fragment.height) - 1,
 				Math.round(fragment.width),
@@ -1189,7 +1200,7 @@ function setCaretAt(
 	const lift = painter.layout.isInFixedSpace(element)
 		? painter.framebuffer.scrollTop
 		: 0;
-	ctx.setCaret(x, y + lift);
+	setCaret(ctx, x, y + lift);
 }
 
 // A run's lines, from the box that broke them. The origin is the run's
@@ -1304,7 +1315,7 @@ function paintInlineBorder(
 	const first = fragments[0];
 	const last = fragments[fragments.length - 1];
 	if (style.border.left) {
-		ctx.drawBox(
+		drawBox(ctx,
 			Math.round(first.left),
 			Math.round(first.top),
 			1,
@@ -1313,7 +1324,7 @@ function paintInlineBorder(
 		);
 	}
 	if (style.border.right) {
-		ctx.drawBox(
+		drawBox(ctx,
 			Math.round(last.left + last.width) - 1,
 			Math.round(last.top),
 			1,
@@ -1605,7 +1616,8 @@ function paintText(
 			continue;
 		}
 		painted = true;
-		ctx.drawText(
+		drawText(
+			ctx,
 			applyTextTransform(text, style.textTransform),
 			Math.round(fragment.rect.left),
 			Math.round(fragment.rect.top),
@@ -1666,7 +1678,7 @@ function renderOutsideMarker(
 	if (markerX < 0) {
 		return;
 	}
-	ctx.drawText(markerContent, markerX, Math.round(rect.top), markerTextStyle);
+	drawText(ctx, markerContent, markerX, Math.round(rect.top), markerTextStyle);
 }
 
 // A marker's text style, by the object its element's style keeps until it
@@ -1770,7 +1782,7 @@ function renderMath(
 		for (const cell of box.cells[row]) {
 			const style = getMathCellStyle(painter, cell, selections);
 			if (!isBlankCell(cell) || style !== cell.style) {
-				ctx.drawText(cell.text, x, top + row, style ?? undefined);
+				drawText(ctx, cell.text, x, top + row, style ?? undefined);
 			}
 			x += cell.width;
 		}
@@ -2144,7 +2156,8 @@ function renderTextHighlights(
 			continue;
 		}
 		for (const run of painter.layout.getTextSpans(textNode, from, to)) {
-			ctx.drawText(
+			drawText(
+				ctx,
 				applyTextTransform(run.text, textTransform),
 				run.rect.x,
 				run.rect.y,

@@ -61,6 +61,7 @@ import type {Exchange} from "./exchange.ts";
 import {
 	CellContext,
 	CellGrid,
+	drawGrid,
 	type Framebuffer,
 	invalidate,
 	scrollTo,
@@ -15907,7 +15908,7 @@ function fitCanvasGrid(
 	}
 	const cells = new CellContext(new CellGrid(rows, cols), rows, cols, 0);
 	if (previous !== null) {
-		cells.drawGrid(previous.grid, 0, 0);
+		drawGrid(cells, previous.grid, 0, 0);
 	}
 	canvasSlots.extra.canvasGrid = cells;
 	return cells;

@@ -51,7 +51,12 @@ import {
 	createStyle,
 	type Edge,
 	type FlexDirection,
+	getChildIndex,
+	getComputedGridTracks,
+	getComputedHeight,
+	getComputedWidth,
 	type Gutter,
+	insertChild,
 	isContainingBlock,
 	type Justify,
 	LayoutNode,
@@ -1049,10 +1054,10 @@ function computePaintExtents(
 		extents.set(node, extent);
 	}
 	let highest = top;
-	let lowest = top + node.getComputedHeight();
+	let lowest = top + getComputedHeight(node);
 	let unstacked = 0;
-	let right = node.getComputedWidth();
-	let bottom = node.getComputedHeight();
+	let right = getComputedWidth(node);
+	let bottom = getComputedHeight(node);
 	const lines = node.style.clipsOverflow || node.measure === null
 		? undefined
 		: getMeasuredLines(layout, node);
@@ -1920,7 +1925,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 			}
 			if (containerFlex.children[index] !== layoutNode) {
 				layoutNode.parent?.removeChild(layoutNode);
-				containerFlex.insertChild(layoutNode, index);
+				insertChild(containerFlex, layoutNode, index);
 			}
 			index++;
 			syncRunMembers(layout, entry);
@@ -1945,7 +1950,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 			// the position is decided here, with the whole list available.
 			if (containerFlex.children[index] !== layoutNode) {
 				containerFlex.removeChild(layoutNode);
-				containerFlex.insertChild(layoutNode, index);
+				insertChild(containerFlex, layoutNode, index);
 			}
 			index++;
 		}
@@ -2156,7 +2161,8 @@ function addNode(
 					currentParent.removeChild(existingLayoutNode);
 				}
 				// Appended. The container's box list decides the order.
-				parentLayoutNode.insertChild(
+				insertChild(
+					parentLayoutNode,
 					existingLayoutNode,
 					parentLayoutNode.children.length,
 				);
@@ -2323,7 +2329,7 @@ function addTextNode(
 		measureInlineRun(layout, own, width, widthSpace, placing);
 	layout.measureNodes.add(layoutNode);
 
-	parentLayoutNode.insertChild(layoutNode, parentLayoutNode.children.length);
+	insertChild(parentLayoutNode, layoutNode, parentLayoutNode.children.length);
 }
 
 // Sees THROUGH an inline wrapping block-level content (CSS2 §9.2.1.1).
@@ -2607,12 +2613,12 @@ function placeChild(
 	index: number,
 ): void {
 	if (child.parent === parent) {
-		if (parent.getChildIndex(child) === index) {
+		if (getChildIndex(parent, child) === index) {
 			return;
 		}
 		parent.removeChild(child);
 	}
-	parent.insertChild(child, index);
+	insertChild(parent, child, index);
 }
 
 function trackNode(
@@ -3612,8 +3618,8 @@ function collectLeaves(
 						contentHeightMode === "definite" ? contentHeight : Number.NaN,
 					);
 					computePaintExtents(layout, independentFormattingContext, 0);
-					finalContentWidth = independentFormattingContext.getComputedWidth();
-					finalContentHeight = independentFormattingContext.getComputedHeight();
+					finalContentWidth = getComputedWidth(independentFormattingContext);
+					finalContentHeight = getComputedHeight(independentFormattingContext);
 				} else {
 					const contentStart = flatFirstRenderableChild(element);
 					if (contentStart) {
@@ -5031,7 +5037,7 @@ function getStaticPosition(
 			top:
 				offsetTop +
 				previousNode.result.top +
-				previousNode.getComputedHeight() +
+				getComputedHeight(previousNode) +
 				previousNode.result.margin.bottom,
 		};
 	}
@@ -5463,7 +5469,7 @@ export class Layout {
 		if (!layoutNode) {
 			return null;
 		}
-		return layoutNode.getComputedGridTracks(rows)?.sizes ?? null;
+		return getComputedGridTracks(layoutNode, rows)?.sizes ?? null;
 	}
 
 	// The root box's height extended to cover top-layer boxes, which
@@ -5780,8 +5786,8 @@ export class Layout {
 		return new this.domRect(
 			x,
 			y,
-			layoutNode.getComputedWidth(),
-			layoutNode.getComputedHeight(),
+			getComputedWidth(layoutNode),
+			getComputedHeight(layoutNode),
 		);
 	}
 
@@ -7704,10 +7710,9 @@ function measureScrollExtent(
 			bottom = Math.max(bottom, child.result.top + reach.overflowBottom);
 		}
 	}
-	const clientWidth =
-		layoutNode.getComputedWidth() - border.left - border.right;
+	const clientWidth = getComputedWidth(layoutNode) - border.left - border.right;
 	const clientHeight =
-		layoutNode.getComputedHeight() - border.top - border.bottom;
+		getComputedHeight(layoutNode) - border.top - border.bottom;
 	return {
 		width: right === null
 			? null

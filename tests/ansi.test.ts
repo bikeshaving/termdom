@@ -3,6 +3,10 @@ import {describe, expect, test} from "@b9g/libuild/test";
 import {
 	beginFrame,
 	type CellContext,
+	drawBox,
+	drawLine,
+	drawRect,
+	drawText,
 	Framebuffer,
 	type LineStyle,
 	repaintAll,
@@ -16,10 +20,10 @@ describe("cells through the pen", () => {
 		const family = "\u{1f468}\u200d\u{1f469}\u200d\u{1f467}";
 		const framebuffer = new Framebuffer(1, 8);
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawText(family, 0, 0);
-			ctx.drawText("é", 2, 0);
-			ctx.drawText("\u{1f1ef}\u{1f1f5}", 3, 0);
-			ctx.drawText("日", 5, 0);
+			drawText(ctx, family, 0, 0);
+			drawText(ctx, "é", 2, 0);
+			drawText(ctx, "\u{1f1ef}\u{1f1f5}", 3, 0);
+			drawText(ctx, "日", 5, 0);
 		});
 
 		expect(output).toContain(family);
@@ -35,9 +39,9 @@ describe("cells through the pen", () => {
 		const family = "\u{1f468}\u200d\u{1f469}\u200d\u{1f467}";
 		const framebuffer = new Framebuffer(1, 20);
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawText("M\u200c\u200ba\u200cr\u034fk", 0, 0);
-			ctx.drawText("e\u200dt", 5, 0);
-			ctx.drawText(family, 8, 0);
+			drawText(ctx, "M\u200c\u200ba\u200cr\u034fk", 0, 0);
+			drawText(ctx, "e\u200dt", 5, 0);
+			drawText(ctx, family, 8, 0);
 		});
 
 		expect(stripControlCodes(output)).toContain("Mark");
@@ -67,7 +71,7 @@ describe("Framebuffer", () => {
 
 			// Test basic drawing functionality
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawText("X", 0, 0);
+				drawText(ctx, "X", 0, 0);
 			});
 
 			expect(output).toContain("X");
@@ -77,9 +81,9 @@ describe("Framebuffer", () => {
 			const framebuffer = new Framebuffer(5, 10, "ansi");
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawText("X", 0, 0, {fg: 0xcd0000});
-				ctx.drawText("Y", 1, 0, {fg: 0xff0000});
-				ctx.drawText("Z", 2, 0, {bg: 0x7f7f7f});
+				drawText(ctx, "X", 0, 0, {fg: 0xcd0000});
+				drawText(ctx, "Y", 1, 0, {fg: 0xff0000});
+				drawText(ctx, "Z", 2, 0, {bg: 0x7f7f7f});
 			});
 
 			expect(output).toContain("\x1b[31mX");
@@ -93,7 +97,7 @@ describe("Framebuffer", () => {
 			const framebuffer = new Framebuffer(5, 10);
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawText("Hello", 1, 2);
+				drawText(ctx, "Hello", 1, 2);
 			});
 
 			expect(output).toContain("Hello");
@@ -103,7 +107,7 @@ describe("Framebuffer", () => {
 			const framebuffer = new Framebuffer(5, 10);
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawRect(0, 0, 3, 2, 0xff0000);
+				drawRect(ctx, 0, 0, 3, 2, 0xff0000);
 			});
 
 			// Should contain background color ANSI codes
@@ -114,7 +118,7 @@ describe("Framebuffer", () => {
 			const framebuffer = new Framebuffer(5, 10);
 
 			const output = renderFrame(framebuffer, {offset: 2}, (ctx) => {
-				ctx.drawText("Test", 0, 0);
+				drawText(ctx, "Test", 0, 0);
 			});
 
 			// Should contain cursor positioning for offset
@@ -127,7 +131,7 @@ describe("Framebuffer", () => {
 			const framebuffer = new Framebuffer(5, 10);
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawText("Test", 0, 0);
+				drawText(ctx, "Test", 0, 0);
 			});
 
 			// Should hide cursor and enable sync mode. The cursor stays hidden
@@ -142,14 +146,14 @@ describe("Framebuffer", () => {
 
 			// First frame
 			renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawText("First", 0, 0);
+				drawText(ctx, "First", 0, 0);
 			});
 
 			repaintAll(framebuffer);
 
 			// Second frame should render everything (no diff)
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawText("Second", 0, 0);
+				drawText(ctx, "Second", 0, 0);
 			});
 
 			expect(output).toContain("Second");
@@ -165,11 +169,11 @@ describe("Framebuffer", () => {
 			const framebuffer = new Framebuffer(10, 40);
 
 			renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawText("Initial", 0, 0);
+				drawText(ctx, "Initial", 0, 0);
 			});
 
 			const output = renderFrame(framebuffer, {offset: 3}, (ctx) => {
-				ctx.drawText("Scrolled", 0, 0);
+				drawText(ctx, "Scrolled", 0, 0);
 			});
 
 			expect(output).not.toContain("\x1b[3S");
@@ -181,11 +185,11 @@ describe("Framebuffer", () => {
 			const framebuffer = new Framebuffer(10, 40);
 
 			renderFrame(framebuffer, {offset: 3}, (ctx) => {
-				ctx.drawText("Initial", 0, 0);
+				drawText(ctx, "Initial", 0, 0);
 			});
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawText("Scrolled", 0, 0);
+				drawText(ctx, "Scrolled", 0, 0);
 			});
 
 			expect(output).not.toContain("\x1b[3T");
@@ -198,12 +202,12 @@ describe("Framebuffer", () => {
 
 			// Frame 1
 			renderFrame(framebuffer, {offset: 2}, (ctx) => {
-				ctx.drawText("Frame1", 0, 0);
+				drawText(ctx, "Frame1", 0, 0);
 			});
 
 			// Frame 2 with same offset
 			const output = renderFrame(framebuffer, {offset: 2}, (ctx) => {
-				ctx.drawText("Frame2", 0, 1);
+				drawText(ctx, "Frame2", 0, 1);
 			});
 
 			expect(output).not.toContain("S");
@@ -227,14 +231,14 @@ describe("Framebuffer", () => {
 
 			// First frame
 			renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawText("Hello", 0, 0);
-				ctx.drawText("World", 1, 0);
+				drawText(ctx, "Hello", 0, 0);
+				drawText(ctx, "World", 1, 0);
 			});
 
 			// Second frame - only change second line
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawText("Hello", 0, 0); // Same
-				ctx.drawText("Test", 1, 0); // Changed
+				drawText(ctx, "Hello", 0, 0); // Same
+				drawText(ctx, "Test", 1, 0); // Changed
 			});
 
 			// Should contain new content but not duplicate unchanged content
@@ -267,7 +271,7 @@ describe("glyphs where lines meet", () => {
 
 	test("two lines turning in a cell make its corner", () => {
 		const output = glyphs(3, 6, (ctx) => {
-			ctx.drawBox(0, 0, 3, 3, {
+			drawBox(ctx, 0, 0, 3, 3, {
 				top: solid,
 				right: solid,
 				bottom: solid,
@@ -280,18 +284,18 @@ describe("glyphs where lines meet", () => {
 
 	test("a line ending on another's run makes the tee", () => {
 		const output = glyphs(3, 8, (ctx) => {
-			ctx.drawLine(0, 0, 0, 3, solid); // a wall
-			ctx.drawLine(0, 1, 4, 1, solid); // a rule leaving it rightward
+			drawLine(ctx, 0, 0, 0, 3, solid); // a wall
+			drawLine(ctx, 0, 1, 4, 1, solid); // a rule leaving it rightward
 		});
 		expect(output).toContain("├───");
 		const inverted = glyphs(3, 8, (ctx) => {
-			ctx.drawLine(4, 0, 4, 3, solid);
-			ctx.drawLine(0, 1, 5, 1, solid);
+			drawLine(ctx, 4, 0, 4, 3, solid);
+			drawLine(ctx, 0, 1, 5, 1, solid);
 		});
 		expect(inverted).toContain("───┤");
 		const down = glyphs(3, 8, (ctx) => {
-			ctx.drawLine(0, 0, 5, 0, solid);
-			ctx.drawLine(2, 0, 2, 3, solid);
+			drawLine(ctx, 0, 0, 5, 0, solid);
+			drawLine(ctx, 2, 0, 2, 3, solid);
 		});
 		expect(down).toContain("─┬─");
 		expect(down).not.toContain("┼");
@@ -299,16 +303,16 @@ describe("glyphs where lines meet", () => {
 
 	test("two lines crossing make the cross", () => {
 		const output = glyphs(3, 6, (ctx) => {
-			ctx.drawLine(0, 1, 5, 1, solid);
-			ctx.drawLine(2, 0, 2, 3, solid);
+			drawLine(ctx, 0, 1, 5, 1, solid);
+			drawLine(ctx, 2, 0, 2, 3, solid);
 		});
 		expect(output).toContain("─┼─");
 	});
 
 	test("a line is its line, and its ends still draw", () => {
 		const output = glyphs(2, 6, (ctx) => {
-			ctx.drawLine(0, 0, 2, 0, solid);
-			ctx.drawLine(4, 0, 4, 2, solid);
+			drawLine(ctx, 0, 0, 2, 0, solid);
+			drawLine(ctx, 4, 0, 4, 2, solid);
 		});
 		expect(output).toContain("──");
 		expect(output).toContain("│");
@@ -316,8 +320,8 @@ describe("glyphs where lines meet", () => {
 
 	test("the style is the line's", () => {
 		const output = glyphs(2, 8, (ctx) => {
-			ctx.drawLine(0, 0, 3, 0, {style: "double"});
-			ctx.drawLine(4, 0, 7, 0, {style: "dashed"});
+			drawLine(ctx, 0, 0, 3, 0, {style: "double"});
+			drawLine(ctx, 4, 0, 7, 0, {style: "dashed"});
 		});
 		expect(output).toContain("═");
 		expect(output).toContain("╌");
@@ -325,23 +329,23 @@ describe("glyphs where lines meet", () => {
 
 	test("a round cap bends the corner, not the run", () => {
 		const output = glyphs(3, 6, (ctx) => {
-			ctx.drawLine(0, 0, 3, 0, {style: "solid", startCap: "round"});
-			ctx.drawLine(0, 0, 0, 3, {style: "solid", startCap: "round"});
+			drawLine(ctx, 0, 0, 3, 0, {style: "solid", startCap: "round"});
+			drawLine(ctx, 0, 0, 0, 3, {style: "solid", startCap: "round"});
 		});
 		expect(output).toContain("╭──");
 
 		// The dashes are the border style's; only the turn bends.
 		const dashed = glyphs(3, 6, (ctx) => {
-			ctx.drawLine(0, 0, 3, 0, {style: "dashed", endCap: "round"});
-			ctx.drawLine(2, 0, 2, 3, {style: "dashed", startCap: "round"});
+			drawLine(ctx, 0, 0, 3, 0, {style: "dashed", endCap: "round"});
+			drawLine(ctx, 2, 0, 2, 3, {style: "dashed", startCap: "round"});
 		});
 		expect(dashed).toContain("╮");
 
 		// Unicode draws no rounded double corner, so the radius cannot
 		// reach one.
 		const double = glyphs(3, 6, (ctx) => {
-			ctx.drawLine(0, 2, 3, 2, {style: "double", startCap: "round"});
-			ctx.drawLine(0, 0, 0, 3, {style: "double", endCap: "round"});
+			drawLine(ctx, 0, 2, 3, 2, {style: "double", startCap: "round"});
+			drawLine(ctx, 0, 0, 0, 3, {style: "double", endCap: "round"});
 		});
 		expect(double).toContain("╚══");
 	});
@@ -353,7 +357,7 @@ describe("Border Drawing", () => {
 			const framebuffer = new Framebuffer(5, 10);
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawBox(1, 1, 4, 3, {
+				drawBox(ctx, 1, 1, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
@@ -371,7 +375,7 @@ describe("Border Drawing", () => {
 			const framebuffer = new Framebuffer(5, 10);
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawBox(1, 1, 4, 3, {
+				drawBox(ctx, 1, 1, 4, 3, {
 					top: {style: "solid"},
 					bottom: {style: "solid"},
 					left: {style: "solid"},
@@ -390,14 +394,14 @@ describe("Border Drawing", () => {
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				// Draw two overlapping rectangles to create border intersections
-				ctx.drawBox(1, 1, 4, 3, {
+				drawBox(ctx, 1, 1, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
 					left: {style: "solid"},
 				});
 
-				ctx.drawBox(2, 0, 4, 3, {
+				drawBox(ctx, 2, 0, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
@@ -419,13 +423,13 @@ describe("Border Drawing", () => {
 			// page's verticals, which take the connecting stub: ├ and ┤, as a
 			// browser's touching one-pixel lines would draw.
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawBox(0, 0, 10, 5, {
+				drawBox(ctx, 0, 0, 10, 5, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
 					left: {style: "solid"},
 				});
-				ctx.drawBox(1, 2, 8, 1, {top: {style: "solid"}});
+				drawBox(ctx, 1, 2, 8, 1, {top: {style: "solid"}});
 			});
 
 			expect(output).toContain("├────────┤");
@@ -438,13 +442,13 @@ describe("Border Drawing", () => {
 			// parallel strokes, which meet nothing head-on. No junction forms
 			// -- the seam stays ┐┌, the way two browser boxes stay two boxes.
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawBox(0, 0, 4, 3, {
+				drawBox(ctx, 0, 0, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
 					left: {style: "solid"},
 				});
-				ctx.drawBox(4, 0, 4, 3, {
+				drawBox(ctx, 4, 0, 4, 3, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
@@ -461,7 +465,7 @@ describe("Border Drawing", () => {
 			const framebuffer = new Framebuffer(5, 10);
 
 			const output = renderFrame(framebuffer, {offset: 2}, (ctx) => {
-				ctx.drawBox(0, 0, 3, 2, {
+				drawBox(ctx, 0, 0, 3, 2, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
@@ -478,7 +482,7 @@ describe("Border Drawing", () => {
 			const framebuffer = new Framebuffer(5, 10);
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawBox(1, 1, 4, 3, {
+				drawBox(ctx, 1, 1, 4, 3, {
 					top: {style: "double"},
 					right: {style: "double"},
 					bottom: {style: "double"},
@@ -496,7 +500,7 @@ describe("Border Drawing", () => {
 			const framebuffer = new Framebuffer(5, 10);
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawBox(1, 1, 4, 3, {});
+				drawBox(ctx, 1, 1, 4, 3, {});
 			});
 
 			// Should not contain any border patterns
@@ -507,7 +511,7 @@ describe("Border Drawing", () => {
 			const framebuffer = new Framebuffer(5, 10);
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-				ctx.drawBox(1, 1, 4, 3, {
+				drawBox(ctx, 1, 1, 4, 3, {
 					top: {style: "solid", color: 0xff0000},
 					right: {style: "solid", color: 0xff0000},
 					bottom: {style: "solid", color: 0xff0000},
@@ -525,7 +529,7 @@ describe("Border Drawing", () => {
 
 			const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 				// Draw border that extends beyond viewport
-				ctx.drawBox(0, 0, 10, 10, {
+				drawBox(ctx, 0, 0, 10, 10, {
 					top: {style: "solid"},
 					right: {style: "solid"},
 					bottom: {style: "solid"},
@@ -546,15 +550,15 @@ describe("Border Integration", () => {
 		const framebuffer = new Framebuffer(4, 8);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawBox(1, 0, 6, 4, {
+			drawBox(ctx, 1, 0, 6, 4, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 			// Fill inside to ensure proper spacing
-			ctx.drawText("    ", 2, 1);
-			ctx.drawText("    ", 2, 2);
+			drawText(ctx, "    ", 2, 1);
+			drawText(ctx, "    ", 2, 2);
 		});
 
 		// Strip control codes but keep ANSI colors for testing
@@ -570,7 +574,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Draw border
-			ctx.drawBox(1, 1, 6, 3, {
+			drawBox(ctx, 1, 1, 6, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -578,7 +582,7 @@ describe("Border Integration", () => {
 			});
 
 			// Add text inside border
-			ctx.drawText("Hi", 2, 2);
+			drawText(ctx, "Hi", 2, 2);
 		});
 
 		expect(output).toContain("┌────┐"); // Complete top border
@@ -591,10 +595,10 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Fill background
-			ctx.drawRect(1, 1, 4, 3, 0x00ff00);
+			drawRect(ctx, 1, 1, 4, 3, 0x00ff00);
 
 			// Draw border on top
-			ctx.drawBox(1, 1, 4, 3, {
+			drawBox(ctx, 1, 1, 4, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -610,7 +614,7 @@ describe("Border Integration", () => {
 		const framebuffer = new Framebuffer(5, 7);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawBox(0, 0, 5, 4, {
+			drawBox(ctx, 0, 0, 5, 4, {
 				top: {style: "double"},
 				right: {style: "double"},
 				bottom: {style: "double"},
@@ -629,7 +633,7 @@ describe("Border Integration", () => {
 		const framebuffer = new Framebuffer(5, 8);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawBox(0, 0, 6, 4, {
+			drawBox(ctx, 0, 0, 6, 4, {
 				top: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
@@ -649,9 +653,9 @@ describe("Border Integration", () => {
 		const framebuffer = new Framebuffer(3, 10);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawText("Hello", 0, 0);
-			ctx.drawText("World", 0, 1);
-			ctx.drawText("Test", 0, 2);
+			drawText(ctx, "Hello", 0, 0);
+			drawText(ctx, "World", 0, 1);
+			drawText(ctx, "Test", 0, 2);
 		});
 
 		// Strip control codes but keep ANSI colors for testing
@@ -673,7 +677,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// First box
-			ctx.drawBox(0, 0, 5, 4, {
+			drawBox(ctx, 0, 0, 5, 4, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -681,7 +685,7 @@ describe("Border Integration", () => {
 			});
 
 			// Second box overlapping
-			ctx.drawBox(2, 2, 5, 4, {
+			drawBox(ctx, 2, 2, 5, 4, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -708,7 +712,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Draw a simple box that fits in viewport
-			ctx.drawBox(1, 1, 3, 3, {
+			drawBox(ctx, 1, 1, 3, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -732,18 +736,18 @@ describe("Border Integration", () => {
 
 		// First render to establish baseline
 		renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawText("Line 1", 0, 0);
-			ctx.drawText("Line 2", 0, 1);
-			ctx.drawText("Line 3", 0, 2);
-			ctx.drawText("Line 4", 0, 3);
+			drawText(ctx, "Line 1", 0, 0);
+			drawText(ctx, "Line 2", 0, 1);
+			drawText(ctx, "Line 3", 0, 2);
+			drawText(ctx, "Line 4", 0, 3);
 		});
 
 		// Second render with minimal changes
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawText("Line 1", 0, 0);
-			ctx.drawText("Line TWO", 0, 1); // Changed
-			ctx.drawText("Line 3", 0, 2);
-			ctx.drawText("Line 4", 0, 3);
+			drawText(ctx, "Line 1", 0, 0);
+			drawText(ctx, "Line TWO", 0, 1); // Changed
+			drawText(ctx, "Line 3", 0, 2);
+			drawText(ctx, "Line 4", 0, 3);
 		});
 
 		// The framebuffer optimizes by only updating changed content
@@ -762,16 +766,16 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Draw box
-			ctx.drawBox(0, 0, 8, 5, {
+			drawBox(ctx, 0, 0, 8, 5, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 			// Add text inside
-			ctx.drawText(" TEST ", 1, 1);
-			ctx.drawText(" BOX  ", 1, 2);
-			ctx.drawText(" HERE ", 1, 3);
+			drawText(ctx, " TEST ", 1, 1);
+			drawText(ctx, " BOX  ", 1, 2);
+			drawText(ctx, " HERE ", 1, 3);
 		});
 
 		// Check that we have a complete box with text
@@ -793,7 +797,7 @@ describe("Border Integration", () => {
 			// This should create proper junctions where borders meet
 
 			// Cell (0,0) - top-left
-			ctx.drawBox(0, 0, 5, 3, {
+			drawBox(ctx, 0, 0, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -801,7 +805,7 @@ describe("Border Integration", () => {
 			});
 
 			// Cell (0,1) - top-right
-			ctx.drawBox(4, 0, 5, 3, {
+			drawBox(ctx, 4, 0, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -809,7 +813,7 @@ describe("Border Integration", () => {
 			});
 
 			// Cell (1,0) - bottom-left
-			ctx.drawBox(0, 2, 5, 3, {
+			drawBox(ctx, 0, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -817,7 +821,7 @@ describe("Border Integration", () => {
 			});
 
 			// Cell (1,1) - bottom-right
-			ctx.drawBox(4, 2, 5, 3, {
+			drawBox(ctx, 4, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -825,10 +829,10 @@ describe("Border Integration", () => {
 			});
 
 			// Add cell content
-			ctx.drawText("A1", 1, 1);
-			ctx.drawText("B1", 5, 1);
-			ctx.drawText("A2", 1, 3);
-			ctx.drawText("B2", 5, 3);
+			drawText(ctx, "A1", 1, 1);
+			drawText(ctx, "B1", 5, 1);
+			drawText(ctx, "A2", 1, 3);
+			drawText(ctx, "B2", 5, 3);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -850,7 +854,7 @@ describe("Border Integration", () => {
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Test border merging with different styles
 			// Left cell with solid borders
-			ctx.drawBox(0, 0, 6, 3, {
+			drawBox(ctx, 0, 0, 6, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -858,7 +862,7 @@ describe("Border Integration", () => {
 			});
 
 			// Right cell with double borders (should merge with solid)
-			ctx.drawBox(5, 0, 6, 3, {
+			drawBox(ctx, 5, 0, 6, 3, {
 				top: {style: "double"},
 				right: {style: "double"},
 				bottom: {style: "double"},
@@ -866,8 +870,8 @@ describe("Border Integration", () => {
 			});
 
 			// Add content to differentiate the cells
-			ctx.drawText("Sol", 1, 1);
-			ctx.drawText("Dbl", 6, 1);
+			drawText(ctx, "Sol", 1, 1);
+			drawText(ctx, "Dbl", 6, 1);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -889,21 +893,21 @@ describe("Border Integration", () => {
 			// For collapsed borders, cells share borders at their edges
 
 			// Header row cells (row 0-2)
-			ctx.drawBox(0, 0, 5, 3, {
+			drawBox(ctx, 0, 0, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 
-			ctx.drawBox(4, 0, 5, 3, {
+			drawBox(ctx, 4, 0, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 
-			ctx.drawBox(8, 0, 5, 3, {
+			drawBox(ctx, 8, 0, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -911,21 +915,21 @@ describe("Border Integration", () => {
 			});
 
 			// Data row cells (row 2-4, sharing top border with header cells)
-			ctx.drawBox(0, 2, 5, 3, {
+			drawBox(ctx, 0, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 
-			ctx.drawBox(4, 2, 5, 3, {
+			drawBox(ctx, 4, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 
-			ctx.drawBox(8, 2, 5, 3, {
+			drawBox(ctx, 8, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -933,12 +937,12 @@ describe("Border Integration", () => {
 			});
 
 			// Cell content - placed inside the cells (max 3 chars per cell)
-			ctx.drawText("Nam", 1, 1);
-			ctx.drawText("Age", 5, 1);
-			ctx.drawText("Cty", 9, 1);
-			ctx.drawText("Jon", 1, 3);
-			ctx.drawText("25", 5, 3);
-			ctx.drawText("NYC", 9, 3);
+			drawText(ctx, "Nam", 1, 1);
+			drawText(ctx, "Age", 5, 1);
+			drawText(ctx, "Cty", 9, 1);
+			drawText(ctx, "Jon", 1, 3);
+			drawText(ctx, "25", 5, 3);
+			drawText(ctx, "NYC", 9, 3);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -954,7 +958,7 @@ describe("Border Integration", () => {
 		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawBox(1, 1, 4, 2, {
+			drawBox(ctx, 1, 1, 4, 2, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -974,13 +978,13 @@ describe("Border Integration", () => {
 		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawBox(1, 1, 6, 3, {
+			drawBox(ctx, 1, 1, 6, 3, {
 				top: {style: "double"},
 				right: {style: "double"},
 				bottom: {style: "double"},
 				left: {style: "double"},
 			});
-			ctx.drawText("Test", 2, 2);
+			drawText(ctx, "Test", 2, 2);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -996,8 +1000,8 @@ describe("Border Integration", () => {
 		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawBox(0, 0, 5, 3, {top: {style: "solid"}, left: {style: "solid"}});
-			ctx.drawText("Part", 1, 1);
+			drawBox(ctx, 0, 0, 5, 3, {top: {style: "solid"}, left: {style: "solid"}});
+			drawText(ctx, "Part", 1, 1);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1017,8 +1021,8 @@ describe("Border Integration", () => {
 		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawBox(0, 0, 6, 4, {left: {style: "solid"}});
-			ctx.drawText("Quote", 2, 1);
+			drawBox(ctx, 0, 0, 6, 4, {left: {style: "solid"}});
+			drawText(ctx, "Quote", 2, 1);
 		});
 
 		// includes, not startsWith: the reset frame's erase sequence survives
@@ -1034,14 +1038,14 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Top row - 2 cells
-			ctx.drawBox(0, 0, 4, 2, {
+			drawBox(ctx, 0, 0, 4, 2, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 
-			ctx.drawBox(3, 0, 4, 2, {
+			drawBox(ctx, 3, 0, 4, 2, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -1049,7 +1053,7 @@ describe("Border Integration", () => {
 			});
 
 			// Bottom left cell only
-			ctx.drawBox(0, 1, 4, 2, {
+			drawBox(ctx, 0, 1, 4, 2, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -1073,7 +1077,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Solid border cell
-			ctx.drawBox(0, 0, 3, 3, {
+			drawBox(ctx, 0, 0, 3, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
@@ -1081,7 +1085,7 @@ describe("Border Integration", () => {
 			});
 
 			// Double border cell
-			ctx.drawBox(2, 0, 3, 3, {
+			drawBox(ctx, 2, 0, 3, 3, {
 				top: {style: "double"},
 				right: {style: "double"},
 				bottom: {style: "double"},
@@ -1089,16 +1093,16 @@ describe("Border Integration", () => {
 			});
 
 			// Heavy border cell
-			ctx.drawBox(4, 0, 3, 3, {
+			drawBox(ctx, 4, 0, 3, 3, {
 				top: {style: "groove"},
 				right: {style: "groove"},
 				bottom: {style: "groove"},
 				left: {style: "groove"},
 			});
 
-			ctx.drawText("S", 1, 1);
-			ctx.drawText("D", 3, 1);
-			ctx.drawText("H", 5, 1);
+			drawText(ctx, "S", 1, 1);
+			drawText(ctx, "D", 3, 1);
+			drawText(ctx, "H", 5, 1);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1115,7 +1119,7 @@ describe("Border Integration", () => {
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
 			// Outer border
-			ctx.drawBox(0, 0, 9, 7, {
+			drawBox(ctx, 0, 0, 9, 7, {
 				top: {style: "double"},
 				right: {style: "double"},
 				bottom: {style: "double"},
@@ -1123,16 +1127,16 @@ describe("Border Integration", () => {
 			});
 
 			// Inner border
-			ctx.drawBox(2, 2, 5, 3, {
+			drawBox(ctx, 2, 2, 5, 3, {
 				top: {style: "solid"},
 				right: {style: "solid"},
 				bottom: {style: "solid"},
 				left: {style: "solid"},
 			});
 
-			ctx.drawText("Out", 1, 1);
-			ctx.drawText("In", 3, 3);
-			ctx.drawText("Out", 5, 5); // Moved left by 2 to avoid overlap
+			drawText(ctx, "Out", 1, 1);
+			drawText(ctx, "In", 3, 3);
+			drawText(ctx, "Out", 5, 5); // Moved left by 2 to avoid overlap
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1156,14 +1160,14 @@ describe("Border Integration", () => {
 					const x = col * 3;
 					const y = row * 2;
 
-					ctx.drawBox(x, y, 4, 3, {
+					drawBox(ctx, x, y, 4, 3, {
 						top: {style: "solid"},
 						right: {style: "solid"},
 						bottom: {style: "solid"},
 						left: {style: "solid"},
 					});
 
-					ctx.drawText(`${row + 1}${col + 1}`, x + 1, y + 1);
+					drawText(ctx, `${row + 1}${col + 1}`, x + 1, y + 1);
 				}
 			}
 		});
@@ -1182,15 +1186,15 @@ describe("Border Integration", () => {
 		repaintAll(framebuffer);
 
 		const output = renderFrame(framebuffer, {offset: 0}, (ctx) => {
-			ctx.drawRect(1, 0, 5, 3, 0x00ff00);
-			ctx.drawBox(1, 0, 5, 3, {
+			drawRect(ctx, 1, 0, 5, 3, 0x00ff00);
+			drawBox(ctx, 1, 0, 5, 3, {
 				top: {style: "solid", color: 0xff0000},
 				right: {style: "solid", color: 0xff0000},
 				bottom: {style: "solid", color: 0xff0000},
 				left: {style: "solid", color: 0xff0000},
 			});
 
-			ctx.drawText("Col", 2, 1);
+			drawText(ctx, "Col", 2, 1);
 		});
 
 		const cleanOutput = stripControlCodes(output);

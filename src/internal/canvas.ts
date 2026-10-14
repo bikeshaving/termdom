@@ -22,6 +22,12 @@ import {
 import {
 	type CellContext,
 	type CellStyle,
+	clearGrid,
+	clearRange,
+	drawBox,
+	drawLine,
+	drawRect,
+	drawText,
 	LINE_STYLES,
 	type LineStyle,
 	readCell,
@@ -3377,7 +3383,7 @@ export class CanvasCellGridContext {
 			return;
 		}
 		const [x0, y0, x1, y1] = rect;
-		slots.gridHost.cells().drawRect(x0, y0, x1 - x0, y1 - y0, fill);
+		drawRect(slots.gridHost.cells(), x0, y0, x1 - x0, y1 - y0, fill);
 		slots.gridHost.changed();
 	}
 
@@ -3391,7 +3397,7 @@ export class CanvasCellGridContext {
 		const x0 = Math.max(0, rect[0]);
 		const x1 = Math.min(cols, rect[2]);
 		for (let row = Math.max(0, rect[1]); row < Math.min(rows, rect[3]); row++) {
-			grid.clearRange(row * cols + x0, row * cols + x1);
+			clearRange(grid, row * cols + x0, row * cols + x1);
 		}
 		slots.gridHost.changed();
 	}
@@ -3460,7 +3466,8 @@ export class CanvasCellGridContext {
 				inside &&
 				grid.cluster[index] !== 0 &&
 				readCell(grid, index)?.inverse === true;
-			cells.drawText(
+			drawText(
+				cells,
 				cluster,
 				col,
 				row,
@@ -3497,13 +3504,13 @@ export class CanvasCellGridContext {
 		const line: LineStyle = {style, color};
 		const cells = slots.gridHost.cells();
 		if (b === d) {
-			cells.drawLine(Math.min(a, c), b, Math.max(a, c) + 1, b, {
+			drawLine(cells, Math.min(a, c), b, Math.max(a, c) + 1, b, {
 				...line,
 				startCap: a === c ? "square" : undefined,
 				endCap: a === c ? "square" : undefined,
 			});
 		} else if (a === c) {
-			cells.drawLine(a, Math.min(b, d), a, Math.max(b, d) + 1, line);
+			drawLine(cells, a, Math.min(b, d), a, Math.max(b, d) + 1, line);
 		} else {
 			return;
 		}
@@ -3527,17 +3534,16 @@ export class CanvasCellGridContext {
 		const [x0, y0, x1, y1] = rect;
 		const side: LineStyle = {style, color};
 		const corner = slots.gridState.lineJoin === "round" ? "round" : undefined;
-		slots.gridHost.cells()
-			.drawBox(x0, y0, x1 - x0, y1 - y0, {
-				top: side,
-				right: side,
-				bottom: side,
-				left: side,
-				topLeft: corner,
-				topRight: corner,
-				bottomRight: corner,
-				bottomLeft: corner,
-			});
+		drawBox(slots.gridHost.cells(), x0, y0, x1 - x0, y1 - y0, {
+			top: side,
+			right: side,
+			bottom: side,
+			left: side,
+			topLeft: corner,
+			topRight: corner,
+			bottomRight: corner,
+			bottomLeft: corner,
+		});
 		slots.gridHost.changed();
 	}
 
@@ -3635,7 +3641,7 @@ export class CanvasCellGridContext {
 						: null,
 				);
 				if (half !== null) {
-					cells.drawText(half.char, x, y, half.style);
+					drawText(cells, half.char, x, y, half.style);
 				}
 			}
 		}
@@ -3694,7 +3700,7 @@ export class CanvasCellGridContext {
 
 	reset(): void {
 		const slots = _(this);
-		slots.gridHost.cells().grid.clear();
+		clearGrid(slots.gridHost.cells().grid);
 		slots.gridState = defaultGridState();
 		slots.gridStack = [];
 		slots.gridHost.changed();

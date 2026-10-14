@@ -543,15 +543,6 @@ export class LayoutNode {
 		this.invalidate();
 	}
 
-	insertChild(child: LayoutNode, index: number): void {
-		child.parent = this;
-		this.children.splice(index, 0, child);
-		if (child.outOfFlowCount !== 0) {
-			countOutOfFlow(this, child.outOfFlowCount);
-		}
-		invalidateAncestors(this);
-	}
-
 	removeChild(child: LayoutNode): void {
 		const index = this.children.indexOf(child);
 		if (index !== -1) {
@@ -564,36 +555,9 @@ export class LayoutNode {
 		}
 	}
 
-	// Searches from the tail. Callers mostly ask about the child they just
-	// appended.
-	getChildIndex(child: LayoutNode): number {
-		return this.children.lastIndexOf(child);
-	}
-
 	invalidate(): void {
 		this.stale = true;
 		invalidateAncestors(this);
-	}
-
-	getComputedGridTracks(
-		rows: boolean,
-	): {sizes: number[]; offset: number} | null {
-		const sizes = rows ? this.result.gridRows : this.result.gridColumns;
-		if (!sizes) {
-			return null;
-		}
-		return {
-			sizes,
-			offset: rows ? this.result.gridRowOffset : this.result.gridColumnOffset,
-		};
-	}
-
-	getComputedWidth(): number {
-		return !Number.isNaN(this.result.width) ? this.result.width : 0;
-	}
-
-	getComputedHeight(): number {
-		return !Number.isNaN(this.result.height) ? this.result.height : 0;
 	}
 
 	performLayout(ownerWidth: number, ownerHeight: number): void {
@@ -634,6 +598,54 @@ export class LayoutNode {
 		roundToGrid(this, 0, 0);
 		this.stale = false;
 	}
+}
+
+export function insertChild(
+	layoutNode: LayoutNode,
+	child: LayoutNode,
+	index: number,
+): void {
+	child.parent = layoutNode;
+	layoutNode.children.splice(index, 0, child);
+	if (child.outOfFlowCount !== 0) {
+		countOutOfFlow(layoutNode, child.outOfFlowCount);
+	}
+	invalidateAncestors(layoutNode);
+}
+
+// Searches from the tail. Callers mostly ask about the child they just
+// appended.
+export function getChildIndex(
+	layoutNode: LayoutNode,
+	child: LayoutNode,
+): number {
+	return layoutNode.children.lastIndexOf(child);
+}
+
+export function getComputedGridTracks(
+	layoutNode: LayoutNode,
+	rows: boolean,
+): {sizes: number[]; offset: number} | null {
+	const sizes = rows
+		? layoutNode.result.gridRows
+		: layoutNode.result.gridColumns;
+	if (!sizes) {
+		return null;
+	}
+	return {
+		sizes,
+		offset: rows
+			? layoutNode.result.gridRowOffset
+			: layoutNode.result.gridColumnOffset,
+	};
+}
+
+export function getComputedWidth(layoutNode: LayoutNode): number {
+	return !Number.isNaN(layoutNode.result.width) ? layoutNode.result.width : 0;
+}
+
+export function getComputedHeight(layoutNode: LayoutNode): number {
+	return !Number.isNaN(layoutNode.result.height) ? layoutNode.result.height : 0;
 }
 
 // The values and edge records nodes share. Most boxes have one of a few
