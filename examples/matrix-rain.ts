@@ -7,20 +7,21 @@ import {TermDOM} from "@b9g/termdom";
 //             glyphs and a translucent black fillRect over everything to fade
 //   dom       a <pre> of one <span> per cell, recolored as the rain falls
 //
-// Usage: matrix-rain.ts [cellgrid|2d|dom] [fps] [shades] [katakana|ascii]
+// Usage: matrix-rain.ts [cellgrid|2d|dom] [fps] [shades] [katakana|ascii|mixed]
 //
 // With 1 shade the trails are one green, as cmatrix draws them. ascii
 // draws letters and digits, which every terminal font has; a terminal
-// that finds katakana in a fallback font can draw them far slower. q quits.
+// that finds katakana in a fallback font can draw them far slower. mixed
+// draws both. q quits.
 const usage =
-  "Usage: matrix-rain.ts [cellgrid|2d|dom] [fps] [shades] [katakana|ascii]";
+  "Usage: matrix-rain.ts [cellgrid|2d|dom] [fps] [shades] [katakana|ascii|mixed]";
 const mode = process.argv[2] ?? "cellgrid";
 const fps = Number(process.argv[3]) || 30;
 const LEVELS = 1 + Math.max(1, Number(process.argv[4]) || 15);
 const glyphSet = process.argv[5] ?? "katakana";
 if (
   !["cellgrid", "2d", "dom"].includes(mode) ||
-  !["katakana", "ascii"].includes(glyphSet)
+  !["katakana", "ascii", "mixed"].includes(glyphSet)
 ) {
   console.error(usage);
   process.exit(1);
@@ -39,15 +40,17 @@ document.head.innerHTML = `
 `;
 
 // Half-width katakana, digits and a few symbols, as in the film.
+const KATAKANA = [
+  ...Array.from({length: 0xff9d - 0xff66 + 1}, (_, i) =>
+    String.fromCharCode(0xff66 + i)),
+  ..."0123456789:.=*+-<>¦|",
+];
+const ASCII = [
+  ..."ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$+-*=<>:.",
+];
 const GLYPHS = glyphSet === "ascii"
-  ? [
-    ..."ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$+-*=<>:.",
-  ]
-  : [
-    ...Array.from({length: 0xff9d - 0xff66 + 1}, (_, i) =>
-      String.fromCharCode(0xff66 + i)),
-    ..."0123456789:.=*+-<>¦|",
-  ];
+  ? ASCII
+  : glyphSet === "mixed" ? [...KATAKANA, ...ASCII] : KATAKANA;
 const glyph = () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
 
 // Brightness from 0 (gone) to LEVELS - 1 (just behind the head), each
