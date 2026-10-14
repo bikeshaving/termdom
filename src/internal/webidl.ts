@@ -39,6 +39,9 @@ interface Check {
 	// The runtime's own classes of those names, whose objects the engine
 	// takes too.
 	runtimeTypes: Constructor[];
+	// The classes it last took objects of.
+	accepted: Constructor | null;
+	acceptedBefore: Constructor | null;
 	label: string;
 	callback: boolean;
 	nullable: boolean;
@@ -88,6 +91,8 @@ function parseCheck(
 		return {
 			types: [],
 			runtimeTypes: [],
+			accepted: null,
+			acceptedBefore: null,
 			label: "Function",
 			callback: true,
 			nullable,
@@ -107,6 +112,8 @@ function parseCheck(
 	return {
 		types,
 		runtimeTypes,
+		accepted: null,
+		acceptedBefore: null,
 		label: names[0],
 		callback: false,
 		nullable,
@@ -143,7 +150,17 @@ export function implementsInterface(
 function isInstance(value: unknown, check: Check): boolean {
 	const type = typeOf(value);
 	if (type !== null) {
-		return check.types.some((t) => implementsInterface(type, t));
+		if (type === check.accepted || type === check.acceptedBefore) {
+			return true;
+		}
+		for (const t of check.types) {
+			if (implementsInterface(type, t)) {
+				check.acceptedBefore = check.accepted;
+				check.accepted = type;
+				return true;
+			}
+		}
+		return false;
 	}
 	return check.runtimeTypes.some((runtime) => value instanceof runtime) &&
 		!check.types.some((t) => value instanceof t);
@@ -160,6 +177,45 @@ function arity(context: string, required: number, count: number): TypeError {
 // The arguments as the operation takes them: a callback that is a
 // function, an object of the interface, or, where a string will do, a
 // string. Null for a list that needs no conversion.
+// One argument as the operation takes it: a callback that is a function,
+// an object of the interface, or, where a string will do, a string.
+function convertValue(
+	value: unknown,
+	check: Check,
+	index: number,
+	required: number,
+	context: string,
+): unknown {
+	if (
+		(value === undefined && index >= required) ||
+		(check.nullable && value == null)
+	) {
+		return value;
+	}
+	if (check.callback) {
+		if (typeof value !== "function") {
+			throw new TypeError(
+				`Failed to ${context}: parameter ${index + 1} is not of type 'Function'.`,
+			);
+		}
+		return value;
+	}
+	if (isInstance(value, check)) {
+		return value;
+	}
+	if (check.stringifies) {
+		return (typeof value === "object" && value !== null) ||
+			typeof value === "function"
+			? String(value)
+			: value;
+	}
+	throw new TypeError(
+		`Failed to ${context}: parameter ${index + 1} is not of type '${check.label}'.`,
+	);
+}
+
+// The arguments as the operation takes them, or null for a list that
+// needs no conversion.
 function convertArguments(
 	args: ArrayLike<unknown>,
 	member: Member,
@@ -173,37 +229,11 @@ function convertArguments(
 		if (check == null) {
 			continue;
 		}
-		const value = args[i];
-		if (value === undefined && i >= member.required) {
-			continue;
+		const value = convertValue(args[i], check, i, member.required, context);
+		if (value !== args[i]) {
+			converted ??= Array.from(args);
+			converted[i] = value;
 		}
-		if (check.nullable && value == null) {
-			continue;
-		}
-		if (check.callback) {
-			if (typeof value !== "function") {
-				throw new TypeError(
-					`Failed to ${context}: parameter ${i + 1} is not of type 'Function'.`,
-				);
-			}
-			continue;
-		}
-		if (isInstance(value, check)) {
-			continue;
-		}
-		if (check.stringifies) {
-			if (
-				(typeof value === "object" && value !== null) ||
-				typeof value === "function"
-			) {
-				converted ??= Array.from(args);
-				converted[i] = String(value);
-			}
-			continue;
-		}
-		throw new TypeError(
-			`Failed to ${context}: parameter ${i + 1} is not of type '${check.label}'.`,
-		);
 	}
 	return converted;
 }
@@ -214,9 +244,24 @@ function convertArguments(
  * class calls the member again on the same object through `super`, and
  * that call runs the next definition up the class's chain.
  */
+type Operation = (...args: unknown[]) => unknown;
+
+// Whether a definition calls `super`, which a moved-up one reaches the
+// binding through.
+function callsSuper(descriptor: PropertyDescriptor): boolean {
+	return [descriptor.value, descriptor.get, descriptor.set].some(
+		(part) =>
+			typeof part === "function" &&
+		/\bsuper\b/.test(Function.prototype.toString.call(part)),
+	);
+}
+
 interface Resolve {
 	// The one definition every object runs, when no class moved its own up.
 	fixed: PropertyDescriptor | undefined;
+	// The definition an object of a class runs, when none that moved up
+	// calls `super`, so a call needs no stack.
+	direct: ((type: Constructor) => PropertyDescriptor | undefined) | undefined;
 	enter(type: Constructor, object: unknown): PropertyDescriptor | undefined;
 	leave(): void;
 }
@@ -228,46 +273,105 @@ function wrapOperation(
 	member: Member,
 	resolve: Resolve,
 ): (...args: unknown[]) => unknown {
-	const hasChecks = member.checks.some((check) => check !== null);
 	const context = `execute '${name}' on '${ownerName}'`;
-	const fixed = resolve.fixed?.value as
-		((...args: unknown[]) => unknown) | undefined;
+	const {required, checks} = member;
+	const fixed = resolve.fixed?.value as Operation | undefined;
+	const direct = resolve.direct;
 	let accepted: Constructor | null = null;
 	let acceptedBefore: Constructor | null = null;
-	const wrapper = {
-		[name](this: unknown): unknown {
-			const type = typeOf(this);
-			if (type === null) {
+	const brand = (object: unknown): Constructor => {
+		const type = typeOf(object);
+		if (type === null) {
+			throw new TypeError("Illegal invocation");
+		}
+		if (type !== accepted && type !== acceptedBefore) {
+			if (!implementsInterface(type, owner)) {
 				throw new TypeError("Illegal invocation");
 			}
-			if (type !== accepted && type !== acceptedBefore) {
-				if (!implementsInterface(type, owner)) {
-					throw new TypeError("Illegal invocation");
-				}
-				acceptedBefore = accepted;
-				accepted = type;
-			}
-			// eslint-disable-next-line prefer-rest-params
-			const args = arguments;
-			if (args.length < member.required) {
-				throw arity(context, member.required, args.length);
-			}
-			const converted = hasChecks
-				? convertArguments(args, member, context)
-				: null;
+			acceptedBefore = accepted;
+			accepted = type;
+		}
+		return type;
+	};
+	const run =
+		(object: unknown, type: Constructor, args: ArrayLike<unknown>) => {
+			const converted = convertArguments(args, member, context) ?? args;
 			if (fixed !== undefined) {
-				return Reflect.apply(fixed, this, converted ?? args);
+				return Reflect.apply(fixed, object, converted);
 			}
-			const implementation =
-				resolve.enter(type, this)!.value as (...args: unknown[]) => unknown;
+			if (direct !== undefined) {
+				return Reflect.apply(
+					direct(type)!.value as Operation,
+					object,
+					converted,
+				);
+			}
+			const implementation = resolve.enter(type, object)!.value as Operation;
 			try {
-				return Reflect.apply(implementation, this, converted ?? args);
+				return Reflect.apply(implementation, object, converted);
 			} finally {
 				resolve.leave();
 			}
-		},
-	}[name];
-	Object.defineProperty(wrapper, "length", {value: member.required});
+		};
+	let wrapper: Operation;
+	if (member.variadic || checks.length > 3) {
+		wrapper = {
+			[name](this: unknown): unknown {
+				const type = brand(this);
+				if (arguments.length < required) {
+					throw arity(context, required, arguments.length);
+				}
+				// eslint-disable-next-line prefer-rest-params
+				return run(this, type, arguments);
+			},
+		}[name];
+	} else {
+		// Three named parameters and the count, so a call makes no array.
+		const [first, second, third] = checks;
+		wrapper = {
+			[name](this: unknown, a?: unknown, b?: unknown, c?: unknown): unknown {
+				const type = brand(this);
+				const count = arguments.length;
+				if (count < required) {
+					throw arity(context, required, count);
+				}
+				if (count > 0 && first != null) {
+					a = convertValue(a, first, 0, required, context);
+				}
+				if (count > 1 && second != null) {
+					b = convertValue(b, second, 1, required, context);
+				}
+				if (count > 2 && third != null) {
+					c = convertValue(c, third, 2, required, context);
+				}
+				let implementation = fixed;
+				if (implementation === undefined && direct !== undefined) {
+					implementation = direct(type)!.value as Operation;
+				}
+				if (implementation === undefined || count > 3) {
+					const args = [a, b, c].slice(0, count);
+					for (let i = 3; i < count; i++) {
+						// eslint-disable-next-line prefer-rest-params
+						args.push(arguments[i]);
+					}
+					return implementation === undefined
+						? run(this, type, args)
+						: Reflect.apply(implementation, this, args);
+				}
+				switch (count) {
+					case 0:
+						return implementation.call(this);
+					case 1:
+						return implementation.call(this, a);
+					case 2:
+						return implementation.call(this, a, b);
+					default:
+						return implementation.call(this, a, b, c);
+				}
+			},
+		}[name];
+	}
+	Object.defineProperty(wrapper, "length", {value: required});
 	return wrapper;
 }
 
@@ -308,6 +412,9 @@ function wrapAttribute(
 			}
 			if (fixedGet !== undefined) {
 				return fixedGet.call(this);
+			}
+			if (resolve.direct !== undefined) {
+				return resolve.direct(type)!.get!.call(this);
 			}
 			const getter = resolve.enter(type, this)!.get!;
 			try {
@@ -457,6 +564,8 @@ export function installInterfaces(
 	// leave it.
 	const originals = new Map<object, Map<string, PropertyDescriptor>>();
 	const misplaced: Array<[Constructor, string]> = [];
+	// The classes that define each misplaced member, by its name.
+	const misplacedTypes = new Map<string, Constructor[]>();
 	for (const [name, type] of byName) {
 		const own = new Map<string, PropertyDescriptor>();
 		originals.set(type.prototype, own);
@@ -473,12 +582,15 @@ export function installInterfaces(
 				[...placed].some((owner) => related(type, owner))
 			) {
 				misplaced.push([type, key]);
+				let types = misplacedTypes.get(key);
+				if (types === undefined) {
+					types = [];
+					misplacedTypes.set(key, types);
+				}
+				types.push(type);
 			}
 		}
 	}
-
-	const isMisplaced = (type: Constructor, key: string): boolean =>
-		!members.get(interfaceNames.get(type)!)?.has(key);
 
 	// The definition an object of `type` runs for `owner`'s `key`: a
 	// descendant's that moved up into it, then the owner's own, then one
@@ -507,22 +619,54 @@ export function installInterfaces(
 			}
 		}
 		const overrides = new Map<Constructor, PropertyDescriptor>();
-		for (const type of byName.values()) {
-			const descriptor = originals.get(type.prototype)?.get(key);
-			if (
-				descriptor !== undefined &&
-				type !== owner &&
-				implementsInterface(type, owner) &&
-				isMisplaced(type, key)
-			) {
-				overrides.set(type, descriptor);
+		for (const type of misplacedTypes.get(key) ?? []) {
+			if (type !== owner && implementsInterface(type, owner)) {
+				overrides.set(type, originals.get(type.prototype)!.get(key)!);
 			}
 		}
 		if (base === undefined && overrides.size === 0) {
 			return null;
 		}
 		if (overrides.size === 0) {
-			return {fixed: base, enter: () => base, leave() {}};
+			return {fixed: base, direct: undefined, enter: () => base, leave() {}};
+		}
+		const chainFor = (type: Constructor) => {
+			const chain: Array<PropertyDescriptor | undefined> = [];
+			for (const current of [type, ...ancestors(type)]) {
+				if (current === owner) {
+					break;
+				}
+				const override = overrides.get(current);
+				if (override !== undefined) {
+					chain.push(override);
+				}
+			}
+			chain.push(base);
+			return chain;
+		};
+		if (![...overrides.values()].some(callsSuper)) {
+			const firsts = new Map<Constructor, PropertyDescriptor | undefined>();
+			let lastType: Constructor | null = null;
+			let lastFirst: PropertyDescriptor | undefined;
+			let priorType: Constructor | null = null;
+			let priorFirst: PropertyDescriptor | undefined;
+			const direct = (type: Constructor) => {
+				if (type === lastType) {
+					return lastFirst;
+				}
+				if (type === priorType) {
+					return priorFirst;
+				}
+				if (!firsts.has(type)) {
+					firsts.set(type, chainFor(type)[0]);
+				}
+				priorType = lastType;
+				priorFirst = lastFirst;
+				lastType = type;
+				lastFirst = firsts.get(type);
+				return lastFirst;
+			};
+			return {fixed: undefined, direct, enter: direct, leave() {}};
 		}
 		const chains =
 			new Map<Constructor, Array<PropertyDescriptor | undefined>>();
@@ -533,20 +677,11 @@ export function installInterfaces(
 		let lastChain: Array<PropertyDescriptor | undefined> = [];
 		return {
 			fixed: undefined,
+			direct: undefined,
 			enter(type, object) {
 				let chain = type === lastType ? lastChain : chains.get(type);
 				if (chain === undefined) {
-					chain = [];
-					for (const current of [type, ...ancestors(type)]) {
-						if (current === owner) {
-							break;
-						}
-						const override = overrides.get(current);
-						if (override !== undefined) {
-							chain.push(override);
-						}
-					}
-					chain.push(base);
+					chain = chainFor(type);
 					chains.set(type, chain);
 				}
 				lastType = type;
