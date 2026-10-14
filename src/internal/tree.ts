@@ -5,6 +5,7 @@
  * one can import it without importing the DOM.
  */
 import type {Attr, AttributeSlots, Document, Element, Node} from "./dom.ts";
+import type {Exchange} from "./exchange.ts";
 import {_, objectOf, rememberObject, type Slots, slotsOf} from "./slots.ts";
 import {toASCIILowercase} from "./text.ts";
 
@@ -195,4 +196,28 @@ export function namespaceOf(element: globalThis.Element): string | null {
 export function parentElement(node: Node): Element | null {
 	const parent = objectOf(_(node).parent);
 	return parent !== null && isElement(parent) ? parent : null;
+}
+
+/** The terminal behind a document, while it is attached to one. */
+export function getDocumentExchange(
+	document: globalThis.Document | null,
+): Exchange | null {
+	if (document === null) {
+		return null;
+	}
+	const attached = getAttachedDocument(document as unknown as Document);
+	return attached === undefined ? null : _(attached).extra.exchange;
+}
+
+// A document that has been adopted. It renders, and knows what it
+// renders through.
+export type AttachedDocument = Document;
+
+export function getAttachedDocument(
+	node: globalThis.Node,
+): AttachedDocument | undefined {
+	const document = _(node as Node).document;
+	return _(document).extra.exchange !== undefined
+		? (document as AttachedDocument)
+		: undefined;
 }

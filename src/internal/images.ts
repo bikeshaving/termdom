@@ -12,7 +12,6 @@
  * and the canvas and the painter read it back through the registry at
  * the bottom.
  */
-import {DOMException} from "./dom.ts";
 import type {CellGrid} from "./framebuffer.ts";
 import {clearTimeout, setTimeout} from "./timers.ts";
 

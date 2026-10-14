@@ -7,12 +7,12 @@
 
 import {getCellSize, getComputedValue, resolveLength} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
-import {getDocumentExchange} from "./dom.ts";
 import type {CellStyle} from "./framebuffer.ts";
 import {getStringWidth, graphemeSegmenter} from "./text.ts";
 import {
 	attributeOf,
 	containsOf,
+	getDocumentExchange,
 	localNameOf,
 	MATHML_NAMESPACE,
 	namespaceOf,
