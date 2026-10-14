@@ -893,3 +893,44 @@ test("the arrow keys step over a contenteditable=false island and stop only on e
 	expect(seen).toEqual(["", "On Monday", "> Hi", "On Monday", ""]);
 	dom.dispose();
 });
+
+test("a caret between inline boxes stands at the edge of the box, whatever its padding", async () => {
+	const chip =
+		"<span contenteditable=\"false\" style=\"padding: 0 1ch\">Ada</span>";
+	const fixture = await withHost(`<div contenteditable>${chip}</div>`);
+	const {document, host} = fixture;
+	host.focus();
+	const span = host.firstChild;
+	const at = async (node: any, offset: number) => {
+		document.getSelection().setBaseAndExtent(node, offset, node, offset);
+		await nextFrame(fixture.dom);
+		return fixture.cursor().x;
+	};
+	// The chip's border box covers cells 0 to 4.
+	expect(await at(host, 1)).toBe(5);
+	expect(await at(host, 0)).toBe(0);
+	const empty = document.createTextNode("");
+	host.append(empty);
+	expect(await at(empty, 0)).toBe(5);
+	empty.data = " ";
+	expect(await at(empty, 0)).toBe(5);
+	empty.data = "ab";
+	expect(await at(empty, 2)).toBe(7);
+	span.style.paddingLeft = "2ch";
+	expect(await at(host, 0)).toBe(0);
+	fixture.dom.dispose();
+});
+
+test("a caret after an inline box with a margin stands past the margin", async () => {
+	const fixture = await withHost(
+		"<div style=\"display: flex\"><div contenteditable>" +
+		"<span contenteditable=\"false\" style=\"margin-right: 2ch\">Ada</span>" +
+		"</div></div>",
+	);
+	const {document, host} = fixture;
+	host.focus();
+	document.getSelection().setBaseAndExtent(host, 1, host, 1);
+	await nextFrame(fixture.dom);
+	expect(fixture.cursor().x).toBe(5);
+	fixture.dom.dispose();
+});
