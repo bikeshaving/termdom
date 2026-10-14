@@ -29,6 +29,7 @@ import {
 	adoptStyleSheets,
 	type Cascade,
 	type CellSizeSetting,
+	CSSOM_INTERFACES,
 	getAdoptedStyleSheets,
 	getBoxModel,
 	getCellSize,
@@ -98,6 +99,7 @@ import {
 	slotsOf,
 	type Step,
 	superStep,
+	typeOf,
 } from "./slots.ts";
 import {
 	getNextGraphemeBoundary,
@@ -108,6 +110,12 @@ import {
 	trimASCIIWhitespace,
 } from "./text.ts";
 import {clearTimeout, queueMicrotask, setTimeout} from "./timers.ts";
+import {
+	type Constructor,
+	installInterfaces,
+	interfaceNameOf,
+	windowMember,
+} from "./webidl.ts";
 
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 export const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
@@ -37606,10 +37614,10 @@ function createHistory(): globalThis.History {
 		forward(): void {},
 		go(_delta?: number): void {},
 		pushState(data: any, _unused: string, _url?: string | URL | null): void {
-			state = structuredClone(data);
+			state = cloneStructured(data, "execute 'pushState' on 'History'");
 		},
 		replaceState(data: any, _unused: string, _url?: string | URL | null): void {
-			state = structuredClone(data);
+			state = cloneStructured(data, "execute 'replaceState' on 'History'");
 		},
 	};
 }
@@ -37930,7 +37938,10 @@ export class PerformanceMark extends PerformanceEntry {
 		slots.entryType = "mark";
 		slots.startTime = startTime;
 		slots.duration = 0;
-		slots.detail = structuredClone(options.detail ?? null);
+		slots.detail = cloneStructured(
+			options.detail ?? null,
+			"construct 'PerformanceMark'",
+		);
 	}
 
 	get detail(): unknown {
@@ -38080,7 +38091,10 @@ export class Performance extends EventTarget {
 		slots.entryType = "measure";
 		slots.startTime = start;
 		slots.duration = end - start;
-		slots.detail = structuredClone(options?.detail ?? null);
+		slots.detail = cloneStructured(
+			options?.detail ?? null,
+			"execute 'measure' on 'Performance'",
+		);
 		entries.push(measure);
 		return measure;
 	}
@@ -38984,7 +38998,7 @@ export class Window extends EventTarget {
 	): void;
 	postMessage(message: any, options?: globalThis.WindowPostMessageOptions): void;
 	postMessage(message: any): void {
-		const data = structuredClone(message);
+		const data = cloneStructured(message, "execute 'postMessage' on 'Window'");
 		const origin = this.origin;
 		setTimeout(() => {
 			dispatch(
@@ -39069,6 +39083,24 @@ installEventHandlers(Window.prototype, [
 	"ondeviceorientationabsolute",
 	"onorientationchange",
 ]);
+
+// A select and a form support indexed properties, which this engine
+// gives their collections but not the elements themselves, so each
+// iterates its collection.
+Object.defineProperty(HTMLSelectElement.prototype, Symbol.iterator, {
+	value: function values(this: HTMLSelectElement) {
+		return Array.prototype.values.call(this.options);
+	},
+	writable: true,
+	configurable: true,
+});
+Object.defineProperty(HTMLFormElement.prototype, Symbol.iterator, {
+	value: function values(this: HTMLFormElement) {
+		return Array.prototype.values.call(this.elements);
+	},
+	writable: true,
+	configurable: true,
+});
 
 // The one place an interface joins the window. A class not listed here
 // is not visible to script, whatever this module exports.
@@ -39258,6 +39290,123 @@ const runtime = {
 	structuredClone: globalThis.structuredClone.bind(globalThis),
 };
 
+/**
+ * HTML's structured clone of `value`, for the algorithm `context` names
+ * in the DataCloneError it throws: "execute 'postMessage' on 'Window'".
+ * A platform object is refused, unless it is one HTML can serialize, and
+ * that is copied.
+ */
+function cloneStructured(value: unknown, context: string): any {
+	return containsPlatformObject(value, new Set(), context)
+		? cloneWithPlatformObjects(value, new Map(), context)
+		: runtime.structuredClone(value);
+}
+
+function isContainer(value: object): boolean {
+	const prototype = Object.getPrototypeOf(value) as object | null;
+	return Array.isArray(value) ||
+		prototype === Object.prototype ||
+		prototype === null ||
+		value instanceof Map ||
+		value instanceof Set;
+}
+
+function containsPlatformObject(
+	value: unknown,
+	seen: Set<object>,
+	context: string,
+): boolean {
+	if (
+		(typeof value !== "object" && typeof value !== "function") ||
+		value === null ||
+		seen.has(value)
+	) {
+		return false;
+	}
+	seen.add(value);
+	if (typeOf(value) !== null) {
+		if (!(value instanceof DOMRectReadOnly || value instanceof ImageData)) {
+			throw domError(
+				"DataCloneError",
+				`Failed to ${context}: ${interfaceNameOf(value)} object could not be cloned.`,
+			);
+		}
+		return true;
+	}
+	if (!isContainer(value)) {
+		return false;
+	}
+	let found = false;
+	const items = value instanceof Map
+		? [...value.keys(), ...value.values()]
+		: value instanceof Set ? [...value] : Object.values(value);
+	for (const item of items) {
+		found = containsPlatformObject(item, seen, context) || found;
+	}
+	return found;
+}
+
+function cloneWithPlatformObjects(
+	value: unknown,
+	copies: Map<object, unknown>,
+	context: string,
+): unknown {
+	if (
+		(typeof value !== "object" && typeof value !== "function") || value === null
+	) {
+		return value;
+	}
+	if (copies.has(value)) {
+		return copies.get(value);
+	}
+	let copy: unknown;
+	if (value instanceof DOMRectReadOnly) {
+		const Type = value instanceof DOMRect ? DOMRect : DOMRectReadOnly;
+		copy = new Type(value.x, value.y, value.width, value.height);
+	} else if (value instanceof ImageData) {
+		copy = new ImageData(
+			new Uint8ClampedArray(value.data),
+			value.width,
+			value.height,
+		);
+	} else if (Array.isArray(value)) {
+		const array: unknown[] = [];
+		copies.set(value, array);
+		for (const [index, item] of value.entries()) {
+			array[index] = cloneWithPlatformObjects(item, copies, context);
+		}
+		copy = array;
+	} else if (value instanceof Map) {
+		const map = new Map();
+		copies.set(value, map);
+		for (const [key, item] of value) {
+			map.set(
+				cloneWithPlatformObjects(key, copies, context),
+				cloneWithPlatformObjects(item, copies, context),
+			);
+		}
+		copy = map;
+	} else if (value instanceof Set) {
+		const set = new Set();
+		copies.set(value, set);
+		for (const item of value) {
+			set.add(cloneWithPlatformObjects(item, copies, context));
+		}
+		copy = set;
+	} else if (isContainer(value)) {
+		const object: Record<string, unknown> = {};
+		copies.set(value, object);
+		for (const [key, item] of Object.entries(value)) {
+			object[key] = cloneWithPlatformObjects(item, copies, context);
+		}
+		copy = object;
+	} else {
+		copy = runtime.structuredClone(value);
+	}
+	copies.set(value, copy);
+	return copy;
+}
+
 const windowTimers = new WeakMap<
 	object,
 	Map<number, ReturnType<typeof setTimeout>>
@@ -39326,49 +39475,59 @@ function buildWindow(document: Document): Window {
 		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) =>
 			runtime.setInterval(guard(handler, args) as () => void, timeout),
 	});
-	Object.assign(window, platform, {
+	Object.assign(
+		window,
+		getWindowClasses(),
+		Object.fromEntries(getInterfaceObjects()),
+		{
 		// The platform's DOMException, which is the one the DOM and the CSSOM
 		// throw. A caller's `instanceof DOMException` has to match the class
 		// the engine builds its errors from.
-		DOMException,
-		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) => {
-			const guarded = guard(handler, args);
-			const id = ++lastTimerId;
-			timers.set(
-				id,
-				runtime.setTimeout(
-					(typeof guarded === "function"
-						? () => {
-							timers.delete(id);
-							(guarded as () => void)();
-						}
-						: guarded) as () => void,
-					timeout,
-				),
-			);
-			return id;
-		},
-		clearTimeout: clearTimer,
-		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) => {
-			const id = ++lastTimerId;
-			timers.set(
-				id,
-				runtime.setInterval(guard(handler, args) as () => void, timeout),
-			);
-			return id;
-		},
-		clearInterval: clearTimer,
-		queueMicrotask: (callback: unknown) => {
-			if (typeof callback !== "function") {
-				throw new TypeError("queueMicrotask needs a function");
-			}
-			runtime.queueMicrotask(guard(callback, []) as () => void);
-		},
-		atob: runtime.atob,
-		btoa: runtime.btoa,
-		fetch: runtime.fetch,
-		structuredClone: runtime.structuredClone,
-	});
+			DOMException,
+			setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) => {
+				const guarded = guard(handler, args);
+				const id = ++lastTimerId;
+				timers.set(
+					id,
+					runtime.setTimeout(
+						(typeof guarded === "function"
+							? () => {
+								timers.delete(id);
+								(guarded as () => void)();
+							}
+							: guarded) as () => void,
+						timeout,
+					),
+				);
+				return id;
+			},
+			clearTimeout: clearTimer,
+			setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) => {
+				const id = ++lastTimerId;
+				timers.set(
+					id,
+					runtime.setInterval(guard(handler, args) as () => void, timeout),
+				);
+				return id;
+			},
+			clearInterval: clearTimer,
+			queueMicrotask: (callback: unknown) => {
+				if (typeof callback !== "function") {
+					throw new TypeError("queueMicrotask needs a function");
+				}
+				runtime.queueMicrotask(guard(callback, []) as () => void);
+			},
+			atob: runtime.atob,
+			btoa: runtime.btoa,
+			fetch: runtime.fetch,
+			structuredClone: (
+				value: unknown,
+				options: StructuredSerializeOptions = {},
+			) =>
+				(options.transfer ?? []).length > 0
+					? runtime.structuredClone(value, options)
+					: cloneStructured(value, "execute 'structuredClone' on 'Window'"),
+		});
 	// HTML's legacy factory: new Image(width, height) is an <img> in this
 	// window's document.
 	const Image = function Image(this: unknown, width?: number, height?: number) {
@@ -39388,25 +39547,19 @@ function buildWindow(document: Document): Window {
 		value: HTMLImageElement.prototype,
 	});
 	window.Image = Image;
-	// Read here rather than in the module's interface table: canvas.ts is
-	// part of the import cycle through cssvalues, and a table built at
-	// module load would read its classes before they exist when canvas.ts
-	// is the first module imported.
-	Object.assign(window, {
-		CanvasGradient,
-		CanvasPattern,
-		CanvasRenderingContext2D,
-		ImageBitmap,
-		ImageData,
-		Path2D,
-	});
 	window.window = window;
 	window.self = window;
-	prepareClasses(
-		Object.getOwnPropertyNames(window).map((name) =>
-			Object.getOwnPropertyDescriptor(window, name)?.value,
-		),
-	);
+	for (const name of Object.keys(window)) {
+		const value = window[name];
+		if (typeof value === "function" && /^[a-z]/.test(name)) {
+			window[name] = windowMember(
+				window,
+				name,
+				value as (...args: never[]) => unknown,
+			);
+		}
+	}
+	prepareClasses(Object.values(getWindowClasses()));
 	startPendingImages(document as unknown as globalThis.Document);
 	return window as unknown as Window;
 }
@@ -39434,11 +39587,41 @@ function startPendingImages(
  * XML content type parses as XML, which is what a frame whose src names a
  * .xml, .xhtml or .svg file holds.
  */
+// The classes a window exposes by name. Read when a window is made rather
+// than in the module's interface table: canvas.ts is part of the import
+// cycle through cssvalues, and a table built at module load would read
+// its classes before they exist when canvas.ts is the first module
+// imported.
+function getWindowClasses(): Record<string, Constructor> {
+	return {
+		...platform,
+		...CSSOM_INTERFACES,
+		CanvasGradient,
+		CanvasPattern,
+		CanvasRenderingContext2D,
+		ImageBitmap,
+		ImageData,
+		Path2D,
+	} as unknown as Record<string, Constructor>;
+}
+
+/** The names of the interfaces a window exposes. */
+export function getWindowInterfaceNames(): string[] {
+	return Object.keys(getWindowClasses());
+}
+
+// The window's interface objects, laid out before the first document is
+// made, so that every platform object has its unforgeable members.
+function getInterfaceObjects(): ReadonlyMap<string, Constructor> {
+	return installInterfaces(getWindowClasses());
+}
+
 export function createWindow(
 	source: string,
 	url?: string,
 	contentType = "text/html",
 ): Window {
+	getInterfaceObjects();
 	if (contentType === "text/html") {
 		return buildWindow(
 			parseHTMLDocument(source, url, true, createWindowRegistry()),

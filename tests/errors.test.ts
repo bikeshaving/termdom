@@ -215,7 +215,7 @@ test("an observer's exception is reported and the observer goes on", async () =>
 });
 
 test("an error listener that throws is reported once, not fired again", async () => {
-	const terminal = new MockProcess({rows: 40, cols: 80});
+	const terminal = new MockProcess({rows: 120, cols: 80});
 	const dom = attached(terminal);
 	let fired = 0;
 	dom.window.addEventListener("error", () => {

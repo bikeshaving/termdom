@@ -24,6 +24,8 @@
  */
 
 const kObject = Symbol("object");
+// The class whose constructor made the object.
+const kType = Symbol("type");
 
 /**
  * The key a class's merged interface names its internals type under, for
@@ -75,8 +77,8 @@ class Slot extends Stamp {
 	static read(value: object): SlotRecord {
 		try {
 			return (value as Slot).#record;
-		} catch (error) {
-			throw new TypeError("Illegal invocation", {cause: error});
+		} catch {
+			throw new TypeError("Illegal invocation");
 		}
 	}
 }
@@ -97,8 +99,12 @@ const recordTypes = new Map<Constructor, new () => SlotRecord>();
 
 interface Family {
 	prototype: object;
-	Record: new (object: object, steps: object, extra: object | null) =>
-	SlotRecord;
+	Record: new (
+		object: object,
+		type: Constructor,
+		steps: object,
+		extra: object | null,
+	) => SlotRecord;
 	dispatched: Set<symbol>;
 }
 
@@ -109,6 +115,9 @@ interface FamilyPlan {
 }
 
 const sealedRoots = new Set<Constructor>();
+// The function a page constructs a class through, and the class.
+const interfaceObjects = new Map<Constructor, Constructor>();
+let sealedHook: ((target: object, type: Constructor) => void) | null = null;
 const sealedParents = new Map<Constructor, Constructor>();
 const familyRoots = new Set<Constructor>();
 const families = new Map<Constructor, Family>();
@@ -132,9 +141,10 @@ let olderRecord: SlotRecord | null = null;
  */
 export function seal(
 	target: object,
-	type: Constructor,
+	constructor: Constructor,
 	root: Constructor,
 ): void {
+	const type = interfaceObjects.get(constructor) ?? constructor;
 	let plan = familyPlans.get(type);
 	if (plan === undefined) {
 		plan = planFamilyRecord(type, root);
@@ -146,10 +156,12 @@ export function seal(
 			target,
 			new plan.Record(
 				target,
+				type,
 				plan.steps,
 				plan.Extra === null ? null : new plan.Extra(),
 			),
 		);
+		sealedHook?.(target, type);
 		return;
 	}
 
@@ -167,7 +179,42 @@ export function seal(
 
 	const record = new Record();
 	record[kObject] = target;
+	record[kType] = type;
 	new Slot(target, record);
+	sealedHook?.(target, type);
+}
+
+/**
+ * Makes `object` the function a page constructs `type` through, which
+ * seal() and the class's descendants take as `type` itself.
+ */
+export function declareInterfaceObject(
+	object: Constructor,
+	type: Constructor,
+): void {
+	interfaceObjects.set(object, type);
+}
+
+/** Calls `hook` with each object sealed from now on, and its class. */
+export function onSeal(hook: (target: object, type: Constructor) => void): void {
+	sealedHook = hook;
+}
+
+/**
+ * The class that made `value`, or null when it has no slots, as a
+ * Proxy and an object a page made do not.
+ */
+export function typeOf(value: unknown): Constructor | null {
+	if (
+		(typeof value !== "object" && typeof value !== "function") ||
+		value === null ||
+		(value !== newestObject && value !== olderObject && !Slot.has(value))
+	) {
+		return null;
+	}
+
+	return (_(value) as unknown as SlotRecord)[kType] as Constructor | null ??
+		null;
 }
 
 /**
@@ -181,9 +228,14 @@ export function declareSealedParent(
 	sealedParents.set(type, parent);
 }
 
-function parentOf(type: Constructor): Constructor {
-	return sealedParents.get(type) ??
+/**
+ * The class `type` takes its slots and steps from: the one it extends,
+ * or the one declareSealedParent() named.
+ */
+export function parentOf(type: Constructor): Constructor {
+	const parent = sealedParents.get(type) ??
 		(Object.getPrototypeOf(type) as Constructor);
+	return interfaceObjects.get(parent) ?? parent;
 }
 
 /**
@@ -208,6 +260,11 @@ export function defineHiddenMember(
 		key,
 		descriptor,
 	);
+}
+
+/** Whether the objects `type` makes are sealed. */
+export function isSealedClass(type: Constructor): boolean {
+	return rootOf(type) !== null;
 }
 
 // The sealed root at or above `type`, or null when it has none.
@@ -326,10 +383,12 @@ function getFamily(familyRoot: Constructor, root: Constructor): Family {
 		function FamilyRecord(
 			this: SlotRecord,
 			object: object,
+			type: Constructor,
 			steps: object,
 			extra: object | null,
 		): void {
 			this[kObject] = object;
+			this[kType] = type;
 			this[kSteps] = steps;
 			this[key] = extra;
 		}
@@ -513,6 +572,7 @@ export function adopt(
 ): void {
 	const record = Object.assign(Object.create(null), state) as SlotRecord;
 	record[kObject] = target;
+	record[kType] = null;
 	new Slot(target, record);
 }
 
