@@ -6,7 +6,12 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {createWindow} from "../src/internal/dom.ts";
-import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.ts";
+import {
+	captureRawOutput,
+	inputDispatched,
+	MockProcess,
+	nextFrame,
+} from "./test-utils.ts";
 
 async function render(
 	html: string,
@@ -783,7 +788,7 @@ function send(terminal: MockProcess, data: string): Promise<void> {
 		"data",
 		Buffer.from(data),
 	);
-	return new Promise((resolve) => setTimeout(resolve, 0));
+	return inputDispatched();
 }
 
 test("a drag inside display math selects the text its cells render", async () => {

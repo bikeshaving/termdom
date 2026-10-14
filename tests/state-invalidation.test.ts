@@ -14,7 +14,7 @@ function send(proc: MockProcess, data: string): Promise<void> {
 		"data",
 		Buffer.from(data),
 	);
-	return new Promise((resolve) => setTimeout(resolve, 0));
+	return inputDispatched();
 }
 
 test("a :focus ~ rule follows the focus out and back", async () => {
