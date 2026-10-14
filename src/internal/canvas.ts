@@ -1702,6 +1702,9 @@ export interface CanvasTextRun {
 	align: "left" | "center" | "right";
 	baseline: string;
 	color: RGBA;
+	// How opaque the paint laid over the text since it was drawn is, all
+	// layers together. The text goes at one half, as a pixel would.
+	covered: number;
 	bold: boolean;
 	italic: boolean;
 }
@@ -1780,6 +1783,7 @@ const kScale = Symbol("scale");
 const kRectMask = Symbol("rectMask");
 const kPaint = Symbol("paint");
 const kDropText = Symbol("dropText");
+const kCoverText = Symbol("coverText");
 const kDrawText = Symbol("drawText");
 
 // The host getContext() is making a context for. A context made any other
@@ -1821,6 +1825,7 @@ export interface CanvasRenderingContext2DSlots {
 	[kRectMask]: Step<CanvasRenderingContext2D[typeof kRectMask]>;
 	[kPaint]: Step<CanvasRenderingContext2D[typeof kPaint]>;
 	[kDropText]: Step<CanvasRenderingContext2D[typeof kDropText]>;
+	[kCoverText]: Step<CanvasRenderingContext2D[typeof kCoverText]>;
 	[kDrawText]: Step<CanvasRenderingContext2D[typeof kDrawText]>;
 }
 
@@ -2974,10 +2979,61 @@ export class CanvasRenderingContext2D {
 				}
 			}
 		}
-		if (operation === "source-over" || operation === "copy") {
+		if (operation === "source-over") {
+			slots[kCoverText](
+				mask,
+				(x, y) =>
+					solid ??
+				(inverse === null
+					? null
+					: _((paint as CanvasGradient | CanvasPattern))[kColorAt](
+						...apply(inverse, x + 0.5, y + 0.5),
+					)),
+				alpha,
+			);
+		} else if (operation === "copy") {
 			slots[kDropText](mask, 0.5);
 		}
 		slots.host.changed();
+	}
+
+	// Translucent paint over text blends the text toward the paint, as it
+	// would blend the text's pixels in a browser, so drawing a dim fill
+	// every frame fades text out over several frames.
+	[kCoverText](
+		this: Slots<CanvasRenderingContext2D>,
+		mask: Float32Array,
+		colorAt: (x: number, y: number) => RGBA | null,
+		alpha: number,
+	): void {
+		const slots = this;
+		const bitmap = slots.host.bitmap();
+		if (bitmap.width === 0 || bitmap.height === 0) {
+			return;
+		}
+		slots.text = slots.text.filter((run) => {
+			const x = Math.min(bitmap.width - 1, Math.max(0, Math.floor(run.x)));
+			const y = Math.min(bitmap.height - 1, Math.max(0, Math.floor(run.y)));
+			const cover = mask[y * bitmap.width + x];
+			if (cover <= 0) {
+				return true;
+			}
+			const paint = colorAt(x, y);
+			const amount = paint === null ? 0 : paint.a * alpha * cover;
+			run.covered = 1 - (1 - run.covered) * (1 - amount);
+			if (run.covered >= 0.5) {
+				return false;
+			}
+			if (paint !== null) {
+				run.color = {
+					r: run.color.r + (paint.r - run.color.r) * amount,
+					g: run.color.g + (paint.g - run.color.g) * amount,
+					b: run.color.b + (paint.b - run.color.b) * amount,
+					a: run.color.a,
+				};
+			}
+			return true;
+		});
 	}
 
 	// Text under the shape painted last is covered, as it would be
@@ -3044,6 +3100,7 @@ export class CanvasRenderingContext2D {
 			align: resolved,
 			baseline: slots.state.textBaseline,
 			color: {...color, a: color.a * slots.state.globalAlpha},
+			covered: 0,
 			bold: words.some(
 				(word) => word === "bold" ||
 					word === "bolder" ||
