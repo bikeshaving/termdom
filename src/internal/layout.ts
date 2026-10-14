@@ -711,11 +711,7 @@ function applyMinMax(style: Style, element: Element): void {
 	style.maxHeight = read("max-height", true);
 	// A scroll container's content scrolls rather than sizes it, so its
 	// automatic minimum is zero (css-flexbox-1 §4.5, css-grid-2 §6.6).
-	const overflow = getComputedValue(element, "overflow");
-	if (
-		isScrollingOverflow(getComputedValue(element, "overflow-x") || overflow) ||
-		isScrollingOverflow(getComputedValue(element, "overflow-y") || overflow)
-	) {
+	if (isScrollContainer(element)) {
 		for (const key of ["minWidth", "minHeight"] as const) {
 			if (style[key].unit === "auto" || style[key].unit === "undefined") {
 				style[key] = toValue(0);
@@ -4618,14 +4614,7 @@ function getScrollOwner(layout: Layout, node: LayoutNode): Element | null {
 
 function scrollsContent(layout: Layout, node: LayoutNode): boolean {
 	const element = getScrollOwner(layout, node);
-	if (element === null) {
-		return false;
-	}
-	const overflow = getComputedValue(element, "overflow");
-	return (
-		isScrollingOverflow(getComputedValue(element, "overflow-y") || overflow) ||
-		isScrollingOverflow(getComputedValue(element, "overflow-x") || overflow)
-	);
+	return element !== null && isScrollContainer(element);
 }
 
 // A sticky box is laid out in flow and then moved, as far as the box it
@@ -7798,13 +7787,7 @@ function revealRectInScrollPorts(
 		ancestor && !isRootBox(engine, ancestor);
 		ancestor = flatParentElement(ancestor)
 	) {
-		const overflow = getComputedValue(ancestor, "overflow");
-		if (
-			isScrollingOverflow(
-				getComputedValue(ancestor, "overflow-y") || overflow,
-			) ||
-			isScrollingOverflow(getComputedValue(ancestor, "overflow-x") || overflow)
-		) {
+		if (isScrollContainer(ancestor)) {
 			revealInPort(engine, getRect(), ancestor, block, inline);
 		}
 	}
@@ -7843,4 +7826,14 @@ function revealInPort(
 
 function isScrollingOverflow(overflow: string): boolean {
 	return overflow === "auto" || overflow === "scroll" || overflow === "hidden";
+}
+
+// Whether either axis clips its content into a scroll port. A longhand
+// left unset takes the shorthand's value.
+function isScrollContainer(element: Element): boolean {
+	const overflow = getComputedValue(element, "overflow");
+	return (
+		isScrollingOverflow(getComputedValue(element, "overflow-x") || overflow) ||
+		isScrollingOverflow(getComputedValue(element, "overflow-y") || overflow)
+	);
 }
