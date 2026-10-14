@@ -4,7 +4,6 @@ import {
 	handleActiveChange,
 	handleFocusChange,
 	handleHoverChange,
-	pxFromCells,
 } from "./cssom.ts";
 import {
 	commitRangeThumb,
@@ -59,6 +58,7 @@ import {
 	localNameOf,
 	nodeTypeOf,
 } from "./tree.ts";
+import {pxFromCells} from "./units.ts";
 
 // The keys a terminal names, with the legacy keyCode plenty of code
 // still reads. Also the list of names that are physical key identities.

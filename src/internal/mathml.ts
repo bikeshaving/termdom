@@ -5,7 +5,7 @@
  * the block and inline engines place, and what the painter blits.
  */
 
-import {getCellSize, getComputedValue, resolveLength} from "./cssom.ts";
+import {getComputedValue, resolveLength} from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
 import type {CellStyle} from "./framebuffer.ts";
 import {getStringWidth, graphemeSegmenter} from "./text.ts";
@@ -18,6 +18,7 @@ import {
 	namespaceOf,
 	nodeTypeOf,
 } from "./tree.ts";
+import {getCellSize} from "./units.ts";
 
 // ---------------------------------------------------------------------
 // The operator dictionary

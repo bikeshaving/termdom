@@ -4,7 +4,6 @@ import {
 	establishesFixedContainingBlock,
 	getBoxModel,
 	getCellBorderWidths,
-	getCellSize,
 	getComputedValue,
 	getDeclaredDisplay,
 	getMarkerContent,
@@ -93,6 +92,7 @@ import {
 import {isReplacedBox, renderReplaced} from "./replaced.ts";
 import {getStringWidth} from "./text.ts";
 import {containsOf, nodeTypeOf} from "./tree.ts";
+import {getCellSize} from "./units.ts";
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
 // edge computed from an infinite origin and size is NaN.
