@@ -1,11 +1,13 @@
 import {
 	type Cascade,
+	declaredPseudoProperties,
 	establishesFixedContainingBlock,
 	getBoxModel,
 	getCellBorderWidths,
 	getCellSize,
 	getComputedValue,
 	getDeclaredDisplay,
+	getMarkerContent,
 	getTabSize,
 	getUsedOverflow,
 	getWhiteSpace,
@@ -1634,7 +1636,7 @@ function renderOutsideMarker(
 	}
 	painter.renderedOutsideMarkers.add(element);
 
-	const markerContent = painter.cascade.getMarkerContent(element);
+	const markerContent = getMarkerContent(painter.cascade, element);
 	if (!markerContent) {
 		return;
 	}
@@ -1927,7 +1929,7 @@ function readHighlightStyle(
 	name: string,
 ): HighlightPaint | null {
 	const pseudo = `::highlight(${name})`;
-	const declared = painter.cascade.declaredPseudoProperties(element, pseudo);
+	const declared = declaredPseudoProperties(painter.cascade, element, pseudo);
 	const parent = flatParentElement(element);
 	const inherited = parent === null
 		? null

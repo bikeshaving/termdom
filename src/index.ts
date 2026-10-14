@@ -5,7 +5,9 @@ import {
 	Cascade,
 	type CellSize,
 	type CellSizeSetting,
+	dispose,
 	getCellSize,
+	hoverRulesExist,
 	UNIT_CELL,
 } from "./internal/cssom.ts";
 import {
@@ -946,7 +948,7 @@ export class TermDOM extends EventTarget {
 			void slots.staticSibling.dispose();
 			slots.staticSibling = null;
 		}
-		slots.cascade.dispose();
+		dispose(slots.cascade);
 		slots.layout.dispose();
 		clearHighlights(this.document);
 		disconnectObservers(this.document);
@@ -1196,7 +1198,7 @@ function syncHoverReporting(termDOM: TermDOM): void {
 	const wanted =
 		termDOMSlots.mouseReportingEnabled &&
 		(hoverListenerCount(termDOM.document) > 0 ||
-			termDOMSlots.cascade.hoverRulesExist());
+			hoverRulesExist(termDOMSlots.cascade));
 	if (wanted === termDOMSlots.hoverReportingEnabled) {
 		return;
 	}
