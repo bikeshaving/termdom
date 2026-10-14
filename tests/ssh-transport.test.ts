@@ -75,10 +75,14 @@ class MockSession extends EventEmitter {
 	}
 }
 
-function open(): {session: MockSession; term: TermDOM} {
+function open(options: {failFast?: boolean} = {}): {
+	session: MockSession;
+	term: TermDOM;
+} {
 	const session = new MockSession();
 	const term = new TermDOM({
 		transport: transportFromSSH(session as unknown as SSHSessionLike),
+		...options,
 	});
 	return {session, term};
 }
@@ -137,6 +141,28 @@ test("window.close() sends the exit status and ends the channel", async () => {
 	term.window.close();
 	await until(() => channel.ended);
 	expect(channel.exitStatus).toBe(0);
+});
+
+test("with failFast, an escaped exception ends that session alone, with status 1", async () => {
+	const failing = open({failFast: true});
+	const other = open({failFast: true});
+	for (const {session} of [failing, other]) {
+		session.pty(80, 24);
+	}
+	const channel = failing.session.shell();
+	const otherChannel = other.session.shell();
+	await Promise.all([failing.term.attach(), other.term.attach()]);
+	failing.term.window.setTimeout(() => {
+		throw new Error("one client's error");
+	}, 0);
+	await until(() => channel.ended);
+	expect(channel.exitStatus).toBe(1);
+	expect(channel.written).toContain("Error: one client's error");
+	other.term.document.body.textContent = "unaffected";
+	await nextFrame(other.term);
+	expect(otherChannel.ended).toBe(false);
+	expect(otherChannel.written).toContain("unaffected");
+	other.term.dispose();
 });
 
 test("when the client's input ends, the terminal is restored and the channel ends", async () => {

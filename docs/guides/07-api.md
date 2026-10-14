@@ -91,6 +91,15 @@ Options:
   value. With `"auto"` (default), TermDOM asks the terminal, and uses
   light if the terminal does not answer. Any other value throws a
   `TypeError`.
+- `failFast?: boolean`: whether an uncaught exception from the page
+  ends the session. With `false` (default), TermDOM reports the error
+  and the program keeps running, as a browser does. With `true`, the
+  first one restores the terminal, prints the error and closes the
+  transport with status 1. The process transport exits, and an SSH
+  transport ends that client's session only. Use it during development,
+  for example `failFast: process.env.NODE_ENV !== "production"`.
+  Any value that is not a boolean throws a `TypeError`. See "Errors" in
+  the events guide.
 
 TermDOM reads no environment variables. It asks the terminal for what
 the terminal can report. You set everything else through options.

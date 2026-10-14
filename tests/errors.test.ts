@@ -1,12 +1,13 @@
 /**
  * An exception the page lets escape is reported the way a browser reports
  * it: the window hears an error event, and an unhandled one is logged
- * without touching the screen. The app keeps running.
+ * without touching the screen. The app keeps running, unless the
+ * failFast option ends the session at the first one.
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {installGlobals, TermDOM} from "../src/index.ts";
+import {MockProcess, nextFrame, until} from "./test-utils.js";
 
 const press = (col: number, row: number): string => `\x1b[<0;${col};${row}M`;
 const release = (col: number, row: number): string => `\x1b[<0;${col};${row}m`;
@@ -16,8 +17,11 @@ async function type(terminal: MockProcess, data: string): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function attached(terminal: MockProcess): TermDOM {
-	const dom = new TermDOM({transport: terminal.transport});
+function attached(
+	terminal: MockProcess,
+	options: {failFast?: boolean} = {},
+): TermDOM {
+	const dom = new TermDOM({transport: terminal.transport, ...options});
 	dom.document.body.innerHTML = "<button id=\"b\">go</button><p>page</p>";
 	return dom;
 }
@@ -269,4 +273,92 @@ test("an exception in a document the page made is reported by the engine", async
 	made.body.click();
 	await dom.dispose();
 	expect(terminal.getScreenContents()).toContain("Error: from a made document");
+});
+
+// The statuses the process transport exits with, in place of exiting.
+function recordExits(terminal: MockProcess): number[] {
+	const codes: number[] = [];
+	terminal.exit = ((code?: number) => {
+		codes.push(code ?? 0);
+	}) as never;
+	return codes;
+}
+
+test("with failFast, the first escaped exception ends the session with status 1", async () => {
+	const terminal = new MockProcess({rows: 40, cols: 80});
+	const codes = recordExits(terminal);
+	const dom = attached(terminal, {failFast: true});
+	const seen: string[] = [];
+	dom.window.addEventListener("error", (event) => {
+		seen.push((event as ErrorEvent).message);
+	});
+	dom.document.getElementById("b")!.addEventListener("click", () => {
+		throw new Error("crash");
+	});
+	await nextFrame(dom);
+	await type(terminal, press(2, 1) + release(2, 1));
+	await until(() => codes.length > 0);
+	expect(seen).toEqual(["crash"]);
+	expect(codes).toEqual([1]);
+	const screen = terminal.getScreenContents();
+	expect(screen).toContain("Error: crash");
+	expect(screen.indexOf("page")).toBeLessThan(screen.indexOf("Error: crash"));
+});
+
+test("with failFast, a handled error event leaves the session running", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const codes = recordExits(terminal);
+	const dom = attached(terminal, {failFast: true});
+	dom.window.addEventListener("error", (event) => event.preventDefault());
+	dom.window.setTimeout(() => {
+		throw new Error("handled");
+	}, 0);
+	await nextFrame(dom);
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	dom.document.querySelector("p")!.textContent = "still here";
+	await nextFrame(dom);
+	expect(codes).toEqual([]);
+	expect(terminal.getScreenContents()).toContain("still here");
+	await dom.dispose();
+});
+
+test("with failFast, an unhandled rejection ends the session while the globals are installed", async () => {
+	const terminal = new MockProcess({rows: 40, cols: 80});
+	const codes = recordExits(terminal);
+	const dom = attached(terminal, {failFast: true});
+	await nextFrame(dom);
+	const uninstall = installGlobals(dom);
+	try {
+		// The listener installGlobals added, called as the runtime calls it.
+		const ours = process.listeners("unhandledRejection").at(-1)!;
+		ours(new Error("rejected"), Promise.resolve());
+	} finally {
+		uninstall();
+	}
+	await until(() => codes.length > 0);
+	expect(codes).toEqual([1]);
+	expect(terminal.getScreenContents()).toContain("Error: rejected");
+});
+
+test("with failFast, a session that never attached ends too", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const codes = recordExits(terminal);
+	const printed: unknown[] = [];
+	const consoleError = console.error;
+	console.error = (...args: unknown[]) => printed.push(...args);
+	try {
+		const dom = attached(terminal, {failFast: true});
+		dom.window.setTimeout(() => {
+			throw new Error("before attach");
+		}, 0);
+		await until(() => codes.length > 0);
+	} finally {
+		console.error = consoleError;
+	}
+	expect(codes).toEqual([1]);
+	expect(String(printed[0])).toContain("Error: before attach");
+});
+
+test("failFast must be a boolean", () => {
+	expect(() => new TermDOM({failFast: "yes" as never})).toThrow(TypeError);
 });
