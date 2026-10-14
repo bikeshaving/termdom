@@ -7,7 +7,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {inputDispatched, MockProcess, nextFrame} from "./test-utils.js";
 
 /**
  * The terminal text, once a repaint no test asked for has drawn a mark into
@@ -32,7 +32,7 @@ async function paintedText(
 function type(terminal: MockProcess, data: string): Promise<void> {
 	(terminal.stdin as any).emit("data", Buffer.from(data));
 	// Input rides the transport's readable: delivery is a microtask away.
-	return new Promise((resolve) => setTimeout(resolve, 0));
+	return inputDispatched();
 }
 
 /* ------------------------------------------------------- hidden content */
