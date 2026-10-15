@@ -104,7 +104,7 @@ import {
 	setWindowFetch,
 } from "./internal/resources.ts";
 import {_, type internals, moveLateMembers} from "./internal/slots.ts";
-import {queueMicrotask, setTimeout} from "./internal/timers.ts";
+import {queueMicrotask, queueTask, setTimeout} from "./internal/timers.ts";
 import {getCellSizeSetting} from "./internal/tree.ts";
 import {
 	type CellSize,
@@ -1319,8 +1319,11 @@ async function render(termDOM: TermDOM): Promise<void> {
 		try {
 			// After the task that asked, and every microtask it queued, as a
 			// browser renders: an edit and whatever answers it in its own
-			// microtasks are one frame, not a frame of the half-done edit.
-			await new Promise((resolve) => setTimeout(resolve, 0));
+			// microtasks are one frame, not a frame of the half-done edit. A
+			// task the runtime runs at once, not a timer, which sleeps the
+			// process and, on a loaded machine, waits for the scheduler to
+			// give it the processor back.
+			await new Promise<void>((resolve) => queueTask(resolve));
 			do {
 				termDOMSlots.renderQueued = false;
 				if (termDOMSlots.lifecycle === "attaching") {
@@ -1349,7 +1352,13 @@ async function render(termDOM: TermDOM): Promise<void> {
 				// microtasks alone, and input and timers would never get a turn.
 				const wait =
 					termDOMSlots.lastFrameAt + FRAME_INTERVAL_MS - performance.now();
-				await new Promise((resolve) => setTimeout(resolve, Math.max(0, wait)));
+				await new Promise<void>((resolve) => {
+					if (wait > 0) {
+						setTimeout(resolve, wait);
+					} else {
+						queueTask(resolve);
+					}
+				});
 				if (!isAttached(termDOM) || termDOMSlots.suspended) {
 					break;
 				}
