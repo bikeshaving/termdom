@@ -3789,7 +3789,7 @@ function collectLeaves(
 					) {
 						boxModel.width = Math.max(
 							0,
-							Math.round((widthValue.percentage / 100) * availableWidth),
+							(widthValue.percentage / 100) * availableWidth,
 						);
 					}
 				}
@@ -5357,7 +5357,11 @@ function getStaticPosition(
 	const index = children.indexOf(entry ?? getPrincipalBox(layout, element));
 	for (let i = index - 1; i >= 0; i--) {
 		const previous = children[i];
-		const previousNode = getOwnLayoutNode(layout, previous);
+		// A table part takes its place in the anonymous table around it.
+		const previousNode = getOwnLayoutNode(
+			layout,
+			box.tables?.get(previous) ?? previous,
+		);
 		if (
 			!previousNode ||
 			previousNode.parent !== containerNode ||
