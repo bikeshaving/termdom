@@ -11,10 +11,12 @@ import {
 import {
 	applyMutations,
 	attachDocument,
+	checkFormControls,
 	clampScrollOffsets,
 	clearHighlights,
 	clearWindowTimers,
 	constructInternal,
+	controlCheck,
 	disconnectObservers,
 	dispatchAsUserAgent,
 	DOMException,
@@ -36,6 +38,7 @@ import {
 	runFrameCallbacks,
 	runScrollSteps,
 	setDocumentVisible,
+	syncFormControls,
 	syncMediaQueries,
 	takeScrollShift,
 	type Window,
@@ -1604,6 +1607,10 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// First, so a hover listener's mutations join the records taken below.
 	resolvePendingHover(termDOMSlots.input);
 
+	if (import.meta.litest && controlCheck.enabled) {
+		checkFormControls(termDOM.document);
+	}
+	syncFormControls(termDOM.document);
 	applyMutations(termDOM.document);
 	runFocusFixup(termDOM.document);
 

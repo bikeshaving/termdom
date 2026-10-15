@@ -19197,6 +19197,7 @@ function legacyCanceledActivationBehavior(input: HTMLInputElement): void {
 	if (input.type === "checkbox") {
 		inputSlots.extra.indeterminate = inputSlots.extra.previouslyIndeterminate;
 		inputSlots.extra.checked = inputSlots.extra.previouslyChecked;
+		syncUAShadowTree(input);
 		return;
 	}
 	if (input.type !== "radio") {
@@ -19205,8 +19206,10 @@ function legacyCanceledActivationBehavior(input: HTMLInputElement): void {
 	const previous = inputSlots.extra.previousRadio;
 	inputSlots.extra.previousRadio = null;
 	inputSlots.extra.checked = false;
+	syncUAShadowTree(input);
 	if (previous !== null && getRadioGroup(input).includes(previous)) {
 		_(previous).extra.checked = true;
+		syncUAShadowTree(previous);
 	}
 }
 
@@ -36166,6 +36169,57 @@ export function applyMutations(document: globalThis.Document): boolean {
 	}
 	handleMutationRecords(document as Document, records);
 	return true;
+}
+
+/**
+ * Bring every connected form control's shadow tree up to its state. A
+ * control's tree is a function of its state, and each change of state
+ * redraws it as it lands. This is what keeps a frame right when one did
+ * not.
+ */
+export function syncFormControls(document: globalThis.Document): void {
+	const attached = getAttachedDocument(document);
+	if (attached === undefined) {
+		return;
+	}
+	for (const root of _(attached).extra.cascade.shadowRoots) {
+		if (isUAShadowTree(root) && root.host.isConnected) {
+			syncUAShadowTree(root.host as unknown as Element);
+		}
+	}
+}
+
+/**
+ * Checks, for tests, that every form control's shadow tree already shows
+ * its state when a frame starts, so no change of state went without
+ * redrawing it. Set, a control the frame's sync would change throws,
+ * naming it.
+ */
+export const controlCheck = {enabled: false, checked: 0};
+
+export function checkFormControls(document: globalThis.Document): void {
+	controlCheck.checked++;
+	const attached = getAttachedDocument(document);
+	if (attached === undefined) {
+		return;
+	}
+	const stale: string[] = [];
+	for (const root of _(attached).extra.cascade.shadowRoots) {
+		if (!isUAShadowTree(root) || !root.host.isConnected) {
+			continue;
+		}
+		const before = root.innerHTML;
+		syncUAShadowTree(root.host as unknown as Element);
+		if (root.innerHTML !== before) {
+			const host = root.host;
+			stale.push(`${host.localName}${host.id ? `#${host.id}` : ""}`);
+		}
+	}
+	if (stale.length > 0) {
+		throw new Error(
+			`A form control did not show its state: ${stale.slice(0, 8).join(", ")}`,
+		);
+	}
 }
 
 /**
