@@ -25,9 +25,10 @@ export function readBenchFile(path: string): string {
 export async function mount(
 	cols = 100,
 	rows = 40,
+	options: object = {},
 ): Promise<{proc: any; dom: any}> {
 	const proc = new MockProcess({cols, rows});
-	const dom = new TermDOM({transport: proc.transport});
+	const dom = new TermDOM({...options, transport: proc.transport});
 	dom.attach();
 	await nextFrame(dom);
 	return {proc, dom};

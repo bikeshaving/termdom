@@ -6,7 +6,7 @@ import {
 	silence,
 } from "../harness.ts";
 
-const {proc, dom} = await mount();
+const {proc, dom} = await mount(100, 40, {cellSize: "auto"});
 installGlobals(dom);
 const {EditorState} = await import("@codemirror/state");
 const {EditorView, keymap, lineNumbers} = await import("@codemirror/view");
@@ -39,10 +39,6 @@ const view = new EditorView({
 			javascript({typescript: true}),
 			syntaxHighlighting(defaultHighlightStyle),
 			keymap.of([...defaultKeymap, ...historyKeymap]),
-			EditorView.theme({
-				".cm-scroller": {lineHeight: "1"},
-				".cm-content": {padding: "0"},
-			}),
 		],
 	}),
 	parent: document.getElementById("editor"),
