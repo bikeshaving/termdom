@@ -1094,8 +1094,8 @@ function paintNodes(
 			continue;
 		}
 		const childOrigin = {
-			x: origin.x + child.result.left,
-			y: origin.y + child.result.top,
+			x: origin.x + child.grid.left,
+			y: origin.y + child.grid.top,
 		};
 		const run = getRun(layout, child);
 		if (run !== null) {
