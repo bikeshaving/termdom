@@ -2734,7 +2734,10 @@ function syncIndependentFormattingContext(
 		!establishesIndependentFormattingContext(element) ||
 		(!grid && !table && !hasBlockLevelBox(element))
 	) {
-		dropIndependentFormattingContext(box);
+		if (box.independentFormattingContext) {
+			dropIndependentFormattingContext(box);
+			invalidateOutOfFlowDescendants(layout, element);
+		}
 		return;
 	}
 
@@ -2743,6 +2746,9 @@ function syncIndependentFormattingContext(
 		root = new LayoutNode();
 		box.independentFormattingContext = root;
 		contextHosts.set(root, element);
+		// What it holds moves under another root, so an out-of-flow box among
+		// it may no longer reach its containing block from where it hangs.
+		invalidateOutOfFlowDescendants(layout, element);
 		// A change inside, a restyle no run records, leaves the box's
 		// measure answering with the old size unless the box hears of it.
 		root.onStale = () => {
@@ -7113,6 +7119,25 @@ function checkTreeShape(layout: Layout): string[] {
 		}
 		if (node.parent === null && !seen.has(node) && flatIsConnected(domNode)) {
 			problems.push(`${name(node)} is held by no box`);
+		}
+		if (
+			seen.has(node) &&
+			nodeTypeOf(domNode) === domNode.ELEMENT_NODE &&
+			isOutOfFlow(domNode) &&
+			getPosition(domNode as Element) !== "fixed"
+		) {
+			const containingBlock = getContainingBlockLayoutNode(
+				layout,
+				domNode as Element,
+			);
+			if (
+				containingBlock !== null &&
+				!isReachableFrom(node.parent, containingBlock)
+			) {
+				problems.push(
+					`${name(node)} hangs out of its containing block's reach`,
+				);
+			}
 		}
 		if (
 			seen.has(node) &&
