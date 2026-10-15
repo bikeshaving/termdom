@@ -1005,6 +1005,8 @@ interface Styling {
 const stylings = new WeakMap<LayoutNode, Styling>();
 
 interface Extent {
+	// The box's own top, in absolute document rows.
+	origin: number;
 	// The rows the subtree can paint, in absolute document rows. Absolutely
 	// positioned children push it outside the box.
 	top: number;
@@ -1029,17 +1031,23 @@ interface Extent {
 
 // Written after every solve, and read by the painter's row culling for
 // every child, so the records are kept and rewritten rather than remade.
+// A subtree roundToGrid left alone keeps its record while its top holds.
 const extents = new WeakMap<LayoutNode, Extent>();
 
 function computePaintExtents(
 	layout: Layout,
 	node: LayoutNode,
 	originTop: number,
+	settled = false,
 ): Extent {
 	const top = originTop + node.result.top;
 	let extent = extents.get(node);
+	if (settled && extent !== undefined && extent.origin === top) {
+		return extent;
+	}
 	if (extent === undefined) {
 		extent = {
+			origin: top,
 			top,
 			bottom: top,
 			unstackedChildren: 0,
@@ -1079,7 +1087,8 @@ function computePaintExtents(
 		}
 	}
 	for (const child of node.children) {
-		const childExtent = computePaintExtents(layout, child, top);
+		const childExtent =
+			computePaintExtents(layout, child, top, settled || node.settled);
 		if (clips && scrollBottom !== null && child.style.displayType !== "none") {
 			if (scrollRight !== null) {
 				scrollRight =
@@ -1117,6 +1126,7 @@ function computePaintExtents(
 			bottom = Math.max(bottom, child.result.top + childExtent.overflowBottom);
 		}
 	}
+	extent.origin = top;
 	extent.top = highest;
 	extent.bottom = lowest;
 	extent.unstackedChildren = unstacked;

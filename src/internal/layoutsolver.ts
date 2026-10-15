@@ -488,6 +488,13 @@ export class LayoutNode {
 	// width it is given, and rounds both edges as a block does.
 	measuresText: boolean;
 
+	// The unrounded origin roundToGrid last gave the children, NaN once the
+	// node is laid out again. Their rounded results stand while it holds.
+	gridLeft: number;
+	gridTop: number;
+	// Whether the last roundToGrid left the children as they were.
+	settled: boolean;
+
 	constructor() {
 		this.children = [];
 		this.parent = null;
@@ -501,6 +508,9 @@ export class LayoutNode {
 		this.owner = null;
 		this.measuresText = true;
 		this.outOfFlowCount = 0;
+		this.gridLeft = NaN;
+		this.gridTop = NaN;
+		this.settled = false;
 		this.currentStyle = createStyle();
 		this.result = createResult();
 	}
@@ -3377,6 +3387,7 @@ function layoutTable(
 	const gridTop = topPaddingBorder + captionHeight;
 
 	for (const group of groups) {
+		group.gridLeft = NaN;
 		group.result.left = leftPaddingBorder;
 		group.result.width = contentWidth;
 		group.result.top = gridTop;
@@ -3391,6 +3402,7 @@ function layoutTable(
 		if (row.node === null) {
 			return;
 		}
+		row.node.gridLeft = NaN;
 		row.node.result.left = rowLeft(row);
 		row.node.result.top = rowTop(row, index);
 		row.node.result.width = contentWidth;
@@ -5806,6 +5818,15 @@ function layoutNode(
 	ownerHeight: number,
 	placing: boolean,
 ): void {
+	// A container may lay out a descendant without laying out the boxes
+	// between, as a table does its cells, so every box above it rounds again.
+	for (
+		let above = node.parent;
+		above !== null && !Number.isNaN(above.gridLeft);
+		above = above.parent
+	) {
+		above.gridLeft = NaN;
+	}
 	// css-sizing-4 §5: the open axis follows a settled (`definite`) one
 	// through the ratio. With both settled the ratio yields. Margins come
 	// off the settled request and back onto the derived one. min/max on the
@@ -5985,6 +6006,7 @@ function layoutNodeImpl(
 	ownerHeight: number,
 	placing: boolean,
 ): void {
+	node.gridLeft = NaN;
 	node.result.padding.left = getPadding(node, "left", ownerWidth);
 	node.result.padding.top = getPadding(node, "top", ownerWidth);
 	node.result.padding.right = getPadding(node, "right", ownerWidth);
@@ -6129,7 +6151,8 @@ function getPadding(node: LayoutNode, edge: Edge, ownerWidth: number): number {
 // position is the difference of two rounded edges too, so text inside a
 // fractional padding starts where a marker beside it ends. A leaf that
 // measures text ceils its trailing edge so the text never gets less room
-// than it measured.
+// than it measured. A node not laid out since, under the same origin,
+// keeps the children it rounded before.
 function roundToGrid(
 	node: LayoutNode,
 	absoluteLeft: number,
@@ -6157,6 +6180,12 @@ function roundToGrid(
 	node.result.height =
 		roundValue(absBottom, isText, false) - roundValue(absTop, isText, false);
 
+	node.settled = absLeft === node.gridLeft && absTop === node.gridTop;
+	if (node.settled) {
+		return;
+	}
+	node.gridLeft = absLeft;
+	node.gridTop = absTop;
 	for (const child of node.children) {
 		roundToGrid(child, absLeft, absTop);
 	}
