@@ -13,15 +13,15 @@ const ENABLE = "\x1b[?1002h\x1b[?1006h";
 const DISABLE = "\x1b[?1006l\x1b[?1002l";
 
 /** Feed bytes as the terminal would, and wait for the read side to see them. */
-function send(proc: MockProcess, data: string): Promise<void> {
+async function send(proc: MockProcess, data: string): Promise<void> {
 	(proc.stdin as unknown as {emit(e: string, d: Buffer): void}).emit(
 		"data",
 		Buffer.from(data),
 	);
+	await inputDispatched();
 	// The frame the input asks for starts in the next task, and writes in
 	// the one after.
-	return new Promise((resolve) =>
-		setTimeout(() => setTimeout(resolve, 0), 0));
+	await new Promise((resolve) => setTimeout(() => setTimeout(resolve, 0), 0));
 }
 
 function makeDocumentModeApp(lines = 30): {
