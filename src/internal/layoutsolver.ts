@@ -72,6 +72,13 @@ export type Sizing = "none" | "min-content" | "max-content" | "fit-content";
 export interface Size {
 	width: number;
 	height: number;
+	// For text: the whole columns its lines broke to, whether one ended
+	// where nothing forced it to, and how many columns the widest takes.
+	// Another place for the box matters only to text these say it would
+	// break differently.
+	columns?: number;
+	wrapped?: boolean;
+	lineColumns?: number;
 }
 
 // `placing` is true for the measurement that places the box and
@@ -500,11 +507,14 @@ export class LayoutNode {
 	settled: boolean;
 	// The box's left edge as its parent last placed it, and that edge
 	// summed down from the root, both unrounded. The text in a box breaks
-	// against the columns these say it is drawn across, and measuredLeft is
-	// the edge it last broke against.
+	// against the columns these say it is drawn across.
 	rawLeft: number;
 	rawAbsoluteLeft: number;
-	measuredLeft: number;
+	// What the last measure broke the box's text to: the width it was
+	// given, and the Size fields that say whether another edge would break
+	// it differently.
+	measuredWidth: number;
+	measured: Size | null;
 	// Whether a child left since the last paint extents, whose rows then
 	// show nothing it painted.
 	lostChild: boolean;
@@ -527,7 +537,8 @@ export class LayoutNode {
 		this.settled = false;
 		this.rawLeft = 0;
 		this.rawAbsoluteLeft = NaN;
-		this.measuredLeft = NaN;
+		this.measuredWidth = NaN;
+		this.measured = null;
 		this.lostChild = false;
 		this.currentStyle = createStyle();
 		this.result = createResult();
@@ -1188,13 +1199,14 @@ function layoutMeasuredContent(
 		return;
 	}
 
-	node.measuredLeft = node.rawAbsoluteLeft;
 	const measured = node.measure!(
 		innerWidth,
 		widthSpace,
 		placing,
-		node.rawAbsoluteLeft + node.style.border.left + node.result.padding.left,
+		getContentLeft(node),
 	);
+	node.measuredWidth = innerWidth;
+	node.measured = measured;
 
 	const width = widthSpace === "definite"
 		? availableWidth - marginRow
@@ -6212,11 +6224,7 @@ function roundToGrid(
 		node.rawLeft = nodeLeft;
 	}
 	node.rawAbsoluteLeft = rawAbsoluteLeft + node.rawLeft;
-	if (
-		node.measure !== null &&
-		node.measuresText &&
-		!isSameFraction(node.measuredLeft, node.rawAbsoluteLeft)
-	) {
+	if (node.measure !== null && breaksElsewhere(node)) {
 		misplaced.push(node);
 	}
 	const nodeTop = node.result.top;
@@ -6259,14 +6267,23 @@ function roundToGrid(
 	}
 }
 
-// Whether two edges fall at the same place within a cell, which is all
-// that decides how many columns a width starting there is drawn across.
-// An edge not yet known breaks as one at a whole cell.
-function isSameFraction(a: number, b: number): boolean {
-	const fraction = (value: number) =>
-		Number.isNaN(value) ? 0 : value - Math.floor(value);
-	const difference = Math.abs(fraction(a) - fraction(b));
-	return difference < 0.0001 || difference > 0.9999;
+function getContentLeft(node: LayoutNode): number {
+	return node.rawAbsoluteLeft +
+		node.style.border.left +
+		node.result.padding.left;
+}
+
+// Whether text measured before its box landed where it did would break
+// into other lines there: its lines no longer fit the columns it is drawn
+// across, or it wrapped and may fit more of them.
+function breaksElsewhere(node: LayoutNode): boolean {
+	const measured = node.measured;
+	if (measured === null || measured.columns === undefined) {
+		return false;
+	}
+	const columns = getDrawnColumns(getContentLeft(node), node.measuredWidth);
+	return columns !== measured.columns &&
+		(measured.wrapped === true || measured.lineColumns! > columns);
 }
 
 /**

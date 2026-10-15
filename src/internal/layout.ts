@@ -3322,6 +3322,11 @@ function measureInlineRun(
 			? Math.max(breakResult.maxLineWidth, width)
 			: breakResult.maxLineWidth,
 		height: breakResult.totalHeight,
+		columns: widthSpace !== "indefinite" && width > 0
+			? getDrawnColumns(left, width)
+			: undefined,
+		wrapped: breakResult.wrapped === true,
+		lineColumns: Math.round(breakResult.maxLineWidth),
 	};
 }
 
@@ -6308,6 +6313,7 @@ function addDamage(
 	}
 	if (layout.damage.length >= MAX_DAMAGE) {
 		layout.wholeDamage = true;
+		layout.collecting = false;
 		layout.damage = [];
 		return;
 	}
