@@ -6457,9 +6457,15 @@ export class Cascade {
 			return;
 		}
 		this.shadowRoots.add(root);
+		noteFlatTreeChange(this);
 		// Incrementally. Rebuilding every sheet per UA shadow tree upgrade made
 		// a document of n UA shadow trees reparse everything n times.
 		syncShadowRoot(this, root);
+	}
+
+	// A slot took other nodes, which now inherit through it.
+	slotsChanged(): void {
+		noteFlatTreeChange(this);
 	}
 
 	// A root filled with its content after it registered, as a declarative
@@ -7903,16 +7909,26 @@ function noteCounterChange(cascade: Cascade, element: Element): void {
 // Whether a removed subtree held an element that changed a counter,
 // which renumbers what came after it.
 function declaresCounters(cascade: Cascade, root: Element): boolean {
-	for (
-		let element: Element | null = root;
-		element !== null;
-		element = nextElementUnder(element, root)
-	) {
+	if (cascade.counterKeys.has(root)) {
+		return true;
+	}
+	for (const element of flatDescendants(root)) {
 		if (cascade.counterKeys.has(element)) {
 			return true;
 		}
 	}
 	return false;
+}
+
+/**
+ * Elements moved in the flat tree with no change of their own, as a slot
+ * takes other nodes or a host takes a shadow root, inherit their counters
+ * from elsewhere, so the counts are made again.
+ */
+function noteFlatTreeChange(cascade: Cascade): void {
+	if (cascade.countersCounted) {
+		cascade.countersStale = true;
+	}
 }
 
 // Every counter is counted again, and the content that reads one is made
@@ -8016,6 +8032,7 @@ function countCounters(
 	element: Element,
 	part: "start" | "end",
 ): void {
+	const tree = createFlatElementTree();
 	const isCounted = ([each, which]: [Element, "start" | "end"]) =>
 		which === "start"
 			? cascade.counterSets.has(each)
@@ -8030,15 +8047,16 @@ function countCounters(
 		const [each, which] = top;
 		const needs: Array<[Element, "start" | "end"]> = [];
 		if (which === "start") {
-			const sibling = each.previousElementSibling;
+			const sibling = tree.previousOf(each);
+			const parent = tree.parentOf(each);
 			if (sibling !== null) {
 				needs.push([sibling, "start"], [sibling, "end"]);
-			} else if (each.parentElement !== null) {
-				needs.push([each.parentElement, "start"]);
+			} else if (parent !== null) {
+				needs.push([parent, "start"]);
 			}
 		} else {
 			needs.push([each, "start"]);
-			const last = each.lastElementChild;
+			const last = tree.lastOf(each);
 			if (last !== null) {
 				needs.push([last, "start"], [last, "end"]);
 			}
@@ -8050,11 +8068,52 @@ function countCounters(
 		}
 		stack.pop();
 		if (which === "start") {
-			countStart(cascade, each);
+			countStart(cascade, each, tree);
 		} else {
-			countEnd(cascade, each);
+			countEnd(cascade, each, tree);
 		}
 	}
+}
+
+// The flat tree's elements, which counters are inherited through, as a
+// shadow tree's content is its host's and a slot's assigned nodes are
+// its own. Each parent's children are listed once a count.
+interface FlatElementTree {
+	parentOf(element: Element): Element | null;
+	previousOf(element: Element): Element | null;
+	lastOf(element: Element): Element | null;
+}
+
+function createFlatElementTree(): FlatElementTree {
+	const children = new Map<Element, Element[]>();
+	const indices = new Map<Element, number>();
+	const childrenOf = (parent: Element): Element[] => {
+		let list = children.get(parent);
+		if (list === undefined) {
+			list = [];
+			for (const child of flatChildren(parent)) {
+				if (nodeTypeOf(child) === ELEMENT_NODE) {
+					indices.set(child as Element, list.length);
+					list.push(child as Element);
+				}
+			}
+			children.set(parent, list);
+		}
+		return list;
+	};
+	return {
+		parentOf: (element) => flatParentElement(element) as Element | null,
+		previousOf: (element) => {
+			const parent = flatParentElement(element) as Element | null;
+			if (parent === null) {
+				return null;
+			}
+			const list = childrenOf(parent);
+			const index = indices.get(element) ?? -1;
+			return index > 0 ? list[index - 1] : null;
+		},
+		lastOf: (element) => childrenOf(element).at(-1) ?? null,
+	};
 }
 
 function inherit(
@@ -8066,10 +8125,14 @@ function inherit(
 		: preceding.slice(0, base.length);
 }
 
-function countStart(cascade: Cascade, element: Element): void {
+function countStart(
+	cascade: Cascade,
+	element: Element,
+	tree: FlatElementTree,
+): void {
 	cascade.countersCounted = true;
-	const sibling = element.previousElementSibling;
-	const parent = element.parentElement;
+	const sibling = tree.previousOf(element);
+	const parent = tree.parentOf(element);
 	const parentStart = parent === null ? null : cascade.counterSets.get(parent)!;
 	const inherited = sibling !== null
 		? inherit(
@@ -8103,9 +8166,13 @@ function countStart(cascade: Cascade, element: Element): void {
 	});
 }
 
-function countEnd(cascade: Cascade, element: Element): void {
+function countEnd(
+	cascade: Cascade,
+	element: Element,
+	tree: FlatElementTree,
+): void {
 	const start = cascade.counterSets.get(element)!;
-	const last = element.lastElementChild;
+	const last = tree.lastOf(element);
 	const base = last === null ? start.inner : cascade.counterSets.get(last)!.own;
 	const preceding = last === null
 		? start.inner
