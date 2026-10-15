@@ -1689,6 +1689,10 @@ function styleNode(
 ): void {
 	const wasHidden = layoutNode.style.displayType === "none";
 	styleLayoutNode(element, layoutNode, layout.positionedElements, layout.pass);
+	const context = layout.boxes.get(element)?.independentFormattingContext;
+	if (context) {
+		styleContextRoot(element, context);
+	}
 	// Turning on display:none makes the whole subtree box-less, and every
 	// path that restyles a box passes through here.
 	if (!wasHidden && layoutNode.style.displayType === "none") {
@@ -2314,6 +2318,9 @@ function syncRunMembers(layout: Layout, run: Box): void {
 			addNode(layout, element, null);
 			continue;
 		}
+		// Whether it lays its content out under a root of its own, and as
+		// what, follows its display as it is now.
+		syncIndependentFormattingContext(layout, element);
 		if (!layout.boxes.get(element)?.independentFormattingContext) {
 			dropLayoutNode(layout, element);
 		}
@@ -2741,15 +2748,36 @@ function syncIndependentFormattingContext(
 			layout.staleHosts.add(element);
 		};
 	}
-	// The root IS the box's formatting context, so it gets the display and
-	// the grid container properties. The element's own node is the run's.
+	styleContextRoot(element, root);
+
+	for (const child of flowContent(element)) {
+		if (
+			nodeTypeOf(child) === child.ELEMENT_NODE ||
+			nodeTypeOf(child) === child.TEXT_NODE
+		) {
+			addNode(layout, child, root);
+		}
+	}
+
+	// The measure laying this root out may be running right now. Its boxes
+	// have to be in it before that measure returns.
+	if (layout.dirtyRunContainers.has(element)) {
+		syncContainerRuns(layout, element);
+	}
+}
+
+// The root IS the box's formatting context, so it gets the display and
+// the grid or table container properties, from the element as it is now.
+// The element's own node is the run's.
+function styleContextRoot(element: Element, root: LayoutNode): void {
+	const display = getLayoutDisplay(element);
 	const style = createStyle();
 	style.blockFormattingContext = true;
-	style.displayType = grid ? "grid" : "block";
-	if (table) {
+	style.displayType = "block";
+	if (display === "inline-table") {
 		applyTableContainer(style, element);
-	}
-	if (grid) {
+	} else if (display === "inline-grid") {
+		style.displayType = "grid";
 		applyGridContainer(style, element);
 		const gaps: Array<[string, Gutter]> = [
 			["row-gap", "row"],
@@ -2766,21 +2794,6 @@ function syncIndependentFormattingContext(
 	}
 	root.style = style;
 	root.invalidate();
-
-	for (const child of flowContent(element)) {
-		if (
-			nodeTypeOf(child) === child.ELEMENT_NODE ||
-			nodeTypeOf(child) === child.TEXT_NODE
-		) {
-			addNode(layout, child, root);
-		}
-	}
-
-	// The measure laying this root out may be running right now. Its boxes
-	// have to be in it before that measure returns.
-	if (layout.dirtyRunContainers.has(element)) {
-		syncContainerRuns(layout, element);
-	}
 }
 
 function dropIndependentFormattingContext(box: Box): void {
