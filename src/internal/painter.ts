@@ -206,6 +206,9 @@ interface PaintStyle {
 	// What else the painter reads from the element's style, so two paint
 	// styles that match paint alike.
 	others: string;
+	// The counters the element sets, which number markers and content
+	// after it, not its own cells.
+	counters: string;
 }
 
 interface BorderPaint {
@@ -236,19 +239,23 @@ const PAINTED_ELSEWHERE = [
 /**
  * Whether the element paints as it did under the style key it had, so a
  * restyle that changed nothing it draws repaints no rows. False when the
- * old style was never painted to compare.
+ * old style was never painted to compare, and "whole" when its counters
+ * changed, which renumber what comes after it.
  */
 export function paintsAsBefore(
 	painter: Painter,
 	element: Element,
 	key: object,
-): boolean {
+): boolean | "whole" {
 	const before = paintStyles.get(key);
 	if (before === undefined || painter.cascade.getStyleKey(element) === null) {
 		return false;
 	}
-	return JSON.stringify(before) ===
-		JSON.stringify(getPaintStyle(painter, element));
+	const after = getPaintStyle(painter, element);
+	if (before.counters !== after.counters) {
+		return "whole";
+	}
+	return JSON.stringify(before) === JSON.stringify(after);
 }
 
 function readPaintStyle(element: Element): PaintStyle {
@@ -363,6 +370,9 @@ function readPaintStyle(element: Element): PaintStyle {
 		others: PAINTED_ELSEWHERE.map((property) =>
 			getComputedValue(element, property),
 		).join("\0"),
+		counters: ["counter-reset", "counter-increment", "counter-set"]
+			.map((property) => getComputedValue(element, property))
+			.join("\0"),
 		// Whole cells, as layout rounds the content edge.
 		contentInsetX: Math.round(model.paddingLeft + model.borderLeftWidth),
 		contentInsetY: Math.round(model.paddingTop + model.borderTopWidth),
@@ -638,15 +648,17 @@ export function paint(painter: Painter, ctx: CellContext): void {
 
 /**
  * Checks a frame that repainted only some rows against one painted
- * whole, for tests. Set, a frame that differs throws, naming the cells.
+ * whole, for tests. Set, a frame that differs throws, naming the cells,
+ * and checked counts the frames compared.
  */
-export const partialFrameCheck = {enabled: false};
+export const partialFrameCheck = {enabled: false, checked: 0};
 
 export function checkPartialFrame(
 	painter: Painter,
 	ctx: CellContext,
 	previousCaret: {col: number; row: number} | null,
 ): void {
+	partialFrameCheck.checked++;
 	const whole = new CellContext(
 		new CellGrid(ctx.rows, ctx.cols),
 		ctx.rows,

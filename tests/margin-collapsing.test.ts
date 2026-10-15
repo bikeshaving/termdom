@@ -251,3 +251,17 @@ test("a trailing self-collapsing child pushes the gap outside its parent", async
 	expect(after.top - wrap.bottom).toBe(2);
 	dom.dispose();
 });
+
+// The root element's margins collapse with nothing (css2 §8.3.1): not its
+// children's, and not out of the initial containing block, which has
+// nowhere to put them.
+test("the root element's margins stay its own", async () => {
+	const {dom} = await layout(
+		"<p id=\"p\" style=\"margin: 0\">x</p>",
+		"<style>html { margin-top: 2px } body { margin: 3px 0 0 }</style>",
+	);
+	const html = getRect(dom, dom.document.documentElement);
+	const p = getRect(dom, dom.document.getElementById("p")!);
+	expect([html.top, p.top]).toEqual([2, 5]);
+	dom.dispose();
+});
