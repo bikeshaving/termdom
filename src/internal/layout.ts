@@ -2321,14 +2321,10 @@ function syncRunMembers(layout: Layout, run: Box): void {
 		// Whether it lays its content out under a root of its own, and as
 		// what, follows its display as it is now.
 		syncIndependentFormattingContext(layout, element);
-		const kept = layout.nodeMap.get(element);
-		if (!layout.boxes.get(element)?.independentFormattingContext) {
-			dropLayoutNode(layout, element);
-		} else if (kept) {
-			// A node kept is styled as the element is now, or the next restyle
-			// compares against a display it no longer has.
-			styleNode(layout, element, kept);
-		}
+		// A member is measured by its run, and has no box of its own for a
+		// node to describe. One left from an earlier shape answers for where
+		// the element was.
+		dropLayoutNode(layout, element);
 		dropRunContent(layout, element);
 	}
 }
@@ -7114,6 +7110,9 @@ function checkTreeShape(layout: Layout): string[] {
 	for (const [domNode, node] of layout.nodeMap) {
 		if (node.parent !== null && !seen.has(node)) {
 			problems.push(`${name(node)} hangs where the root cannot reach`);
+		}
+		if (node.parent === null && !seen.has(node) && flatIsConnected(domNode)) {
+			problems.push(`${name(node)} is held by no box`);
 		}
 		if (
 			seen.has(node) &&
