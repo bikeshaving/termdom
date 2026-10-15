@@ -3257,7 +3257,10 @@ function measureInlineRun(
 }
 
 // The <math> element a node is inside, itself included.
-function getEnclosingMath(node: Node): Element | null {
+function getEnclosingMath(layout: Layout, node: Node): Element | null {
+	if (!layout.laidOutMath) {
+		return null;
+	}
 	for (
 		let element: Element | null = nodeTypeOf(node) === node.ELEMENT_NODE
 			? (node as Element)
@@ -3275,6 +3278,7 @@ function getEnclosingMath(node: Node): Element | null {
 function measureMath(layout: Layout, element: Element): MathBox {
 	const box = layoutMath(element, !isInlineDisplay(getUsedDisplay(element)));
 	layout.mathBoxes.set(element, box);
+	layout.laidOutMath = true;
 	return box;
 }
 
@@ -5272,6 +5276,9 @@ export class Layout {
 	// Each <math> element's last laid-out box. Written by whichever
 	// measurement placed the element and read back by the painter.
 	mathBoxes: WeakMap<Element, MathBox>;
+	// Whether any <math> was ever laid out, so a page without one never
+	// searches an element's ancestors for it.
+	laidOutMath: boolean;
 
 	// The reverse of Box.layoutNode, and the registry the sweeps that must
 	// reach every box (resize, pruning, disposal) walk. Strong, because
@@ -5300,16 +5307,21 @@ export class Layout {
 	// Counts layout passes, so a node styled in this pass is not styled
 	// again when a container re-adds it.
 	pass: number;
+	// Counts the passes that solved the tree, so a reader can tell whether
+	// geometry changed since it last looked.
+	solves: number;
 
 	constructor(window: Window, width: number, height: number) {
 		this.geometryMoved = false;
 		this.pass = 0;
+		this.solves = 0;
 		this.positionedElements = new Set<Element>();
 		this.terminalReordersText = false;
 		this.rectTextIndices =
 			new WeakMap<object, Map<Node, TextFragmentEntry[]>>();
 		this.boxes = new WeakMap<Node, Box>();
 		this.mathBoxes = new WeakMap<Element, MathBox>();
+		this.laidOutMath = false;
 		this.derivedContainers = new WeakSet<Element>();
 		this.anonymousBoxes = new Map<LayoutNode, Box>();
 		this.dirtyRunContainers = new Set<Element>();
@@ -5454,6 +5466,7 @@ export class Layout {
 		const root = this.initialBlock;
 		root.performLayout(root.style.width.value, root.style.height.value);
 		computePaintExtents(this, root, 0);
+		this.solves++;
 	}
 
 	dispose(): void {
@@ -5726,7 +5739,7 @@ export class Layout {
 		}
 
 		// An element inside <math> covers the cells that render its text.
-		const math = getEnclosingMath(element);
+		const math = getEnclosingMath(this, element);
 		if (math !== null && math !== element) {
 			const rects = getMathNodeRects(this, math, element);
 			return rects.length === 0 ? null : unionRects(this, rects);
@@ -5798,7 +5811,7 @@ export class Layout {
 	}
 
 	getRects(node: Node): DOMRect[] {
-		const math = getEnclosingMath(node);
+		const math = getEnclosingMath(this, node);
 		if (math !== null && math !== node) {
 			return getMathNodeRects(this, math, node);
 		}
@@ -5987,7 +6000,7 @@ export class Layout {
 		clampToNearestLine = false,
 	): {node: Text; offset: number} | null {
 		// Math has no text runs. Its cells know what text they render.
-		const math = getEnclosingMath(root);
+		const math = getEnclosingMath(this, root);
 		if (math !== null) {
 			const origin = getMathOrigin(this, math);
 			return origin === null
