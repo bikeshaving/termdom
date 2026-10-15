@@ -87,7 +87,7 @@ export interface Size {
 // left is the absolute left edge of the content box, unrounded, as the
 // box was last placed, so text can break against the whole columns it is
 // drawn across. NaN before the box is first placed.
-type Measure = (
+export type Measure = (
 	width: number,
 	widthSpace: AvailableSpace,
 	placing: boolean,
@@ -684,6 +684,23 @@ export class LayoutNode {
 		}
 		this.stale = false;
 	}
+}
+
+/**
+ * Forgets what the node remembers between solves: its cached results,
+ * the places it was rounded and measured at. A solve after this is a
+ * solve from nothing.
+ */
+export function forgetLayout(node: LayoutNode): void {
+	node.stale = true;
+	node.cachedLayout = null;
+	node.cachedSizes = null;
+	node.gridLeft = NaN;
+	node.gridTop = NaN;
+	node.settled = false;
+	node.rawAbsoluteLeft = NaN;
+	node.measuredWidth = NaN;
+	node.measured = null;
 }
 
 export function insertChild(

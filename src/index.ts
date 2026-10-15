@@ -84,9 +84,11 @@ import {
 } from "./internal/images.ts";
 import {Input, resolvePendingHover} from "./internal/input.ts";
 import {
+	checkLayoutFromScratch,
 	framePainted,
 	invalidateTextMeasurement,
 	Layout,
+	layoutCheck,
 	takeDamageBands,
 } from "./internal/layout.ts";
 import {
@@ -1600,6 +1602,9 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	runFocusFixup(termDOM.document);
 
 	termDOMSlots.layout.performLayout();
+	if (layoutCheck.enabled) {
+		checkLayoutFromScratch(termDOMSlots.layout);
+	}
 	clampScrollOffsets(termDOM.document);
 
 	revealPendingCaret(termDOM.document);

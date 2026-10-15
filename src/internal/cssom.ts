@@ -342,17 +342,48 @@ const boxModels = new WeakMap<object, CSSValues.BoxModel>();
  * An element's margins, borders and padding, in cells. The same object
  * until the element's style changes, so a caller copies it to change it.
  */
+/**
+ * Called with every style value read while set: the element, what was
+ * read, and the value. A computation that caches its result records what
+ * it read, and is invalidated when any of it reads differently.
+ */
+type StyleReadRecorder = (
+	element: Element,
+	read: string,
+	value: string,
+) => void;
+
+let readRecorder: StyleReadRecorder | null = null;
+
+// A box model is recorded as one read, not the values it is made of, and
+// by the record it is: the same until the element's style changes.
+const BOX_MODEL_READ = "box-model";
+const boxModelIds = new WeakMap<CSSValues.BoxModel, string>();
+let nextBoxModelId = 0;
+
+function getBoxModelId(model: CSSValues.BoxModel): string {
+	let id = boxModelIds.get(model);
+	if (id === undefined) {
+		id = String(nextBoxModelId++);
+		boxModelIds.set(model, id);
+	}
+	return id;
+}
+
 export function getBoxModel(element: Element): CSSValues.BoxModel {
 	const document = ownerDocumentOf(element);
 	const cascade = document ? documentCascades.get(document) : undefined;
 	const key = cascade?.getStyleKey(element) ?? null;
 	let model = key === null ? undefined : boxModels.get(key);
 	if (model === undefined) {
-		model = readBoxModel(element);
+		// Recorded as one read, cached or not, rather than as the values
+		// that make it up.
+		model = recordStyleReads(() => {}, () => readBoxModel(element));
 		if (key !== null) {
 			boxModels.set(key, model);
 		}
 	}
+	readRecorder?.(element, BOX_MODEL_READ, getBoxModelId(model));
 	return model;
 }
 
@@ -3853,6 +3884,44 @@ export function getComputedValue(
 	element: Element,
 	property: string,
 	pseudoElement = "",
+): string {
+	const value = readComputedValue(element, property, pseudoElement);
+	readRecorder?.(
+		element,
+		pseudoElement === "" ? property : `${pseudoElement}|${property}`,
+		value,
+	);
+	return value;
+}
+
+export function recordStyleReads<T>(
+	recorder: StyleReadRecorder,
+	compute: () => T,
+): T {
+	const outer = readRecorder;
+	readRecorder = recorder;
+	try {
+		return compute();
+	} finally {
+		readRecorder = outer;
+	}
+}
+
+/** What a recorded read reads now. */
+export function readStyleAgain(element: Element, read: string): string {
+	if (read === BOX_MODEL_READ) {
+		return getBoxModelId(getBoxModel(element));
+	}
+	const bar = read.indexOf("|");
+	return bar === -1
+		? readComputedValue(element, read, "")
+		: readComputedValue(element, read.slice(bar + 1), read.slice(0, bar));
+}
+
+function readComputedValue(
+	element: Element,
+	property: string,
+	pseudoElement: string,
 ): string {
 	// A pseudo-element node's style is its host's declaration for the
 	// pseudo-element it fills. It matches no selector of its own.
@@ -8428,6 +8497,14 @@ function recordRestyle(
 	dropped: Slots<ComputedStyleDeclaration> | undefined,
 	hadPseudoStyles: boolean,
 ): void {
+	cascade.layout.restyledSinceLayout.add(element);
+	// Past this many, the next frame repaints whole rather than compare
+	// them, and a document that never paints keeps no more.
+	if (cascade.layout.restyledForPaint.size >= 256) {
+		cascade.layout.restyledForPaint.clear();
+		cascade.layout.invalidateFrame();
+		return;
+	}
 	if (!cascade.layout.restyledForPaint.has(element)) {
 		cascade.layout.restyledForPaint.set(
 			element,
