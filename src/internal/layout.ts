@@ -7877,6 +7877,10 @@ function applyRestyles(layout: Layout): void {
 			measured.add(element);
 			touchChildren(layout, element);
 			invalidateChildDerivation(layout, element);
+			// Whether it lays its content out under a root of its own follows
+			// its display, and a node kept through the change keeps no root it
+			// no longer has.
+			syncIndependentFormattingContext(layout, element);
 			if (layout.boxes.get(element)?.children) {
 				invalidateContainerBoxes(layout, element);
 				// An element that becomes a flex container, or stops being one,
