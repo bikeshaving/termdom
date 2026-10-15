@@ -188,6 +188,15 @@ const TABLE_DISPLAYS = new Set<string>([
 	"table-caption",
 ]);
 
+const BLOCKIFIED_TABLE_PARTS = new Set<Display>([
+	"table-header-group",
+	"table-footer-group",
+	"table-row-group",
+	"table-caption",
+	"table-row",
+	"table-cell",
+]);
+
 // display has two axes (css-display-3 §2), and blockification (§2.7) changes
 // only the OUTER one. An absolutely positioned inline-grid sits on rows of its
 // own and is still a grid inside. So the outer question (is this box on a line)
@@ -1492,7 +1501,13 @@ function styleLayoutNodeProperties(
 		}
 	}
 
-	if (display === "none") {
+	// An absolutely positioned part of a table is a block (css2 §9.7). It
+	// leaves the table, and lays out as any positioned box does.
+	const outOfFlow =
+		getPosition(element) === "absolute" || getPosition(element) === "fixed";
+	if (outOfFlow && BLOCKIFIED_TABLE_PARTS.has(display)) {
+		style.displayType = "block";
+	} else if (display === "none") {
 		style.displayType = "none";
 	} else if (display === "grid" || display === "inline-grid") {
 		style.displayType = "grid";
@@ -2462,6 +2477,11 @@ function syncIndependentFormattingContext(
 	if (!root) {
 		root = new LayoutNode();
 		box.independentFormattingContext = root;
+		// A change inside, a restyle no run records, leaves the box's
+		// measure answering with the old size unless the box hears of it.
+		root.onStale = () => {
+			layout.staleHosts.add(element);
+		};
 	}
 	// The root IS the box's formatting context, so it gets the display and
 	// the grid container properties. The element's own node is the run's.
@@ -5397,6 +5417,9 @@ export class Layout {
 	// Elements whose style changed with no layout change, and whether the
 	// selection moved. Their rows are found once layout is current.
 	restyledForPaint: Map<Element, object | null>;
+	// Boxes whose own formatting context went stale, so that their measure,
+	// which lays it out, is answered again.
+	staleHosts: Set<Element>;
 	selectionMoved: boolean;
 	// The rows the selection covered at the last frame, from its ends.
 	selectionRows: [number, number] | null;
@@ -5409,6 +5432,7 @@ export class Layout {
 		this.wholeDamage = true;
 		this.collecting = false;
 		this.restyledForPaint = new Map();
+		this.staleHosts = new Set();
 		this.selectionMoved = false;
 		this.selectionRows = null;
 		this.positionedElements = new Set<Element>();
@@ -5483,6 +5507,7 @@ export class Layout {
 		// The cascade has finished for this frame, so the boxes it unsettled
 		// can be resolved against the current styles.
 		applyRestyles(this);
+		flushStaleHosts(this);
 		// Every mutation path dirties the tree on its way in, so a clean tree
 		// cannot be hiding a disconnection, and even the pruning sweep below is
 		// not worth paying.
@@ -5553,6 +5578,10 @@ export class Layout {
 			}
 		}
 
+		// The boxes added above may have joined a box's own formatting
+		// context.
+		flushStaleHosts(this);
+
 		// A clean root means the previous layout is still exact. Recomputing
 		// would be a full-tree relayout per frame for an animation repainting
 		// one span.
@@ -5565,6 +5594,26 @@ export class Layout {
 		// viewport units against it.
 		const root = this.initialBlock;
 		root.performLayout(root.style.width.value, root.style.height.value);
+		// A context that went stale while the solve ran and was not laid out
+		// after, as one whose box's measure was already answered, is laid out
+		// now. One its own measure rebuilt is laid out already.
+		for (let pass = 0; pass < 2 && this.staleHosts.size > 0; pass++) {
+			const hosts = [...this.staleHosts];
+			this.staleHosts.clear();
+			let again = false;
+			for (const host of hosts) {
+				const context = this.boxes.get(host)?.independentFormattingContext;
+				if (host.isConnected && context?.stale) {
+					invalidateHost(this, host);
+					again = true;
+				}
+			}
+			if (!again) {
+				break;
+			}
+			root.performLayout(root.style.width.value, root.style.height.value);
+		}
+		this.staleHosts.clear();
 		this.collecting = !this.wholeDamage;
 		computePaintExtents(this, root, 0, 0);
 		this.collecting = false;
@@ -6463,6 +6512,25 @@ function paintsOwnBox(layout: Layout, node: LayoutNode): boolean {
 		getComputedValue(element, "display") === "list-item";
 }
 
+// A box whose own formatting context went stale lays it out again in its
+// measure, which is what is invalidated.
+function flushStaleHosts(layout: Layout): void {
+	for (const host of layout.staleHosts) {
+		invalidateHost(layout, host);
+	}
+	layout.staleHosts.clear();
+}
+
+// The box's own node when it has one, a block in a flex or grid
+// container, and the run that measures it when it sits on a line.
+function invalidateHost(layout: Layout, host: Element): void {
+	if (!host.isConnected) {
+		return;
+	}
+	layout.nodeMap.get(host)?.invalidate();
+	invalidateEnclosingMeasure(layout, host);
+}
+
 function isInDocumentTree(layout: Layout, node: LayoutNode): boolean {
 	let root = node;
 	while (root.parent !== null) {
@@ -7014,6 +7082,14 @@ function applyRestyles(layout: Layout): void {
 				pseudoElementCount(element) === 0
 					? probeLayoutStyle(element)
 					: null;
+			// A box that starts or stops being positioned starts or stops
+			// containing its absolute descendants.
+			if (
+				probe !== null &&
+				probe.style.positionType !== layoutNode!.style.positionType
+			) {
+				invalidateOutOfFlowDescendants(layout, element);
+			}
 			if (probe !== null) {
 				// A restyle that left every property layout reads as it was (a
 				// color, a decoration) changes no box and no measurement, and
