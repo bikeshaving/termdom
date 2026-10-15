@@ -1041,6 +1041,10 @@ interface Extent {
 // A subtree roundToGrid left alone keeps its record while its top holds.
 const extents = new WeakMap<LayoutNode, Extent>();
 
+// The lines a measured box painted at the last paint extents, to tell a
+// box laid out again into the same lines from one whose text changed.
+const lineRecords = new WeakMap<LayoutNode, BreakResult>();
+
 function computePaintExtents(
 	layout: Layout,
 	node: LayoutNode,
@@ -1058,18 +1062,22 @@ function computePaintExtents(
 	fixed ||= node.style.positionType === "fixed";
 	let moved = false;
 	if (layout.collecting) {
-		const lines = node.measure === null ? undefined : getMeasuredLines(layout, node);
-		const shifted = extent === undefined ||
-			extent.origin !== top ||
-			extent.left !== left;
-		const resized = extent !== undefined &&
+		const lines = node.measure === null
+			? undefined
+			: getMeasuredLines(layout, node);
+		const shifted =
+			extent === undefined || extent.origin !== top || extent.left !== left;
+		const resized =
+			extent !== undefined &&
 			(extent.width !== getComputedWidth(node) ||
 				extent.height !== getComputedHeight(node));
-		moved = node.lostChild ||
+		moved =
+			node.lostChild ||
 			((shifted || resized) && paintsOwnBox(layout, node)) ||
 			(node.measure !== null &&
 				(shifted ||
-					(!settled && !node.settled &&
+					(!settled &&
+						!node.settled &&
 						!isSameLines(node, lineRecords.get(node), lines))));
 		if (lines !== undefined) {
 			lineRecords.set(node, lines);
@@ -6280,6 +6288,10 @@ export function framePainted(layout: Layout): void {
 	layout.selectionMoved = false;
 }
 
+// Past this many moved boxes a frame repaints whole, which is cheaper
+// than merging them, and bounds what a document never painted keeps.
+const MAX_DAMAGE = 64;
+
 function addDamage(
 	layout: Layout,
 	node: LayoutNode,
@@ -6298,10 +6310,6 @@ function addDamage(
 	const shift = getScrollShift(layout, node).y;
 	layout.damage.push([top + shift, bottom + shift, fixed]);
 }
-
-// The lines a measured box painted at the last paint extents, to tell a
-// box laid out again into the same lines from one whose text changed.
-const lineRecords = new WeakMap<LayoutNode, BreakResult>();
 
 function isSameLines(
 	node: LayoutNode,
@@ -6357,8 +6365,10 @@ function isSameLeaf(a: Leaf, b: Leaf): boolean {
 	}
 	if (a.type === "edge") {
 		const edge = b as EdgeLeaf;
-		return a.side === edge.side && a.margin === edge.margin &&
-			a.border === edge.border && a.padding === edge.padding;
+		return a.side === edge.side &&
+			a.margin === edge.margin &&
+			a.border === edge.border &&
+			a.padding === edge.padding;
 	}
 	return true;
 }
@@ -6378,7 +6388,9 @@ function isStartAligned(node: LayoutNode): boolean {
 	const align = CSSValues.getLineAlignment(
 		getComputedValue(element, "text-align"),
 	);
-	return align !== "center" && align !== "right" && align !== "end" &&
+	return align !== "center" &&
+		align !== "right" &&
+		align !== "end" &&
 		!getComputedValue(element, "text-indent").includes("%");
 }
 
@@ -6418,10 +6430,6 @@ function paintsOwnBox(layout: Layout, node: LayoutNode): boolean {
 		getComputedValue(element, "box-shadow") !== "none" ||
 		getComputedValue(element, "display") === "list-item";
 }
-
-// Past this many moved boxes a frame repaints whole, which is cheaper
-// than merging them, and bounds what a document never painted keeps.
-const MAX_DAMAGE = 64;
 
 function isInFixedBox(node: LayoutNode): boolean {
 	for (let at: LayoutNode | null = node; at !== null; at = at.parent) {
@@ -6482,7 +6490,9 @@ export function takeDamageBands(
 		add(top, bottom, fixed);
 	}
 	for (const [element, key] of layout.restyledForPaint) {
-		if (!element.isConnected || (key !== null && paintsAsBefore(element, key))) {
+		if (
+			!element.isConnected || (key !== null && paintsAsBefore(element, key))
+		) {
 			continue;
 		}
 		let box: Element | null = element;

@@ -49,7 +49,7 @@ import {
 } from "./dom.ts";
 import {requestEditingInsert} from "./editing.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
-import {type Framebuffer, requestFrame, repaintAll} from "./framebuffer.ts";
+import {type Framebuffer, repaintAll, requestFrame} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";
 import {
 	attributeOf,

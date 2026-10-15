@@ -8489,7 +8489,12 @@ function invalidateElementCaches(
 	// A computed style an author still holds is the one this cache handed
 	// out, so it is told the cascade changed rather than merely dropped.
 	const dropped = cascade.computedStyleCache.get(element);
-	recordRestyle(cascade, element, dropped, cascade.pseudoElementStyleCache.has(element));
+	recordRestyle(
+		cascade,
+		element,
+		dropped,
+		cascade.pseudoElementStyleCache.has(element),
+	);
 	if (dropped) {
 		cascade.currentDeclarations.delete(dropped);
 		storeTransitionFallback(cascade, element, "", dropped.resolved);

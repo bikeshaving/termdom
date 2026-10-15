@@ -800,7 +800,12 @@ test("a paragraph holding only a non-breaking space is one line tall", async () 
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({transport: terminal.transport});
 	const paragraph = (inner: string) => `<p style="margin: 0">${inner}</p>`;
-	for (const inner of ["&nbsp;", "<span>&nbsp;</span>", "<o:p>&nbsp;</o:p>", " &nbsp; "]) {
+	for (const inner of [
+		"&nbsp;",
+		"<span>&nbsp;</span>",
+		"<o:p>&nbsp;</o:p>",
+		" &nbsp; ",
+	]) {
 		dom.document.body.innerHTML =
 			paragraph("a") + paragraph(inner) + paragraph("b");
 		await nextFrame(dom);

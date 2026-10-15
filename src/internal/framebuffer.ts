@@ -2014,7 +2014,12 @@ export class Framebuffer {
 	// The previous frame's borders before they were joined, and where it
 	// was painted from, so a frame that repaints some rows starts from it.
 	prevBorders: Uint32Array | null;
-	prevFrame: {offset: number; cursorRow: number | undefined; caret: {col: number; row: number} | null} | null;
+	prevFrame: {
+		offset: number;
+		cursorRow: number | undefined;
+		caret: {col: number; row: number} | null;
+	} | null;
+
 	// The dropped grid, reused by the next frame of the same size.
 	spare: CellGrid | null;
 	diff: CellGrid | null;
