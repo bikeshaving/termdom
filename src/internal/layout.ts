@@ -1019,6 +1019,9 @@ interface Extent {
 	// ones, and display:none ones, whose result.top is never updated. The
 	// children are sorted by extent top only when this is 0.
 	unstackedChildren: number;
+	// Whether the children's extents never move up, top or bottom, in
+	// document order, so a binary search can find the ones on some rows.
+	rowOrdered: boolean;
 	// Where the box and its scrollable overflow reach, from the box's own
 	// origin: its border box, and past it the lines it measures and the
 	// boxes it holds, unless it clips them (css-overflow-3 §2.2). A fixed
@@ -1085,6 +1088,7 @@ function computePaintExtents(
 			top,
 			bottom: top,
 			unstackedChildren: 0,
+			rowOrdered: true,
 			overflowRight: 0,
 			overflowBottom: 0,
 			scrollRight: null,
@@ -1120,6 +1124,9 @@ function computePaintExtents(
 				node.style.border.top + node.result.padding.top + own.totalHeight;
 		}
 	}
+	let rowOrdered = true;
+	let previousTop = -Infinity;
+	let previousBottom = -Infinity;
 	for (const child of node.children) {
 		const childExtent = computePaintExtents(
 			layout,
@@ -1129,6 +1136,11 @@ function computePaintExtents(
 			settled || node.settled,
 			fixed,
 		);
+		if (childExtent.top < previousTop || childExtent.bottom < previousBottom) {
+			rowOrdered = false;
+		}
+		previousTop = childExtent.top;
+		previousBottom = childExtent.bottom;
 		if (clips && scrollBottom !== null && child.style.displayType !== "none") {
 			if (scrollRight !== null) {
 				scrollRight =
@@ -1176,6 +1188,7 @@ function computePaintExtents(
 		addDamage(layout, node, highest, lowest, fixed);
 	}
 	extent.unstackedChildren = unstacked;
+	extent.rowOrdered = rowOrdered;
 	extent.overflowRight = right;
 	extent.overflowBottom = bottom;
 	extent.scrollRight = clips ? scrollRight : null;

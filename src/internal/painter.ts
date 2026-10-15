@@ -1112,8 +1112,8 @@ function visibleChildren(
 	if (
 		extent === undefined ||
 		extent.unstackedChildren !== 0 ||
+		!extent.rowOrdered ||
 		node.measure !== null ||
-		node.style.displayType !== "block" ||
 		(owner !== null &&
 			nodeTypeOf(owner) === owner.ELEMENT_NODE &&
 			layout.getBox(owner as Element)?.holdsFragments === true)
