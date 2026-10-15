@@ -21,7 +21,7 @@ import {
 } from "./fuzz-pages.ts";
 import {nextFrame} from "./test-utils.ts";
 
-const [LAYOUT] = PAGES;
+const [LAYOUT, FLOW] = PAGES;
 
 for (const page of PAGES) {
 	for (let seed = 1; seed <= 24; seed++) {
@@ -57,6 +57,16 @@ for (const seed of [
 		expect(await firstMismatch(LAYOUT, await record(LAYOUT, seed, 25))).toBe(
 			null,
 		);
+	});
+}
+
+// The same for the flow page: an input's shown value its attributes set
+// (3006), a class restyling a form control's shadow children (3003), a
+// sticky box asked for its shift in the middle of a solve (3130), and a
+// sticky shift moving rows its rect did not (3134, 3262).
+for (const seed of [3003, 3006, 3130, 3134, 3262]) {
+	test(`seeded changes to the flow page render as a fresh page does: seed ${seed}`, async () => {
+		expect(await firstMismatch(FLOW, await record(FLOW, seed, 25))).toBe(null);
 	});
 }
 

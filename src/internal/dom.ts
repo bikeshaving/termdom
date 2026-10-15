@@ -18997,6 +18997,8 @@ export class HTMLInputElement extends HTMLElement {
 		const slots = this;
 		if (localName === "value" && !slots.extra.dirtyValue) {
 			slots.extra.value = sanitizeInputValue(ownerOf(this), value ?? "");
+			// What the control shows is its value, which just changed.
+			syncUAShadowTree(ownerOf(this));
 		} else if (localName === "checked" && !slots.extra.dirtyChecked) {
 			setCheckedness(ownerOf(this), value !== null);
 		} else if (
@@ -19005,6 +19007,7 @@ export class HTMLInputElement extends HTMLElement {
 				(localName === "min" || localName === "max"))
 		) {
 			slots.extra.value = sanitizeInputValue(ownerOf(this), slots.extra.value);
+			syncUAShadowTree(ownerOf(this));
 		}
 	}
 

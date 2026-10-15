@@ -4887,17 +4887,20 @@ function stickyShiftAlong(
 // in-flow box is contained by its parent, so every ancestor is in the
 // chain. An absolute box is contained by the nearest positioned or
 // containing ancestor, so the scrollers below that leave it alone. A
-// fixed box is contained by the viewport, so none of them move it.
+// fixed box is contained by the viewport, so none of them move it. A
+// sticky shift comes from the finished layout, so a solve still running
+// goes without it.
 function getScrollShift(
 	layout: Layout,
 	layoutNode: LayoutNode,
+	solving: boolean,
 ): {x: number; y: number} {
 	let x = 0;
 	let y = 0;
 	let current: LayoutNode | null = layoutNode;
 	while (current !== null) {
 		const type: PositionType = current.style.positionType;
-		if (type === "sticky") {
+		if (type === "sticky" && !solving) {
 			const shift = getStickyShift(layout, current);
 			x += shift.x;
 			y += shift.y;
@@ -4950,7 +4953,7 @@ function getAbsolutePosition(
 		x += place.left;
 		y += place.top;
 	}
-	const shift = getScrollShift(layout, layoutNode);
+	const shift = getScrollShift(layout, layoutNode, solving);
 	return {x: x + shift.x, y: y + shift.y};
 }
 
@@ -5451,6 +5454,10 @@ export class Layout {
 	// which lays it out, is answered again.
 	staleHosts: Set<Element>;
 	selectionMoved: boolean;
+	// Whether the last solve found a sticky box. Its shift moves its rows
+	// with no change to its rect, so while one is shown, or was, a solve
+	// repaints whole.
+	shiftedSticky: boolean;
 	// The rows the selection covered at the last frame, from its ends.
 	selectionRows: [number, number] | null;
 
@@ -5465,6 +5472,7 @@ export class Layout {
 		this.restyledSinceLayout = new Set();
 		this.staleHosts = new Set();
 		this.selectionMoved = false;
+		this.shiftedSticky = false;
 		this.selectionRows = null;
 		this.positionedElements = new Set<Element>();
 		this.terminalReordersText = false;
@@ -5645,6 +5653,11 @@ export class Layout {
 			root.performLayout(root.style.width.value, root.style.height.value);
 		}
 		this.staleHosts.clear();
+		const sticky = hasStickyBox(this);
+		if (sticky || this.shiftedSticky) {
+			this.wholeDamage = true;
+		}
+		this.shiftedSticky = sticky;
 		this.collecting = !this.wholeDamage;
 		computePaintExtents(this, root, 0, 0);
 		this.collecting = false;
@@ -6391,6 +6404,15 @@ export function invalidateTextMeasurement(layout: Layout): void {
 	}
 }
 
+function hasStickyBox(layout: Layout): boolean {
+	for (const element of layout.positionedElements) {
+		if (layout.nodeMap.get(element)?.style.positionType === "sticky") {
+			return true;
+		}
+	}
+	return false;
+}
+
 export function framePainted(layout: Layout): void {
 	layout.geometryMoved = false;
 	layout.damage = [];
@@ -6419,7 +6441,7 @@ function addDamage(
 		layout.damage = [];
 		return;
 	}
-	const shift = getScrollShift(layout, node).y;
+	const shift = getScrollShift(layout, node, false).y;
 	layout.damage.push([top + shift, bottom + shift, fixed]);
 }
 
@@ -6735,7 +6757,7 @@ export function takeDamageBands(
 		if (node === undefined || extent === undefined) {
 			return undefined;
 		}
-		const shift = getScrollShift(layout, node).y;
+		const shift = getScrollShift(layout, node, false).y;
 		add(extent.top + shift, extent.bottom + shift, isInFixedBox(node));
 	}
 	if (layout.selectionMoved) {
@@ -6898,7 +6920,7 @@ function getMathNodeRects(
 export function scrolledAncestorRows(layout: Layout, element: Element): number {
 	const layoutNode =
 		layout.nodeMap.get(element) ?? runLayoutNode(layout, element);
-	return layoutNode ? -getScrollShift(layout, layoutNode).y : 0;
+	return layoutNode ? -getScrollShift(layout, layoutNode, false).y : 0;
 }
 
 // The text lets a caller repaint the run in the selection style.

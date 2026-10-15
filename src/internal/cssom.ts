@@ -24,6 +24,7 @@ import {
 	type Node as DOMNode,
 	dropPseudoElement,
 	ensurePseudoElement,
+	flatChildren,
 	flatParentElement,
 	flushLayout,
 	flushStyle,
@@ -73,6 +74,7 @@ import {clearTimeout, queueMicrotask, setTimeout} from "./timers.ts";
 import {
 	attributeOf,
 	containsOf,
+	ELEMENT_NODE,
 	getAttributeList,
 	getDocumentExchange,
 	hasAttributeOf,
@@ -6703,8 +6705,10 @@ export function handleMutations(
 				invalidateElementCaches(cascade, element, notifyLayout);
 				attachPseudoElementsToElement(cascade, element);
 				if (subjects.length > 0) {
-					for (const descendant of element.querySelectorAll("*")) {
-						const parent = descendant.parentElement;
+					// The flat tree, where a box's children are: a host's are
+					// its shadow tree's, a form control's included.
+					for (const descendant of flatDescendants(element)) {
+						const parent = flatParentElement(descendant);
 						if (
 							subjects.some(
 								(anchor) =>
@@ -7258,6 +7262,15 @@ function resolveCounterFunction(
 			);
 		},
 	);
+}
+
+function *flatDescendants(element: Element): Generator<Element> {
+	for (const child of flatChildren(element)) {
+		if (nodeTypeOf(child) === ELEMENT_NODE) {
+			yield child as Element;
+			yield *flatDescendants(child as Element);
+		}
+	}
 }
 
 function reachesSiblings(
