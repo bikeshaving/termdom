@@ -978,10 +978,22 @@ export function readCell(
 }
 
 // Returns the borders as painted, before joining, which a frame painted
-// over this one starts from.
-function joinTouchingBorders(grid: CellGrid): Uint32Array {
+// over this one starts from. Given the rows a frame repainted and the
+// borders the last frame joined, only those rows and their neighbours
+// join again, and the rest keep what the last frame joined.
+function joinTouchingBorders(
+	grid: CellGrid,
+	ranges: Array<[number, number]> = [[0, grid.rows]],
+	joinedBefore: Uint32Array | null = null,
+): Uint32Array {
 	const {rows, cols, border} = grid;
 	const painted = border.slice();
+	if (joinedBefore !== null) {
+		border.set(joinedBefore);
+		for (const [from, to] of ranges) {
+			border.set(painted.subarray(from * cols, to * cols), from * cols);
+		}
+	}
 	// Which neighbour to look at for each edge of a cell, and which of that
 	// neighbour's edges would run into this one.
 	const REACHES: Array<{mask: number; step: number; from: number}> = [
@@ -991,7 +1003,14 @@ function joinTouchingBorders(grid: CellGrid): Uint32Array {
 		{mask: BORDER_MASK.Right, step: 1, from: BORDER_MASK.Left},
 	];
 
-	for (let row = 0; row < rows; row++) {
+	for (const [from, to] of ranges) {
+		for (let row = from; row < to; row++) {
+			joinRow(row);
+		}
+	}
+	return painted;
+
+	function joinRow(row: number): void {
 		for (let col = 0; col < cols; col++) {
 			const index = row * cols + col;
 			const own = painted[index];
@@ -1026,7 +1045,6 @@ function joinTouchingBorders(grid: CellGrid): Uint32Array {
 			border[index] = joined;
 		}
 	}
-	return painted;
 }
 
 function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
@@ -2463,7 +2481,26 @@ export function beginFrame(
 		// The frame is complete. Join the borders whose strokes touch, so
 		// the diff below sees a junction appear even when only its
 		// neighbour changed.
-		const painted = joinTouchingBorders(next);
+		// A frame painted over the last one changed only its bands, and the
+		// rows beside them where borders join.
+		const changedRows = partial
+			? context.bands.map(([top, end]): [number, number] => [
+				Math.max(0, top - 1),
+				Math.min(frameRows, end + 1),
+			])
+			: undefined;
+		const painted = joinTouchingBorders(
+			next,
+			changedRows,
+			partial ? framebuffer.prev!.border : null,
+		);
+		let unchangedRows: Uint8Array | null = null;
+		if (changedRows !== undefined) {
+			unchangedRows = new Uint8Array(frameRows).fill(1);
+			for (const [from, to] of changedRows) {
+				unchangedRows.fill(0, from, to);
+			}
+		}
 
 		// Build the diff. A frame taller than the terminal is a growth
 		// frame. The rows below the fold have never been on screen, so
@@ -2488,6 +2525,9 @@ export function beginFrame(
 			const aligned = prevCols === cols;
 
 			for (let row = 0; row < framebuffer.rowCount; row++) {
+				if (unchangedRows !== null && unchangedRows[row] === 1) {
+					continue;
+				}
 				const nextRow = row * cols;
 				const prevRow = row * prevCols;
 				const rowInPrev = row < prevRows;
