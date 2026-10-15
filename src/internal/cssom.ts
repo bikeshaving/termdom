@@ -7378,6 +7378,72 @@ function flushCascadeStyle(cascade: Cascade): void {
 	}
 }
 
+/**
+ * Checks each frame's styles against styles resolved from nothing, for
+ * tests: every value an element's cached style has served must be what
+ * the cascade resolves with every cache dropped. Set, a value served
+ * otherwise throws, naming it.
+ */
+export const styleCheck = {enabled: false, checked: 0};
+
+export function checkStylesFromScratch(cascade: Cascade): void {
+	styleCheck.checked++;
+	const elements: Element[] =
+		[...cascade.document.querySelectorAll("*")] as Element[];
+	for (const root of cascade.shadowRoots) {
+		elements.push(...root.querySelectorAll("*") as unknown as Element[]);
+	}
+	const before = new Map<Element, Map<string, string>>();
+	for (const element of elements) {
+		const slots = cascade.computedStyleCache.get(element);
+		// A transition's values move with time, and resolving again would
+		// restart it.
+		if (slots === undefined || cascade.activeTransitions.has(element)) {
+			continue;
+		}
+		const values = new Map<string, string>();
+		for (const property of [...slots.resolved.keys()]) {
+			values.set(property, getComputedValue(element, property));
+		}
+		before.set(element, values);
+	}
+	// The caches are put back after, so the check observes and changes
+	// nothing a page could see.
+	const kept = {
+		currentDeclarations: cascade.currentDeclarations,
+		usedValues: cascade.usedValues,
+		computedStyleCache: cascade.computedStyleCache,
+		hasResults: cascade.hasResults,
+		pseudoElementStyleCache: cascade.pseudoElementStyleCache,
+		counterScopes: cascade.counterScopes,
+		sharedRoot: cascade.sharedRoot,
+	};
+	dropCache(cascade);
+	cascade.sharedRoot = new Map();
+	const differences: string[] = [];
+	for (const [element, values] of before) {
+		for (const [property, value] of values) {
+			const now = getComputedValue(element, property);
+			if (now !== value) {
+				differences.push(
+					`${element.localName}${element.id ? `#${element.id}` : ""} ` +
+						`${property} ${JSON.stringify(value)}, from nothing ${
+							JSON.stringify(now)
+						}`,
+				);
+			}
+		}
+	}
+	Object.assign(cascade, kept);
+	if (differences.length > 0) {
+		throw new Error(
+			`A style differs from one from nothing at ${
+				differences.slice(0, 8).join("; ")
+			}`,
+		);
+	}
+}
+
 function dropCache(cascade: Cascade): void {
 	// Every computed style ever handed out re-resolves on its next read.
 	cascade.currentDeclarations = new WeakSet<object>();

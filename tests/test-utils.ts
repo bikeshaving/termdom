@@ -20,6 +20,7 @@ import {
 	endFrame,
 	Framebuffer,
 } from "../src/internal/framebuffer.ts";
+import {styleCheck} from "../src/internal/cssom.ts";
 import {layoutCheck} from "../src/internal/layout.ts";
 import {partialFrameCheck} from "../src/internal/painter.ts";
 import {getStringWidth} from "../src/internal/text.ts";
@@ -30,6 +31,9 @@ partialFrameCheck.enabled = true;
 // And every solve must place each box where a solve that forgot every
 // cache would.
 layoutCheck.enabled = true;
+// And every style value served must be what the cascade resolves with
+// every cache dropped.
+styleCheck.enabled = true;
 
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
