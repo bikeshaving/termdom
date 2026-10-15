@@ -20,6 +20,10 @@ const painter = await import(`${root}/src/internal/painter.ts`);
 if (painter.partialFrameCheck !== undefined) {
 	painter.partialFrameCheck.enabled = false;
 }
+const layout = await import(`${root}/src/internal/layout.ts`);
+if (layout.layoutCheck !== undefined) {
+	layout.layoutCheck.enabled = false;
+}
 
 export const TermDOM = index.TermDOM;
 export const installGlobals = index.installGlobals;

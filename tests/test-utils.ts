@@ -20,12 +20,16 @@ import {
 	endFrame,
 	Framebuffer,
 } from "../src/internal/framebuffer.ts";
+import {layoutCheck} from "../src/internal/layout.ts";
 import {partialFrameCheck} from "../src/internal/painter.ts";
 import {getStringWidth} from "../src/internal/text.ts";
 
 // A frame that repaints only the rows that changed must match one painted
 // whole, and every test's frames are held to that.
 partialFrameCheck.enabled = true;
+// And every solve must place each box where a solve that forgot every
+// cache would.
+layoutCheck.enabled = true;
 
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;

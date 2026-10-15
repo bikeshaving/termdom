@@ -13,6 +13,8 @@ import {
 	getTabSize,
 	getUsedOverflow,
 	hasLayoutOrPaintContainment,
+	readStyleAgain,
+	recordStyleReads,
 	toCellBorder,
 	toCellLength,
 	toWholeCells,
@@ -45,6 +47,7 @@ import {
 	createStyle,
 	type Edge,
 	type FlexDirection,
+	forgetLayout,
 	getChildIndex,
 	getComputedGridTracks,
 	getComputedHeight,
@@ -55,6 +58,7 @@ import {
 	isContainingBlock,
 	type Justify,
 	LayoutNode,
+	type Measure,
 	type PositionType,
 	resolveValue,
 	shareStyleEdges,
@@ -1284,11 +1288,8 @@ function sizeReplacedBox(
 }
 
 // What the run measurer reads beyond the style record: the properties
-// that decide where text breaks and how wide it is, and the size of an
-// inline-block, which its measure reads rather than its record.
+// that decide where text breaks and how wide it is.
 const MEASURE_PROPERTIES = [
-	"width",
-	"height",
 	"white-space",
 	"direction",
 	"word-break",
@@ -1854,6 +1855,7 @@ function dropLayoutNode(layout: Layout, node: Node): void {
 		layoutNode.removeChild(layoutNode.children[0]);
 	}
 	layout.measureNodes.delete(layoutNode);
+	forgetReads(layoutNode);
 	untrackNode(layout, node);
 }
 
@@ -1883,6 +1885,7 @@ function dropAnonymousBox(layout: Layout, box: Box): void {
 	}
 	layoutNode.parent?.removeChild(layoutNode);
 	layout.measureNodes.delete(layoutNode);
+	forgetReads(layoutNode);
 	layout.anonymousBoxes.delete(layoutNode);
 	layoutNode.owner = null;
 }
@@ -2008,8 +2011,12 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 				if (styledFrom) {
 					styleLayoutNode(styledFrom, layoutNode, layout.positionedElements);
 				}
-				layoutNode.measure = (width, widthSpace, placing, left) =>
-					measureInlineRun(layout, entry, width, widthSpace, placing, left);
+				layoutNode.measure = recordReads(
+					layout,
+					layoutNode,
+					(width, widthSpace, placing, left) =>
+						measureInlineRun(layout, entry, width, widthSpace, placing, left),
+				);
 				layout.measureNodes.add(layoutNode);
 				layout.anonymousBoxes.set(layoutNode, entry);
 				layoutNode.owner = entry.head;
@@ -2205,6 +2212,7 @@ function addNode(
 		if (stale && stale.parent === parentLayoutNode) {
 			parentLayoutNode.removeChild(stale);
 			layout.measureNodes.delete(stale);
+			forgetReads(stale);
 			untrackNode(layout, node);
 		}
 		return;
@@ -2315,18 +2323,19 @@ function addElementNode(
 		return;
 	} else if (isReplacedBox(element)) {
 		layoutNode.measuresText = false;
-		layoutNode.measure = (width, widthSpace) =>
-			measureReplaced(element, width, widthSpace);
+		layoutNode.measure = recordReads(layout, layoutNode, (width, widthSpace) =>
+			measureReplaced(element, width, widthSpace),
+		);
 		layout.measureNodes.add(layoutNode);
 		if (parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
 		return;
 	} else if (isMathRoot(element)) {
-		layoutNode.measure = () => {
+		layoutNode.measure = recordReads(layout, layoutNode, () => {
 			const box = measureMath(layout, element);
 			return {width: box.width, height: box.height};
-		};
+		});
 		layout.measureNodes.add(layoutNode);
 		if (parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
@@ -2334,8 +2343,12 @@ function addElementNode(
 		return;
 	} else if (asRun) {
 		const box = getPrincipalBox(layout, element);
-		layoutNode.measure = (width, widthSpace, placing, left) =>
-			measureInlineRun(layout, box, width, widthSpace, placing, left);
+		layoutNode.measure = recordReads(
+			layout,
+			layoutNode,
+			(width, widthSpace, placing, left) =>
+				measureInlineRun(layout, box, width, widthSpace, placing, left),
+		);
 		layout.measureNodes.add(layoutNode);
 
 		if (layoutNode && parentLayoutNode) {
@@ -2418,8 +2431,12 @@ function addTextNode(
 	}
 
 	const own = getPrincipalBox(layout, text);
-	layoutNode.measure = (width, widthSpace, placing, left) =>
-		measureInlineRun(layout, own, width, widthSpace, placing, left);
+	layoutNode.measure = recordReads(
+		layout,
+		layoutNode,
+		(width, widthSpace, placing, left) =>
+			measureInlineRun(layout, own, width, widthSpace, placing, left),
+	);
 	layout.measureNodes.add(layoutNode);
 
 	insertChild(parentLayoutNode, layoutNode, parentLayoutNode.children.length);
@@ -2732,6 +2749,7 @@ function untrackNode(layout: Layout, domNode: Node): void {
 	const layoutNode = layout.nodeMap.get(domNode);
 	if (layoutNode) {
 		layoutNode.owner = null;
+		forgetReads(layoutNode);
 	}
 	// The lines are the product of the layout node that is being removed,
 	// and would describe a box that no longer exists.
@@ -2894,6 +2912,7 @@ function invalidateNode(layout: Layout, node: Node): void {
 
 			if (!node.isConnected) {
 				layout.measureNodes.delete(layoutNode);
+				forgetReads(layoutNode);
 				untrackNode(layout, node);
 			} else {
 				// Kept for performLayout's re-add sweep, but restyled. A
@@ -5420,6 +5439,9 @@ export class Layout {
 	// Elements whose style changed with no layout change, and whether the
 	// selection moved. Their rows are found once layout is current.
 	restyledForPaint: Map<Element, object | null>;
+	// Every element restyled since the last layout, for the measures that
+	// read it.
+	restyledSinceLayout: Set<Element>;
 	// Boxes whose own formatting context went stale, so that their measure,
 	// which lays it out, is answered again.
 	staleHosts: Set<Element>;
@@ -5435,6 +5457,7 @@ export class Layout {
 		this.wholeDamage = true;
 		this.collecting = false;
 		this.restyledForPaint = new Map();
+		this.restyledSinceLayout = new Set();
 		this.staleHosts = new Set();
 		this.selectionMoved = false;
 		this.selectionRows = null;
@@ -6515,6 +6538,78 @@ function paintsOwnBox(layout: Layout, node: LayoutNode): boolean {
 		getComputedValue(element, "display") === "list-item";
 }
 
+/**
+ * Checks each frame's layout against a solve from nothing, for tests:
+ * every box where a solve that forgot every cache would place it. Run at
+ * every frame, not every solve, since a change that wrongly asks for no
+ * solve leaves the last one standing. Set, a box placed elsewhere throws,
+ * naming the boxes.
+ */
+export const layoutCheck = {enabled: false, checked: 0};
+
+// Every box of the document's tree and of the formatting contexts boxes
+// in it lay out for themselves.
+function forEachLayoutNode(
+	layout: Layout,
+	visit: (node: LayoutNode) => void,
+): void {
+	const walk = (node: LayoutNode): void => {
+		visit(node);
+		for (const child of node.children) {
+			walk(child);
+		}
+		const owner = node.owner as Node | null;
+		if (owner !== null && nodeTypeOf(owner) === owner.ELEMENT_NODE) {
+			const context = layout.boxes.get(owner as Element)
+				?.independentFormattingContext;
+			if (context) {
+				walk(context);
+			}
+		}
+	};
+	walk(layout.initialBlock);
+}
+
+function describeLayoutNode(node: LayoutNode): string {
+	const owner = node.owner as {
+		id?: string;
+		localName?: string;
+		nodeName?: string;
+	} | null;
+	const name = owner === null
+		? "anonymous"
+		: owner.id ? `#${owner.id}` : (owner.localName ?? owner.nodeName ?? "?");
+	const {left, top, width, height} = node.result;
+	return `${name} ${left},${top} ${width}x${height}`;
+}
+
+export function checkLayoutFromScratch(layout: Layout): void {
+	layoutCheck.checked++;
+	const before = new Map<LayoutNode, string>();
+	forEachLayoutNode(layout, (node) => {
+		before.set(node, describeLayoutNode(node));
+		forgetLayout(node);
+	});
+	const root = layout.initialBlock;
+	root.performLayout(root.style.width.value, root.style.height.value);
+	computePaintExtents(layout, root, 0, 0);
+	const differences: string[] = [];
+	forEachLayoutNode(layout, (node) => {
+		const was = before.get(node);
+		const now = describeLayoutNode(node);
+		if (was !== now) {
+			differences.push(`${was ?? "(new)"} -> ${now}`);
+		}
+	});
+	if (differences.length > 0) {
+		throw new Error(
+			`A solve differs from one from nothing at ${
+				differences.slice(0, 8).join(", ")
+			}`,
+		);
+	}
+}
+
 // A box whose own formatting context went stale lays it out again in its
 // measure, which is what is invalidated.
 function flushStaleHosts(layout: Layout): void {
@@ -7051,6 +7146,7 @@ function pruneDisconnectedNodes(layout: Layout): void {
 		}
 
 		layout.measureNodes.delete(layoutNode);
+		forgetReads(layoutNode);
 		untrackNode(layout, node);
 		layout.invalidatedNodes.delete(node);
 	}
@@ -7061,7 +7157,93 @@ function pruneDisconnectedNodes(layout: Layout): void {
 // now generates is derived where every box is derived.
 // Measures are dropped after every restyle has dropped its enumerations,
 // as handleMutations does with records.
+// The style values each box's measure last read, by the element read,
+// and the boxes that read each element. A measure's result is a function
+// of what it read, so it stands until one of those reads differently.
+const measureReads =
+	new WeakMap<LayoutNode, Map<Element, Map<string, string>>>();
+const measureReaders = new WeakMap<Element, Set<LayoutNode>>();
+
+// The readers are registered once the measure has returned, and only
+// while the layout still measures the box: a measure can drop its own box
+// on the way, and a reader dropped would be held by every element it read.
+function recordReads(
+	layout: Layout,
+	node: LayoutNode,
+	measure: Measure,
+): Measure {
+	return (width, widthSpace, placing, left) => {
+		const reads = new Map<Element, Map<string, string>>();
+		// Reads come in runs on one element.
+		let lastElement: Element | null = null;
+		let lastReads: Map<string, string> | undefined;
+		const size = recordStyleReads((element, read, value) => {
+			if (element !== lastElement) {
+				lastElement = element;
+				lastReads = reads.get(element);
+				if (lastReads === undefined) {
+					lastReads = new Map();
+					reads.set(element, lastReads);
+				}
+			}
+			lastReads!.set(read, value);
+		}, () => measure(width, widthSpace, placing, left));
+		forgetReads(node);
+		if (layout.measureNodes.has(node)) {
+			for (const element of reads.keys()) {
+				let readers = measureReaders.get(element);
+				if (readers === undefined) {
+					readers = new Set();
+					measureReaders.set(element, readers);
+				}
+				readers.add(node);
+			}
+			measureReads.set(node, reads);
+		}
+		return size;
+	};
+}
+
+// A box that leaves takes its reads with it, so no element it read keeps
+// it.
+function forgetReads(node: LayoutNode): void {
+	for (const element of measureReads.get(node)?.keys() ?? []) {
+		measureReaders.get(element)?.delete(node);
+	}
+	measureReads.delete(node);
+}
+
+// Every measure that read the element and would read it differently now
+// measures again.
+function invalidateMeasureReaders(element: Element): void {
+	const readers = measureReaders.get(element);
+	if (readers === undefined) {
+		return;
+	}
+	for (const node of readers) {
+		const reads = measureReads.get(node)?.get(element);
+		if (reads === undefined) {
+			readers.delete(node);
+			continue;
+		}
+		for (const [read, value] of reads) {
+			if (readStyleAgain(element, read) !== value) {
+				node.invalidate();
+				break;
+			}
+		}
+	}
+}
+
 function applyRestyles(layout: Layout): void {
+	// What a measure read is checked first, whatever the restyle changed,
+	// a property the cascade calls paint-only included.
+	for (const element of layout.restyledSinceLayout) {
+		if (flatIsConnected(element)) {
+			invalidateMeasureReaders(element);
+		}
+	}
+	layout.restyledSinceLayout.clear();
 	const measured = new Set<Element>();
 	while (layout.restyled.size > 0) {
 		const restyled = [...layout.restyled];
