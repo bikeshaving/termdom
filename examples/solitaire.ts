@@ -528,9 +528,9 @@ function sheet(): string {
 
   ${css(TIERS.compact)}
   @media (min-width: ${ROOMY_MIN_WIDTH}ch) { ${css(TIERS.roomy)} }
-  @media (min-width: ${GRAND_MIN_WIDTH}ch) and (min-height: ${GRAND_MIN_HEIGHT}) { ${css(TIERS.grand)} }
+  @media (min-width: ${GRAND_MIN_WIDTH}ch) and (min-height: ${GRAND_MIN_HEIGHT}px) { ${css(TIERS.grand)} }
   /* A short terminal spends its rows on the cards. */
-  @media (max-height: ${HINT_MIN_HEIGHT - 1}) { .hint { display: none; } }
+  @media (max-height: ${HINT_MIN_HEIGHT - 1}px) { .hint { display: none; } }
 `;
 }
 
@@ -1360,7 +1360,7 @@ function *App(this: Context) {
   // re-renders the faces to the size the CSS just snapped to.
   const roomy = term.window.matchMedia(`(min-width: ${ROOMY_MIN_WIDTH}ch)`);
   const grand = term.window.matchMedia(
-    `(min-width: ${GRAND_MIN_WIDTH}ch) and (min-height: ${GRAND_MIN_HEIGHT})`,
+    `(min-width: ${GRAND_MIN_WIDTH}ch) and (min-height: ${GRAND_MIN_HEIGHT}px)`,
   );
   const retier = () => this.refresh();
   roomy.addEventListener("change", retier);
