@@ -8,14 +8,14 @@
 // CodeMirror edits the document through the DOM: it renders lines into a
 // contenteditable element, listens for beforeinput and watches the tree
 // with a MutationObserver, and reads the selection back through
-// getSelection(). Nothing here is adapted for the terminal except the
-// theme, which turns its pixel paddings into cells.
+// getSelection(). The terminal reports how many pixels a cell measures,
+// so CodeMirror's pixel sizes and its viewport culling work as they do in
+// a browser. Nothing here is adapted for the terminal but the colors.
 import {readFileSync} from "node:fs";
 
 import {installGlobals, TermDOM} from "@b9g/termdom";
-import type {EditorView as View} from "@codemirror/view";
 
-const term = new TermDOM();
+const term = new TermDOM({cellSize: "auto"});
 term.attach();
 const {document} = term;
 
@@ -30,7 +30,7 @@ const {javascript} = await import("@codemirror/lang-javascript");
 const {defaultHighlightStyle, syntaxHighlighting} = await import(
   "@codemirror/language",
 );
-const {EditorSelection, EditorState} = await import("@codemirror/state");
+const {EditorState} = await import("@codemirror/state");
 const {EditorView, keymap, lineNumbers} = await import("@codemirror/view");
 
 document.head.innerHTML = `
@@ -51,52 +51,17 @@ const theme = EditorView.theme(
     // The focused editor edits text, so it shows the terminal cursor, not
     // the dotted outline the base theme draws around the wrapper.
     "&.cm-focused": {outline: "none"},
-    ".cm-scroller": {lineHeight: "1"},
-    ".cm-content": {padding: "0", caretColor: "white"},
-    ".cm-line": {padding: "0 1ch"},
+    ".cm-content": {caretColor: "white"},
     ".cm-gutters": {
       backgroundColor: "#101418",
       color: "#606060",
       borderRight: "1px solid #303030",
-      minWidth: "4ch",
-    },
-    ".cm-lineNumbers .cm-gutterElement": {
-      padding: "0 1ch 0 0",
-      minWidth: "3ch",
     },
     ".cm-activeLine": {backgroundColor: "#1a2028"},
     ".cm-activeLineGutter": {backgroundColor: "#1a2028"},
   },
   {dark: true},
 );
-
-// CodeMirror's own line moves probe half a text height at a time, and a
-// line here is one cell tall, so half of it rounds to nothing. These
-// probe half a cell past the line's edge, which is the next row.
-function moveLine(forward: boolean, extend: boolean): (view: View) => boolean {
-  return (view: View): boolean => {
-    const {selection} = view.state;
-    const ranges = selection.ranges.map((range) => {
-      const moved = view.moveVertically(
-        range,
-        forward,
-        view.defaultLineHeight / 2,
-      );
-      return extend ? EditorSelection.range(range.anchor, moved.head) : moved;
-    });
-    view.dispatch({
-      selection: EditorSelection.create(ranges, selection.mainIndex),
-      scrollIntoView: true,
-      userEvent: "select",
-    });
-    return true;
-  };
-}
-
-const lineKeys = keymap.of([
-  {key: "ArrowUp", run: moveLine(false, false), shift: moveLine(false, true)},
-  {key: "ArrowDown", run: moveLine(true, false), shift: moveLine(true, true)},
-]);
 
 const sample = [
   "function greet(name) {",
@@ -119,7 +84,6 @@ const view = new EditorView({
       EditorState.tabSize.of(2),
       lineNumbers(),
       history(),
-      lineKeys,
       keymap.of([...defaultKeymap, ...historyKeymap]),
       javascript(),
       syntaxHighlighting(defaultHighlightStyle),
