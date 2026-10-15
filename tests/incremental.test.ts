@@ -217,3 +217,13 @@ for (let seed = 1; seed <= 24; seed++) {
 		await run(seed, 12);
 	});
 }
+
+// Seeds that once found a bug, run as long as they did then: a grid cell
+// rounded again from rounded values (1012, 1066, 1093), and restyles
+// inside an inline-block repainting rows counted from its own top (1020,
+// 1193, 1200, 1260).
+for (const seed of [1012, 1020, 1066, 1093, 1193, 1200, 1260]) {
+	test(`seeded changes render as a fresh page does: seed ${seed}`, async () => {
+		await run(seed, 25);
+	});
+}
