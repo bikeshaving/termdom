@@ -22618,7 +22618,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	get defaultValue(): string {
-		return getDescendantText(this);
+		return getChildText(this);
 	}
 
 	set defaultValue(value: string) {
@@ -22703,7 +22703,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 		const slots = this as unknown as Slots<HTMLTextAreaElement>;
 		return slots.extra.dirty
 			? slots.extra.value
-			: normalizeNewlines(getDescendantText(ownerOf(slots)));
+			: normalizeNewlines(getChildText(ownerOf(slots) as Element));
 	}
 
 	get _uaValueText(): globalThis.Text | null {
@@ -36071,6 +36071,16 @@ function handleMutationRecords(
 				continue;
 			}
 			ensureUAShadowTrees(added);
+		}
+	}
+	// A textarea nobody has edited shows its default value, which is its
+	// text children, so a change to them changes what it shows.
+	for (const record of relevant) {
+		const textarea = record.type === "childList"
+			? record.target
+			: record.type === "characterData" ? record.target.parentNode : null;
+		if (textarea instanceof HTMLTextAreaElement && !_(textarea).extra.dirty) {
+			syncUAShadowTree(textarea);
 		}
 	}
 	cssom.handleMutations(_(attached).extra.cascade, relevant);

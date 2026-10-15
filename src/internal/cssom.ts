@@ -6554,6 +6554,16 @@ export function handleMutations(
 							}
 						}
 						for (const each of elements) {
+							// A sheet brought in inside what was added, a <style>
+							// in an added <head>, is synced as one added alone.
+							if (each !== element && isStyleElement(each)) {
+								const styleRoot = each.getRootNode();
+								if (isShadowRoot(styleRoot)) {
+									rootsToSync.add(styleRoot);
+								} else {
+									shouldSyncStylesheets = true;
+								}
+							}
 							invalidateElementCaches(cascade, each);
 							if (connected) {
 								attachPseudoElementsToElement(cascade, each);

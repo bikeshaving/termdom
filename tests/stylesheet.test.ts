@@ -651,3 +651,21 @@ test("a :has() that reads only down the tree restyles a changed item's ancestors
 		.toBe("rgb(255, 0, 0)");
 	termdom.dispose();
 });
+
+// A sheet can come in inside what is added, a <style> in an added head,
+// and is synced as one added alone. An input beside it once settled the
+// styles before the sheet was read.
+test("a style element inside an added subtree applies its rules", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	await nextFrame(dom);
+	const head = dom.document.createElement("head");
+	head.innerHTML = "<style>.w { width: 10px }</style>";
+	const body = dom.document.createElement("body");
+	body.innerHTML = "<div id=d class=w>x</div><input value=v>";
+	dom.document.documentElement.replaceChildren(head, body);
+	await nextFrame(dom);
+	expect(dom.document.getElementById("d")!.getBoundingClientRect().width)
+		.toBe(10);
+	dom.dispose();
+});
