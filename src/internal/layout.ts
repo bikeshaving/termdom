@@ -6463,6 +6463,14 @@ function paintsOwnBox(layout: Layout, node: LayoutNode): boolean {
 		getComputedValue(element, "display") === "list-item";
 }
 
+function isInDocumentTree(layout: Layout, node: LayoutNode): boolean {
+	let root = node;
+	while (root.parent !== null) {
+		root = root.parent;
+	}
+	return root === layout.initialBlock;
+}
+
 function isInFixedBox(node: LayoutNode): boolean {
 	for (let at: LayoutNode | null = node; at !== null; at = at.parent) {
 		if (at.style.positionType === "fixed") {
@@ -6536,7 +6544,18 @@ export function takeDamageBands(
 		while (box !== null && !layout.nodeMap.has(box)) {
 			box = flatParentElement(box);
 		}
-		const node = box === null ? undefined : layout.nodeMap.get(box);
+		let node = box === null ? undefined : layout.nodeMap.get(box);
+		// A box an inline-block lays out in its own context has rows counted
+		// from that context. The inline-block's own rows hold them.
+		while (
+			box !== null && node !== undefined && !isInDocumentTree(layout, node)
+		) {
+			box = getEnclosingIndependentFormattingContext(
+				layout,
+				getBoxParentElement(box),
+			);
+			node = box === null ? undefined : layout.nodeMap.get(box);
+		}
 		const extent = node === undefined ? undefined : extents.get(node);
 		if (node === undefined || extent === undefined) {
 			return undefined;
