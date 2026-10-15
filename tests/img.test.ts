@@ -920,3 +920,38 @@ test("an image at 100% stops where its cell does, short of the border", async ()
 		dom.dispose();
 	}
 });
+
+// Under the unit cell the page's lengths do not follow the terminal's
+// cell, but an image's pixels still divide by it, so a font zoom resizes
+// the image.
+test("a font zoom resizes an image under the unit cell", async () => {
+	const square = png(40, 40, () => RED);
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const cell = {ask: "\x1b[16t", reply: "\x1b[6;20;10t"};
+	scriptReplies(terminal, [cell]);
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		csp: "img-src data: https:",
+	});
+	dom.document.body.innerHTML = `<img src="${square}">`;
+	await dom.attach();
+	const image = dom.document.querySelector("img")!;
+	await loaded(image);
+	await nextFrame(dom);
+	const before = image.getBoundingClientRect();
+	expect([before.width, before.height]).toEqual([4, 2]);
+
+	// Zoomed in: each cell twice as many pixels.
+	cell.reply = "\x1b[6;40;20t";
+	terminal.resize(20, 6);
+	(terminal as any).emit("SIGWINCH");
+	for (let waited = 0; waited < 2000; waited += 25) {
+		await new Promise((resolve) => setTimeout(resolve, 25));
+		if (image.getBoundingClientRect().width !== 4) {
+			break;
+		}
+	}
+	const after = image.getBoundingClientRect();
+	expect([after.width, after.height]).toEqual([2, 1]);
+	dom.dispose();
+});
