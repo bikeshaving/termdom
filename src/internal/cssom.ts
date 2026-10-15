@@ -6444,6 +6444,13 @@ export class Cascade {
 	}
 }
 
+const LIST_NUMBERING_ATTRIBUTES = new Set([
+	"start",
+	"value",
+	"reversed",
+	"type",
+]);
+
 export function handleMutations(
 	cascade: Cascade,
 	mutations: MutationRecord[],
@@ -8534,13 +8541,6 @@ function invalidateElementCaches(
 	cascade.pseudoElementStyleCache.delete(element);
 	cascade.counterScopes.delete(element);
 }
-
-const LIST_NUMBERING_ATTRIBUTES = new Set([
-	"start",
-	"value",
-	"reversed",
-	"type",
-]);
 
 // Properties the painter reads and layout never does. A rule declaring
 // only these moves nothing when it starts or stops matching.
