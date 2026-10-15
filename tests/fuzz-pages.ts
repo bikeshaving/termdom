@@ -198,7 +198,77 @@ const FLOW: Page = {
 	],
 };
 
-export const PAGES = [LAYOUT, FLOW];
+// What boxes that lay out their own content hold: a sticky box in an
+// inline-block in a scroller, held against the scroller's bottom with no
+// scrolling, content past an inline-block's own height, an inline-table,
+// counters ::before steps, and cells with no table around them.
+const CONTEXTS: Page = {
+	name: "contexts",
+	head: `<style id=sheet>
+	.ib { display: inline-block }
+	.scroll { overflow: auto; height: 60px }
+	.stick { position: sticky; bottom: 0; background-color: rgb(0, 0, 90) }
+	.rel { position: relative; top: 5px }
+	.abs { position: absolute; right: 0 }
+	.short { height: 15px }
+	.it { display: inline-table }
+	.row { display: table-row }
+	.cell { display: table-cell }
+	.n::before { counter-increment: n; content: counter(n) ". " }
+	.box { border: 1px solid }
+</style>`,
+	body: `<div id=root style="counter-reset: n">
+	<div id=s class=scroll><span id=ib class=ib><div id=b0>head text</div><div id=st class=stick>stuck foot</div><div id=b1>one</div><div id=b2>two</div><div id=b3>three</div><div id=b4>four</div><div id=b5>five</div></span></div>
+	<p id=p0>before <span id=ib2 class=ib><div id=o class=short><div id=o0>first</div><div id=o1>second</div></div></span> after</p>
+	<p id=p1>table <span id=it class=it><span id=r0 class=row><span id=c0 class=cell>a</span><span id=c1 class=cell>bb</span></span></span> tail</p>
+	<div id=h0 class=n>heading</div><div id=h1 class=n>heading</div>
+	<div id=cells><div id=d0 class=cell>x</div><div id=d1 class=cell>yy</div></div>
+</div>`,
+	classes: [
+		"ib",
+		"scroll",
+		"stick",
+		"rel",
+		"abs",
+		"short",
+		"it",
+		"row",
+		"cell",
+		"n",
+		"box",
+	],
+	styles: [
+		["height", (r: Random): string => `${15 + r.int(90)}px`],
+		["width", (r: Random): string => `${20 + r.int(80)}%`],
+		[
+			"display",
+			(r: Random): string =>
+				r.pick([
+					"block",
+					"inline-block",
+					"inline-table",
+					"table-cell",
+					"table-row",
+					"none",
+				]),
+		],
+		[
+			"position",
+			(r: Random): string =>
+				r.pick(["static", "relative", "sticky", "absolute"]),
+		],
+		["bottom", (r: Random): string => `${r.int(30)}px`],
+		["margin-top", (r: Random): string => `${r.int(40)}px`],
+		["overflow", (r: Random): string => r.pick(["visible", "hidden", "auto"])],
+	],
+	attributes: [],
+	rules: [
+		".n::before { content: counter(n) \" \" }",
+		".ib { border: 1px solid }",
+	],
+};
+
+export const PAGES = [LAYOUT, FLOW, CONTEXTS];
 
 export const WORDS = [
 	"alpha",
