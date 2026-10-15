@@ -6255,10 +6255,28 @@ export class Layout {
 
 	// A chain reaching a fixed box puts the geometry in viewport space
 	// rather than document space.
+	// Read from the boxes, whose position type is a field, rather than
+	// from every ancestor's computed style. A box laid out in an
+	// inline-block's own context has no parent past it, and the elements
+	// answer from there.
 	isInFixedSpace(element: Element): boolean {
-		for (
-			let el: Element | null = element; el; el = flatParentElement(el)
-		) {
+		let box: Element | null = element;
+		while (box !== null && !this.nodeMap.has(box)) {
+			box = flatParentElement(box);
+		}
+		let node = box === null ? undefined : this.nodeMap.get(box);
+		for (; node !== undefined; node = node.parent ?? undefined) {
+			if (node.style.positionType === "fixed") {
+				return true;
+			}
+			if (node.parent === null && node !== this.initialBlock) {
+				break;
+			}
+		}
+		if (node === undefined) {
+			return false;
+		}
+		for (let el: Element | null = element; el; el = flatParentElement(el)) {
 			if (getPosition(el) === "fixed") {
 				return true;
 			}
