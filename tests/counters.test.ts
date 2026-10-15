@@ -173,3 +173,26 @@ test("a string that spells counter() is only text", async () => {
 		),
 	).toEqual(["counter(n) a"]);
 });
+
+test("a counter passes through a shadow tree and a slot", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.head.innerHTML = `<style>${NUMBERED}</style>`;
+	dom.document.body.innerHTML =
+		"<div class=n>a</div><div id=host><div class=n slot=s>b</div></div>" +
+		"<div class=n>c</div>";
+	const root =
+		dom.document.getElementById("host")!.attachShadow({mode: "open"});
+	root.innerHTML =
+		"<style>.n { counter-increment: n } " +
+		".n::before { content: counter(n) \". \" }</style>" +
+		"<div class=n>inner</div><slot name=s></slot>";
+	await nextFrame(dom);
+	await nextFrame(dom);
+	const lines = terminal.getScreenContents()
+		.split("\n")
+		.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd())
+		.filter((line) => line !== "");
+	expect(lines).toEqual(["1. a", "2. inner", "3. b", "4. c"]);
+	dom.dispose();
+});

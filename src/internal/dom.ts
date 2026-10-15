@@ -14496,6 +14496,10 @@ function assignSlottables(slot: HTMLSlotElement): void {
 		slottables.every((node, index) => node === assigned[index]);
 	if (!identical) {
 		signalASlotChange(slot);
+		const attached = getAttachedDocument(slot);
+		if (attached !== undefined) {
+			_(attached).extra.cascade.slotsChanged();
+		}
 	}
 	for (const previous of assigned) {
 		if (_(previous).assignedSlot === slot && !slottables.includes(previous)) {
