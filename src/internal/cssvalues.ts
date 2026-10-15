@@ -5772,12 +5772,6 @@ function cubicBezierEasing(
 	};
 }
 
-export interface CounterScope {
-	element: Element;
-	counters: {[counterName: string]: number};
-	parent?: CounterScope;
-}
-
 // Each identifier opens a pair. A counter written without a number
 // takes `fallback`: 0 for a reset, 1 for an increment.
 export function getCounterPairs(
@@ -5800,29 +5794,6 @@ export function getCounterPairs(
 		}
 	}
 	return pairs;
-}
-
-export function parseCounterReset(
-	scope: CounterScope,
-	counterReset: string,
-): void {
-	for (const [name, value] of getCounterPairs(counterReset, 0)) {
-		scope.counters[name] = value;
-	}
-}
-
-export function getCounterValueInScope(
-	scope: CounterScope | undefined,
-	counterName: string,
-): number {
-	let currentScope = scope;
-	while (currentScope) {
-		if (counterName in currentScope.counters) {
-			return currentScope.counters[counterName];
-		}
-		currentScope = currentScope.parent;
-	}
-	return 0;
 }
 
 // A bullet style names a glyph and ignores the value. Everything else is

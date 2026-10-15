@@ -2617,10 +2617,12 @@ function dropRunContent(layout: Layout, element: Element): void {
 	}
 }
 
-// Retire the boxes of elements the enumeration saw THROUGH (dissolved,
-// or broken around a block). Neither generates a box, and one left in
-// place is laid out from a shape the container no longer has. Only
-// those elements are descended into.
+// Retire the boxes of elements the enumeration saw THROUGH: dissolved
+// ones, and inline boxes, which a block inside breaks. A dissolved one
+// generates no box, and one left in place is laid out from a shape the
+// container no longer has. The walk descends where the enumeration
+// does, into every inline box, since one that held a block before this
+// derivation may hold none now.
 function dropSteppedOver(layout: Layout, parent: Element): void {
 	for (const child of flatChildren(parent)) {
 		if (nodeTypeOf(child) !== child.ELEMENT_NODE) {
@@ -2628,7 +2630,7 @@ function dropSteppedOver(layout: Layout, parent: Element): void {
 		}
 		const element = child as Element;
 		const dissolves = isDisplayContents(element);
-		if (!dissolves && !layout.boxes.get(element)?.broken) {
+		if (!dissolves && !isInlineBox(element)) {
 			continue;
 		}
 		// addNode drops the box of a box-less element.
