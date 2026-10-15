@@ -5327,8 +5327,7 @@ export class Layout {
 		this.measureNodes = new Set<LayoutNode>();
 
 		const root = new LayoutNode();
-		root.style.flexDirection = "column";
-		root.style.alignItems = "stretch";
+		root.style.displayType = "block";
 		root.style.width = toValue(width);
 		root.style.height = toValue(height);
 		this.initialBlock = root;
