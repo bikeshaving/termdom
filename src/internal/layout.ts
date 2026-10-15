@@ -5271,9 +5271,14 @@ function hitTestInFlow(
 			) {
 				return null;
 			}
+			// Extents an inline-block's own root counts are in its rows, not
+			// the document's, so a box laid out there is not ruled out by one.
 			const node = getLayoutNode(layout, element);
 			const extent = node === null ? undefined : paintExtent(node);
-			if (extent === undefined || y < extent.top || y >= extent.bottom) {
+			if (
+				(extent === undefined || y < extent.top || y >= extent.bottom) &&
+				(node === null || isInDocumentTree(layout, node))
+			) {
 				return null;
 			}
 		}
@@ -7145,6 +7150,9 @@ function getVisibleChildren(
 		// A measure-function leaf never decomposes into layout children, so
 		// empty children[] means "not decomposed," not "nothing to paint."
 		layoutNode.measure !== null ||
+		// Its children's extents are counted from an inline-block's own
+		// root, not in the rows asked about.
+		!isInDocumentTree(layout, layoutNode) ||
 		extents.get(layoutNode)?.unstackedChildren !== 0 ||
 		layoutNode.style.displayType !== "block" ||
 		// Cheap proxy for "every DOM child has exactly one children[]
