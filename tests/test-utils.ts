@@ -13,7 +13,7 @@ import {
 	transportFromProcess,
 } from "../src/index.ts";
 import {styleCheck} from "../src/internal/cssom.ts";
-import {framePainted} from "../src/internal/dom.ts";
+import {controlCheck, framePainted} from "../src/internal/dom.ts";
 import type {ColorDepth} from "../src/internal/exchange.ts";
 import {
 	beginFrame,
@@ -34,6 +34,8 @@ layoutCheck.enabled = true;
 // And every style value served must be what the cascade resolves with
 // every cache dropped.
 styleCheck.enabled = true;
+// And every form control must show its state before a frame redraws it.
+controlCheck.enabled = true;
 
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
