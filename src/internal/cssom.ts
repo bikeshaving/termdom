@@ -7846,46 +7846,44 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 	}
 }
 
-const COUNTING_PSEUDO_ELEMENTS = ["::before", "::after"] as const;
+// Everything an element's counters are computed from: whether it shows,
+// and what it, its ::before and its ::after reset, step and set. The key
+// that says when to count again is made from these, and counting applies
+// them, so the two cannot disagree.
+interface CounterInputs {
+	hidden: boolean;
+	own: CounterEffects;
+	before: CounterEffects | null;
+	after: CounterEffects | null;
+}
 
-// What an element's counters are computed from, its ::before's and
-// ::after's included, or null for an element that changes none of them.
-// Such an element passes on what it inherits, so adding or removing it
-// leaves every other element's counters as they were.
-function getCounterKey(cascade: Cascade, element: Element): string | null {
-	const slots = _(cascade.declarationFor(element));
+function readCounterInputs(cascade: Cascade, element: Element): CounterInputs {
+	return {
+		hidden:
+			_(cascade.declarationFor(element))._computedValue("display") === "none",
+		own: getElementCounterEffects(cascade, element),
+		before: getPseudoCounterEffects(cascade, element, "::before"),
+		after: getPseudoCounterEffects(cascade, element, "::after"),
+	};
+}
+
+// Null for an element that changes no counter. Such an element passes on
+// what it inherits, so adding or removing it leaves every other
+// element's counters as they were.
+function getCounterKey(inputs: CounterInputs): string | null {
 	const parts: string[] = [];
-	if (slots._computedValue("display") === "none") {
+	if (inputs.hidden) {
 		parts.push("hidden");
 	}
-	if (
-		cascade.counterRulesExist ||
-		(attributeOf(element, "style") ?? "").includes("counter")
-	) {
-		const own = describeCounterEffects(
-			getElementCounterEffects(cascade, element),
-		);
-		if (own !== "") {
-			parts.push(own);
-		}
+	const own = describeCounterEffects(inputs.own);
+	if (own !== "") {
+		parts.push(own);
 	}
-	for (const type of COUNTING_PSEUDO_ELEMENTS) {
-		const effects = getPseudoCounterEffects(cascade, element, type);
-		if (effects !== null) {
-			parts.push(`${type}${describeCounterEffects(effects)}`);
-		}
+	if (inputs.before !== null) {
+		parts.push(`::before ${describeCounterEffects(inputs.before)}`);
 	}
-	const tag = element.tagName;
-	if (tag === "OL" || tag === "UL") {
-		parts.push(
-			`${tag}:${attributeOf(element, "start")}:` +
-				`${hasAttributeOf(element, "reversed")}`,
-		);
-		if (hasAttributeOf(element, "reversed")) {
-			parts.push(`items:${getListItems(element).length}`);
-		}
-	} else if (tag === "LI") {
-		parts.push(`LI:${attributeOf(element, "value")}`);
+	if (inputs.after !== null) {
+		parts.push(`::after ${describeCounterEffects(inputs.after)}`);
 	}
 	return parts.length === 0 ? null : parts.join("|");
 }
@@ -7897,7 +7895,7 @@ function noteCounterChange(cascade: Cascade, element: Element): void {
 		return;
 	}
 	const before = cascade.counterKeys.get(element) ?? null;
-	if (before !== getCounterKey(cascade, element)) {
+	if (before !== getCounterKey(readCounterInputs(cascade, element))) {
 		cascade.countersStale = true;
 	}
 }
@@ -7957,6 +7955,8 @@ interface CounterStart {
 	own: readonly CounterEntry[];
 	inner: readonly CounterEntry[];
 	hidden: boolean;
+	// What its ::after resets, steps and sets, counted where it ends.
+	after: CounterEffects | null;
 }
 
 // What its ::after reads, if it has one, and what the subtree leaves,
@@ -8077,31 +8077,29 @@ function countStart(cascade: Cascade, element: Element): void {
 			cascade.counterEnds.get(sibling)!.end,
 		)
 		: parentStart?.inner ?? NO_COUNTERS;
-	const key = getCounterKey(cascade, element);
+	const inputs = readCounterInputs(cascade, element);
+	const key = getCounterKey(inputs);
 	if (key !== null) {
 		cascade.counterKeys.set(element, key);
 	}
-	const hidden =
-		parentStart?.hidden === true || (key !== null && key.startsWith("hidden"));
+	const hidden = parentStart?.hidden === true || inputs.hidden;
 	if (key === null || hidden) {
 		cascade.counterSets.set(element, {
 			own: inherited,
 			inner: inherited,
 			hidden,
+			after: null,
 		});
 		return;
 	}
-	const own = applyCounters(
-		getElementCounterEffects(cascade, element),
-		inherited,
-		element,
-		element.parentNode,
-	);
-	const before = getPseudoCounterEffects(cascade, element, "::before");
+	const own = applyCounters(inputs.own, inherited, element, element.parentNode);
 	cascade.counterSets.set(element, {
 		own,
-		inner: before === null ? own : applyCounters(before, own, {}, element),
+		inner: inputs.before === null
+			? own
+			: applyCounters(inputs.before, own, {}, element),
 		hidden,
+		after: inputs.after,
 	});
 }
 
@@ -8117,7 +8115,7 @@ function countEnd(cascade: Cascade, element: Element): void {
 			!hasGeneratedContent(cascade, element, "::after")
 			? null
 			: applyCounters(
-				getPseudoCounterEffects(cascade, element, "::after") ?? NO_EFFECTS,
+				start.after ?? NO_EFFECTS,
 				inherit(base, preceding),
 				{},
 				element,
@@ -8161,8 +8159,11 @@ function getElementCounterEffects(
 	element: Element,
 ): CounterEffects {
 	const slots = _(cascade.declarationFor(element));
+	const declares =
+		cascade.counterRulesExist ||
+		(attributeOf(element, "style") ?? "").includes("counter");
 	const effects = readCounterEffects((property) =>
-		slots._computedValue(property) ?? undefined,
+		declares ? (slots._computedValue(property) ?? undefined) : undefined,
 	);
 	const names = (pairs: Array<[string, number]>) => pairs.map(([name]) => name);
 	const tag = element.tagName;
