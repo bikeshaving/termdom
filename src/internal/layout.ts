@@ -2940,6 +2940,14 @@ function isHiddenByAncestor(node: Node): boolean {
 	return false;
 }
 
+function getLayoutRoot(node: LayoutNode): LayoutNode {
+	let root = node;
+	while (root.parent !== null) {
+		root = root.parent;
+	}
+	return root;
+}
+
 // Coordinates under an independent formatting context start at the box that owns
 // it: the ancestor whose root the node was actually laid out under, not the
 // nearest one. An out-of-flow descendant hangs from its containing block
@@ -5462,6 +5470,12 @@ function getStaticPosition(
 		return null;
 	}
 
+	// Positions count from the root of the tree a node is in, the
+	// document's or an inline-block's own, and one from another root says
+	// nothing about where this box would be.
+	if (getLayoutRoot(containerNode) !== getLayoutRoot(containingBlock)) {
+		return null;
+	}
 	const origin = getAbsolutePosition(layout, containerNode, true);
 	const containingOrigin = getAbsolutePosition(layout, containingBlock, true);
 	const offsetLeft = origin.x - containingOrigin.x;
