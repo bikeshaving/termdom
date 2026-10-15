@@ -2712,9 +2712,10 @@ function syncIndependentFormattingContext(
 	const box = getPrincipalBox(layout, element);
 	const display = getLayoutDisplay(element);
 	// An inline-grid or inline-table always lays its own content out,
-	// because a line cannot contain a grid or a table piecemeal. An inline-block does so only once it holds a
-	// block-level box. Never a plain inline: it is broken instead, and
-	// taking its content here would steal back the container's boxes.
+	// because a line cannot contain a grid or a table piecemeal. An
+	// inline-block does so only once it holds a block-level box. Never a
+	// plain inline: it is broken instead, and taking its content here would
+	// steal back the container's boxes.
 	const grid = display === "inline-grid";
 	const table = display === "inline-table";
 	if (
