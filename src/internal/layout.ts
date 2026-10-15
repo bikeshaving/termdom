@@ -4102,8 +4102,8 @@ function processWhitespace(
 
 		// Never the newline a <br> contributes. That is a forced break, and
 		// trimming it dropped the blank line `<br>text` opens with.
-		const leading = text.match(/^[^\S\n]*/)?.[0].length || 0;
-		const trailing = text.match(/[^\S\n]*$/)?.[0].length || 0;
+		const leading = text.match(/^[ \t\r\f]*/)?.[0].length || 0;
+		const trailing = text.match(/[ \t\r\f]*$/)?.[0].length || 0;
 		const trimStart = Math.min(leading, guardStart);
 		const trimmedEnd = Math.max(text.length - trailing, guardEnd);
 
