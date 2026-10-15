@@ -231,6 +231,24 @@ function getLayoutDisplay(element: Element): Display {
 	return DISPLAYS.has(value) ? (value as Display) : "block";
 }
 
+// An inline-block flex item's measure returns a border-box size, so its
+// layout node must not add padding and border again on the cross axis (a
+// bordered textarea in a flex row came out too tall). The main axis is
+// masked by flex sizing. The node then holds none on those edges, though
+// the box has them.
+function getMaskedEdges(element: Element): readonly Edge[] {
+	if (getLayoutDisplay(element) !== "inline-block" || !hasFlexParent(element)) {
+		return [];
+	}
+	const direction = getComputedValue(
+		boxParentElement(element)!,
+		"flex-direction",
+	);
+	return direction === "column" || direction === "column-reverse"
+		? ["left", "right"]
+		: ["top", "bottom"];
+}
+
 function applyTableContainer(style: Style, element: Element): void {
 	style.displayType = "table";
 	style.borderCollapse =
@@ -1490,24 +1508,9 @@ function styleLayoutNodeProperties(
 		applyLegacyAlignment(style, element, display, parentIsFlex);
 	}
 
-	// An inline-block flex item's measure returns a border-box size, so
-	// the layout node must not add padding+border again on the cross axis (a
-	// bordered textarea in a flex row came out too tall). The main axis is
-	// masked by flex sizing.
-	if (display === "inline-block" && hasFlexParent(element)) {
-		const direction = getComputedValue(
-			boxParentElement(element)!,
-			"flex-direction",
-		);
-		const crossEdges: readonly Edge[] =
-			direction === "column" ||
-			direction === "column-reverse"
-				? ["left", "right"]
-				: ["top", "bottom"];
-		for (const edge of crossEdges) {
-			style.padding[edge] = toValue(0);
-			style.border[edge] = 0;
-		}
+	for (const edge of getMaskedEdges(element)) {
+		style.padding[edge] = toValue(0);
+		style.border[edge] = 0;
 	}
 
 	// Item properties are consulted only inside a flex or grid container,
@@ -6238,6 +6241,18 @@ export class Layout {
 			top = border.top + padding.top;
 			right = border.right + padding.right;
 			bottom = border.bottom + padding.bottom;
+			// Edges its measure counts in its size are not on its node.
+			const masked = getMaskedEdges(element);
+			if (masked.length > 0) {
+				const box = getBoxModel(element);
+				if (masked.includes("top")) {
+					top = (box.borderTopWidth || 0) + (box.paddingTop || 0);
+					bottom = (box.borderBottomWidth || 0) + (box.paddingBottom || 0);
+				} else {
+					left = (box.borderLeftWidth || 0) + (box.paddingLeft || 0);
+					right = (box.borderRightWidth || 0) + (box.paddingRight || 0);
+				}
+			}
 		} else {
 			const box = getBoxModel(element);
 			left = (box.borderLeftWidth || 0) + (box.paddingLeft || 0);

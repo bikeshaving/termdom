@@ -162,6 +162,30 @@ test("the caret parks at the content origin of an empty textarea", async () => {
 	dom.dispose();
 });
 
+// In a flex row the textarea's measure counts its border in its height,
+// and its layout node holds no border on that axis. Its content box is
+// still inside the border.
+test("the caret parks inside the border of an empty textarea in a flex row", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+	document.body.innerHTML =
+		"<style>body { margin: 0; }</style><div>line one</div>" +
+		"<div style=\"display: flex\"><div>Body</div><textarea rows=\"2\">" +
+		"</textarea></div>";
+	document.querySelector("textarea")!.focus();
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	// Border row 1, content row 2; "Body", border and padding, column 6.
+	const buffer = (terminal as any).terminal.buffer.active;
+	expect(buffer.cursorY).toBe(2);
+	expect(buffer.cursorX).toBe(6);
+	dom.dispose();
+});
+
 test("the caret parks at the multiline position; arrows move between lines", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
