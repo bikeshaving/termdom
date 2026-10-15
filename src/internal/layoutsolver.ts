@@ -2594,8 +2594,8 @@ function layoutAbsoluteChild(
 			between !== null && between !== node;
 			between = between.parent
 		) {
-			offsetLeft += between.result.left;
-			offsetTop += between.result.top;
+			offsetLeft += getRawOffset(between, "left");
+			offsetTop += getRawOffset(between, "top");
 		}
 		child.result.left -= offsetLeft;
 		child.result.top -= offsetTop;
@@ -3555,9 +3555,15 @@ function layoutTable(
 	}
 
 	// A positioned table or part of one contains the absolute boxes in it,
-	// as any positioned box does.
-	for (const child of getOutOfFlowDescendants(node, false)) {
-		layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
+	// as any positioned box does. The table lays its groups and rows out
+	// itself, so it lays out theirs too.
+	for (const part of [node, ...groups, ...rows.map((row) => row.node)]) {
+		if (part === null || (part !== node && !isContainingBlock(part.style))) {
+			continue;
+		}
+		for (const child of getOutOfFlowDescendants(part, false)) {
+			layoutAbsoluteChild(part, child, ownerWidth, ownerHeight);
+		}
 	}
 }
 
@@ -6319,6 +6325,16 @@ function roundToGrid(
 	for (const child of node.children) {
 		roundToGrid(child, absLeft, absTop, childrenPlaced, misplaced);
 	}
+}
+
+// A box's place in its parent as layout last wrote it: the place in
+// result when something placed it in this solve, and otherwise the one
+// kept from before result was rounded.
+function getRawOffset(node: LayoutNode, edge: "left" | "top"): number {
+	if (node.placedDirectly || node.parent?.childrenPlaced) {
+		return edge === "left" ? node.result.left : node.result.top;
+	}
+	return edge === "left" ? node.rawLeft : node.rawTop;
 }
 
 function getContentLeft(node: LayoutNode): number {
