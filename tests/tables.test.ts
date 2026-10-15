@@ -838,3 +838,56 @@ test("table-layout:fixed does nothing to a table whose width is auto", async () 
 	expect(box("table").width).toBeLessThan(10);
 	dom.dispose();
 });
+
+// CSS 2.1 §17.2.1, rule 3: table parts a block holds are wrapped in an
+// anonymous table, one for each unbroken sequence, so cells sit side by
+// side and stray rows share their columns.
+test("cells in a block share an anonymous table", async () => {
+	const {box, rows, dom} = await render(
+		"<div><div id=a style=\"display: table-cell\">a</div>" +
+			"<div id=b style=\"display: table-cell\">bb</div></div><p>after</p>",
+	);
+	expect(box("#a").top).toBe(box("#b").top);
+	expect(box("#b").left).toBe(box("#a").left + box("#a").width);
+	expect(rows[0]).toBe("abb");
+	dom.dispose();
+});
+
+test("rows in a block share the columns of one anonymous table", async () => {
+	const row = (a: string, b: string, id: string) =>
+		`<div style="display: table-row"><div style="display: table-cell">${a}` +
+		`</div><div id=${id} style="display: table-cell">${b}</div></div>`;
+	const {box, dom} = await render(
+		"<div>" +
+		row("a", "x", "first") +
+		"\n  " +
+		row("cccc", "y", "second") +
+			"</div>",
+	);
+	expect(box("#first").left).toBe(box("#second").left);
+	dom.dispose();
+});
+
+test("text a script puts in a table gets a row of its own", async () => {
+	const {box, dom, document} =
+		await render("<table id=t><tbody id=g><tr><td>x</td></tr></tbody></table>");
+	document.getElementById("t")!.append("loose");
+	await nextFrame(dom);
+	const group = box("#g");
+	expect(box("#t").height).toBe(group.height + 1);
+	expect(dom.document.body.textContent).toContain("loose");
+	dom.dispose();
+});
+
+test("a row group spans its own rows", async () => {
+	const {box, dom} = await render(
+		"<table><thead id=h><tr><td>h</td></tr></thead>" +
+			"<tbody id=b><tr><td>one</td></tr><tr><td>two</td></tr></tbody></table>",
+	);
+	expect(box("#h").height).toBe(box("tr", 0).height);
+	expect(box("#b").top).toBe(box("tr", 1).top);
+	expect(box("#b").height).toBe(
+		box("tr", 2).top + box("tr", 2).height - box("tr", 1).top,
+	);
+	dom.dispose();
+});

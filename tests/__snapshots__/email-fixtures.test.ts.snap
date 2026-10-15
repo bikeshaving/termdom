@@ -516,6 +516,14 @@ exports[`email fixture: ghost-article.html 1`] = `
 
 
 
+
+                            xxxx xxxx xxxx                xxxx xxxx xxxx
+
+
+
+                                               xxxxx
+
+
        ──────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -689,7 +697,15 @@ exports[`email fixture: ghost-article.html 1`] = `
 114: 0-100 #faf9f5
 115: 0-100 #faf9f5
 116: 0-100 #faf9f5
-117: 0-100 #faf9f5`;
+117: 0-100 #faf9f5
+118: 0-100 #faf9f5
+119: 0-100 #faf9f5
+120: 0-100 #faf9f5
+121: 0-100 #faf9f5
+122: 0-100 #faf9f5
+123: 0-100 #faf9f5
+124: 0-100 #faf9f5
+125: 0-100 #faf9f5`;
 
 exports[`email fixture: inline-block-button.html 1`] = `
 

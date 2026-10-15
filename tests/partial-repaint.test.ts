@@ -370,3 +370,15 @@ test("a box that stops painting as it moves clears its old rows", async () => {
 	expect(partial).toBeGreaterThan(0);
 	dom.dispose();
 });
+
+test("an outlined box with no height paints no row", async () => {
+	const {partial, dom} = await repaint(
+		"<div>one</div><div id=p>text</div><div>between</div>" +
+			"<div style=\"outline: 1px solid\"></div><div>after</div>",
+		(document) => {
+			document.getElementById("p").textContent = "changed";
+		},
+	);
+	expect(partial).toBeGreaterThan(0);
+	dom.dispose();
+});

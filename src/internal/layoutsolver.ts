@@ -79,6 +79,9 @@ export interface Size {
 	columns?: number;
 	wrapped?: boolean;
 	lineColumns?: number;
+	// Whether the content resolved a percentage against the width given,
+	// so that measured at another request it would not be the same.
+	widthDependent?: boolean;
 }
 
 // `placing` is true for the measurement that places the box and
@@ -480,6 +483,12 @@ export class LayoutNode {
 	cachedSizes: Array<CachedSize | null> | null;
 	cachedLayout: CachedSize | null;
 
+	// Whether the subtree's size depends on the width it is offered other
+	// than through where its lines break: a percentage that resolves
+	// against it, or that an unbounded probe takes as auto. Such a size is
+	// reused only for the request it answered.
+	widthDependent: boolean;
+
 	// A baseline-aligned table cell's content moves down this far, to its
 	// row's baseline. Set by the table before the cell is placed.
 	cellBaselineShift: number;
@@ -533,6 +542,7 @@ export class LayoutNode {
 		this.staticPositionFn = null;
 		this.stale = true;
 		this.cachedSizes = null;
+		this.widthDependent = false;
 		this.cachedLayout = null;
 		this.cellBaselineShift = 0;
 		this.owner = null;
@@ -2826,12 +2836,12 @@ function stackAnonymousCell(
 	return height + below;
 }
 
-// An element only. The white space between a row's cells is a run of
-// text the row holds too, and it renders nothing (css-tables-3 §3.3).
+// An element, or a run of text. The white space between a row's cells
+// never reaches a table as a run (css-tables-3 §3.3).
 function isAnonymousCellContent(node: LayoutNode): boolean {
 	const type = node.style.displayType;
 	const owner = node.owner as {nodeType?: number} | null;
-	return owner?.nodeType === 1 &&
+	return (owner?.nodeType === 1 || owner?.nodeType === 3) &&
 		type !== "none" &&
 		!type.startsWith("table") &&
 		!isOutOfFlowType(node.style.positionType);
@@ -3489,17 +3499,34 @@ function layoutTable(
 	// its group.
 	const gridTop = topPaddingBorder + captionHeight;
 
+	// A group spans its own rows, which are consecutive, and a row in one
+	// is placed from the group's top.
+	const firstRows = new Map<LayoutNode, number>();
+	const lastRows = new Map<LayoutNode, number>();
+	rows.forEach((row, index) => {
+		if (row.group !== null) {
+			if (!firstRows.has(row.group)) {
+				firstRows.set(row.group, index);
+			}
+			lastRows.set(row.group, index);
+		}
+	});
 	for (const group of groups) {
+		const first = firstRows.get(group);
 		group.gridLeft = NaN;
 		group.result.left = leftPaddingBorder;
 		group.result.width = contentWidth;
-		group.result.top = gridTop;
-		group.result.height = gridHeight;
+		group.result.top = gridTop + (first === undefined ? 0 : rowStart(first));
+		group.result.height = first === undefined
+			? 0
+			: spanHeight(first, lastRows.get(group)! - first + 1);
 	}
 
 	const rowLeft = (row: TableRow) => row.group ? 0 : leftPaddingBorder;
 	const rowTop = (row: TableRow, index: number) =>
-		row.group ? rowStart(index) : gridTop + rowStart(index);
+		row.group
+			? rowStart(index) - rowStart(firstRows.get(row.group)!)
+			: gridTop + rowStart(index);
 
 	rows.forEach((row, index) => {
 		if (row.node === null) {
@@ -6000,13 +6027,16 @@ function layoutNode(
 							isSameConstraint(cached.ownerHeight, ownerHeight))) &&
 					cached.width >= 0 &&
 					cached.height >= 0 &&
-					isCachedSizeValid(
-						cached.widthSpace,
-						cached.availableWidth - marginRow,
-						cached.width,
-						widthSpace,
-						availableWidth - marginRow,
-					) &&
+					(node.widthDependent
+						? cached.widthSpace === widthSpace &&
+							isSameConstraint(cached.availableWidth, availableWidth)
+						: isCachedSizeValid(
+							cached.widthSpace,
+							cached.availableWidth - marginRow,
+							cached.width,
+							widthSpace,
+							availableWidth - marginRow,
+						)) &&
 					isCachedSizeValid(
 						cached.heightSpace,
 						cached.availableHeight - marginColumn,
@@ -6045,6 +6075,11 @@ function layoutNode(
 	);
 
 	node.ownerFree = isOwnerFree(node);
+	node.widthDependent = node.measure !== null
+		? node.measured?.widthDependent === true
+		: node.children.some((child) =>
+			child.widthDependent || usesPercent(child.style),
+		);
 	// An entry already in the slot is written over rather than replaced. A
 	// node laid out every frame would otherwise leave one behind each time.
 	const write = (entry: CachedSize | null): CachedSize => {
