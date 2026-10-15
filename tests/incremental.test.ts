@@ -38,8 +38,10 @@ for (const page of PAGES) {
 // an inline-block repainting rows counted from its own top (1020, 1193,
 // 1200, 1260), an inline-block's width its measure did not hear of
 // (1481), a positioned row group zeroed by its table when stray content
-// joined it (1140), a positioned row's absolute cell (1941), and an
-// absolute row placed from rounded offsets (2029).
+// joined it (1140), a positioned row's absolute cell (1941), an
+// absolute row placed from rounded offsets (2029), and a row made an
+// inline-block whose percentage width a cached size did not hear of
+// (1637, 2045).
 for (const seed of [
 	1012,
 	1020,
@@ -50,8 +52,10 @@ for (const seed of [
 	1200,
 	1260,
 	1481,
+	1637,
 	1941,
 	2029,
+	2045,
 ]) {
 	test(`seeded changes to the layout page render as a fresh page does: seed ${seed}`, async () => {
 		expect(await firstMismatch(LAYOUT, await record(LAYOUT, seed, 25))).toBe(

@@ -1090,13 +1090,15 @@ function paintNodes(
 	const layout = painter.layout;
 	for (const child of visibleChildren(painter, ctx, node)) {
 		const owner = child.owner as Node | null;
-		if (owner === null) {
-			continue;
-		}
 		const childOrigin = {
 			x: origin.x + child.grid.left,
 			y: origin.y + child.grid.top,
 		};
+		// An anonymous table paints nothing of its own, only its parts.
+		if (owner === null) {
+			paintNodes(painter, child, childOrigin, ctx);
+			continue;
+		}
 		const run = getRun(layout, child);
 		if (run !== null) {
 			paintRun(painter, run, childOrigin, ctx);
@@ -1212,7 +1214,11 @@ function paintOutline(
 	ctx: CellContext,
 	fragments: readonly Rect[] = [rect],
 ): void {
-	if (!style.visible || style.outlineColor === null) {
+	// A box paints only the rows it covers, which is what its extent
+	// says, so one with no height has no row to ring.
+	if (
+		!style.visible || style.outlineColor === null || Math.round(rect.height) < 1
+	) {
 		return;
 	}
 	const color = style.outlineColor;
@@ -1239,6 +1245,9 @@ function paintOutline(
 		);
 	} else {
 		for (const fragment of fragments) {
+			if (Math.round(fragment.height) < 1) {
+				continue;
+			}
 			drawDecoration(ctx,
 				Math.round(fragment.left),
 				Math.round(fragment.top),

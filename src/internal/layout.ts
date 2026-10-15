@@ -606,13 +606,16 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 
 // css-flexbox-1 §4: an anonymous item of collapsible white space is not
 // rendered, or multi-line markup's indentation eats gap and
-// justify-content space.
-function isSuppressedFlexWhitespace(text: Text): boolean {
+// justify-content space. Nor is one in a table, a row group or a row
+// (CSS2 §17.2.1, rule 1), so any run left there has content, which an
+// anonymous cell holds.
+function isSuppressedWhitespace(text: Text): boolean {
 	const parent = boxParentElement(text);
 	if (!parent) {
 		return false;
 	}
-	if (!hasItemChildren(getLayoutDisplay(parent))) {
+	const display = getLayoutDisplay(parent);
+	if (!hasItemChildren(display) && !isTableInternal(display)) {
 		return false;
 	}
 	if (isSpacePreserving(getElementWhiteSpace(parent))) {
@@ -1647,8 +1650,10 @@ function styleNode(
 
 // `node` is a DOM node's principal box. `anonymous` is one contiguous
 // run of inline-level flow children of a block container (CSS2
-// §9.2.1.1), belonging to no DOM node at all.
-type BoxKind = "node" | "anonymous";
+// §9.2.1.1), belonging to no DOM node at all. `table` is the anonymous
+// table around table parts a container that is no table holds (CSS2
+// §17.2.1).
+type BoxKind = "node" | "anonymous" | "table";
 
 // A box either is LAID OUT (it has a layout node the solver sized) or
 // is a run MEMBER whose geometry lives in the break result of the run
@@ -1673,6 +1678,10 @@ export class Box {
 	// Null until a derivation has run, which is not the same as none.
 	children: Box[] | null;
 	heads: Map<Node, Box> | null;
+	// The anonymous table each of a container's children falls in, for
+	// those that fall in one. The children stay in the container's list,
+	// in order, and their layout nodes hang from the table's.
+	tables: Map<Box, Box> | null;
 
 	// An inline broken around a block-level box lays out none of its own
 	// content. The fragments and the block between them are the container's
@@ -1705,6 +1714,7 @@ export class Box {
 		this.members = [];
 		this.children = null;
 		this.heads = null;
+		this.tables = null;
 		this.broken = false;
 		this.holdsFragments = false;
 		this.layoutNode = null;
@@ -1777,7 +1787,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 			}
 		} else if (nodeTypeOf(child) !== child.TEXT_NODE) {
 			continue;
-		} else if (isSuppressedFlexWhitespace(child as Text)) {
+		} else if (isSuppressedWhitespace(child as Text)) {
 			continue;
 		}
 		if (run === null) {
@@ -1807,6 +1817,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	for (let i = runCount; i < previous.length; i++) {
 		dropAnonymousBox(layout, previous[i]);
 	}
+	box.tables = wrapStrayTableParts(container, box, children);
 
 	// The walk flattens a dissolved element and never names it, so a box
 	// it held under an earlier display would outlive the change. A display:
@@ -1817,6 +1828,99 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	box.heads = heads;
 	layout.derivedContainers.add(container);
 	return box;
+}
+
+const TABLE_PARTS = new Set<Display>([
+	"table-row",
+	"table-row-group",
+	"table-header-group",
+	"table-footer-group",
+	"table-cell",
+	"table-caption",
+	"table-column",
+	"table-column-group",
+]);
+
+// Consecutive table parts in a container that is no table, row group
+// or row share one anonymous table, with the white space and the boxless
+// elements between them (CSS2 §17.2.1, rule 3). The table's own layout
+// wraps a cell or stray content in the anonymous row and cell around it.
+// Matched by ordinal, as runs are.
+function wrapStrayTableParts(
+	container: Element,
+	box: Box,
+	children: Box[],
+): Map<Box, Box> | null {
+	const previous = box.tables === null ? [] : [...new Set(box.tables.values())];
+	const display = getLayoutDisplay(container);
+	let tables: Map<Box, Box> | null = null;
+	let count = 0;
+	if (!hasItemChildren(display) && !isTableInternal(display)) {
+		let table: Box | null = null;
+		let between: Box[] = [];
+		for (const child of children) {
+			if (child.kind === "node" && isTablePart(child.node!)) {
+				if (table === null) {
+					table = previous[count] ?? new Box("table", null, box);
+					count++;
+				}
+				tables ??= new Map();
+				for (const each of [...between, child]) {
+					tables.set(each, table);
+				}
+				between = [];
+			} else if (table !== null && isPassedOver(container, child)) {
+				between.push(child);
+			} else {
+				table = null;
+				between = [];
+			}
+		}
+	}
+	for (let i = count; i < previous.length; i++) {
+		dropTableBox(previous[i]);
+	}
+	return tables;
+}
+
+function isTablePart(node: Node): boolean {
+	return nodeTypeOf(node) === node.ELEMENT_NODE &&
+		!isOutOfFlow(node) &&
+		TABLE_PARTS.has(getUsedDisplay(node as Element));
+}
+
+function isTableInternal(display: Display): boolean {
+	return display === "table" ||
+		display === "table-row" ||
+		display === "table-row-group" ||
+		display === "table-header-group" ||
+		display === "table-footer-group";
+}
+
+// What stays inside an anonymous table between two of its parts: white
+// space, which renders nothing there, and elements that take no place.
+function isPassedOver(container: Element, child: Box): boolean {
+	if (child.kind === "anonymous") {
+		return !isSpacePreserving(getElementWhiteSpace(container)) &&
+			child.members.every((member) =>
+				nodeTypeOf(member) === member.TEXT_NODE &&
+				COLLAPSIBLE_ONLY.test((member as Text).data),
+			);
+	}
+	const node = child.node;
+	return node !== null &&
+		nodeTypeOf(node) === node.ELEMENT_NODE &&
+		(getLayoutDisplay(node as Element) === "none" || isOutOfFlow(node));
+}
+
+// The parts go back under the container, or another table, when it next
+// places them.
+function dropTableBox(box: Box): void {
+	const wrapper = box.layoutNode;
+	if (wrapper !== null) {
+		wrapper.parent?.removeChild(wrapper);
+		box.layoutNode = null;
+	}
 }
 
 function getPrincipalBox(
@@ -1937,7 +2041,7 @@ function getBoxEntry(layout: Layout, node: Node): Box | null {
 }
 
 function getOwnLayoutNode(layout: Layout, box: Box): LayoutNode | null {
-	if (box.kind === "anonymous") {
+	if (box.kind !== "node") {
 		return box.layoutNode;
 	}
 	return box.node === null ? null : (layout.nodeMap.get(box.node) ?? null);
@@ -1987,9 +2091,45 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 		return;
 	}
 
-	const children = getContainerBox(layout, container).children!;
+	const containerBox = getContainerBox(layout, container);
+	const children = containerBox.children!;
 	let index = 0;
+	let table: Box | null = null;
+	let partIndex = 0;
 	for (const entry of children) {
+		const wrapping = containerBox.tables?.get(entry) ?? null;
+		if (wrapping !== table) {
+			if (table !== null) {
+				dropUnplacedParts(table.layoutNode!, partIndex);
+			}
+			table = wrapping;
+			partIndex = 0;
+			if (table !== null) {
+				placeTableBox(containerFlex, table, index);
+				index++;
+			}
+		}
+		if (table !== null) {
+			const wrapper = table.layoutNode!;
+			if (entry.kind === "anonymous") {
+				dropAnonymousBox(layout, entry);
+				continue;
+			}
+			const node = entry.node!;
+			const kept = layout.nodeMap.get(node);
+			if (kept?.parent !== wrapper || isTouched(layout, node)) {
+				addNode(layout, node, wrapper, null);
+			}
+			const layoutNode = layout.nodeMap.get(node);
+			if (!isOutOfFlow(node) && layoutNode?.parent === wrapper) {
+				if (wrapper.children[partIndex] !== layoutNode) {
+					wrapper.removeChild(layoutNode);
+					insertChild(wrapper, layoutNode, partIndex);
+				}
+				partIndex++;
+			}
+			continue;
+		}
 		if (entry.kind === "anonymous") {
 			let layoutNode = entry.layoutNode;
 			// A flex or grid item measured as a run is that item's box. In a
@@ -2058,6 +2198,10 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 		}
 	}
 
+	if (table !== null) {
+		dropUnplacedParts(table.layoutNode!, partIndex);
+	}
+
 	// Children the box list does not name, left past its end by the
 	// reordering above. A node that moved under a display:none ancestor is
 	// never re-placed, and a container that kept it would go on laying it
@@ -2069,6 +2213,36 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 			continue;
 		}
 		containerFlex.removeChild(child);
+	}
+}
+
+function placeTableBox(
+	containerFlex: LayoutNode,
+	table: Box,
+	index: number,
+): void {
+	let wrapper = table.layoutNode;
+	if (!wrapper) {
+		wrapper = new LayoutNode();
+		const style = createStyle();
+		style.displayType = "table";
+		wrapper.style = style;
+		table.layoutNode = wrapper;
+	}
+	if (containerFlex.children[index] !== wrapper) {
+		wrapper.parent?.removeChild(wrapper);
+		insertChild(containerFlex, wrapper, index);
+	}
+}
+
+function dropUnplacedParts(wrapper: LayoutNode, count: number): void {
+	for (let i = wrapper.children.length - 1; i >= count; i--) {
+		const child = wrapper.children[i];
+		const node = child.owner as Node | undefined;
+		if (node && isOutOfFlow(node)) {
+			continue;
+		}
+		wrapper.removeChild(child);
 	}
 }
 
@@ -2415,7 +2589,7 @@ function addTextNode(
 		return;
 	}
 
-	if (isSuppressedFlexWhitespace(text)) {
+	if (isSuppressedWhitespace(text)) {
 		return;
 	}
 
@@ -2582,6 +2756,10 @@ function dropContainerBoxes(layout: Layout, element: Element): void {
 				dropAnonymousBox(layout, child);
 			}
 		}
+		for (const table of new Set(box.tables?.values())) {
+			dropTableBox(table);
+		}
+		box.tables = null;
 		box.children = null;
 		box.heads = null;
 	}
@@ -3342,6 +3520,11 @@ function getPrefixWidths(
 // Only the placing measurement's lines become the box's. A probe's are
 // a result about a box nothing was laid out in, and painting them
 // rendered a stretched item at its narrowest.
+// Set while a run is measured when its content holds a percentage that
+// resolves against the width the run is given, whether or not this
+// request gave one.
+let resolvedPercentage = false;
+
 function measureInlineRun(
 	layout: Layout,
 	box: Box,
@@ -3350,7 +3533,11 @@ function measureInlineRun(
 	placing: boolean,
 	left: number,
 ): Size {
+	const outer = resolvedPercentage;
+	resolvedPercentage = false;
 	const breakResult = breakNodes(layout, box, width, widthSpace, left);
+	const widthDependent = resolvedPercentage;
+	resolvedPercentage = outer || widthDependent;
 	if (Number.isFinite(width)) {
 		breakResult.containerWidth = width;
 	}
@@ -3373,6 +3560,7 @@ function measureInlineRun(
 			: undefined,
 		wrapped: breakResult.wrapped === true,
 		lineColumns: Math.round(breakResult.maxLineWidth),
+		widthDependent,
 	};
 }
 
@@ -3590,6 +3778,9 @@ function collectLeaves(
 					const widthValue = CSSValues.parseUnitValue(
 						getComputedValue(element, "width"),
 					);
+					if (widthValue !== null && typeof widthValue === "object") {
+						resolvedPercentage = true;
+					}
 					if (
 						widthValue !== null &&
 						typeof widthValue === "object" &&
@@ -3700,6 +3891,9 @@ function collectLeaves(
 					element,
 				);
 				let maxWidthCap: number | undefined;
+				if (maxWidthValue && typeof maxWidthValue === "object") {
+					resolvedPercentage = true;
+				}
 				if (typeof maxWidthValue === "number") {
 					maxWidthCap = maxWidthValue;
 				} else if (
@@ -6656,8 +6850,74 @@ function forEachLayoutNode(
 	walk(layout.initialBlock);
 }
 
+// The tree is one: every child names the node that holds it, no node is
+// held twice, and every node that hangs from another is reachable from
+// the root, so no box is laid out where nothing paints it. A box belongs
+// to a connected element that generates one.
+function checkTreeShape(layout: Layout): string[] {
+	const problems: string[] = [];
+	const seen = new Set<LayoutNode>();
+	const name = (node: LayoutNode): string => {
+		const owner = node.owner as Node | null;
+		return owner === null
+			? "anonymous"
+			: nodeTypeOf(owner) === owner.ELEMENT_NODE
+			? (owner as Element).localName +
+				((owner as Element).id ? `#${(owner as Element).id}` : "")
+			: "#text";
+	};
+	const visit = (node: LayoutNode): void => {
+		if (seen.has(node)) {
+			problems.push(`${name(node)} held twice`);
+		}
+		seen.add(node);
+		for (const child of node.children) {
+			if (child.parent !== node) {
+				problems.push(`${name(child)} names another parent`);
+			}
+			visit(child);
+		}
+	};
+	// The root, and the formatting context of every box that lays its own
+	// content out, which a run measures and no parent holds.
+	visit(layout.initialBlock);
+	const document = layout.rootElement.ownerDocument!;
+	for (const each of flatDescendants(document.documentElement!)) {
+		if (nodeTypeOf(each) !== each.ELEMENT_NODE) {
+			continue;
+		}
+		const context = layout.boxes.get(each as Element)
+			?.independentFormattingContext;
+		if (context && !seen.has(context)) {
+			visit(context);
+		}
+	}
+	for (const [domNode, node] of layout.nodeMap) {
+		if (node.parent !== null && !seen.has(node)) {
+			problems.push(`${name(node)} hangs where the root cannot reach`);
+		}
+		if (
+			seen.has(node) &&
+			nodeTypeOf(domNode) === domNode.ELEMENT_NODE &&
+			isDisplayContents(domNode as Element)
+		) {
+			problems.push(`${name(node)} has a box and generates none`);
+		}
+		if (seen.has(node) && !flatIsConnected(domNode)) {
+			problems.push(`${name(node)} has a box and is not in the document`);
+		}
+	}
+	return problems;
+}
+
 export function checkLayoutFromScratch(layout: Layout): void {
 	layoutCheck.checked++;
+	const shape = checkTreeShape(layout);
+	if (shape.length > 0) {
+		throw new Error(
+			`The layout tree is malformed: ${shape.slice(0, 8).join("; ")}`,
+		);
+	}
 	const document = layout.window.document;
 	const elements = [...document.querySelectorAll("*")] as Element[];
 	const describe = (): string[] => elements.map((element) => {
