@@ -40,6 +40,7 @@ import {
 	drawGrid,
 	type Framebuffer,
 	invalidate,
+	requestFrame,
 	scrollTo,
 } from "./framebuffer.ts";
 import {
@@ -31089,7 +31090,8 @@ function scheduleSelectionChange(document: Document): void {
 	// below. That guard drops the second move in a task but not its paint.
 	const attached = getAttachedDocument(document);
 	if (attached !== undefined) {
-		invalidate(_(attached).extra.framebuffer);
+		_(attached).extra.layout.selectionMoved = true;
+		requestFrame(_(attached).extra.framebuffer);
 		void _(attached).extra.render();
 	}
 	const documentSlots = _(document);
@@ -36031,8 +36033,9 @@ function handleMutationRecords(
 		return;
 	}
 	// Any observed mutation can move a node in the flat tree. Drop the
-	// memoized composition links before anything reads through them.
-	_(attached).extra.layout.invalidateFrame();
+	// memoized composition links before anything reads through them. What
+	// the mutation changes on screen, layout finds as the boxes it moves.
+	_(attached).extra.layout.invalidateFrame(false);
 	// Attribute records whose value did not actually change are dropped
 	// before any handler sees them. Frameworks (and this repo's own
 	// examples) reassign className/style with identical values on every

@@ -494,6 +494,9 @@ export class LayoutNode {
 	gridTop: number;
 	// Whether the last roundToGrid left the children as they were.
 	settled: boolean;
+	// Whether a child left since the last paint extents, whose rows then
+	// show nothing it painted.
+	lostChild: boolean;
 
 	constructor() {
 		this.children = [];
@@ -511,6 +514,7 @@ export class LayoutNode {
 		this.gridLeft = NaN;
 		this.gridTop = NaN;
 		this.settled = false;
+		this.lostChild = false;
 		this.currentStyle = createStyle();
 		this.result = createResult();
 	}
@@ -558,6 +562,7 @@ export class LayoutNode {
 		if (index !== -1) {
 			this.children.splice(index, 1);
 			child.parent = null;
+			this.lostChild = true;
 			if (child.outOfFlowCount !== 0) {
 				countOutOfFlow(this, -child.outOfFlowCount);
 			}

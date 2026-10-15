@@ -49,7 +49,7 @@ import {
 } from "./dom.ts";
 import {requestEditingInsert} from "./editing.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
-import {type Framebuffer, invalidate, repaintAll} from "./framebuffer.ts";
+import {type Framebuffer, requestFrame, repaintAll} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";
 import {
 	attributeOf,
@@ -454,8 +454,9 @@ export function dispatchInput(
 	input: Input,
 	item: WireKey[] | WireMouse | WirePaste,
 ): void {
-	// Pseudo-state and the selection move with no mutation record.
-	invalidate(input.framebuffer);
+	// Pseudo-state and the selection move with no mutation record. Each
+	// names the rows it changes.
+	requestFrame(input.framebuffer);
 	if (Array.isArray(item)) {
 		deliverKeys(input, item);
 		return;

@@ -1005,8 +1005,12 @@ interface Styling {
 const stylings = new WeakMap<LayoutNode, Styling>();
 
 interface Extent {
-	// The box's own top, in absolute document rows.
+	// The box's own top, in absolute document rows, and its left edge and
+	// size, which a repaint compares to find what moved.
 	origin: number;
+	left: number;
+	width: number;
+	height: number;
 	// The rows the subtree can paint, in absolute document rows. Absolutely
 	// positioned children push it outside the box.
 	top: number;
@@ -1037,17 +1041,47 @@ const extents = new WeakMap<LayoutNode, Extent>();
 function computePaintExtents(
 	layout: Layout,
 	node: LayoutNode,
+	originLeft: number,
 	originTop: number,
 	settled = false,
+	fixed = false,
 ): Extent {
 	const top = originTop + node.result.top;
+	const left = originLeft + node.result.left;
 	let extent = extents.get(node);
 	if (settled && extent !== undefined && extent.origin === top) {
 		return extent;
 	}
+	fixed ||= node.style.positionType === "fixed";
+	let moved = false;
+	if (layout.collecting) {
+		const lines = node.measure === null ? undefined : getMeasuredLines(layout, node);
+		const shifted = extent === undefined ||
+			extent.origin !== top ||
+			extent.left !== left;
+		const resized = extent !== undefined &&
+			(extent.width !== getComputedWidth(node) ||
+				extent.height !== getComputedHeight(node));
+		moved = node.lostChild ||
+			((shifted || resized) && paintsOwnBox(layout, node)) ||
+			(node.measure !== null &&
+				(shifted ||
+					(!settled && !node.settled &&
+						!isSameLines(node, lineRecords.get(node), lines))));
+		if (lines !== undefined) {
+			lineRecords.set(node, lines);
+		}
+	}
+	node.lostChild = false;
+	if (moved && layout.collecting && extent !== undefined) {
+		addDamage(layout, node, extent.top, extent.bottom, fixed);
+	}
 	if (extent === undefined) {
 		extent = {
 			origin: top,
+			left: 0,
+			width: 0,
+			height: 0,
 			top,
 			bottom: top,
 			unstackedChildren: 0,
@@ -1087,8 +1121,14 @@ function computePaintExtents(
 		}
 	}
 	for (const child of node.children) {
-		const childExtent =
-			computePaintExtents(layout, child, top, settled || node.settled);
+		const childExtent = computePaintExtents(
+			layout,
+			child,
+			left,
+			top,
+			settled || node.settled,
+			fixed,
+		);
 		if (clips && scrollBottom !== null && child.style.displayType !== "none") {
 			if (scrollRight !== null) {
 				scrollRight =
@@ -1127,8 +1167,14 @@ function computePaintExtents(
 		}
 	}
 	extent.origin = top;
+	extent.left = left;
+	extent.width = getComputedWidth(node);
+	extent.height = getComputedHeight(node);
 	extent.top = highest;
 	extent.bottom = lowest;
+	if (moved && layout.collecting) {
+		addDamage(layout, node, highest, lowest, fixed);
+	}
 	extent.unstackedChildren = unstacked;
 	extent.overflowRight = right;
 	extent.overflowBottom = bottom;
@@ -3628,7 +3674,7 @@ function collectLeaves(
 							: Number.NaN,
 						contentHeightMode === "definite" ? contentHeight : Number.NaN,
 					);
-					computePaintExtents(layout, independentFormattingContext, 0);
+					computePaintExtents(layout, independentFormattingContext, 0, 0);
 					finalContentWidth = getComputedWidth(independentFormattingContext);
 					finalContentHeight = getComputedHeight(independentFormattingContext);
 				} else {
@@ -5310,11 +5356,31 @@ export class Layout {
 	// Counts the passes that solved the tree, so a reader can tell whether
 	// geometry changed since it last looked.
 	solves: number;
+	// The rows the next frame repaints, [top, bottom, fixed] in document
+	// rows, or in viewport rows for a box in fixed space. Every row
+	// repaints when wholeDamage is set. collecting is set while the paint
+	// extents of the document, not of a box's own formatting context, are
+	// written, which is when moved boxes add their rows.
+	damage: Array<[number, number, boolean]>;
+	wholeDamage: boolean;
+	collecting: boolean;
+	// Elements whose style changed with no layout change, and whether the
+	// selection moved. Their rows are found once layout is current.
+	restyledForPaint: Map<Element, object | null>;
+	selectionMoved: boolean;
+	// The rows the selection covered at the last frame, from its ends.
+	selectionRows: [number, number] | null;
 
 	constructor(window: Window, width: number, height: number) {
 		this.geometryMoved = false;
 		this.pass = 0;
 		this.solves = 0;
+		this.damage = [];
+		this.wholeDamage = true;
+		this.collecting = false;
+		this.restyledForPaint = new Map();
+		this.selectionMoved = false;
+		this.selectionRows = null;
 		this.positionedElements = new Set<Element>();
 		this.terminalReordersText = false;
 		this.rectTextIndices =
@@ -5465,7 +5531,9 @@ export class Layout {
 		// viewport units against it.
 		const root = this.initialBlock;
 		root.performLayout(root.style.width.value, root.style.height.value);
-		computePaintExtents(this, root, 0);
+		this.collecting = !this.wholeDamage;
+		computePaintExtents(this, root, 0, 0);
+		this.collecting = false;
 		this.solves++;
 	}
 
@@ -6102,13 +6170,16 @@ export class Layout {
 	// The observer drain calls this once per mutation batch. The cascade calls
 	// it for style changes no record describes. Every entry that moves geometry
 	// announces it here, and the pass itself moves nothing unannounced.
-	invalidateFrame(): void {
+	invalidateFrame(whole = true): void {
 		const document = this.rootElement.ownerDocument;
 		if (document === null) {
 			return;
 		}
 		usedValuesChanged(document);
 		this.geometryMoved = true;
+		if (whole) {
+			this.wholeDamage = true;
+		}
 	}
 
 	// A node re-enumerates its whole subtree, because run membership may
@@ -6190,6 +6261,253 @@ export function invalidateTextMeasurement(layout: Layout): void {
 
 export function framePainted(layout: Layout): void {
 	layout.geometryMoved = false;
+	layout.damage = [];
+	layout.wholeDamage = false;
+	layout.restyledForPaint.clear();
+	layout.selectionMoved = false;
+}
+
+function addDamage(
+	layout: Layout,
+	node: LayoutNode,
+	top: number,
+	bottom: number,
+	fixed: boolean,
+): void {
+	if (bottom <= top) {
+		return;
+	}
+	if (layout.damage.length >= MAX_DAMAGE) {
+		layout.wholeDamage = true;
+		layout.damage = [];
+		return;
+	}
+	const shift = getScrollShift(layout, node).y;
+	layout.damage.push([top + shift, bottom + shift, fixed]);
+}
+
+// The lines a measured box painted at the last paint extents, to tell a
+// box laid out again into the same lines from one whose text changed.
+const lineRecords = new WeakMap<LayoutNode, BreakResult>();
+
+function isSameLines(
+	node: LayoutNode,
+	a: BreakResult | undefined,
+	b: BreakResult | undefined,
+): boolean {
+	if (a === b) {
+		return true;
+	}
+	if (
+		a === undefined ||
+		b === undefined ||
+		a.lines.length !== b.lines.length ||
+		(a.containerWidth !== b.containerWidth && !isStartAligned(node))
+	) {
+		return false;
+	}
+	for (let index = 0; index < a.lines.length; index++) {
+		const x = a.lines[index];
+		const y = b.lines[index];
+		if (
+			x.y !== y.y ||
+			x.width !== y.width ||
+			x.height !== y.height ||
+			x.segments.length !== y.segments.length
+		) {
+			return false;
+		}
+		for (let at = 0; at < x.segments.length; at++) {
+			const p = x.segments[at];
+			const q = y.segments[at];
+			if (
+				!isSameLeaf(p.leaf, q.leaf) ||
+				p.x !== q.x ||
+				p.width !== q.width ||
+				p.processedText !== q.processedText ||
+				p.dataStart !== q.dataStart ||
+				p.dataEnd !== q.dataEnd ||
+				p.visualBase !== q.visualBase
+			) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+// Leaves are made again whenever a run breaks. An inline-block lays its
+// content out apart, so a line holding one never counts as the same.
+function isSameLeaf(a: Leaf, b: Leaf): boolean {
+	if (a.type !== b.type || a.node !== b.node || a.type === "inline-block") {
+		return false;
+	}
+	if (a.type === "edge") {
+		const edge = b as EdgeLeaf;
+		return a.side === edge.side && a.margin === edge.margin &&
+			a.border === edge.border && a.padding === edge.padding;
+	}
+	return true;
+}
+
+// Whether a box's lines start at its left edge whatever width they broke
+// against, so that width alone moves none of them.
+function isStartAligned(node: LayoutNode): boolean {
+	const owner = node.owner as Node | null;
+	const element = owner === null
+		? null
+		: nodeTypeOf(owner) === owner.ELEMENT_NODE
+		? (owner as Element)
+		: flatParentElement(owner);
+	if (element === null || getComputedValue(element, "direction") === "rtl") {
+		return false;
+	}
+	const align = CSSValues.getLineAlignment(
+		getComputedValue(element, "text-align"),
+	);
+	return align !== "center" && align !== "right" && align !== "end" &&
+		!getComputedValue(element, "text-indent").includes("%");
+}
+
+// Whether a box draws anything of its own that its size or place decides:
+// a fill, a border, an outline, a marker, a clip. One that draws nothing
+// changes no cell by moving, and what it holds reports its own moves.
+function paintsOwnBox(layout: Layout, node: LayoutNode): boolean {
+	const owner = node.owner as Node | null;
+	// A run paints its lines from its origin, whatever its size.
+	if (owner === null || getRun(layout, node) !== null) {
+		return false;
+	}
+	if (nodeTypeOf(owner) !== owner.ELEMENT_NODE) {
+		return false;
+	}
+	const element = owner as Element;
+	const style = node.style;
+	if (
+		style.clipsOverflow ||
+		style.border.top !== 0 ||
+		style.border.right !== 0 ||
+		style.border.bottom !== 0 ||
+		style.border.left !== 0 ||
+		(style.displayType !== "block" &&
+			style.displayType !== "flex" &&
+			style.displayType !== "grid") ||
+		isReplacedBox(element) ||
+		isMathRoot(element) ||
+		layout.getBox(element)?.fragments
+	) {
+		return true;
+	}
+	const fill = getComputedValue(element, "background-color");
+	return !(fill === "transparent" || fill === "rgba(0, 0, 0, 0)") ||
+		getComputedValue(element, "background-image") !== "none" ||
+		getComputedValue(element, "outline-style") !== "none" ||
+		getComputedValue(element, "box-shadow") !== "none" ||
+		getComputedValue(element, "display") === "list-item";
+}
+
+// Past this many moved boxes a frame repaints whole, which is cheaper
+// than merging them, and bounds what a document never painted keeps.
+const MAX_DAMAGE = 64;
+
+function isInFixedBox(node: LayoutNode): boolean {
+	for (let at: LayoutNode | null = node; at !== null; at = at.parent) {
+		if (at.style.positionType === "fixed") {
+			return true;
+		}
+	}
+	return false;
+}
+
+// The rows from the first end of the selection to the last, or null
+// when an end has no caret position to measure.
+function getSelectionRows(layout: Layout): [number, number] | null {
+	const selection = layout.window.document.getSelection();
+	if (selection === null || selection.rangeCount === 0) {
+		return null;
+	}
+	let top = Infinity;
+	let bottom = -Infinity;
+	for (let index = 0; index < selection.rangeCount; index++) {
+		const range = selection.getRangeAt(index);
+		for (const [node, offset] of [
+			[range.startContainer, range.startOffset],
+			[range.endContainer, range.endOffset],
+		] as const) {
+			const rect = layout.getCaretRect(node, offset);
+			if (rect === null) {
+				return null;
+			}
+			top = Math.min(top, Math.floor(rect.y));
+			bottom = Math.max(bottom, Math.ceil(rect.y + Math.max(rect.height, 1)));
+		}
+	}
+	return [top, bottom];
+}
+
+/**
+ * The buffer rows the next frame must repaint, merged into bands, or
+ * undefined when every row must. offset turns document rows into buffer
+ * rows, as the frame's viewport offset does.
+ */
+export function takeDamageBands(
+	layout: Layout,
+	offset: number,
+	paintsAsBefore: (element: Element, key: object) => boolean,
+): Array<[number, number]> | undefined {
+	const selectionRows = getSelectionRows(layout);
+	const previousSelection = layout.selectionRows;
+	layout.selectionRows = selectionRows;
+	if (layout.wholeDamage) {
+		return undefined;
+	}
+	const rows: Array<[number, number]> = [];
+	const add = (top: number, bottom: number, fixed: boolean): void => {
+		rows.push(fixed ? [top, bottom] : [top + offset, bottom + offset]);
+	};
+	for (const [top, bottom, fixed] of layout.damage) {
+		add(top, bottom, fixed);
+	}
+	for (const [element, key] of layout.restyledForPaint) {
+		if (!element.isConnected || (key !== null && paintsAsBefore(element, key))) {
+			continue;
+		}
+		let box: Element | null = element;
+		while (box !== null && !layout.nodeMap.has(box)) {
+			box = flatParentElement(box);
+		}
+		const node = box === null ? undefined : layout.nodeMap.get(box);
+		const extent = node === undefined ? undefined : extents.get(node);
+		if (node === undefined || extent === undefined) {
+			return undefined;
+		}
+		const shift = getScrollShift(layout, node).y;
+		add(extent.top + shift, extent.bottom + shift, isInFixedBox(node));
+	}
+	if (layout.selectionMoved) {
+		if (selectionRows === null || previousSelection === null) {
+			return undefined;
+		}
+		for (const [top, bottom] of [previousSelection, selectionRows]) {
+			add(top, bottom, false);
+			add(top, bottom, true);
+		}
+	}
+	// A row beside a change can change too: a border there joins the
+	// changed one, and an outline reaches past its box.
+	rows.sort((a, b) => a[0] - b[0]);
+	const bands: Array<[number, number]> = [];
+	for (const [top, bottom] of rows) {
+		const from = top - 1;
+		const to = bottom + 1;
+		const last = bands.at(-1);
+		if (last !== undefined && from <= last[1]) {
+			last[1] = Math.max(last[1], to);
+		} else {
+			bands.push([from, to]);
+		}
+	}
+	return bands;
 }
 
 // Membership gates. A positioned inline run member owns no box of its
