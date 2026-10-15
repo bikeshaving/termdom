@@ -2321,8 +2321,13 @@ function syncRunMembers(layout: Layout, run: Box): void {
 		// Whether it lays its content out under a root of its own, and as
 		// what, follows its display as it is now.
 		syncIndependentFormattingContext(layout, element);
+		const kept = layout.nodeMap.get(element);
 		if (!layout.boxes.get(element)?.independentFormattingContext) {
 			dropLayoutNode(layout, element);
+		} else if (kept) {
+			// A node kept is styled as the element is now, or the next restyle
+			// compares against a display it no longer has.
+			styleNode(layout, element, kept);
 		}
 		dropRunContent(layout, element);
 	}
