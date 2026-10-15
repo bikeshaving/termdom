@@ -533,6 +533,9 @@ export class LayoutNode {
 	// Whether a child left since the last paint extents, whose rows then
 	// show nothing it painted.
 	lostChild: boolean;
+	// Called when the tree this node roots goes stale. The root of a box's
+	// own formatting context tells the box, whose measure lays it out.
+	onStale: (() => void) | null;
 
 	constructor() {
 		this.children = [];
@@ -561,6 +564,7 @@ export class LayoutNode {
 		this.measuredWidth = NaN;
 		this.measured = null;
 		this.lostChild = false;
+		this.onStale = null;
 		this.currentStyle = createStyle();
 		this.result = createResult();
 	}
@@ -938,9 +942,15 @@ function countOutOfFlow(start: LayoutNode, change: number): void {
 }
 
 function invalidateAncestors(start: LayoutNode): void {
-	for (let node: LayoutNode | null = start; node; node = node.parent) {
+	let node = start;
+	for (;;) {
 		node.stale = true;
+		if (node.parent === null) {
+			break;
+		}
+		node = node.parent;
 	}
+	node.onStale?.();
 }
 
 function resolveFlexGrow(node: LayoutNode): number {
@@ -2640,6 +2650,14 @@ interface TableRow {
 
 // Visual order: header groups first and footer groups last, wherever they
 // were written.
+// A positioned box hangs from its containing block wherever it sits in
+// the tree, and takes no cell of the table it is in.
+function getInFlowCells(row: LayoutNode): LayoutNode[] {
+	return row.children.some((cell) => isOutOfFlowType(cell.style.positionType))
+		? row.children.filter((cell) => !isOutOfFlowType(cell.style.positionType))
+		: row.children;
+}
+
 function collectTableRows(table: LayoutNode): {
 	rows: TableRow[];
 	captions: LayoutNode[];
@@ -2675,9 +2693,12 @@ function collectTableRows(table: LayoutNode): {
 		groups.push(group);
 		anonymous = null;
 		for (const child of group.children) {
+			if (isOutOfFlowType(child.style.positionType)) {
+				continue;
+			}
 			if (child.style.displayType === "table-row") {
 				anonymous = null;
-				into.push({node: child, group, cells: child.children});
+				into.push({node: child, group, cells: getInFlowCells(child)});
 			} else {
 				collectStray(child, group, into);
 			}
@@ -2690,7 +2711,11 @@ function collectTableRows(table: LayoutNode): {
 			child.style.displayType === "none" ||
 			isOutOfFlowType(child.style.positionType)
 		) {
-			zeroLayout(child);
+			// A positioned child is its containing block's to lay out, and
+			// zeroing it here would wipe what that layout placed.
+			if (!isOutOfFlowType(child.style.positionType)) {
+				zeroLayout(child);
+			}
 			continue;
 		}
 
@@ -2718,7 +2743,7 @@ function collectTableRows(table: LayoutNode): {
 				collectGroup(child, body);
 				break;
 			case "table-row":
-				body.push({node: child, group: null, cells: child.children});
+				body.push({node: child, group: null, cells: getInFlowCells(child)});
 				break;
 			default:
 				collectStray(child, null, body);
@@ -3527,6 +3552,12 @@ function layoutTable(
 
 		cell.node.result.left = left + columnStart(cell.column);
 		cell.node.result.top = top;
+	}
+
+	// A positioned table or part of one contains the absolute boxes in it,
+	// as any positioned box does.
+	for (const child of getOutOfFlowDescendants(node, false)) {
+		layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
 	}
 }
 
