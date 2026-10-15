@@ -12,6 +12,7 @@ import {
 	type TerminalTransport,
 	transportFromProcess,
 } from "../src/index.ts";
+import {styleCheck} from "../src/internal/cssom.ts";
 import {framePainted} from "../src/internal/dom.ts";
 import type {ColorDepth} from "../src/internal/exchange.ts";
 import {
@@ -20,7 +21,6 @@ import {
 	endFrame,
 	Framebuffer,
 } from "../src/internal/framebuffer.ts";
-import {styleCheck} from "../src/internal/cssom.ts";
 import {layoutCheck} from "../src/internal/layout.ts";
 import {partialFrameCheck} from "../src/internal/painter.ts";
 import {getStringWidth} from "../src/internal/text.ts";
