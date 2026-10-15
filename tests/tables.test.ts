@@ -891,3 +891,14 @@ test("a row group spans its own rows", async () => {
 	);
 	dom.dispose();
 });
+
+test("an absolute box after an anonymous table starts below it", async () => {
+	const {box, dom} = await render(
+		"<div style=\"position: relative\">" +
+			"<div id=a style=\"display: table-cell\">a</div>" +
+			"<div style=\"display: table-cell\">bb</div>" +
+			"<span id=abs style=\"position: absolute\">X</span></div>",
+	);
+	expect(box("#abs").top).toBe(box("#a").top + box("#a").height);
+	dom.dispose();
+});
