@@ -902,3 +902,17 @@ test("an absolute box after an anonymous table starts below it", async () => {
 	expect(box("#abs").top).toBe(box("#a").top + box("#a").height);
 	dom.dispose();
 });
+
+test("an inline-table sits on the line with the text around it", async () => {
+	const {box, dom} = await render(
+		"<p>before <span id=t style=\"display: inline-table\">" +
+			"<span style=\"display: table-row\">" +
+			"<span id=a style=\"display: table-cell\">a</span>" +
+			"<span id=b style=\"display: table-cell\">bb</span></span></span>" +
+			" after</p>",
+	);
+	expect(box("#t").top).toBe(box("p").top);
+	expect(box("#t").left).toBe("before ".length);
+	expect(box("#b").left).toBe(box("#a").left + box("#a").width);
+	dom.dispose();
+});
