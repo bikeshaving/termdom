@@ -242,6 +242,41 @@ term.addEventListener("fetch", (event) => {
 When `csp` blocks a load, TermDOM fires `securitypolicyviolation` at
 the element instead. The images guide covers both events.
 
+### `term.measureCell()`
+
+Asks the terminal how many of its pixels one cell covers, and resolves
+to `{width, height}`, or to `null` when there is no terminal to ask
+(before `attach()`, after `dispose()`, or when output is not a
+terminal) or the terminal does not answer. Most terminals answer
+(XTWINOPS 16); the Linux console does not.
+
+This is the terminal's own measurement, whatever the `cellSize` option
+says. Cells are seldom square: an 11 by 25 pixel cell is about 2.27
+times as tall as it is wide. Divide by it to draw something to its
+true shape on a canvas.
+
+```ts
+const cell = await term.measureCell();
+const aspect = cell ? cell.height / cell.width : 2;
+```
+
+Each call asks the terminal again. Calls made while a question is out
+share its answer.
+
+### `term.addEventListener("cellchange", listener)`
+
+Fires a `CellChangeEvent`, with `width` and `height`, when the
+terminal's cell is measured at a different size: when its first answer
+after `attach()` replaces the size TermDOM assumed until then, and
+after a font zoom. Images resize with it on their own. Anything drawn
+to the cell's shape can redraw here.
+
+```ts
+term.addEventListener("cellchange", (event) => {
+  drawChart(event.height / event.width);
+});
+```
+
 ### `term.attach()`
 
 `attach()` puts the terminal in raw mode. It starts input handling,
@@ -517,6 +552,8 @@ also exports:
 
 - `FetchEvent`, `ExtendableEvent` and the `FetchEventInit` type, for
   the `"fetch"` event.
+- `CellChangeEvent` and the `CellChangeEventInit` type, for the
+  `"cellchange"` event.
 - The types `TermDOMOptions`, `TermDOMEventMap`, `CellSize`,
   `ColorDepth`, `TerminalTransport`, `TerminalCloseInfo`,
   `TerminalSize`, `ProcessLike` and `SSHSessionLike`.

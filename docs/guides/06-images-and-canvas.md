@@ -221,7 +221,10 @@ that cell size. With the default unit cell, where one CSS pixel is one
 whole cell, the engine uses the terminal's real cell size instead. It
 asks the terminal for its cell size (XTWINOPS 16) and assumes 8 by 16
 pixels until the terminal answers. At 8 by 16, a 400 by 400 image is
-50 columns by 25 rows.
+50 columns by 25 rows. It asks again when the terminal resizes, so a
+font zoom resizes images too. `term.measureCell()` reports the same
+measurement to a program, and a `"cellchange"` event announces a new
+one.
 
 `naturalWidth` and `naturalHeight` report this size in CSS pixels.
 Under the unit cell a CSS pixel is a cell, so this works the way a

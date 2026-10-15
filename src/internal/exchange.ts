@@ -900,6 +900,9 @@ export interface ExchangeSlots extends EventTargetSlots {
 	interactive: boolean;
 	// Whether the terminal's answers can be read, so it is asked anything.
 	asking: boolean;
+	// The cell size asked for and not yet answered, which every caller
+	// waits on rather than asking again.
+	cellQuery: Promise<{width: number; height: number} | null> | null;
 	engagedModes: Set<ModeName>;
 	anchorDetectionEnabled: boolean;
 	window: Window;
@@ -1005,6 +1008,7 @@ export class Exchange extends EventTarget {
 		slots.transport = transport;
 		slots.interactive = interactive;
 		slots.asking = asking;
+		slots.cellQuery = null;
 		slots.engagedModes = new Set<ModeName>();
 		// Anchor detection only makes sense when a shell's rows are above ours.
 		slots.anchorDetectionEnabled = transport.sharesScreen && asking;
@@ -1414,9 +1418,37 @@ export async function negotiateCellPixels(
 	exchange: Exchange,
 ): Promise<boolean> {
 	const slots = _(exchange);
-	if (!slots.interactive) {
-		return false;
+	const answer = await queryCellPixels(exchange);
+	return (
+		answer !== null &&
+		!slots.disposed &&
+		adoptCellPixels(slots.framebuffer, answer.width, answer.height)
+	);
+}
+
+/**
+ * One cell in the terminal's pixels, as it answers CSI 16 t, or null
+ * when nothing can be asked or it does not say. A question already
+ * asked is waited on, not asked again.
+ */
+export function queryCellPixels(
+	exchange: Exchange,
+): Promise<{width: number; height: number} | null> {
+	const slots = _(exchange);
+	if (!slots.interactive || slots.disposed) {
+		return Promise.resolve(null);
 	}
+	slots.cellQuery ??= askCellPixels(exchange).finally(() => {
+		slots.cellQuery = null;
+	});
+	return slots.cellQuery;
+}
+
+// The terminal answers its device attributes after anything asked before
+// them, so no cell size by then is none.
+function askCellPixels(
+	exchange: Exchange,
+): Promise<{width: number; height: number} | null> {
 	let answered!: () => void;
 	const until = new Promise<void>((resolve) => (answered = resolve));
 	const cell = nextReply<"cell-size", {width: number; height: number} | null>(
@@ -1433,12 +1465,7 @@ export async function negotiateCellPixels(
 		},
 	);
 	void queryDeviceAttributes(exchange).then(answered);
-	const answer = await cell;
-	return (
-		answer !== null &&
-		!slots.disposed &&
-		adoptCellPixels(slots.framebuffer, answer.width, answer.height)
-	);
+	return cell;
 }
 
 /**

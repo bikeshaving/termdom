@@ -11,6 +11,7 @@ import {
 import {
 	applyMutations,
 	attachDocument,
+	CellChangeEvent,
 	checkFormControls,
 	clampScrollOffsets,
 	clearHighlights,
@@ -63,6 +64,7 @@ import {
 	negotiateColorScheme,
 	negotiateGraphemeClusters,
 	negotiateOverline,
+	queryCellPixels,
 	queryDeviceAttributes,
 	reclaimModes,
 	releaseModes,
@@ -79,6 +81,7 @@ import {
 	writeLines,
 } from "./internal/exchange.ts";
 import {
+	adoptCellPixels,
 	beginFrame,
 	endFrame,
 	Framebuffer,
@@ -133,6 +136,8 @@ export type {CanvasCellGridContext} from "./internal/canvas.ts";
 export type {CellSize} from "./internal/units.ts";
 export {transportFromProcess, transportFromSSH} from "./internal/exchange.ts";
 export {
+	CellChangeEvent,
+	type CellChangeEventInit,
 	ExtendableEvent,
 	FetchEvent,
 	type FetchEventInit,
@@ -370,6 +375,7 @@ const HELD_ERROR_LIMIT = 50;
 
 /** The events a TermDOM dispatches, by type. */
 export interface TermDOMEventMap {
+	cellchange: CellChangeEvent;
 	fetch: FetchEvent;
 }
 
@@ -779,10 +785,7 @@ export class TermDOM extends EventTarget {
 						return;
 					}
 					if (cellChanged) {
-						cellPixelsChanged(this);
-						if (measuresCell) {
-							cellSizeChanged(this);
-						}
+						cellMeasured(this);
 					}
 					void render(this);
 				},
@@ -795,29 +798,29 @@ export class TermDOM extends EventTarget {
 				depthSettled,
 				...(measuresCell ? [cellAnswered] : []),
 			]).then(() => {});
+			// A font zoom resizes the grid, and the cell with it, so the cell
+			// is asked again. When the cell sizes the page, the page hears of
+			// the resize once, when the cell is known.
 			if (measuresCell) {
-				// A font zoom resizes the grid, and the cell with it. The page
-				// hears of it once, when the cell is known.
 				deferResizeEvent(slots.exchange);
-				slots.exchange.addEventListener("terminalresize", (event) => {
-					const {sizeChanged} = event as TerminalResizeEvent;
-					void negotiateCellPixels(slots.exchange).then((cellChanged) => {
-						if (!isAttached(this)) {
-							return;
-						}
-						if (cellChanged) {
-							cellPixelsChanged(this);
-							cellSizeChanged(this);
-							void render(this);
-						} else if (sizeChanged) {
-							dispatchAsUserAgent(
-								this.window,
-								constructInternal(() => new this.window.Event("resize")),
-							);
-						}
-					});
-				});
 			}
+			slots.exchange.addEventListener("terminalresize", (event) => {
+				const {sizeChanged} = event as TerminalResizeEvent;
+				void negotiateCellPixels(slots.exchange).then((cellChanged) => {
+					if (!isAttached(this)) {
+						return;
+					}
+					if (cellChanged) {
+						cellMeasured(this);
+						void render(this);
+					} else if (sizeChanged && measuresCell) {
+						dispatchAsUserAgent(
+							this.window,
+							constructInternal(() => new this.window.Event("resize")),
+						);
+					}
+				});
+			});
 			slots.lifecycle = "attached";
 			begun();
 
@@ -883,6 +886,29 @@ export class TermDOM extends EventTarget {
 
 	override dispatchEvent(event: globalThis.Event): boolean {
 		return super.dispatchEvent(event as never);
+	}
+
+	/**
+	 * One cell in the terminal's pixels, asked of the terminal now: what
+	 * an image or a canvas drawing to the cell's shape divides by. Null
+	 * when there is no terminal to ask, before attach() or after
+	 * dispose(), or when the terminal does not say. A cell measured at
+	 * another size than before is also announced as a cellchange event.
+	 */
+	async measureCell(): Promise<{width: number; height: number} | null> {
+		if (!isAttached(this)) {
+			return null;
+		}
+		const slots = _(this);
+		const answer = await queryCellPixels(slots.exchange);
+		if (answer === null || !isAttached(this)) {
+			return null;
+		}
+		if (adoptCellPixels(slots.framebuffer, answer.width, answer.height)) {
+			cellMeasured(this);
+			void render(this);
+		}
+		return {width: answer.width, height: answer.height};
 	}
 
 	/**
@@ -1258,8 +1284,17 @@ function syncHoverReporting(termDOM: TermDOM): void {
 
 // An image's or a canvas's natural size in cells is its pixels over the
 // cell's, so a cell measured anew lays them out again.
-function cellPixelsChanged(termDOM: TermDOM): void {
+// What the engine sized from the terminal's cell follows it: images,
+// always, and every length the page wrote when the cell sizes the page.
+function cellMeasured(termDOM: TermDOM): void {
 	relayoutReplacedElements(termDOM.document);
+	if (getCellSizeSetting(termDOM.document) === "auto") {
+		cellSizeChanged(termDOM);
+	}
+	const {width, height} = _(termDOM).framebuffer.cellPixels;
+	termDOM.dispatchEvent(
+		constructInternal(() => new CellChangeEvent("cellchange", {width, height})),
+	);
 }
 
 // Every length the page wrote measures differently now, and so does the

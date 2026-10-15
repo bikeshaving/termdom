@@ -1953,6 +1953,42 @@ function addLifetimePromise(
 	promise.then(settled, settled);
 }
 
+export interface CellChangeEventInit extends EventInit {
+	width: number;
+	height: number;
+}
+
+export interface CellChangeEventSlots extends EventSlots {
+	width: number;
+	height: number;
+}
+
+export interface CellChangeEvent {
+	readonly [internals]: CellChangeEventSlots;
+}
+
+/**
+ * The terminal's cell measured at another size, dispatched at the TermDOM:
+ * one cell in the terminal's pixels, as measureCell() reports it. A font
+ * zoom is the usual cause, and so is the first answer after attach() when
+ * it differs from the size assumed until then.
+ */
+export class CellChangeEvent extends Event {
+	constructor(type: string, init: CellChangeEventInit) {
+		super(type, init);
+		_(this).width = init.width;
+		_(this).height = init.height;
+	}
+
+	get width(): number {
+		return _(this).width;
+	}
+
+	get height(): number {
+		return _(this).height;
+	}
+}
+
 export interface FetchEventInit extends EventInit {
 	request: Request;
 	preloadResponse?: Promise<unknown>;

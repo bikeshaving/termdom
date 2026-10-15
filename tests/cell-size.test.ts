@@ -693,3 +693,81 @@ test("text breaks to the columns a box at a half cell is drawn across", () => {
 		dom.dispose();
 	}
 });
+
+// measureCell() asks the terminal for its cell in pixels whatever the
+// cellSize setting, since an image or a canvas drawing to the cell's
+// shape needs it under the unit cell too.
+test("measureCell answers what the terminal reports", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;25;11t"}]);
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
+	await dom.attach();
+	expect(await dom.measureCell()).toEqual({width: 11, height: 25});
+	// The unit cell still sizes the page.
+	expect(dom.window.innerWidth).toBe(40);
+	dom.dispose();
+});
+
+test("measureCell is null with no terminal, or one that does not say", async () => {
+	const detached = new TermDOM({
+		transport: new MockProcess({cols: 40, rows: 10}).transport,
+	});
+	expect(await detached.measureCell()).toBe(null);
+	detached.dispose();
+
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	scriptReplies(terminal, [{ask: "\x1b[c", reply: "\x1b[?62c"}]);
+	const silent =
+		new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
+	await silent.attach();
+	expect(await silent.measureCell()).toBe(null);
+	silent.dispose();
+	expect(await silent.measureCell()).toBe(null);
+});
+
+test("measureCell calls made together ask the terminal once", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;25;11t"}]);
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
+	await dom.attach();
+	const stdout =
+		terminal.stdout as unknown as {write: (...args: unknown[]) => boolean};
+	const write = stdout.write.bind(stdout);
+	let asked = 0;
+	stdout.write = (...args: unknown[]) => {
+		asked += String(args[0]).split("\x1b[16t").length - 1;
+		return write(...args);
+	};
+	const answers = await Promise.all([dom.measureCell(), dom.measureCell()]);
+	expect(answers).toEqual([{width: 11, height: 25}, {width: 11, height: 25}]);
+	expect(asked).toBe(1);
+	dom.dispose();
+});
+
+test("a font zoom under the unit cell is a cellchange", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const cell = {ask: "\x1b[16t", reply: "\x1b[6;25;11t"};
+	scriptReplies(terminal, [cell]);
+	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
+	const changes: Array<[number, number]> = [];
+	dom.addEventListener("cellchange", (event) => {
+		changes.push([event.width, event.height]);
+	});
+	await dom.attach();
+	for (let waited = 0; changes.length === 0 && waited < 2000; waited += 25) {
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	// The first answer replaces what was assumed before it.
+	expect(changes).toEqual([[11, 25]]);
+
+	// Zoomed out: twice the cells, each smaller.
+	cell.reply = "\x1b[6;12;5t";
+	terminal.resize(80, 20);
+	(terminal as any).emit("SIGWINCH");
+	for (let waited = 0; changes.length === 1 && waited < 2000; waited += 25) {
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	expect(changes).toEqual([[11, 25], [5, 12]]);
+	expect(await dom.measureCell()).toEqual({width: 5, height: 12});
+	dom.dispose();
+});

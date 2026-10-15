@@ -35,7 +35,13 @@ function networkFetch(request: Request): Promise<Response> {
 	return isWindowFetch(current) ? runtimeFetch(request) : current(request);
 }
 
-export {ExtendableEvent, FetchEvent, type FetchEventInit} from "./dom.ts";
+export {
+	CellChangeEvent,
+	type CellChangeEventInit,
+	ExtendableEvent,
+	FetchEvent,
+	type FetchEventInit,
+} from "./dom.ts";
 
 /** What a load knows of what asked for it. */
 interface RequestContext {
