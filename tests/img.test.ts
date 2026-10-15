@@ -270,7 +270,9 @@ test("an image sits on a line with the text around it", async () => {
 	await nextFrame(dom);
 	// A frame drawn while it loaded showed its wider loading box, whose
 	// last cell was erased.
-	expect(rowText(terminal, 0).trimEnd()).toBe("before ▄▄ after");
+	// Its bottom edge is its baseline, which the text sits on.
+	expect(rowText(terminal, 0).trimEnd()).toBe("       ▄▄");
+	expect(rowText(terminal, 1).trimEnd()).toBe("before ▄▄ after");
 	// The image's computed display stays inline, as in a browser.
 	expect(
 		dom.window.getComputedStyle(document.querySelector("img")!).display,

@@ -118,8 +118,8 @@ test("toString is the rendered text, not the range's DOM text", async () => {
 	await nextFrame(dom);
 
 	await type(terminal, press(1, 1));
-	await type(terminal, drag(39, 5));
-	await type(terminal, release(39, 5));
+	await type(terminal, drag(39, 6));
+	await type(terminal, release(39, 6));
 	await nextFrame(dom);
 	const text = dom.window.getSelection()!.toString();
 	expect(text).toContain("sum");

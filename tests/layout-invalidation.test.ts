@@ -509,7 +509,8 @@ test("a block arriving under a box that measures as a unit rebuilds it", async (
 	const host = document.getElementById("s")!;
 	host.insertBefore(block, host.firstChild);
 	await nextFrame(dom);
-	expect(lines().slice(0, 2)).toEqual(["NB", "A"]);
+	// The inline-block's baseline is its last line, which the text sits on.
+	expect(lines().slice(0, 2)).toEqual(["N", "AB"]);
 
 	dom.dispose();
 });

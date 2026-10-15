@@ -1263,12 +1263,17 @@ function *getInlineBlockReaches(
 	from = 0,
 ): Generator<[number, number]> {
 	for (const line of lines.lines) {
-		for (const {leaf} of line.segments) {
+		for (const segment of line.segments) {
+			const leaf = segment.leaf;
 			if (leaf.type !== "inline-block") {
 				continue;
 			}
 			const top =
-				from + line.y + leaf.boxModel.borderTopWidth + leaf.boxModel.paddingTop;
+				from +
+				line.y +
+				segment.dy +
+				leaf.boxModel.borderTopWidth +
+				leaf.boxModel.paddingTop;
 			const context = layout.boxes.get(leaf.node)?.independentFormattingContext;
 			const extent = context ? extents.get(context) : undefined;
 			if (extent !== undefined) {
@@ -3477,11 +3482,19 @@ interface LineResult {
 			// The direction the characters were reordered into. Null in logical
 			// order (no bidi on the line, or a terminal that reorders for itself).
 			visualBase: "ltr" | "rtl" | null;
+
+			// An atomic inline's top below the line's, and its height, as
+			// vertical-align puts it on the line. Zero for anything else.
+			dy: number;
+			height: number;
 		}
 	>;
 	y: number;
 	width: number;
 	height: number;
+	// The row the line's text sits on, below the line's top: its baseline,
+	// which an atomic inline taller above it pushes down.
+	textTop: number;
 }
 
 export interface BreakResult {
@@ -4796,21 +4809,7 @@ function buildLines(
 		}
 
 		if (lineNodes.length > 0) {
-			// Whole rows: a line is drawn on rows.
-			const lineHeight = Math.round(
-				Math.max(
-					...lineNodes.map((n) =>
-						n.leaf.type === "inline-block"
-							? n.leaf.contentHeight +
-						n.leaf.boxModel.paddingTop +
-						n.leaf.boxModel.paddingBottom +
-						n.leaf.boxModel.borderTopWidth +
-						n.leaf.boxModel.borderBottomWidth
-							: 1,
-					),
-					1,
-				),
-			);
+			const {lineHeight, textTop} = placeOnLine(layout, lineNodes);
 
 			// css2 §10.8.1: a line is as tall as the line-height of its block
 			// and of the text on it, with the leading split above and below.
@@ -4842,6 +4841,7 @@ function buildLines(
 				y: currentY + Math.floor(leading / 2),
 				height: lineHeight,
 				width: bestBreakWidth,
+				textTop,
 			});
 
 			currentY += lineHeight + leading;
@@ -4856,6 +4856,126 @@ function buildLines(
 	}
 
 	return {lines, wrapped, height: currentY};
+}
+
+// css2 §10.8: each box on a line is placed by its vertical-align, text on
+// the line's baseline and an atomic inline with its baseline on it, and
+// the line is as tall as what reaches furthest above the baseline and
+// below it. In whole rows: text is a row, with the baseline its bottom.
+function placeOnLine(
+	layout: Layout,
+	segments: LineResult["segments"],
+): {lineHeight: number; textTop: number} {
+	let above = 1;
+	let below = 0;
+	const atomics: Array<{
+		segment: LineResult["segments"][number];
+		height: number;
+		baseline: number;
+		align: string;
+	}> = [];
+	for (const segment of segments) {
+		if (segment.leaf.type !== "inline-block") {
+			continue;
+		}
+		const leaf = segment.leaf;
+		const height = Math.round(
+			leaf.contentHeight +
+				leaf.boxModel.paddingTop +
+				leaf.boxModel.paddingBottom +
+				leaf.boxModel.borderTopWidth +
+				leaf.boxModel.borderBottomWidth,
+		);
+		const align = getComputedValue(leaf.node, "vertical-align");
+		const baseline = getAtomicBaseline(layout, leaf, height);
+		atomics.push({segment, height, baseline, align});
+		if (align !== "top" && align !== "bottom" && align !== "middle") {
+			above = Math.max(above, baseline);
+			below = Math.max(below, height - baseline);
+		}
+	}
+	let lineHeight = above + below;
+	for (const {height} of atomics) {
+		lineHeight = Math.max(lineHeight, height);
+	}
+	for (const {segment, height, baseline, align} of atomics) {
+		segment.height = height;
+		segment.dy = align === "top"
+			? 0
+			: align === "bottom"
+			? lineHeight - height
+			: align === "middle"
+			? Math.floor((lineHeight - height) / 2)
+			: above - baseline;
+	}
+	return {lineHeight, textTop: above - 1};
+}
+
+// The rows from an atomic inline's top through the row its baseline is
+// the bottom of (css2 §10.8.1): an inline-table's, an inline-grid's or an
+// inline-flex's first line, an inline-block's last when it shows its
+// content past its edges, and otherwise, a replaced box's included, its
+// bottom edge.
+function getAtomicBaseline(
+	layout: Layout,
+	leaf: InlineBlockLeaf,
+	height: number,
+): number {
+	const element = leaf.node;
+	const display = getLayoutDisplay(element);
+	const first =
+		display === "inline-table" ||
+		display === "inline-grid" ||
+		display === "inline-flex";
+	if (
+		isReplacedBox(element) ||
+		(!first &&
+			(getComputedValue(element, "overflow-x") !== "visible" ||
+				getComputedValue(element, "overflow-y") !== "visible"))
+	) {
+		return height;
+	}
+	const inset = leaf.boxModel.borderTopWidth + leaf.boxModel.paddingTop;
+	const context = layout.boxes.get(element)?.independentFormattingContext;
+	const line = context
+		? getLineInTree(layout, context, first)
+		: leaf.breakResult === undefined || leaf.breakResult.lines.length === 0
+		? null
+		: first ? leaf.breakResult.lines[0].y : leaf.breakResult.lines.at(-1)!.y;
+	return line === null
+		? height
+		: Math.min(height, Math.max(1, Math.round(inset + line + 1)));
+}
+
+// The top of the first or last line laid out in a tree, from its root's
+// top, depth first through the boxes in flow.
+function getLineInTree(
+	layout: Layout,
+	node: LayoutNode,
+	first: boolean,
+): number | null {
+	const children = first ? node.children : [...node.children].reverse();
+	for (const child of children) {
+		if (
+			child.style.displayType === "none" ||
+			child.style.positionType === "absolute" ||
+			child.style.positionType === "fixed"
+		) {
+			continue;
+		}
+		const lines = child.measure === null
+			? undefined
+			: getMeasuredLines(layout, child);
+		const line = lines !== undefined && lines.lines.length > 0
+			? (first ? lines.lines[0] : lines.lines.at(-1)!).y +
+				child.style.border.top +
+				child.result.padding.top
+			: getLineInTree(layout, child, first);
+		if (line !== null) {
+			return child.grid.top + line;
+		}
+	}
+	return null;
 }
 
 // The rows a line-height asks for: as many as it is times the text's font
@@ -5587,7 +5707,7 @@ function getInlineCursorBefore(
 					(segment.leaf.type === "inline-block"
 						? segment.leaf.boxModel.marginRight
 						: 0),
-				y: line.y,
+				y: line.y + line.textTop,
 			};
 		}
 	}
@@ -5644,6 +5764,8 @@ function getNodesInRange(
 					dataStart,
 					dataEnd,
 					visualBase: null,
+					dy: 0,
+					height: 0,
 				});
 			} else if (item.leafNode.type === "inline-block") {
 				// The placeholder advances by the margin box, so the line fits it
@@ -5669,6 +5791,8 @@ function getNodesInRange(
 					dataStart: 0,
 					dataEnd: 0,
 					visualBase: null,
+					dy: 0,
+					height: 0,
 				});
 			} else if (item.leafNode.type === "edge") {
 				width = getEdgeWidth(item.leafNode);
@@ -5682,6 +5806,8 @@ function getNodesInRange(
 					dataStart: 0,
 					dataEnd: 0,
 					visualBase: null,
+					dy: 0,
+					height: 0,
 				});
 			} else if (item.leafNode.type === "br") {
 				nodes.push({
@@ -5694,6 +5820,8 @@ function getNodesInRange(
 					dataStart: 0,
 					dataEnd: 0,
 					visualBase: null,
+					dy: 0,
+					height: 0,
 				});
 			}
 
@@ -8195,6 +8323,7 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 			hop.segment.leaf.boxModel.borderLeftWidth;
 		originY +=
 			hop.line.y +
+			hop.segment.dy +
 			hop.segment.leaf.boxModel.paddingTop +
 			hop.segment.leaf.boxModel.borderTopWidth;
 		if (hop.segment.leaf.breakResult) {
@@ -8214,11 +8343,7 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 	// a box heads in a block is not its box.
 	const ownLayoutNode = descended ? undefined : runLayoutNode(layout, element);
 	const anonymous = ownLayoutNode && layout.anonymousBoxes.get(ownLayoutNode);
-	const height = getAtomicHeight(
-		element,
-		target.segment.leaf,
-		target.line.height,
-	);
+	const height = target.segment.height;
 	if (ownLayoutNode && (!anonymous || anonymous.styledFrom === element)) {
 		const {x, y} = getDocumentPosition(layout, element, ownLayoutNode);
 		return new layout.domRect(x, y, target.segment.width, height);
@@ -8227,33 +8352,9 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 		originX +
 		getLineStart(alignContainer, breakResult, target.line) +
 			target.segment.x,
-		originY + target.line.y,
+		originY + target.line.y + target.segment.dy,
 		target.segment.width,
 		height,
-	);
-}
-
-/**
- * An atomic inline's height on its line. An inline-block fills the line,
- * as this engine lays lines out, but an image or a canvas is as tall as
- * its own content, so a taller neighbor does not stretch its pixels.
- */
-export function getAtomicHeight(
-	element: Element,
-	leaf: InlineBlockLeaf,
-	lineHeight: number,
-): number {
-	if (!isReplacedBox(element)) {
-		return lineHeight;
-	}
-	const box = leaf.boxModel;
-	return Math.min(
-		lineHeight,
-		leaf.contentHeight +
-		box.paddingTop +
-		box.paddingBottom +
-			box.borderTopWidth +
-		box.borderBottomWidth,
 	);
 }
 
@@ -8660,9 +8761,14 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 											visualBase: nestedSegment.visualBase,
 											rect: new layout.domRect(
 												containerX + segment.x + paddingLeft + nestedSegment.x,
-												containerY + line.y + paddingTop + nestedLine.y,
+												containerY +
+													line.y +
+													segment.dy +
+													paddingTop +
+													nestedLine.y +
+													nestedLine.textTop,
 												nestedSegment.width,
-												nestedLine.height,
+												nestedLine.height - nestedLine.textTop,
 											),
 										});
 									} else if (
@@ -8696,10 +8802,13 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 															innerSegment.x,
 															containerY +
 															line.y +
+															segment.dy +
 															paddingTop +
 															nestedLine.y +
+															nestedSegment.dy +
 															nestedPaddingTop +
-															innerLine.y,
+															innerLine.y +
+															innerLine.textTop,
 															innerSegment.width,
 															innerLine.height,
 														),
@@ -8791,6 +8900,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 							segment.leaf.boxModel.borderLeftWidth;
 						accumulatedOffsetY +=
 							line.y +
+							segment.dy +
 							segment.leaf.boxModel.paddingTop +
 							segment.leaf.boxModel.borderTopWidth;
 						if (segment.leaf.breakResult) {
@@ -8924,9 +9034,9 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 
 		const rect = new layout.domRect(
 			containerX + minX + alignOffset + indent,
-			containerY + line.y,
+			containerY + line.y + line.textTop,
 			maxX - minX,
-			line.height,
+			line.height - line.textTop,
 		);
 		rectTexts.push({
 			rect,
