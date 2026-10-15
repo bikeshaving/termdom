@@ -11300,7 +11300,8 @@ function toViewportRect(
 	const attachedSlots = _(attached);
 	const {x, y, width, height} = _(rect as unknown as DOMRect).rectValues;
 	const scrolled =
-		element !== null && attachedSlots.extra.layout.isInFixedSpace(element)
+		element !== null &&
+		attachedSlots.extra.layout.isInFixedSpace(element)
 			? 0
 			: attachedSlots.extra.framebuffer.scrollTop;
 	const cell = getCellSize(attached as unknown as globalThis.Node);
