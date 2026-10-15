@@ -106,7 +106,22 @@ and <code>csp</code> allows, it receives a <code>&quot;fetch&quot;</code> event,
 term<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"fetch"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>event<span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span>
   event<span class="token punctuation">.</span><span class="token function">respondWith</span><span class="token punctuation">(</span><span class="token function">fetch</span><span class="token punctuation">(</span>event<span class="token punctuation">.</span>request<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><p>When <code>csp</code> blocks a load, TermDOM fires <code>securitypolicyviolation</code> at
-the element instead. The images guide covers both events.</p><h3 id="term-attach"><code>term.attach()</code> <a class="heading-anchor" href="#term-attach">#</a></h3><p><code>attach()</code> puts the terminal in raw mode. It starts input handling,
+the element instead. The images guide covers both events.</p><h3 id="term-measurecell"><code>term.measureCell()</code> <a class="heading-anchor" href="#term-measurecell">#</a></h3><p>Asks the terminal how many of its pixels one cell covers, and resolves
+to <code>{width, height}</code>, or to <code>null</code> when there is no terminal to ask
+(before <code>attach()</code>, after <code>dispose()</code>, or when output is not a
+terminal) or the terminal does not answer. Most terminals answer
+(XTWINOPS 16); the Linux console does not.</p><p>This is the terminal&#039;s own measurement, whatever the <code>cellSize</code> option
+says. Cells are seldom square: an 11 by 25 pixel cell is about 2.27
+times as tall as it is wide. Divide by it to draw something to its
+true shape on a canvas.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> cell <span class="token operator">=</span> <span class="token keyword">await</span> term<span class="token punctuation">.</span><span class="token function">measureCell</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">const</span> aspect <span class="token operator">=</span> cell <span class="token operator">?</span> cell<span class="token punctuation">.</span>height <span class="token operator">/</span> cell<span class="token punctuation">.</span>width <span class="token operator">:</span> <span class="token number">2</span><span class="token punctuation">;</span></code></pre><p>Each call asks the terminal again. Calls made while a question is out
+share its answer.</p><h3 id="term-addeventlistener-cellchange-listener"><code>term.addEventListener(&quot;cellchange&quot;, listener)</code> <a class="heading-anchor" href="#term-addeventlistener-cellchange-listener">#</a></h3><p>Fires a <code>CellChangeEvent</code>, with <code>width</code> and <code>height</code>, when the
+terminal&#039;s cell is measured at a different size: when its first answer
+after <code>attach()</code> replaces the size TermDOM assumed until then, and
+after a font zoom. Images resize with it on their own. Anything drawn
+to the cell&#039;s shape can redraw here.</p><pre class="language-typescript"><code class="language-typescript">term<span class="token punctuation">.</span><span class="token function">addEventListener</span><span class="token punctuation">(</span><span class="token string">"cellchange"</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>event<span class="token punctuation">)</span> <span class="token operator">=></span> <span class="token punctuation">{</span>
+  <span class="token function">drawChart</span><span class="token punctuation">(</span>event<span class="token punctuation">.</span>height <span class="token operator">/</span> event<span class="token punctuation">.</span>width<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre><h3 id="term-attach"><code>term.attach()</code> <a class="heading-anchor" href="#term-attach">#</a></h3><p><code>attach()</code> puts the terminal in raw mode. It starts input handling,
 mouse reporting, and bracketed paste, and it paints the current
 document. Calling it a second time does nothing. Apart from <code>print()</code>,
 it is the only call that writes to the terminal. It returns a promise
@@ -252,7 +267,8 @@ server that should survive one session&#039;s mistake listens for them
 itself, with <code>process.on(&quot;unhandledRejection&quot;, ...)</code>.</li></ul><h2 id="other-exports">Other exports <a class="heading-anchor" href="#other-exports">#</a></h2><p><code>TermDOM</code>, <code>installGlobals</code>, <code>transportFromProcess</code> and
 <code>transportFromSSH</code> are the entry points described above. The package
 also exports:</p><ul><li><code>FetchEvent</code>, <code>ExtendableEvent</code> and the <code>FetchEventInit</code> type, for
-the <code>&quot;fetch&quot;</code> event.</li><li>The types <code>TermDOMOptions</code>, <code>TermDOMEventMap</code>, <code>CellSize</code>,
+the <code>&quot;fetch&quot;</code> event.</li><li><code>CellChangeEvent</code> and the <code>CellChangeEventInit</code> type, for the
+<code>&quot;cellchange&quot;</code> event.</li><li>The types <code>TermDOMOptions</code>, <code>TermDOMEventMap</code>, <code>CellSize</code>,
 <code>ColorDepth</code>, <code>TerminalTransport</code>, <code>TerminalCloseInfo</code>,
 <code>TerminalSize</code>, <code>ProcessLike</code> and <code>SSHSessionLike</code>.</li><li><code>CanvasCellGridContext</code>, the type of the experimental
 <code>&quot;termdom-cellgrid&quot;</code> context. It may change in a minor release.</li></ul><p>Custom transports and mocks implement <code>TerminalTransport</code> and the
