@@ -505,26 +505,14 @@ export class LayoutNode {
 	gridTop: number;
 	// Whether the last roundToGrid left the children as they were.
 	settled: boolean;
-	// The box's place and size as layout last wrote them, before
-	// roundToGrid rounded them in result. A box not laid out again keeps
-	// rounded values in result, and rounding those again from another
-	// fraction of a cell is not rounding the true ones, so the grid is
-	// always rounded from these. rawAbsoluteLeft sums the left edges down
-	// from the root, and the text in a box breaks against the columns it
-	// says the box is drawn across.
-	rawLeft: number;
-	rawTop: number;
-	rawWidth: number;
-	rawHeight: number;
+	// The box's place in its parent and its size in whole cells, which
+	// roundToGrid writes from result and nothing else does. Layout reads
+	// only result, which only layout writes, so no value it reads was ever
+	// rounded. rawAbsoluteLeft sums result's left edges down from the root:
+	// the text in a box breaks against the columns it says the box is drawn
+	// across.
+	grid: {left: number; top: number; width: number; height: number};
 	rawAbsoluteLeft: number;
-	// Whether result holds values layout wrote since the last rounding: a
-	// size, once layoutNode has answered for the box, and the children's
-	// places, once the box has laid them out. An ancestor that lays a box
-	// out past its parent, as a containing block does an absolute box,
-	// places it directly.
-	sized: boolean;
-	childrenPlaced: boolean;
-	placedDirectly: boolean;
 	// What the last measure broke the box's text to: the width it was
 	// given, and the Size fields that say whether another edge would break
 	// it differently.
@@ -553,14 +541,8 @@ export class LayoutNode {
 		this.gridLeft = NaN;
 		this.gridTop = NaN;
 		this.settled = false;
-		this.rawLeft = 0;
-		this.rawTop = 0;
-		this.rawWidth = 0;
-		this.rawHeight = 0;
+		this.grid = {left: 0, top: 0, width: 0, height: 0};
 		this.rawAbsoluteLeft = NaN;
-		this.sized = false;
-		this.childrenPlaced = false;
-		this.placedDirectly = false;
 		this.measuredWidth = NaN;
 		this.measured = null;
 		this.lostChild = false;
@@ -664,7 +646,7 @@ export class LayoutNode {
 		// landed. A box placed at a whole cell, as most are, never does.
 		for (let pass = 0; pass < 3; pass++) {
 			const misplaced: LayoutNode[] = [];
-			roundToGrid(this, 0, 0, true, misplaced);
+			roundToGrid(this, 0, 0, misplaced);
 			if (misplaced.length === 0 || pass === 2) {
 				break;
 			}
@@ -744,11 +726,11 @@ export function getComputedGridTracks(
 }
 
 export function getComputedWidth(layoutNode: LayoutNode): number {
-	return !Number.isNaN(layoutNode.result.width) ? layoutNode.result.width : 0;
+	return layoutNode.grid.width;
 }
 
 export function getComputedHeight(layoutNode: LayoutNode): number {
-	return !Number.isNaN(layoutNode.result.height) ? layoutNode.result.height : 0;
+	return layoutNode.grid.height;
 }
 
 // The values and edge records nodes share. Most boxes have one of a few
@@ -2442,7 +2424,6 @@ function layoutAbsoluteChild(
 	area: {left: number; top: number; width: number; height: number} |
 		null = null,
 ): void {
-	child.placedDirectly = true;
 	const parentWidth = node.result.width;
 	const parentHeight = node.result.height;
 
@@ -2611,8 +2592,8 @@ function layoutAbsoluteChild(
 			between !== null && between !== node;
 			between = between.parent
 		) {
-			offsetLeft += getRawOffset(between, "left");
-			offsetTop += getRawOffset(between, "top");
+			offsetLeft += between.result.left;
+			offsetTop += between.result.top;
 		}
 		child.result.left -= offsetLeft;
 		child.result.top -= offsetTop;
@@ -3510,8 +3491,6 @@ function layoutTable(
 
 	for (const group of groups) {
 		group.gridLeft = NaN;
-		group.sized = true;
-		group.childrenPlaced = true;
 		group.result.left = leftPaddingBorder;
 		group.result.width = contentWidth;
 		group.result.top = gridTop;
@@ -3527,8 +3506,6 @@ function layoutTable(
 			return;
 		}
 		row.node.gridLeft = NaN;
-		row.node.sized = true;
-		row.node.childrenPlaced = true;
 		row.node.result.left = rowLeft(row);
 		row.node.result.top = rowTop(row, index);
 		row.node.result.width = contentWidth;
@@ -5956,7 +5933,6 @@ function layoutNode(
 	ownerHeight: number,
 	placing: boolean,
 ): void {
-	node.sized = true;
 	// A container may lay out a descendant without laying out the boxes
 	// between, as a table does its cells, so every box above it rounds again.
 	for (
@@ -6146,7 +6122,6 @@ function layoutNodeImpl(
 	placing: boolean,
 ): void {
 	node.gridLeft = NaN;
-	node.childrenPlaced = true;
 	node.result.padding.left = getPadding(node, "left", ownerWidth);
 	node.result.padding.top = getPadding(node, "top", ownerWidth);
 	node.result.padding.right = getPadding(node, "right", ownerWidth);
@@ -6295,44 +6270,31 @@ function getPadding(node: LayoutNode, edge: Edge, ownerWidth: number): number {
 // keeps the children it rounded before.
 function roundToGrid(
 	node: LayoutNode,
-	rawParentLeft: number,
-	rawParentTop: number,
-	placedByParent: boolean,
+	parentLeft: number,
+	parentTop: number,
 	misplaced: LayoutNode[],
 ): void {
-	if (placedByParent || node.placedDirectly) {
-		node.rawLeft = node.result.left;
-		node.rawTop = node.result.top;
-		node.placedDirectly = false;
-	}
-	if (node.sized) {
-		node.rawWidth = !Number.isNaN(node.result.width) ? node.result.width : 0;
-		node.rawHeight = !Number.isNaN(node.result.height) ? node.result.height : 0;
-		node.sized = false;
-	}
-	const absLeft = rawParentLeft + node.rawLeft;
-	const absTop = rawParentTop + node.rawTop;
+	const absLeft = parentLeft + node.result.left;
+	const absTop = parentTop + node.result.top;
 	node.rawAbsoluteLeft = absLeft;
 	if (node.measure !== null && breaksElsewhere(node)) {
 		misplaced.push(node);
 	}
-	const absRight = absLeft + node.rawWidth;
-	const absBottom = absTop + node.rawHeight;
-
+	const width = !Number.isNaN(node.result.width) ? node.result.width : 0;
+	const height = !Number.isNaN(node.result.height) ? node.result.height : 0;
 	const isText = node.measure !== null && node.measuresText;
 
-	node.result.left =
-		roundValue(absLeft, false, false) - roundValue(rawParentLeft, false, false);
-	node.result.top =
-		roundValue(absTop, false, false) - roundValue(rawParentTop, false, false);
+	node.grid.left =
+		roundValue(absLeft, false, false) - roundValue(parentLeft, false, false);
+	node.grid.top =
+		roundValue(absTop, false, false) - roundValue(parentTop, false, false);
+	node.grid.width =
+		roundValue(absLeft + width, isText, false) -
+		roundValue(absLeft, isText, false);
+	node.grid.height =
+		roundValue(absTop + height, isText, false) -
+		roundValue(absTop, isText, false);
 
-	node.result.width =
-		roundValue(absRight, isText, false) - roundValue(absLeft, isText, false);
-	node.result.height =
-		roundValue(absBottom, isText, false) - roundValue(absTop, isText, false);
-
-	const childrenPlaced = node.childrenPlaced;
-	node.childrenPlaced = false;
 	node.settled = absLeft === node.gridLeft && absTop === node.gridTop;
 	if (node.settled) {
 		return;
@@ -6340,18 +6302,8 @@ function roundToGrid(
 	node.gridLeft = absLeft;
 	node.gridTop = absTop;
 	for (const child of node.children) {
-		roundToGrid(child, absLeft, absTop, childrenPlaced, misplaced);
+		roundToGrid(child, absLeft, absTop, misplaced);
 	}
-}
-
-// A box's place in its parent as layout last wrote it: the place in
-// result when something placed it in this solve, and otherwise the one
-// kept from before result was rounded.
-function getRawOffset(node: LayoutNode, edge: "left" | "top"): number {
-	if (node.placedDirectly || node.parent?.childrenPlaced) {
-		return edge === "left" ? node.result.left : node.result.top;
-	}
-	return edge === "left" ? node.rawLeft : node.rawTop;
 }
 
 function getContentLeft(node: LayoutNode): number {

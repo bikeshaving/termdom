@@ -1067,8 +1067,8 @@ function computePaintExtents(
 	settled = false,
 	fixed = false,
 ): Extent {
-	const top = originTop + node.result.top;
-	const left = originLeft + node.result.left;
+	const top = originTop + node.grid.top;
+	const left = originLeft + node.grid.left;
 	let extent = extents.get(node);
 	if (settled && extent !== undefined && extent.origin === top) {
 		return extent;
@@ -1171,12 +1171,12 @@ function computePaintExtents(
 						? null
 						: Math.max(
 							scrollRight,
-							child.result.left + childExtent.overflowRight,
+							child.grid.left + childExtent.overflowRight,
 						);
 			}
 			scrollBottom = Math.max(
 				scrollBottom,
-				child.result.top + childExtent.overflowBottom,
+				child.grid.top + childExtent.overflowBottom,
 			);
 		}
 		if (
@@ -1196,8 +1196,8 @@ function computePaintExtents(
 			child.style.displayType !== "none" &&
 			child.style.positionType !== "fixed"
 		) {
-			right = Math.max(right, child.result.left + childExtent.overflowRight);
-			bottom = Math.max(bottom, child.result.top + childExtent.overflowBottom);
+			right = Math.max(right, child.grid.left + childExtent.overflowRight);
+			bottom = Math.max(bottom, child.grid.top + childExtent.overflowBottom);
 		}
 	}
 	extent.origin = top;
@@ -4769,8 +4769,8 @@ function getStickyShift(
 	let y = 0;
 	let scroller: LayoutNode | null = null;
 	for (let current = node; current.parent !== null; current = current.parent) {
-		x += current.result.left;
-		y += current.result.top;
+		x += current.grid.left;
+		y += current.grid.top;
 		if (current !== node && current.style.positionType === "sticky") {
 			const shift = getStickyShift(layout, current);
 			x += shift.x;
@@ -4789,7 +4789,7 @@ function getStickyShift(
 		// scrollY is CSS pixels: a whole number of rows, each a cell tall.
 		const window = layout.window;
 		portTop = window.scrollY / getCellSize(window.document).height;
-		portWidth = layout.initialBlock.result.width;
+		portWidth = layout.initialBlock.grid.width;
 		portHeight = layout.initialBlock.style.height.value;
 	} else {
 		const element = scroller.owner as Element;
@@ -4797,26 +4797,26 @@ function getStickyShift(
 		portLeft = (box.borderLeftWidth || 0) + getScrollOffset(element, "left");
 		portTop = (box.borderTopWidth || 0) + getScrollOffset(element, "top");
 		portWidth =
-			scroller.result.width -
+			scroller.grid.width -
 			(box.borderLeftWidth || 0) -
 			(box.borderRightWidth || 0);
 		portHeight =
-			scroller.result.height -
+			scroller.grid.height -
 			(box.borderTopWidth || 0) -
 			(box.borderBottomWidth || 0);
 	}
 	// The box the sticky one flows in bounds the shift: its content box,
 	// or everything it scrolls when it is the scroller itself.
-	const parentX = x - node.result.left;
-	const parentY = y - node.result.top;
+	const parentX = x - node.grid.left;
+	const parentY = y - node.grid.top;
 	const owner = parent.owner as Node | undefined;
 	const edges = owner && nodeTypeOf(owner) === owner.ELEMENT_NODE
 		? getBoxModel(owner as Element)
 		: null;
 	let left = parentX + (edges?.borderLeftWidth || 0);
 	let top = parentY + (edges?.borderTopWidth || 0);
-	let right = parentX + parent.result.width - (edges?.borderRightWidth || 0);
-	let bottom = parentY + parent.result.height - (edges?.borderBottomWidth || 0);
+	let right = parentX + parent.grid.width - (edges?.borderRightWidth || 0);
+	let bottom = parentY + parent.grid.height - (edges?.borderBottomWidth || 0);
 	const scrolled = parent === scroller
 		? layout.getScrollExtent(owner as Element)
 		: null;
@@ -4832,7 +4832,7 @@ function getStickyShift(
 	return {
 		x: stickyShiftAlong(
 			x,
-			node.result.width,
+			node.grid.width,
 			portLeft,
 			portWidth,
 			left,
@@ -4842,7 +4842,7 @@ function getStickyShift(
 		),
 		y: stickyShiftAlong(
 			y,
-			node.result.height,
+			node.grid.height,
 			portTop,
 			portHeight,
 			top,
@@ -4932,10 +4932,12 @@ function getScrollShift(
 
 // Document-space geometry: the layout position under what scrolling has
 // done to it. Applied in this one function so paint, getRect,
-// hit-testing and Range geometry all inherit it at once.
+// hit-testing and Range geometry all inherit it at once. In whole cells,
+// or, for a solve still running, as layout writes it.
 function getAbsolutePosition(
 	layout: Layout,
 	layoutNode: LayoutNode,
+	solving = false,
 ): {x: number; y: number} {
 	let x = 0;
 	let y = 0;
@@ -4944,8 +4946,9 @@ function getAbsolutePosition(
 		current;
 		current = current.parent
 	) {
-		x += current.result.left;
-		y += current.result.top;
+		const place = solving ? current.result : current.grid;
+		x += place.left;
+		y += place.top;
 	}
 	const shift = getScrollShift(layout, layoutNode);
 	return {x: x + shift.x, y: y + shift.y};
@@ -5111,8 +5114,8 @@ function getStaticPosition(
 		return null;
 	}
 
-	const origin = getAbsolutePosition(layout, containerNode);
-	const containingOrigin = getAbsolutePosition(layout, containingBlock);
+	const origin = getAbsolutePosition(layout, containerNode, true);
+	const containingOrigin = getAbsolutePosition(layout, containingBlock, true);
 	const offsetLeft = origin.x - containingOrigin.x;
 	const offsetTop = origin.y - containingOrigin.y;
 	const contentLeft =
@@ -5140,7 +5143,7 @@ function getStaticPosition(
 	if (entry?.kind === "anonymous") {
 		const runNode = entry.layoutNode;
 		if (runNode) {
-			const runOrigin = getAbsolutePosition(layout, runNode);
+			const runOrigin = getAbsolutePosition(layout, runNode, true);
 			const cursor = getInlineCursorBefore(entry, element);
 			return {
 				left: runOrigin.x - containingOrigin.x + cursor.x,
@@ -5166,7 +5169,9 @@ function getStaticPosition(
 			top:
 				offsetTop +
 				previousNode.result.top +
-				getComputedHeight(previousNode) +
+				(!Number.isNaN(previousNode.result.height)
+					? previousNode.result.height
+					: 0) +
 				previousNode.result.margin.bottom,
 		};
 	}
@@ -8346,7 +8351,7 @@ function getDocumentContentHeight(engine: Layout): number {
 function getDocumentOverflowBottom(engine: Layout): number {
 	const root = engine.nodeMap.get(engine.rootElement);
 	const extent = root ? extents.get(root) : undefined;
-	return extent ? Math.ceil(root!.result.top + extent.overflowBottom) : 0;
+	return extent ? Math.ceil(root!.grid.top + extent.overflowBottom) : 0;
 }
 
 function measureScrollExtent(
@@ -8392,9 +8397,9 @@ function measureScrollExtent(
 					child.measure !== null &&
 						getMeasuredLines(layout, child) === undefined
 						? null
-						: Math.max(right, child.result.left + reach.overflowRight);
+						: Math.max(right, child.grid.left + reach.overflowRight);
 			}
-			bottom = Math.max(bottom, child.result.top + reach.overflowBottom);
+			bottom = Math.max(bottom, child.grid.top + reach.overflowBottom);
 		}
 	}
 	const clientWidth = getComputedWidth(layoutNode) - border.left - border.right;
