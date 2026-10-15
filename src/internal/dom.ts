@@ -36211,11 +36211,19 @@ export function flushLayout(node: globalThis.Node): boolean {
 	const had = flushStyle(node);
 	const attached = getAttachedDocument(node);
 	if (attached !== undefined) {
-		_(attached).extra.layout.performLayout();
-		clampScrollOffsets(attached);
+		const layout = _(attached).extra.layout;
+		layout.performLayout();
+		if (clampedSolves.get(layout) !== layout.solves) {
+			clampedSolves.set(layout, layout.solves);
+			clampScrollOffsets(attached);
+		}
 	}
 	return had;
 }
+
+// Offsets only leave their range when layout changes, since every scroll
+// clamps what it stores, so a flush after no solve has nothing to clamp.
+const clampedSolves = new WeakMap<object, number>();
 
 export function hoverListenerCount(document: globalThis.Document): number {
 	return hoverListenerCounters.get(document as Document)?.count ?? 0;
