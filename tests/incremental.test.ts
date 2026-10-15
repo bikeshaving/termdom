@@ -163,3 +163,9 @@ test("a row made a containing block lays out its positioned cell", async () => {
 		(document) => document.getElementById("r").style.position = "relative",
 	]);
 });
+
+test("a block in an inline that dissolves leaves no box behind", async () => {
+	await replay("<div><span>inline<p id=p>block</p></span></div>", [
+		(document) => document.getElementById("p").style.display = "contents",
+	]);
+});

@@ -6276,8 +6276,13 @@ export class Cascade {
 	// one element changes renumbers the content of others, which nothing
 	// restyles, so a change sets countersStale and those elements restyle.
 	counterUsers: Set<Element>;
-	counterDeclarations: WeakMap<Element, string>;
 	countersStale: boolean;
+	// Each element's counters, the inputs they were counted from, the
+	// elements that generate no box, and whether any were counted.
+	counterSets: WeakMap<Element, readonly CounterEntry[]>;
+	counterKeys: WeakMap<Element, string>;
+	counterHidden: WeakSet<Element>;
+	countersCounted: boolean;
 
 	// Whether any rule is scoped, which is what adds proximity to the sort.
 	scopedRulesExist: boolean;
@@ -6301,8 +6306,6 @@ export class Cascade {
 	// computation, which lets a sheet appended right before the first paint
 	// apply with no MutationObserver attached.
 	parsedStyleSheetCount: number;
-
-	counterScopes: WeakMap<Element, CSSValues.CounterScope>;
 
 	// The transition gate is STICKY. It opens the first time anything
 	// declares a transition and never closes, so a document with none pays
@@ -6397,8 +6400,11 @@ export class Cascade {
 		this.counterRulesExist = false;
 		this.listItemRulesExist = false;
 		this.counterUsers = new Set();
-		this.counterDeclarations = new WeakMap();
 		this.countersStale = false;
+		this.counterSets = new WeakMap();
+		this.counterKeys = new WeakMap();
+		this.counterHidden = new WeakSet();
+		this.countersCounted = false;
 		this.scopedRulesExist = false;
 		this.hasRulesExist = false;
 		this.hasAnchors = new Set();
@@ -6406,7 +6412,6 @@ export class Cascade {
 		this.hasStates = new Set();
 		this.hoverRulesDeclared = false;
 		this.parsedStyleSheetCount = -1;
-		this.counterScopes = new WeakMap<Element, CSSValues.CounterScope>();
 		this.flushing = false;
 		this.usedValues = new WeakMap();
 		this.hasResults = null;
@@ -6652,7 +6657,7 @@ export function handleMutations(
 						shouldSyncStylesheets = true;
 					}
 					removedElements = true;
-					if (cascade.counterUsers.size > 0 && !cascade.countersStale) {
+					if (cascade.countersCounted && !cascade.countersStale) {
 						cascade.countersStale = declaresCounters(cascade, element);
 					}
 				}
@@ -6683,6 +6688,7 @@ export function handleMutations(
 				LIST_NUMBERING_ATTRIBUTES.has(mutation.attributeName!) &&
 				(localNameOf(element) === "ol" || localNameOf(element) === "li")
 			) {
+				noteCounterChange(cascade, element);
 				cascade.layout.invalidateFrame();
 			}
 			// A change to keys whose rules declare only paint properties
@@ -6982,7 +6988,7 @@ export function dispose(cascade: Cascade): void {
 	cascade.computedStyleCache = new WeakMap();
 	cascade.hasResults = null;
 	cascade.pseudoElementStyleCache = new WeakMap();
-	cascade.counterScopes = new WeakMap();
+	forgetCounters(cascade);
 	if (cascade.transitionTimer !== null) {
 		clearTimeout(cascade.transitionTimer);
 		cascade.transitionTimer = null;
@@ -7248,17 +7254,16 @@ function resolveCounterFunction(
 	element: Element,
 	content: string,
 ): string {
-	initializeCounters(cascade, element);
-	const scope = cascade.counterScopes.get(element);
 	return content.replace(
 		/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g,
 		(_match, counterName, style) => {
 			cascade.counterUsers.add(element);
-			const trimmedName = counterName.trim();
-			const trimmedStyle = style?.trim() || "decimal";
+			const name = counterName.trim();
+			const counters = getCounterSet(cascade, element);
+			const index = findInnermost(counters, name);
 			return CSSValues.formatCounterValue(
-				CSSValues.getCounterValueInScope(scope, trimmedName),
-				trimmedStyle,
+				index === -1 ? 0 : counters[index].value,
+				style?.trim() || "decimal",
 			);
 		},
 	);
@@ -7428,7 +7433,10 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 		computedStyleCache: cascade.computedStyleCache,
 		hasResults: cascade.hasResults,
 		pseudoElementStyleCache: cascade.pseudoElementStyleCache,
-		counterScopes: cascade.counterScopes,
+		counterSets: cascade.counterSets,
+		counterKeys: cascade.counterKeys,
+		counterHidden: cascade.counterHidden,
+		countersCounted: cascade.countersCounted,
 		sharedRoot: cascade.sharedRoot,
 	};
 	dropCache(cascade);
@@ -7464,7 +7472,7 @@ function dropCache(cascade: Cascade): void {
 	cascade.computedStyleCache = new WeakMap();
 	cascade.hasResults = null;
 	cascade.pseudoElementStyleCache = new WeakMap();
-	cascade.counterScopes = new WeakMap();
+	forgetCounters(cascade);
 }
 
 // The box a child's or a pseudo-element's percentage resolves against,
@@ -7805,46 +7813,67 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 	}
 }
 
-// The parent's scope is read, never built. Building it recursively up a
-// deep tree is what this avoids.
-function getCounterDeclaration(
-	reset: string | null | undefined,
-	increment: string | null | undefined,
-): string {
-	return `${reset || "none"}|${increment || "none"}`;
+// What an element's counters are computed from, or null for an element
+// that changes none of them. Such an element passes on what it inherits,
+// so adding or removing it leaves every other element's counters as
+// they were.
+function getCounterKey(cascade: Cascade, element: Element): string | null {
+	const slots = _(cascade.declarationFor(element));
+	const parts: string[] = [];
+	if (slots._computedValue("display") === "none") {
+		parts.push("hidden");
+	}
+	if (
+		cascade.counterRulesExist ||
+		(attributeOf(element, "style") ?? "").includes("counter")
+	) {
+		for (const property of [
+			"counter-reset",
+			"counter-increment",
+			"counter-set",
+		]) {
+			const value = slots._computedValue(property);
+			if (value && value !== "none") {
+				parts.push(`${property}:${value}`);
+			}
+		}
+	}
+	const tag = element.tagName;
+	if (tag === "OL" || tag === "UL") {
+		parts.push(
+			`${tag}:${attributeOf(element, "start")}:` +
+				`${hasAttributeOf(element, "reversed")}`,
+		);
+		if (hasAttributeOf(element, "reversed")) {
+			parts.push(`items:${getListItems(element).length}`);
+		}
+	} else if (tag === "LI") {
+		parts.push(`LI:${attributeOf(element, "value")}`);
+	}
+	return parts.length === 0 ? null : parts.join("|");
 }
 
-// Whether an element restyled now declares other counters than its scope
-// was built from. Asked only of a document whose generated content reads
-// a counter, since answering resolves the element's new style.
+// Whether an element restyled now computes its counters from other
+// inputs than they were counted with.
 function noteCounterChange(cascade: Cascade, element: Element): void {
-	if (cascade.counterUsers.size === 0 || cascade.countersStale) {
+	if (!cascade.countersCounted || cascade.countersStale) {
 		return;
 	}
-	const before =
-		cascade.counterDeclarations.get(element) ??
-		getCounterDeclaration(null, null);
-	const slots = _(cascade.declarationFor(element));
-	const after = getCounterDeclaration(
-		slots._computedValue("counter-reset"),
-		slots._computedValue("counter-increment"),
-	);
-	if (before !== after) {
+	const before = cascade.counterKeys.get(element) ?? null;
+	if (before !== getCounterKey(cascade, element)) {
 		cascade.countersStale = true;
 	}
 }
 
-// Whether a removed subtree declared a counter, which renumbers what
-// came after it.
+// Whether a removed subtree held an element that changed a counter,
+// which renumbers what came after it.
 function declaresCounters(cascade: Cascade, root: Element): boolean {
-	const none = getCounterDeclaration(null, null);
 	for (
 		let element: Element | null = root;
 		element !== null;
 		element = nextElementUnder(element, root)
 	) {
-		const declared = cascade.counterDeclarations.get(element);
-		if (declared !== undefined && declared !== none) {
+		if (cascade.counterKeys.has(element)) {
 			return true;
 		}
 	}
@@ -7857,8 +7886,7 @@ function refreshCounters(cascade: Cascade): void {
 	if (!cascade.countersStale) {
 		return;
 	}
-	cascade.countersStale = false;
-	cascade.counterScopes = new WeakMap();
+	forgetCounters(cascade);
 	const users = [...cascade.counterUsers];
 	cascade.counterUsers.clear();
 	for (const element of users) {
@@ -7869,144 +7897,210 @@ function refreshCounters(cascade: Cascade): void {
 	}
 }
 
-// Built on first read, not on invalidation: a counter's value depends
-// on the element's ancestors, and for a list item on the items before
-// it, so the parent is built first and a dropped scope comes back when
-// something next asks.
-function initializeCounters(cascade: Cascade, element: Element): void {
-	if (cascade.counterScopes.has(element)) {
-		return;
-	}
-	if (element.parentElement) {
-		initializeCounters(cascade, element.parentElement);
-	}
-
-	// With no counter rules anywhere, only lists carry counters. But an
-	// element under a scope-holding parent still joins, so a chain like ol >
-	// li > div > ol keeps its inheritance path unbroken.
-	const tag = element.tagName;
-	if (
-		!cascade.counterRulesExist &&
-		tag !== "OL" &&
-		tag !== "UL" &&
-		tag !== "LI" &&
-		!(
-			element.parentElement && cascade.counterScopes.has(element.parentElement)
-		) &&
-		!(attributeOf(element, "style") ?? "").includes("counter")
-	) {
-		return;
-	}
-
-	const computedStyle = cascade.declarationFor(element);
-	const computedStyleSlots = _(computedStyle);
-	const counterReset = computedStyleSlots._computedValue("counter-reset");
-	const counterIncrement =
-		computedStyleSlots._computedValue("counter-increment");
-
-	const parentElement = element.parentElement;
-	const parentScope = parentElement
-		? cascade.counterScopes.get(parentElement)
-		: undefined;
-
-	const scope: CSSValues.CounterScope = {
-		element,
-		counters: {},
-		parent: parentScope,
-	};
-	cascade.counterScopes.set(element, scope);
-	cascade.counterDeclarations.set(
-		element,
-		getCounterDeclaration(counterReset, counterIncrement),
-	);
-
-	if (counterReset && counterReset !== "none") {
-		CSSValues.parseCounterReset(scope, counterReset);
-	}
-
-	if (element.tagName === "OL" || element.tagName === "UL") {
-		const startValue = element.tagName === "OL"
-			? parseInt(attributeOf(element, "start") || "1", 10)
-			: 0;
-		// start - 1, so the first increment gives start.
-		scope.counters["list-item"] = startValue - 1;
-	}
-
-	if (counterIncrement && counterIncrement !== "none") {
-		parseCounterIncrement(cascade, scope, counterIncrement);
-	}
-
-	if (element.tagName === "LI") {
-		incrementCounter(cascade, scope, "list-item", 1);
-	}
+function forgetCounters(cascade: Cascade): void {
+	cascade.countersStale = false;
+	cascade.countersCounted = false;
+	cascade.counterSets = new WeakMap();
+	cascade.counterKeys = new WeakMap();
+	cascade.counterHidden = new WeakSet();
 }
 
-function parseCounterIncrement(
+/**
+ * The counters in scope at an element, innermost last (css-lists-3
+ * §4.4). An element inherits the counters of its parent and of its
+ * previous sibling, at the values of the element before it in tree
+ * order, then applies its own counter-reset, counter-increment and
+ * counter-set, in that order.
+ *
+ * By induction on tree order, an element's counters begin with its
+ * parent's, and so with those of every ancestor: an element starts from
+ * its parent's and appends, and only ever removes a counter one of its
+ * siblings made. The element before E in tree order is E's previous
+ * sibling, or one of that sibling's descendants, or E's parent, so its
+ * counters begin with the ones E inherits, at the values E inherits
+ * them with. Inheriting is cutting that list to the length of the
+ * previous sibling's, or the parent's.
+ */
+function getCounterSet(
 	cascade: Cascade,
-	scope: CSSValues.CounterScope,
-	counterIncrement: string,
-): void {
-	for (const [name, increment] of CSSValues.getCounterPairs(
-		counterIncrement,
-		1,
-	)) {
-		incrementCounter(cascade, scope, name, increment);
+	element: Element,
+): readonly CounterEntry[] {
+	const counted = cascade.counterSets.get(element);
+	if (counted !== undefined) {
+		return counted;
 	}
-}
-
-function incrementCounter(
-	cascade: Cascade,
-	scope: CSSValues.CounterScope,
-	counterName: string,
-	increment: number,
-): void {
-	// A list item counts from the item before it, not from its scope.
-	// Siblings share one list, and each scope only ever holds its own
-	// element's value.
-	if (counterName === "list-item" && scope.element.tagName === "LI") {
-		const currentValue = getListItemCounterValue(cascade, scope.element);
-		scope.counters[counterName] = currentValue + increment;
-	} else {
-		const currentValue = CSSValues.getCounterValueInScope(
-			scope.parent,
-			counterName,
-		);
-		scope.counters[counterName] = currentValue + increment;
-	}
-}
-
-// The list's start value plus the items before this one. Siblings
-// share one counter, and each scope holds only its own element's value.
-function getListItemCounterValue(cascade: Cascade, element: Element): number {
-	let parent = element.parentElement;
-	while (parent && parent.tagName !== "OL" && parent.tagName !== "UL") {
-		parent = parent.parentElement;
-	}
-
-	if (!parent) {
-		return 0;
-	}
-
-	// Items initialize in document order, so the nearest earlier item that
-	// has a scope already holds the count up to itself. Counting from the
-	// list's start for every item made a long list quadratic.
-	let uncounted = 0;
-	for (
-		let previous = element.previousElementSibling;
-		previous !== null;
-		previous = previous.previousElementSibling
-	) {
-		if (previous.tagName !== "LI") {
+	// The elements a set is built from come first in tree order, so they
+	// are counted first, from a stack rather than by recursion, since a
+	// long list asks through every item before.
+	const stack = [element];
+	while (stack.length > 0) {
+		const each = stack.at(-1)!;
+		if (cascade.counterSets.has(each)) {
+			stack.pop();
 			continue;
 		}
-		const scope = cascade.counterScopes.get(previous as Element);
-		if (scope !== undefined && "list-item" in scope.counters) {
-			return scope.counters["list-item"] + uncounted;
+		const parent = each.parentElement;
+		const sibling = each.previousElementSibling;
+		const before = getElementBefore(each);
+		const missing = [parent, sibling, before].filter(
+			(source): source is Element =>
+				source !== null && !cascade.counterSets.has(source),
+		);
+		if (missing.length > 0) {
+			stack.push(...missing);
+			continue;
 		}
-		uncounted++;
+		stack.pop();
+		countElement(cascade, each, parent, sibling, before);
 	}
-	const parentScope = cascade.counterScopes.get(parent);
-	return (parentScope?.counters["list-item"] ?? 0) + uncounted;
+	return cascade.counterSets.get(element)!;
+}
+
+interface CounterEntry {
+	name: string;
+	origin: Element;
+	value: number;
+}
+
+const NO_COUNTERS: readonly CounterEntry[] = [];
+
+function getElementBefore(element: Element): Element | null {
+	let before = element.previousElementSibling;
+	if (before === null) {
+		return element.parentElement;
+	}
+	while (before.lastElementChild !== null) {
+		before = before.lastElementChild;
+	}
+	return before;
+}
+
+function countElement(
+	cascade: Cascade,
+	element: Element,
+	parent: Element | null,
+	sibling: Element | null,
+	before: Element | null,
+): void {
+	cascade.countersCounted = true;
+	const inherits = sibling ?? parent;
+	const length = inherits === null
+		? 0
+		: cascade.counterSets.get(inherits)!.length;
+	const preceding = before === null
+		? NO_COUNTERS
+		: cascade.counterSets.get(before)!;
+	const inherited = preceding.length === length
+		? preceding
+		: preceding.slice(0, length);
+	const key = getCounterKey(cascade, element);
+	const hidden =
+		(parent !== null && cascade.counterHidden.has(parent)) ||
+		(key !== null && key.startsWith("hidden"));
+	if (key !== null) {
+		cascade.counterKeys.set(element, key);
+	}
+	if (hidden) {
+		cascade.counterHidden.add(element);
+	}
+	cascade.counterSets.set(
+		element,
+		key === null || hidden
+			? inherited
+			: applyCounters(cascade, element, inherited),
+	);
+}
+
+// An element's own counter-reset, counter-increment and counter-set,
+// with the list-item counter HTML's lists keep: a list resets it, an
+// item steps it, and an item's value sets it.
+function applyCounters(
+	cascade: Cascade,
+	element: Element,
+	inherited: readonly CounterEntry[],
+): readonly CounterEntry[] {
+	const counters = [...inherited];
+	const slots = _(cascade.declarationFor(element));
+	const declared = (property: string, fallback: number) => {
+		const value = slots._computedValue(property);
+		return value && value !== "none"
+			? CSSValues.getCounterPairs(value, fallback)
+			: [];
+	};
+	const resets = declared("counter-reset", 0);
+	const increments = declared("counter-increment", 1);
+	const sets = declared("counter-set", 0);
+	const names = (pairs: Array<[string, number]>) => pairs.map(([name]) => name);
+	const tag = element.tagName;
+	if ((tag === "OL" || tag === "UL") && !names(resets).includes("list-item")) {
+		resets.push(["list-item", getListStart(element)]);
+	}
+	if (tag === "LI") {
+		const list = element.parentElement;
+		if (!names(increments).includes("list-item")) {
+			increments.push([
+				"list-item",
+				list?.tagName === "OL" && hasAttributeOf(list, "reversed") ? -1 : 1,
+			]);
+		}
+		const value = parseInt(attributeOf(element, "value") ?? "", 10);
+		if (Number.isFinite(value) && !names(sets).includes("list-item")) {
+			sets.push(["list-item", value]);
+		}
+	}
+	const instantiate = (name: string, value: number): number => {
+		const index = counters.findIndex((counter) =>
+			counter.name === name &&
+			(counter.origin === element ||
+				counter.origin.parentNode === element.parentNode),
+		);
+		if (index !== -1) {
+			counters.splice(index, 1);
+		}
+		counters.push({name, origin: element, value});
+		return counters.length - 1;
+	};
+	const innermost = (name: string): number => {
+		const index = findInnermost(counters, name);
+		return index === -1 ? instantiate(name, 0) : index;
+	};
+	for (const [name, value] of resets) {
+		instantiate(name, value);
+	}
+	for (const [name, step] of increments) {
+		const index = innermost(name);
+		counters[index] = {...counters[index], value: counters[index].value + step};
+	}
+	for (const [name, value] of sets) {
+		const index = innermost(name);
+		counters[index] = {...counters[index], value};
+	}
+	return counters;
+}
+
+function findInnermost(
+	counters: readonly CounterEntry[],
+	name: string,
+): number {
+	for (let index = counters.length - 1; index >= 0; index--) {
+		if (counters[index].name === name) {
+			return index;
+		}
+	}
+	return -1;
+}
+
+// One before the first item's number, so the first step gives it.
+function getListStart(list: Element): number {
+	if (list.tagName !== "OL") {
+		return 0;
+	}
+	const reversed = hasAttributeOf(list, "reversed");
+	const start = parseInt(attributeOf(list, "start") ?? "", 10);
+	if (reversed) {
+		return (Number.isFinite(start) ? start : getListItems(list).length) + 1;
+	}
+	return (Number.isFinite(start) ? start : 1) - 1;
 }
 
 function getUsedValues(
@@ -8788,7 +8882,7 @@ function invalidateElementCaches(
 		}
 	}
 	cascade.pseudoElementStyleCache.delete(element);
-	cascade.counterScopes.delete(element);
+	cascade.counterSets.delete(element);
 	noteCounterChange(cascade, element);
 }
 
@@ -9955,6 +10049,7 @@ function parseSelector(
 	if (
 		declarations["counter-reset"] ||
 		declarations["counter-increment"] ||
+		declarations["counter-set"] ||
 		declarations["content"]?.includes("counter")
 	) {
 		cascade.counterRulesExist = true;
@@ -10608,9 +10703,6 @@ function attachPseudoElementToElementForType(
 	) {
 		return;
 	}
-
-	// counter() in a content value reads these, so they must exist first.
-	initializeCounters(cascade, element);
 
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(element);
