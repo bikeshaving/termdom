@@ -183,11 +183,6 @@ export function getWindowClasses(): Readonly<Record<string, Constructor>> {
 	return windowClasses;
 }
 
-/** The names of the interfaces a window exposes. */
-export function getWindowInterfaceNames(): string[] {
-	return Object.keys(getWindowClasses());
-}
-
 // The window's interface objects, laid out before the first document is
 // made, so that every platform object has its unforgeable members.
 export function getInterfaceObjects(): ReadonlyMap<string, Constructor> {

@@ -23,7 +23,7 @@
     "noUnusedParameters": true,
     "noImplicitOverride": true
   },
-  "include": ["src", "tests", "fuzz", "examples", "scripts", "bench"],
+  "include": ["src", "tests", "fuzz", "examples", "scripts", "bench", "node_modules/@b9g/libuild/litest.d.ts"],
 	// The drift ledger instantiates every class against lib.dom, which is
 	// twenty seconds and a gigabyte the ordinary typecheck does not need.
 	// scripts/lib-dom-drift.ts checks it in a program of its own.

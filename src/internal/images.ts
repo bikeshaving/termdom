@@ -2171,7 +2171,7 @@ export async function readImageResponse(
  * which ends the decode with it, or the decode here stops at its next
  * yield, and the image fails.
  */
-let decodeTimeout = 10_000;
+const decodeTimeout = 10_000;
 // A worker with nothing to do is ended, so it keeps the runtime alive for
 // a second at most.
 const WORKER_IDLE_MS = 1_000;
@@ -2227,11 +2227,6 @@ export function setDecodeWorkerURL(url: URL | null): void {
 		running = null;
 		startNextDecode();
 	}
-}
-
-/** How long a decode may take before it is stopped. */
-export function setDecodeTimeout(ms: number): void {
-	decodeTimeout = ms;
 }
 
 /**

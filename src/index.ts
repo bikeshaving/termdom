@@ -1607,11 +1607,12 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	applyMutations(termDOM.document);
 	runFocusFixup(termDOM.document);
 
-	if (styleCheck.enabled) {
+	// The checks run under test only, and the build strips them.
+	if (import.meta.litest && styleCheck.enabled) {
 		checkStylesFromScratch(termDOMSlots.cascade);
 	}
 	termDOMSlots.layout.performLayout();
-	if (layoutCheck.enabled) {
+	if (import.meta.litest && layoutCheck.enabled) {
 		checkLayoutFromScratch(termDOMSlots.layout);
 	}
 	clampScrollOffsets(termDOM.document);
@@ -1690,7 +1691,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 			: damage,
 	});
 	paint(termDOMSlots.painter, context);
-	if (context.partial && partialFrameCheck.enabled) {
+	if (import.meta.litest && context.partial && partialFrameCheck.enabled) {
 		checkPartialFrame(
 			termDOMSlots.painter,
 			context,
