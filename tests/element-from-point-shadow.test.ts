@@ -27,3 +27,18 @@ test("elementFromPoint retargets against the tree it is asked from", async () =>
 	]);
 	dom.dispose();
 });
+
+test("elementFromPoint finds a box an inline-block lays out low on the page", async () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 40, rows: 12}).transport,
+	});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div>" +
+		"<span style=\"display: inline-block\"><div id=list>" +
+		"<div id=a>first</div><div id=b>second</div></div></span>";
+	await nextFrame(dom);
+	expect(document.elementFromPoint(1, 6)!.id).toBe("a");
+	expect(document.elementFromPoint(1, 7)!.id).toBe("b");
+	dom.dispose();
+});
