@@ -6570,41 +6570,45 @@ function forEachLayoutNode(
 	walk(layout.initialBlock);
 }
 
-function describeLayoutNode(node: LayoutNode): string {
-	const owner = node.owner as {
-		id?: string;
-		localName?: string;
-		nodeName?: string;
-	} | null;
-	const name = owner === null
-		? "anonymous"
-		: owner.id ? `#${owner.id}` : (owner.localName ?? owner.nodeName ?? "?");
-	const {left, top, width, height} = node.result;
-	return `${name} ${left},${top} ${width}x${height}`;
-}
-
 export function checkLayoutFromScratch(layout: Layout): void {
 	layoutCheck.checked++;
-	const before = new Map<LayoutNode, string>();
-	forEachLayoutNode(layout, (node) => {
-		before.set(node, describeLayoutNode(node));
-		forgetLayout(node);
+	const document = layout.window.document;
+	const elements = [...document.querySelectorAll("*")] as Element[];
+	const describe = (): string[] => elements.map((element) => {
+		const rect = layout.getRect(element);
+		return rect === null
+			? "none"
+			: `${rect.x},${rect.y} ${rect.width}x${rect.height}`;
 	});
-	const root = layout.initialBlock;
-	root.performLayout(root.style.width.value, root.style.height.value);
-	computePaintExtents(layout, root, 0, 0);
+	const before = describe();
+	// The frame's own damage stands: the check repaints nothing.
+	const damage = [...layout.damage];
+	const wholeDamage = layout.wholeDamage;
+	const geometryMoved = layout.geometryMoved;
+	// Every box derived again and styled again, then solved with nothing
+	// remembered.
+	layout.invalidate();
+	forEachLayoutNode(layout, forgetLayout);
+	layout.performLayout();
+	layout.damage = damage;
+	layout.wholeDamage = wholeDamage;
+	layout.geometryMoved = geometryMoved;
+	const after = describe();
 	const differences: string[] = [];
-	forEachLayoutNode(layout, (node) => {
-		const was = before.get(node);
-		const now = describeLayoutNode(node);
-		if (was !== now) {
-			differences.push(`${was ?? "(new)"} -> ${now}`);
+	for (let index = 0; index < elements.length; index++) {
+		if (before[index] !== after[index]) {
+			const element = elements[index];
+			differences.push(
+				`${element.localName}${element.id ? `#${element.id}` : ""} ${
+					before[index]
+				}, from nothing ${after[index]}`,
+			);
 		}
-	});
+	}
 	if (differences.length > 0) {
 		throw new Error(
-			`A solve differs from one from nothing at ${
-				differences.slice(0, 8).join(", ")
+			`A layout differs from one from nothing at ${
+				differences.slice(0, 8).join("; ")
 			}`,
 		);
 	}
