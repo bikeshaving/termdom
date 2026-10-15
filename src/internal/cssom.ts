@@ -1114,21 +1114,32 @@ for (const property of CSS_PROPERTIES) {
 	}
 }
 
-const pageViews = new WeakMap<CSSStyleDeclaration, CSSStyleProperties>();
+const pageViews = new WeakMap<Element, Map<string, CSSStyleProperties>>();
 
 // The engine resolves a computed style through classes of its own, which
 // a page must not find in a prototype chain. What a page gets is a plain
-// CSSStyleProperties that reads through to the engine's, one per
-// declaration, so asking again returns the same object.
-function getPageView(source: CSSStyleDeclaration): CSSStyleProperties {
-	let view = pageViews.get(source);
+// CSSStyleProperties that reads through to the engine's, one per element
+// and pseudo-element, so asking again returns the same object. A restyle
+// gives the element a new declaration, and the view reads through to it,
+// keeping the indices it already defined.
+function getPageView(
+	source: CSSStyleDeclaration,
+	element: Element,
+	pseudoElement: string,
+): CSSStyleProperties {
+	let views = pageViews.get(element);
+	if (views === undefined) {
+		views = new Map();
+		pageViews.set(element, views);
+	}
+	let view = views.get(pseudoElement);
 	if (view === undefined) {
 		view = Object.create(CSSStyleProperties.prototype) as CSSStyleProperties;
 		seal(view, CSSStyleProperties, CSSStyleDeclaration);
-		_(view).viewOf = source;
 		_(view).indexed = 0;
-		pageViews.set(source, view);
+		views.set(pseudoElement, view);
 	}
+	_(view).viewOf = source;
 	syncViewIndices(view);
 	return view;
 }
@@ -6345,6 +6356,8 @@ export class Cascade {
 				getPageView(
 					getResolvedStyle(this, element, pseudoElt) as unknown as
 						CSSStyleDeclaration,
+					element,
+					pseudoElt ?? "",
 				) as unknown as globalThis.CSSStyleDeclaration,
 		) as typeof window.getComputedStyle;
 
