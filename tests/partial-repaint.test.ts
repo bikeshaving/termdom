@@ -382,3 +382,18 @@ test("an outlined box with no height paints no row", async () => {
 	expect(partial).toBeGreaterThan(0);
 	dom.dispose();
 });
+
+test("a change in what overflows an inline-block repaints its rows", async () => {
+	const {partial, dom} = await repaint(
+		lines(6) +
+		"<span style=\"display: inline-block\">" +
+			"<div style=\"height: 1px\"><div>first</div><div>second</div>" +
+			"<div id=c>third</div></div></span>" +
+		lines(3, "after"),
+		(document) => {
+			document.getElementById("c").textContent = "changed";
+		},
+	);
+	expect(partial).toBeGreaterThan(0);
+	dom.dispose();
+});

@@ -1148,6 +1148,14 @@ function computePaintExtents(
 			right,
 			node.style.border.left + node.result.padding.left + lines.maxLineWidth,
 		);
+		// An inline-block on a line paints its content, which can reach past
+		// its own box and the line.
+		const contentTop = top + node.style.border.top + node.result.padding.top;
+		for (const [reach, overflow] of getInlineBlockReaches(layout, lines)) {
+			highest = Math.min(highest, contentTop + reach);
+			lowest = Math.max(lowest, contentTop + overflow);
+			bottom = Math.max(bottom, contentTop - top + overflow);
+		}
 	}
 	const clips = node.style.clipsOverflow;
 	let scrollRight: number | null = 0;
@@ -1233,6 +1241,32 @@ function computePaintExtents(
 	extent.scrollRight = clips ? scrollRight : null;
 	extent.scrollBottom = clips ? scrollBottom : null;
 	return extent;
+}
+
+// The rows each inline-block on these lines paints, from the top of the
+// lines: its content box's, reaching as far as what it lays out does.
+function *getInlineBlockReaches(
+	layout: Layout,
+	lines: BreakResult,
+	from = 0,
+): Generator<[number, number]> {
+	for (const line of lines.lines) {
+		for (const {leaf} of line.segments) {
+			if (leaf.type !== "inline-block") {
+				continue;
+			}
+			const top =
+				from + line.y + leaf.boxModel.borderTopWidth + leaf.boxModel.paddingTop;
+			const context = layout.boxes.get(leaf.node)?.independentFormattingContext;
+			const extent = context ? extents.get(context) : undefined;
+			if (extent !== undefined) {
+				yield [top + extent.top, top + extent.bottom];
+			} else if (leaf.breakResult !== undefined) {
+				yield [top, top + leaf.breakResult.totalHeight];
+				yield *getInlineBlockReaches(layout, leaf.breakResult, top);
+			}
+		}
+	}
 }
 
 function styleLayoutNode(
@@ -5271,13 +5305,17 @@ function hitTestInFlow(
 			) {
 				return null;
 			}
-			// Extents an inline-block's own root counts are in its rows, not
-			// the document's, so a box laid out there is not ruled out by one.
-			const node = getLayoutNode(layout, element);
-			const extent = node === null ? undefined : paintExtent(node);
+			// A box measured on a line is covered by the line's extent. One an
+			// inline-block's own root counts is in that root's rows, not the
+			// document's, so it rules nothing out, and nor does no extent.
+			const node =
+				getLayoutNode(layout, element) ?? getBox(layout, element)?.layoutNode;
+			const extent = node ? paintExtent(node) : undefined;
 			if (
-				(extent === undefined || y < extent.top || y >= extent.bottom) &&
-				(node === null || isInDocumentTree(layout, node))
+				node &&
+				extent !== undefined &&
+				isInDocumentTree(layout, node) &&
+				(y < extent.top || y >= extent.bottom)
 			) {
 				return null;
 			}
