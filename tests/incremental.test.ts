@@ -173,3 +173,21 @@ test("a block in an inline that dissolves leaves no box behind", async () => {
 		(document) => document.getElementById("p").style.display = "contents",
 	]);
 });
+
+test("a positioned cell in an inline-block paints on the rows it is on", async () => {
+	await replay(
+		"<div>1</div><div>2</div><div>3</div><div>4</div><div>5</div>" +
+			"<div>6</div><div>7</div><div>8</div><table id=t><tbody id=g><tr><td class=box>x</td>" +
+			"<td id=b>y y</td></tr></tbody></table>",
+		[
+			(document) => document.getElementById("t").style.display = "inline-block",
+			(document) => document.getElementById("b").style.position = "relative",
+			(document) => {
+				const block = document.createElement("div");
+				block.textContent = "e";
+				document.getElementById("b").prepend(block);
+			},
+			(document) => document.getElementById("g").style.marginTop = "24px",
+		],
+	);
+});

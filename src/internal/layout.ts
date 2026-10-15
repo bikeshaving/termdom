@@ -6996,7 +6996,7 @@ function invalidateHost(layout: Layout, host: Element): void {
 	invalidateEnclosingMeasure(layout, host);
 }
 
-function isInDocumentTree(layout: Layout, node: LayoutNode): boolean {
+export function isInDocumentTree(layout: Layout, node: LayoutNode): boolean {
 	let root = node;
 	while (root.parent !== null) {
 		root = root.parent;

@@ -72,6 +72,7 @@ import {
 	hoistedToLayer,
 	type InlineBlockLeaf,
 	isAtomicInline,
+	isInDocumentTree,
 	isPositioned,
 	isStackingContext,
 	type Layout,
@@ -816,7 +817,35 @@ function paintEntry(
 	if (rect === null) {
 		return;
 	}
-	paintBlock(painter, element, node, {x: rect.x, y: rect.y}, ctx, afterOwnBox);
+	// A box an inline-block lays out has its extents counted from that
+	// box's own root, so the band is counted from there too, as it is when
+	// the inline-block paints its content.
+	const extent = paintExtent(node);
+	if (extent === undefined || isInDocumentTree(layout, node)) {
+		paintBlock(
+			painter,
+			element,
+			node,
+			{x: rect.x, y: rect.y},
+			ctx,
+			afterOwnBox,
+		);
+		return;
+	}
+	const scrolled = painter.scrolledRows;
+	painter.scrolledRows = extent.origin - Math.round(rect.y);
+	try {
+		paintBlock(
+			painter,
+			element,
+			node,
+			{x: rect.x, y: rect.y},
+			ctx,
+			afterOwnBox,
+		);
+	} finally {
+		painter.scrolledRows = scrolled;
+	}
 }
 
 function isOutsideViewport(
