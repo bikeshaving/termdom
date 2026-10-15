@@ -361,7 +361,7 @@ function readPaintStyle(element: Element): PaintStyle {
 	const model = getBoxModel(element);
 	return {
 		others: PAINTED_ELSEWHERE.map((property) =>
-			getComputedValue(element, property)
+			getComputedValue(element, property),
 		).join("\0"),
 		// Whole cells, as layout rounds the content edge.
 		contentInsetX: Math.round(model.paddingLeft + model.borderLeftWidth),

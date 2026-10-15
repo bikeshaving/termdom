@@ -36203,6 +36203,10 @@ export function revealPendingEditingCaret(document: globalThis.Document): void {
 	attachedSlots.extra.layout.revealCaret(node as Node, selection!.focusOffset);
 }
 
+// Offsets only leave their range when layout changes, since every scroll
+// clamps what it stores, so a flush after no solve has nothing to clamp.
+const clampedSolves = new WeakMap<object, number>();
+
 /**
  * Synchronously settle what a geometry read must see: pending mutations
  * delivered and layout brought up to date. A geometry read needs fresh
@@ -36223,10 +36227,6 @@ export function flushLayout(node: globalThis.Node): boolean {
 	}
 	return had;
 }
-
-// Offsets only leave their range when layout changes, since every scroll
-// clamps what it stores, so a flush after no solve has nothing to clamp.
-const clampedSolves = new WeakMap<object, number>();
 
 export function hoverListenerCount(document: globalThis.Document): number {
 	return hoverListenerCounters.get(document as Document)?.count ?? 0;

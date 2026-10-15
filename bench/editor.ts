@@ -4,11 +4,7 @@
  */
 import {installGlobals, mount, nextFrame} from "./harness.ts";
 
-export async function mountEditor(): Promise<{
-	proc: any;
-	dom: any;
-	view: any;
-}> {
+export async function mountEditor(): Promise<{proc: any; dom: any; view: any}> {
 	const {proc, dom} = await mount(100, 40, {cellSize: "auto"});
 	installGlobals(dom);
 	const {EditorState} = await import("@codemirror/state");

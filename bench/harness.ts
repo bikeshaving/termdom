@@ -104,9 +104,7 @@ export function describeLatency(label: string, times: number[]): void {
  * Times each key from reaching the program to its frame reaching the
  * terminal, typed at a person's pace.
  */
-export function keyLatency(
-	proc: any,
-): (key: string) => Promise<number> {
+export function keyLatency(proc: any): (key: string) => Promise<number> {
 	let wrote: (() => void) | null = null;
 	proc.stdout.write = (_chunk: unknown, enc?: unknown, cb?: unknown) => {
 		wrote?.();
