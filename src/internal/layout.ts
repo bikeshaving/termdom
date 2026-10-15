@@ -1087,7 +1087,9 @@ function computePaintExtents(
 				extent.height !== getComputedHeight(node));
 		moved =
 			node.lostChild ||
-			((shifted || resized) && paintsOwnBox(layout, node)) ||
+			((shifted || resized) &&
+				(layout.restyledForPaint.has(node.owner as Element) ||
+					paintsOwnBox(layout, node))) ||
 			(node.measure !== null &&
 				(shifted ||
 					(!settled &&
@@ -5454,10 +5456,10 @@ export class Layout {
 	// which lays it out, is answered again.
 	staleHosts: Set<Element>;
 	selectionMoved: boolean;
-	// Whether the last solve found a sticky box. Its shift moves its rows
-	// with no change to its rect, so while one is shown, or was, a solve
-	// repaints whole.
-	shiftedSticky: boolean;
+	// The rows each sticky box painted at the last solve, shift included.
+	// A shift moves a box's rows with no change to its rect, and only a
+	// solve or a scroll changes one, so a solve compares them.
+	stickyRows: Map<LayoutNode, [number, number, boolean]>;
 	// The rows the selection covered at the last frame, from its ends.
 	selectionRows: [number, number] | null;
 
@@ -5472,7 +5474,7 @@ export class Layout {
 		this.restyledSinceLayout = new Set();
 		this.staleHosts = new Set();
 		this.selectionMoved = false;
-		this.shiftedSticky = false;
+		this.stickyRows = new Map();
 		this.selectionRows = null;
 		this.positionedElements = new Set<Element>();
 		this.terminalReordersText = false;
@@ -5653,13 +5655,9 @@ export class Layout {
 			root.performLayout(root.style.width.value, root.style.height.value);
 		}
 		this.staleHosts.clear();
-		const sticky = hasStickyBox(this);
-		if (sticky || this.shiftedSticky) {
-			this.wholeDamage = true;
-		}
-		this.shiftedSticky = sticky;
 		this.collecting = !this.wholeDamage;
 		computePaintExtents(this, root, 0, 0);
+		damageShiftedStickyBoxes(this);
 		this.collecting = false;
 		this.solves++;
 	}
@@ -6404,9 +6402,59 @@ export function invalidateTextMeasurement(layout: Layout): void {
 	}
 }
 
-function hasStickyBox(layout: Layout): boolean {
+// A sticky box's extent holds its descendants', so its rows before and
+// after cover everything its shift moved.
+function damageShiftedStickyBoxes(layout: Layout): void {
+	const before = layout.stickyRows;
+	const after = new Map<LayoutNode, [number, number, boolean]>();
 	for (const element of layout.positionedElements) {
-		if (layout.nodeMap.get(element)?.style.positionType === "sticky") {
+		const node = layout.nodeMap.get(element);
+		const extent = node && extents.get(node);
+		if (
+			node?.style.positionType !== "sticky" ||
+			extent === undefined ||
+			!isInLayoutTree(layout, node)
+		) {
+			continue;
+		}
+		const shift = getScrollShift(layout, node, false).y;
+		const rows: [number, number, boolean] = [
+			extent.top + shift,
+			extent.bottom + shift,
+			isInFixedSpace(node),
+		];
+		after.set(node, rows);
+		const old = before.get(node);
+		if (old === undefined || old[0] !== rows[0] || old[1] !== rows[1]) {
+			pushDamage(layout, ...rows);
+			if (old !== undefined) {
+				pushDamage(layout, ...old);
+			}
+		}
+		before.delete(node);
+	}
+	for (const old of before.values()) {
+		pushDamage(layout, ...old);
+	}
+	layout.stickyRows = after;
+}
+
+function isInLayoutTree(layout: Layout, node: LayoutNode): boolean {
+	let current: LayoutNode | null = node;
+	while (current.parent !== null) {
+		if (current.style.displayType === "none") {
+			return false;
+		}
+		current = current.parent;
+	}
+	return current === layout.initialBlock;
+}
+
+function isInFixedSpace(node: LayoutNode): boolean {
+	for (let current: LayoutNode | null = node;
+		current;
+		current = current.parent) {
+		if (current.style.positionType === "fixed") {
 			return true;
 		}
 	}
@@ -6432,7 +6480,17 @@ function addDamage(
 	bottom: number,
 	fixed: boolean,
 ): void {
-	if (bottom <= top) {
+	const shift = getScrollShift(layout, node, false).y;
+	pushDamage(layout, top + shift, bottom + shift, fixed);
+}
+
+function pushDamage(
+	layout: Layout,
+	top: number,
+	bottom: number,
+	fixed: boolean,
+): void {
+	if (!layout.collecting || bottom <= top) {
 		return;
 	}
 	if (layout.damage.length >= MAX_DAMAGE) {
@@ -6441,8 +6499,7 @@ function addDamage(
 		layout.damage = [];
 		return;
 	}
-	const shift = getScrollShift(layout, node, false).y;
-	layout.damage.push([top + shift, bottom + shift, fixed]);
+	layout.damage.push([top, bottom, fixed]);
 }
 
 function isSameLines(

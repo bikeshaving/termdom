@@ -340,3 +340,33 @@ test("a counter set on one element renumbers the ones after it", async () => {
 	);
 	dom.dispose();
 });
+
+test("a sticky header moves when the box it sticks in shrinks", async () => {
+	const {partial, dom} = await repaint(
+		"<div style=\"display: flex; flex-direction: column; height: 20px; " +
+			"gap: 3px\"><div style=\"flex: 1\"><div style=\"position: sticky; " +
+			"top: 0; background: navy\">head</div></div><div id=q>q</div></div>" +
+			"<div style=\"height: 40px\"></div>",
+		async (document, window) => {
+			window.scrollTo(0, 6);
+			await nextFrame({window, document});
+			document.getElementById("q").innerHTML = "q<br>".repeat(12);
+		},
+	);
+	expect(partial).toBeGreaterThan(0);
+	dom.dispose();
+});
+
+test("a box that stops painting as it moves clears its old rows", async () => {
+	const {partial, dom} = await repaint(
+		lines(6) +
+			"<div id=bar class=tall style=\"position: fixed; bottom: 0; " +
+			"left: 0\">bar</div>",
+		(document) => {
+			document.getElementById("bar").classList.remove("tall");
+		},
+		{head: "<style>.tall { top: 0; background: navy }</style>"},
+	);
+	expect(partial).toBeGreaterThan(0);
+	dom.dispose();
+});
