@@ -144,6 +144,7 @@ export type Display =
 	"inline-block" |
 	"inline-flex" |
 	"inline-grid" |
+	"inline-table" |
 	"flex" |
 	"grid" |
 	"list-item" |
@@ -166,6 +167,7 @@ const DISPLAYS = new Set<string>([
 	"inline-block",
 	"inline-flex",
 	"inline-grid",
+	"inline-table",
 	"flex",
 	"grid",
 	"list-item",
@@ -229,9 +231,19 @@ function getLayoutDisplay(element: Element): Display {
 	return DISPLAYS.has(value) ? (value as Display) : "block";
 }
 
+function applyTableContainer(style: Style, element: Element): void {
+	style.displayType = "table";
+	style.borderCollapse =
+		getComputedValue(element, "border-collapse") === "collapse";
+	style.tableLayoutFixed =
+		getComputedValue(element, "table-layout") === "fixed";
+}
+
 // A box that sits on a line whole, measured as one opaque unit.
 export function isAtomicInline(display: Display): boolean {
-	return display === "inline-block" || display === "inline-grid";
+	return display === "inline-block" ||
+		display === "inline-grid" ||
+		display === "inline-table";
 }
 
 // About a display value. For a node, ask isInlineLevel.
@@ -1523,12 +1535,8 @@ function styleLayoutNodeProperties(
 		applyGridContainer(style, element);
 	} else if (display === "flex") {
 		style.displayType = "flex";
-	} else if (display === "table") {
-		style.displayType = "table";
-		style.borderCollapse =
-			getComputedValue(element, "border-collapse") === "collapse";
-		style.tableLayoutFixed =
-			getComputedValue(element, "table-layout") === "fixed";
+	} else if (display === "table" || display === "inline-table") {
+		applyTableContainer(style, element);
 	} else if (display === "table-header-group") {
 		style.displayType = "table-header-group";
 	} else if (display === "table-footer-group") {
@@ -1891,6 +1899,7 @@ function isTablePart(node: Node): boolean {
 
 function isTableInternal(display: Display): boolean {
 	return display === "table" ||
+		display === "inline-table" ||
 		display === "table-row" ||
 		display === "table-row-group" ||
 		display === "table-header-group" ||
@@ -2656,14 +2665,15 @@ function syncIndependentFormattingContext(
 ): void {
 	const box = getPrincipalBox(layout, element);
 	const display = getLayoutDisplay(element);
-	// An inline-grid always lays its own content out, because a line cannot
-	// contain a grid piecemeal. An inline-block does so only once it holds a
+	// An inline-grid or inline-table always lays its own content out,
+	// because a line cannot contain a grid or a table piecemeal. An inline-block does so only once it holds a
 	// block-level box. Never a plain inline: it is broken instead, and
 	// taking its content here would steal back the container's boxes.
 	const grid = display === "inline-grid";
+	const table = display === "inline-table";
 	if (
 		!establishesIndependentFormattingContext(element) ||
-		(!grid && !hasBlockLevelBox(element))
+		(!grid && !table && !hasBlockLevelBox(element))
 	) {
 		dropIndependentFormattingContext(box);
 		return;
@@ -2684,6 +2694,9 @@ function syncIndependentFormattingContext(
 	const style = createStyle();
 	style.blockFormattingContext = true;
 	style.displayType = grid ? "grid" : "block";
+	if (table) {
+		applyTableContainer(style, element);
+	}
 	if (grid) {
 		applyGridContainer(style, element);
 		const gaps: Array<[string, Gutter]> = [
