@@ -792,3 +792,22 @@ test("a nowrap span keeps itself whole and lets the paragraph wrap", () => {
 		.toEqual(["affirmed the suit against", "Jack Poulson was without merit."]);
 	dom.dispose();
 });
+
+// U+00A0 is not collapsible white space (css-text-3 §4.1.1), so a line
+// holding only one is not empty. Outlook writes every blank line as
+// <p class=MsoNormal><o:p>&nbsp;</o:p></p>.
+test("a paragraph holding only a non-breaking space is one line tall", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport});
+	const paragraph = (inner: string) => `<p style="margin: 0">${inner}</p>`;
+	for (const inner of ["&nbsp;", "<span>&nbsp;</span>", "<o:p>&nbsp;</o:p>", " &nbsp; "]) {
+		dom.document.body.innerHTML =
+			paragraph("a") + paragraph(inner) + paragraph("b");
+		await nextFrame(dom);
+		expect(
+			[...dom.document.querySelectorAll("p")]
+				.map((p) => p.getBoundingClientRect().height),
+		).toEqual([1, 1, 1]);
+	}
+	dom.dispose();
+});
