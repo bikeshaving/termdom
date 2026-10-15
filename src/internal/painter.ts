@@ -36,7 +36,8 @@ import {
 } from "./dom.ts";
 import {getEditingCaretPoint} from "./editing.ts";
 import {
-	type CellContext,
+	CellContext,
+	CellGrid,
 	type CellStyle,
 	drawBox,
 	drawDecoration,
@@ -44,6 +45,7 @@ import {
 	drawText,
 	type Framebuffer,
 	insetShiftPays,
+	keptCaret,
 	type LineStyle,
 	setCaret,
 } from "./framebuffer.ts";
@@ -201,6 +203,9 @@ interface PaintStyle {
 	shiftY: number;
 	contentInsetX: number;
 	contentInsetY: number;
+	// What else the painter reads from the element's style, so two paint
+	// styles that match paint alike.
+	others: string;
 }
 
 interface BorderPaint {
@@ -212,6 +217,38 @@ interface BorderPaint {
 	topRight?: "round";
 	bottomRight?: "round";
 	bottomLeft?: "round";
+}
+
+const PAINTED_ELSEWHERE = [
+	"z-index",
+	"position",
+	"text-overflow",
+	"list-style-type",
+	"list-style-position",
+	"list-style-image",
+	"outline-offset",
+	"caret-color",
+	"direction",
+	"text-align",
+	"text-indent",
+];
+
+/**
+ * Whether the element paints as it did under the style key it had, so a
+ * restyle that changed nothing it draws repaints no rows. False when the
+ * old style was never painted to compare.
+ */
+export function paintsAsBefore(
+	painter: Painter,
+	element: Element,
+	key: object,
+): boolean {
+	const before = paintStyles.get(key);
+	if (before === undefined || painter.cascade.getStyleKey(element) === null) {
+		return false;
+	}
+	return JSON.stringify(before) ===
+		JSON.stringify(getPaintStyle(painter, element));
 }
 
 function readPaintStyle(element: Element): PaintStyle {
@@ -323,6 +360,9 @@ function readPaintStyle(element: Element): PaintStyle {
 	const gradient = getGradient(element);
 	const model = getBoxModel(element);
 	return {
+		others: PAINTED_ELSEWHERE.map((property) =>
+			getComputedValue(element, property)
+		).join("\0"),
 		// Whole cells, as layout rounds the content edge.
 		contentInsetX: Math.round(model.paddingLeft + model.borderLeftWidth),
 		contentInsetY: Math.round(model.paddingTop + model.borderTopWidth),
@@ -574,8 +614,6 @@ export function resolveDocumentScrollBand(
 }
 
 export function paint(painter: Painter, ctx: CellContext): void {
-	painter.renderedOutsideMarkers = new WeakSet<Element>();
-	painter.scrolledRows = 0;
 	painter.highlightedText = collectHighlightedText(painter.document);
 	painter.paintedText.clear();
 	painter.highlightStyles = new Map();
@@ -589,13 +627,74 @@ export function paint(painter: Painter, ctx: CellContext): void {
 	const fromRoot =
 		document.documentElement !== null &&
 		(bodyDisplay === "contents" || bodyDisplay.startsWith("inline"));
-	renderStackingContext(
-		painter,
-		(fromRoot ? document.documentElement : document.body) as Element,
-		ctx,
-		layers,
-	);
+	const root = (fromRoot ? document.documentElement : document.body) as Element;
 	const rendered = renderedTopLayer(painter.document) as unknown as Element[];
+	for (const [top, bottom] of ctx.bands) {
+		ctx.bandTop = top;
+		ctx.bandBottom = bottom;
+		paintBand(painter, ctx, root, rendered, layers);
+	}
+}
+
+/**
+ * Checks a frame that repainted only some rows against one painted
+ * whole, for tests. Set, a frame that differs throws, naming the cells.
+ */
+export const partialFrameCheck = {enabled: false};
+
+export function checkPartialFrame(
+	painter: Painter,
+	ctx: CellContext,
+	previousCaret: {col: number; row: number} | null,
+): void {
+	const whole = new CellContext(
+		new CellGrid(ctx.rows, ctx.cols),
+		ctx.rows,
+		ctx.cols,
+		ctx.viewportOffset,
+	);
+	whole.backdrop = ctx.backdrop;
+	paint(painter, whole);
+	const differences: string[] = [];
+	const a = ctx.grid;
+	const b = whole.grid;
+	for (let index = 0; index < a.cluster.length; index++) {
+		if (
+			a.cluster[index] !== b.cluster[index] ||
+			a.fg[index] !== b.fg[index] ||
+			a.bg[index] !== b.bg[index] ||
+			a.attrs[index] !== b.attrs[index] ||
+			a.border[index] !== b.border[index]
+		) {
+			differences.push(
+				`row ${Math.floor(index / ctx.cols)} col ${index % ctx.cols}`,
+			);
+		}
+	}
+	const caret = keptCaret(ctx, previousCaret);
+	if (JSON.stringify(caret) !== JSON.stringify(whole.caret)) {
+		differences.push(
+			`caret ${JSON.stringify(caret)}, whole ${JSON.stringify(whole.caret)}`,
+		);
+	}
+	if (differences.length > 0) {
+		throw new Error(
+			`A frame repainting rows ${JSON.stringify(ctx.bands)} differs from ` +
+				`a whole one at ${differences.slice(0, 8).join(", ")}`,
+		);
+	}
+}
+
+function paintBand(
+	painter: Painter,
+	ctx: CellContext,
+	root: Element,
+	rendered: Element[],
+	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
+): void {
+	painter.renderedOutsideMarkers = new WeakSet<Element>();
+	painter.scrolledRows = 0;
+	renderStackingContext(painter, root, ctx, layers);
 	for (const element of rendered) {
 		const previousClip = ctx.clipRect;
 		ctx.clipRect = null;
@@ -718,8 +817,8 @@ function isOutsideViewport(
 	if (extent === undefined) {
 		return false;
 	}
-	const top = -ctx.viewportOffset + painter.scrolledRows;
-	const bottom = top + ctx.rows;
+	const top = -ctx.viewportOffset + painter.scrolledRows + ctx.bandTop;
+	const bottom = top + ctx.bandBottom - ctx.bandTop;
 	if (extent.bottom > top && extent.top < bottom) {
 		return false;
 	}
@@ -1006,8 +1105,8 @@ function visibleChildren(
 ): LayoutNode[] {
 	const layout = painter.layout;
 	const children = node.children;
-	const top = -ctx.viewportOffset + painter.scrolledRows;
-	const bottom = top + ctx.rows;
+	const top = -ctx.viewportOffset + painter.scrolledRows + ctx.bandTop;
+	const bottom = top + ctx.bandBottom - ctx.bandTop;
 	const extent = paintExtent(node);
 	const owner = node.owner as Node | null;
 	if (

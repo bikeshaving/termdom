@@ -87,10 +87,14 @@ import {
 	framePainted,
 	invalidateTextMeasurement,
 	Layout,
+	takeDamageBands,
 } from "./internal/layout.ts";
 import {
+	checkPartialFrame,
 	paint,
 	Painter,
+	paintsAsBefore,
+	partialFrameCheck,
 	resolveDocumentScrollBand,
 	resolveScrollShift,
 } from "./internal/painter.ts";
@@ -1655,14 +1659,30 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 			));
 	// Read after the clamp, which adds to the journal.
 	const clamped = termDOMSlots.framebuffer.journal;
+	const damage = takeDamageBands(
+		termDOMSlots.layout,
+		-termDOMSlots.framebuffer.scrollTop,
+		(element, key) => paintsAsBefore(termDOMSlots.painter, element, key),
+	);
 	const context = beginFrame(termDOMSlots.framebuffer, {
 		offset: -termDOMSlots.framebuffer.scrollTop,
 		cursorRow: top,
 		regionRows: top + regionHeight,
 		delta: shift ? shift.delta : fullscreen ? 0 : clamped.frameScroll,
 		shift: shift ?? undefined,
+		// A box scrolled moves rows no box reports.
+		bands: termDOMSlots.framebuffer.wholeDamage || journalled !== null
+			? undefined
+			: damage,
 	});
 	paint(termDOMSlots.painter, context);
+	if (context.partial && partialFrameCheck.enabled) {
+		checkPartialFrame(
+			termDOMSlots.painter,
+			context,
+			termDOMSlots.framebuffer.prevFrame?.caret ?? null,
+		);
+	}
 	const ansi = endFrame(termDOMSlots.framebuffer);
 	framePainted(termDOMSlots.layout);
 

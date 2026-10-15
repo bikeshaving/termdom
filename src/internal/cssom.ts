@@ -8288,10 +8288,29 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 	}
 	cascade.computedStyleCache.delete(element);
 	cascade.hasResults = null;
-	cascade.pseudoElementStyleCache.delete(element);
+	const hadPseudoStyles = cascade.pseudoElementStyleCache.delete(element);
 	// A style change can flip display: contents, which moves the node's
-	// flat-tree BOX parent, so every box enumeration is stale.
-	cascade.layout.invalidateFrame();
+	// flat-tree BOX parent, so every box enumeration is stale. A change
+	// layout sees repaints what it moves. The element's own rows repaint
+	// for one it does not.
+	cascade.layout.invalidateFrame(false);
+	recordRestyle(cascade, element, dropped, hadPseudoStyles);
+}
+
+// The style an element painted under, kept until the next frame compares
+// it with the new one. A pseudo-element's style is not compared.
+function recordRestyle(
+	cascade: Cascade,
+	element: Element,
+	dropped: Slots<ComputedStyleDeclaration> | undefined,
+	hadPseudoStyles: boolean,
+): void {
+	if (!cascade.layout.restyledForPaint.has(element)) {
+		cascade.layout.restyledForPaint.set(
+			element,
+			dropped && !hadPseudoStyles ? dropped.styleVersion : null,
+		);
+	}
 }
 
 // A child that came or went can change what the element's other
@@ -8470,6 +8489,7 @@ function invalidateElementCaches(
 	// A computed style an author still holds is the one this cache handed
 	// out, so it is told the cascade changed rather than merely dropped.
 	const dropped = cascade.computedStyleCache.get(element);
+	recordRestyle(cascade, element, dropped, cascade.pseudoElementStyleCache.has(element));
 	if (dropped) {
 		cascade.currentDeclarations.delete(dropped);
 		storeTransitionFallback(cascade, element, "", dropped.resolved);

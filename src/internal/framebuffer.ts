@@ -977,7 +977,9 @@ export function readCell(
 	};
 }
 
-function joinTouchingBorders(grid: CellGrid): void {
+// Returns the borders as painted, before joining, which a frame painted
+// over this one starts from.
+function joinTouchingBorders(grid: CellGrid): Uint32Array {
 	const {rows, cols, border} = grid;
 	const painted = border.slice();
 	// Which neighbour to look at for each edge of a cell, and which of that
@@ -1024,6 +1026,7 @@ function joinTouchingBorders(grid: CellGrid): void {
 			border[index] = joined;
 		}
 	}
+	return painted;
 }
 
 function getGridLine(grid: CellGrid, row: number, writer: FrameWriter): string {
@@ -1126,6 +1129,15 @@ export class CellContext {
 	// The terminal's own background as packed RGB, where it has said, for
 	// a translucent color painted where nothing else is.
 	backdrop: number | null;
+	// The buffer rows a frame repaints, [top, bottom) for each band. Rows
+	// outside them keep what the last frame painted. One band of every row
+	// for a full frame.
+	bands: Array<[number, number]>;
+	// The band being painted. Writes outside it are dropped.
+	bandTop: number;
+	bandBottom: number;
+	// Whether the frame started from the last one.
+	partial: boolean;
 
 	constructor(
 		grid: CellGrid,
@@ -1136,6 +1148,10 @@ export class CellContext {
 		this.caret = null;
 		this.clipRect = null;
 		this.backdrop = null;
+		this.bands = [[0, rows]];
+		this.bandTop = 0;
+		this.bandBottom = rows;
+		this.partial = false;
 		this.grid = grid;
 		this.rows = rows;
 		this.cols = cols;
@@ -1152,6 +1168,23 @@ export class CellContext {
 		}
 		return {width};
 	}
+}
+
+/**
+ * The caret a frame shows: the one it painted, or, on a row a frame that
+ * repainted some rows left alone, the one the last frame showed.
+ */
+export function keptCaret(
+	context: CellContext,
+	previous: {col: number; row: number} | null,
+): {col: number; row: number} | null {
+	if (!context.partial || context.caret !== null || previous === null) {
+		return context.caret;
+	}
+	const row = previous.row + context.viewportOffset;
+	return context.bands.some(([top, end]) => row >= top && row < end)
+		? null
+		: previous;
 }
 
 export function setCaret(context: CellContext, x: number, y: number): void {
@@ -1188,11 +1221,11 @@ export function drawRect(
 		const bg = background === "default" ? 0 : background & COLOR_MASK;
 		const clip = context.clipRect;
 		const offset = context.viewportOffset;
-		const top = Math.max(y, clip?.top ?? y, -offset);
+		const top = Math.max(y, clip?.top ?? y, context.bandTop - offset);
 		const bottom = Math.min(
 			y + height,
 			clip?.bottom ?? y + height,
-			context.rows - offset,
+			context.bandBottom - offset,
 		);
 		const left = Math.max(x, clip?.left ?? x, 0);
 		const right = Math.min(x + width, clip?.right ?? x + width, context.cols);
@@ -1508,8 +1541,8 @@ function getGuardedWriteIndex(
 ): number {
 	const terminalRow = row + context.viewportOffset;
 	if (
-		terminalRow < 0 ||
-		terminalRow >= context.rows ||
+		terminalRow < context.bandTop ||
+		terminalRow >= context.bandBottom ||
 		col < 0 ||
 		col >= context.cols
 	) {
@@ -1978,6 +2011,10 @@ const GUESSED_CELL_PIXELS: Readonly<{width: number; height: number}> = {
 
 export class Framebuffer {
 	prev: CellGrid | null;
+	// The previous frame's borders before they were joined, and where it
+	// was painted from, so a frame that repaints some rows starts from it.
+	prevBorders: Uint32Array | null;
+	prevFrame: {offset: number; cursorRow: number | undefined; caret: {col: number; row: number} | null} | null;
 	// The dropped grid, reused by the next frame of the same size.
 	spare: CellGrid | null;
 	diff: CellGrid | null;
@@ -2006,11 +2043,16 @@ export class Framebuffer {
 	writer: FrameWriter;
 	frameScroll: number;
 	dirty: boolean;
+	// Whether the next frame repaints every row, because something changed
+	// that names no rows of its own.
+	wholeDamage: boolean;
 
 	constructor(rows: number, cols: number, colorDepth: ColorDepth = "rgb") {
 		this.probesWaiting = false;
 		this.exchange = null;
 		this.prev = null;
+		this.prevBorders = null;
+		this.prevFrame = null;
 		this.spare = null;
 		this.diff = null;
 		this.pendingEnd = null;
@@ -2029,6 +2071,7 @@ export class Framebuffer {
 		this.cellSize = {...GUESSED_CELL_PIXELS};
 		this.frameScroll = 0;
 		this.dirty = true;
+		this.wholeDamage = true;
 		this.writer = new FrameWriter(colorDepth);
 	}
 
@@ -2145,6 +2188,12 @@ export function adoptCellPixels(
 
 export function invalidate(framebuffer: Framebuffer): void {
 	framebuffer.dirty = true;
+	framebuffer.wholeDamage = true;
+}
+
+/** A frame is wanted, and whoever asks names the rows it changed. */
+export function requestFrame(framebuffer: Framebuffer): void {
+	framebuffer.dirty = true;
 }
 
 /**
@@ -2244,6 +2293,8 @@ export function repaintAll(framebuffer: Framebuffer): void {
 	// leaves the scrollback alone) and reprints.
 	framebuffer.spare = framebuffer.prev;
 	framebuffer.prev = null;
+	framebuffer.prevBorders = null;
+	framebuffer.prevFrame = null;
 	framebuffer.prevContentHeight = 0;
 	framebuffer.needsFullClear = true;
 	framebuffer.renderedLines.clear();
@@ -2251,7 +2302,7 @@ export function repaintAll(framebuffer: Framebuffer): void {
 
 export function beginFrame(
 	framebuffer: Framebuffer,
-	{offset, cursorRow: cursorPosition, regionRows, delta = 0, shift}: {
+	{offset, cursorRow: cursorPosition, regionRows, delta = 0, shift, bands}: {
 
 		/** Rows the document scroll has scrolled, negative downward. */
 		offset: number;
@@ -2275,6 +2326,13 @@ export function beginFrame(
 	 * whole region, which is the rows a document scroll spans.
 	 */
 		shift?: {top: number; end: number};
+
+		/**
+	 * The buffer rows that changed, `[top, end)` each. The frame starts
+	 * from the last one and repaints only these, when nothing moved the
+	 * rest. Absent, every row repaints.
+	 */
+		bands?: Array<[number, number]>;
 	},
 ): CellContext {
 	const frameRows = Math.max(
@@ -2353,8 +2411,44 @@ export function beginFrame(
 		scrollPrefix = writer.resetScrollRegion().take();
 	}
 
+	const prevFrame = framebuffer.prevFrame;
+	const prevBorders = framebuffer.prevBorders;
+	const partial =
+		bands !== undefined &&
+		framebuffer.prev !== null &&
+		prevBorders !== null &&
+		prevFrame !== null &&
+		!scrolling &&
+		delta === 0 &&
+		!overflowing &&
+		framebuffer.prev.rows === frameRows &&
+		framebuffer.prev.cols === cols &&
+		prevFrame.offset === offset &&
+		prevFrame.cursorRow === cursorPosition &&
+		!framebuffer.needsScreenReset &&
+		!framebuffer.needsFullClear &&
+		!framebuffer.probesWaiting;
+
 	const context = new CellContext(next, frameRows, cols, offset);
 	context.backdrop = framebuffer.exchange?.terminalBackground ?? null;
+	if (partial) {
+		context.partial = true;
+		const prev = framebuffer.prev!;
+		next.cluster.set(prev.cluster);
+		next.fg.set(prev.fg);
+		next.bg.set(prev.bg);
+		next.attrs.set(prev.attrs);
+		next.border.set(prevBorders);
+		context.bands = [];
+		for (const [top, end] of bands) {
+			const from = Math.max(0, top);
+			const to = Math.min(frameRows, end);
+			if (from < to) {
+				clearRange(next, from * cols, to * cols);
+				context.bands.push([from, to]);
+			}
+		}
+	}
 	framebuffer.pendingEnd = (): string => {
 		const measurer =
 			framebuffer.exchange !== null &&
@@ -2364,7 +2458,7 @@ export function beginFrame(
 		// The frame is complete. Join the borders whose strokes touch, so
 		// the diff below sees a junction appear even when only its
 		// neighbour changed.
-		joinTouchingBorders(next);
+		const painted = joinTouchingBorders(next);
 
 		// Build the diff. A frame taller than the terminal is a growth
 		// frame. The rows below the fold have never been on screen, so
@@ -2541,6 +2635,7 @@ export function beginFrame(
 		// when no cell changed. A blurred input leaves no visual diff, but
 		// the real cursor is sitting visible at the stale caret until a
 		// frame re-parks it.
+		context.caret = keptCaret(context, prevFrame?.caret ?? null);
 		const caret = context.caret;
 		const caretBufferRow = caret === null ? null : caret.row + offset;
 		const caretVisible =
@@ -2657,9 +2752,17 @@ export function beginFrame(
 		if (overflowing) {
 			framebuffer.prev = bottomRows(next, framebuffer.rowCount);
 			framebuffer.spare = next;
+			framebuffer.prevBorders = null;
+			framebuffer.prevFrame = null;
 		} else {
 			framebuffer.prev = next;
 			framebuffer.spare = retired;
+			framebuffer.prevBorders = painted;
+			framebuffer.prevFrame = {
+				offset,
+				cursorRow: cursorPosition,
+				caret: context.caret,
+			};
 		}
 		framebuffer.prevContentHeight = contentHeight;
 
@@ -2729,6 +2832,7 @@ export function endFrame(framebuffer: Framebuffer): string {
 	const ansi = end();
 	framebuffer.frameScroll = 0;
 	framebuffer.dirty = false;
+	framebuffer.wholeDamage = false;
 	return ansi;
 }
 

@@ -14,6 +14,12 @@ export const benchRoot = new URL("..", import.meta.url).pathname;
 
 const index = await import(`${root}/src/index.ts`);
 const utils = await import(`${root}/tests/test-utils.ts`);
+const painter = await import(`${root}/src/internal/painter.ts`);
+// The test utilities check every partial frame against a whole one, which
+// is not what a user's frame costs.
+if (painter.partialFrameCheck !== undefined) {
+	painter.partialFrameCheck.enabled = false;
+}
 
 export const TermDOM = index.TermDOM;
 export const installGlobals = index.installGlobals;
