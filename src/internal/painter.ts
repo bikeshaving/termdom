@@ -63,6 +63,7 @@ import {
 	type Display,
 	fullWidthFixedRows,
 	getAtomicHeight,
+	getExtentFrame,
 	getLayoutNode,
 	getLineAlignOffset,
 	getLineIndent,
@@ -72,7 +73,6 @@ import {
 	hoistedToLayer,
 	type InlineBlockLeaf,
 	isAtomicInline,
-	isInDocumentTree,
 	isPositioned,
 	isStackingContext,
 	type Layout,
@@ -500,8 +500,11 @@ export class Painter {
 	topLayer: Set<Element>;
 	// Each list marker paints at most once per frame.
 	renderedOutsideMarkers: WeakSet<Element>;
-	// Paint extents are cached in unscrolled rows. A scrolled subtree
-	// paints this many rows higher, so culling shifts the viewport instead.
+	// Paint extents are cached in unscrolled rows of a frame: the
+	// document's, or an inline-block's own root's. The band is culled
+	// against them in the frame being painted, which a scrolled subtree
+	// paints this many rows higher than it counts.
+	frame: LayoutNode;
 	scrolledRows: number;
 	highlightedText: Map<Text, HighlightRun[]>;
 	highlightStyles: Map<Element, Map<string, HighlightPaint | null>>;
@@ -516,6 +519,7 @@ export class Painter {
 		framebuffer: Framebuffer,
 	) {
 		this.renderedOutsideMarkers = new WeakSet<Element>();
+		this.frame = layout.initialBlock;
 		this.scrolledRows = 0;
 		this.highlightedText = new Map();
 		this.highlightStyles = new Map();
@@ -706,6 +710,7 @@ function paintBand(
 	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
 ): void {
 	painter.renderedOutsideMarkers = new WeakSet<Element>();
+	painter.frame = painter.layout.initialBlock;
 	painter.scrolledRows = 0;
 	renderStackingContext(painter, root, ctx, layers);
 	for (const element of rendered) {
@@ -817,34 +822,45 @@ function paintEntry(
 	if (rect === null) {
 		return;
 	}
+	const paint = () =>
+		paintBlock(
+			painter,
+			element,
+			node,
+			{x: rect.x, y: rect.y},
+			ctx,
+			afterOwnBox,
+		);
 	// A box an inline-block lays out has its extents counted from that
 	// box's own root, so the band is counted from there too, as it is when
 	// the inline-block paints its content.
-	const extent = paintExtent(node);
-	if (extent === undefined || isInDocumentTree(layout, node)) {
-		paintBlock(
-			painter,
-			element,
-			node,
-			{x: rect.x, y: rect.y},
-			ctx,
-			afterOwnBox,
-		);
+	const frame = getExtentFrame(node);
+	const extent = frame === undefined ? undefined : paintExtent(node, frame);
+	if (
+		frame === undefined || extent === undefined || frame === layout.initialBlock
+	) {
+		paint();
 		return;
 	}
-	const scrolled = painter.scrolledRows;
-	painter.scrolledRows = extent.origin - Math.round(rect.y);
+	paintInFrame(painter, frame, extent.origin - Math.round(rect.y), paint);
+}
+
+// Paint with the band counted in another frame's rows.
+function paintInFrame(
+	painter: Painter,
+	frame: LayoutNode,
+	scrolledRows: number,
+	paint: () => void,
+): void {
+	const previousFrame = painter.frame;
+	const previousScrolled = painter.scrolledRows;
+	painter.frame = frame;
+	painter.scrolledRows = scrolledRows;
 	try {
-		paintBlock(
-			painter,
-			element,
-			node,
-			{x: rect.x, y: rect.y},
-			ctx,
-			afterOwnBox,
-		);
+		paint();
 	} finally {
-		painter.scrolledRows = scrolled;
+		painter.frame = previousFrame;
+		painter.scrolledRows = previousScrolled;
 	}
 }
 
@@ -854,7 +870,7 @@ function isOutsideViewport(
 	node: LayoutNode,
 	element: Element | null,
 ): boolean {
-	const extent = paintExtent(node);
+	const extent = paintExtent(node, painter.frame);
 	if (extent === undefined) {
 		return false;
 	}
@@ -984,18 +1000,14 @@ function paintContent(
 			// The box lays its content out from 0, so what the viewport shows
 			// of it is counted from where it paints, not from the document.
 			const top = origin.y + style.contentInsetY;
-			const scrolled = painter.scrolledRows;
-			painter.scrolledRows = -top;
-			try {
+			paintInFrame(painter, context, -top, () =>
 				paintNodes(
 					painter,
 					context,
 					{x: origin.x + style.contentInsetX, y: top},
 					ctx,
-				);
-			} finally {
-				painter.scrolledRows = scrolled;
-			}
+				),
+			);
 		} else {
 			paintLayoutChildren(origin);
 		}
@@ -1150,7 +1162,7 @@ function visibleChildren(
 	const children = node.children;
 	const top = -ctx.viewportOffset + painter.scrolledRows + ctx.bandTop;
 	const bottom = top + ctx.bandBottom - ctx.bandTop;
-	const extent = paintExtent(node);
+	const extent = paintExtent(node, painter.frame);
 	const owner = node.owner as Node | null;
 	if (
 		extent === undefined ||
@@ -1167,7 +1179,7 @@ function visibleChildren(
 	let hi = children.length;
 	while (lo < hi) {
 		const mid = (lo + hi) >>> 1;
-		const childExtent = paintExtent(children[mid]);
+		const childExtent = paintExtent(children[mid], painter.frame);
 		if (childExtent !== undefined && childExtent.bottom <= top) {
 			lo = mid + 1;
 		} else {
@@ -1176,7 +1188,7 @@ function visibleChildren(
 	}
 	const visible: LayoutNode[] = [];
 	for (let i = lo; i < children.length; i++) {
-		const childExtent = paintExtent(children[i]);
+		const childExtent = paintExtent(children[i], painter.frame);
 		if (childExtent !== undefined && childExtent.top >= bottom) {
 			break;
 		}
