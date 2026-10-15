@@ -13,6 +13,7 @@ import {expect, test} from "@b9g/libuild/test";
 import {
 	type Bitmap,
 	decodeImage,
+	decodeImageForPage,
 	decodeImageOffThread,
 	encodePNG,
 	keepAtMost,
@@ -23,7 +24,6 @@ import {
 	resolveImageURL,
 	retainDecoder,
 	sampleBitmap,
-	setDecodeTimeout,
 	setDecodeWorkerURL,
 	sniffImageType,
 } from "../src/internal/images.ts";
@@ -495,7 +495,6 @@ withWorker(
 	"an image past its time fails alone, and the images behind it decode",
 	async () => {
 		try {
-			setDecodeTimeout(1000);
 			setDecodeWorkerURL(
 				fakeWorker(`if (data.bytes.byteLength !== 1) ${ANSWER};`),
 			);
@@ -506,12 +505,11 @@ withWorker(
 					decodeImageOffThread(bytesOf("png-rgb.png")),
 				]),
 			).toEqual([
-				"The image took more than 1000 ms to decode",
+				"The image took more than 10000 ms to decode",
 				"1 wide",
 				"1 wide",
 			]);
 		} finally {
-			setDecodeTimeout(10_000);
 			setDecodeWorkerURL(null);
 		}
 	},
@@ -521,7 +519,6 @@ withWorker(
 	"a decode aborted while it waits is dropped, and the line moves on",
 	async () => {
 		try {
-			setDecodeTimeout(1000);
 			setDecodeWorkerURL(
 				fakeWorker(`if (data.bytes.byteLength !== 1) ${ANSWER};`),
 			);
@@ -541,7 +538,7 @@ withWorker(
 			];
 			abort.abort(new Error("The source changed"));
 			expect(await outcomes(decodes)).toEqual([
-				"The image took more than 1000 ms to decode",
+				"The image took more than 10000 ms to decode",
 				"The source changed",
 				"1 wide",
 			]);
@@ -550,7 +547,6 @@ withWorker(
 				decodeImageOffThread(bytesOf("png-rgb.png"), abort.signal),
 			).rejects.toThrow("The source changed");
 		} finally {
-			setDecodeTimeout(10_000);
 			setDecodeWorkerURL(null);
 		}
 	},
@@ -627,15 +623,9 @@ test("a decode on this thread stops past its time", async () => {
 		data[i] = (i * 2654435761) >>> 24;
 	}
 	const png = encodePNG({width, height: width, data});
-	try {
-		setDecodeTimeout(0);
-		await expect(decodeImageOffThread(png)).rejects.toThrow("too long");
-		setDecodeTimeout(10_000);
-		const bitmap = await decodeImageOffThread(png);
-		expect(bitmap.naturalWidth ?? bitmap.width).toBe(width);
-	} finally {
-		setDecodeTimeout(10_000);
-	}
+	await expect(decodeImageForPage(png, Date.now())).rejects.toThrow("too long");
+	const bitmap = await decodeImageOffThread(png);
+	expect(bitmap.naturalWidth ?? bitmap.width).toBe(width);
 });
 
 test("an image past MAX_KEPT_PIXELS is kept averaged down, with its natural size", () => {

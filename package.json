@@ -59,7 +59,7 @@
   "devDependencies": {
     "@b9g/crank": "^0.7.12",
     "@b9g/eslint-config": "^0.1.10",
-    "@b9g/libuild": "^0.2.26",
+    "@b9g/libuild": "^0.2.27",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/language": "^6.12.4",
