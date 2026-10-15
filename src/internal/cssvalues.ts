@@ -2446,7 +2446,12 @@ export function withMarkerSeparator(marker: string): string {
 // A content value is a SEQUENCE of components (strings and functions).
 // Stripping quotes only when the whole value was one quoted string left
 // `"` in the rendered marker.
-export function unquoteContent(content: string): string {
+// A function's text goes through `evaluate`, which answers what it stands
+// for, or null to keep it as written.
+export function unquoteContent(
+	content: string,
+	evaluate?: (name: string, args: string) => string | null,
+): string {
 	let out = "";
 	let index = 0;
 
@@ -2481,7 +2486,9 @@ export function unquoteContent(content: string): string {
 					break;
 				}
 			}
-			out += content.slice(index, end);
+			const token = content.slice(index, end);
+			const call = /^([\w-]+)\(([\s\S]*)\)$/.exec(token);
+			out += (call && evaluate?.(call[1].toLowerCase(), call[2])) ?? token;
 			index = end;
 		}
 	}

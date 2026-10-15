@@ -6277,11 +6277,11 @@ export class Cascade {
 	// restyles, so a change sets countersStale and those elements restyle.
 	counterUsers: Set<Element>;
 	countersStale: boolean;
-	// Each element's counters, the inputs they were counted from, the
-	// elements that generate no box, and whether any were counted.
-	counterSets: WeakMap<Element, readonly CounterEntry[]>;
+	// Each element's counters where its subtree starts and where it ends,
+	// the inputs they were counted from, and whether any were counted.
+	counterSets: WeakMap<Element, CounterStart>;
+	counterEnds: WeakMap<Element, CounterEnd>;
 	counterKeys: WeakMap<Element, string>;
-	counterHidden: WeakSet<Element>;
 	countersCounted: boolean;
 
 	// Whether any rule is scoped, which is what adds proximity to the sort.
@@ -6402,8 +6402,8 @@ export class Cascade {
 		this.counterUsers = new Set();
 		this.countersStale = false;
 		this.counterSets = new WeakMap();
+		this.counterEnds = new WeakMap();
 		this.counterKeys = new WeakMap();
-		this.counterHidden = new WeakSet();
 		this.countersCounted = false;
 		this.scopedRulesExist = false;
 		this.hasRulesExist = false;
@@ -6976,11 +6976,7 @@ export function getMarkerContent(
 		return null;
 	}
 
-	let textContent = CSSValues.unquoteContent(content);
-
-	textContent = resolveCounterFunction(cascade, hostElement, textContent);
-
-	return textContent;
+	return evaluateContent(cascade, hostElement, "::marker", content);
 }
 
 // The document is being torn down.
@@ -7247,26 +7243,63 @@ function restyleAll(cascade: Cascade): void {
 	}
 }
 
-// Replace each counter(name[, style]) with the number it stands at
-// here.
-function resolveCounterFunction(
+// A content value's text: its strings, and what counter() and counters()
+// stand for where the pseudo-element is.
+function evaluateContent(
 	cascade: Cascade,
 	element: Element,
+	pseudoType: string,
 	content: string,
 ): string {
-	return content.replace(
-		/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g,
-		(_match, counterName, style) => {
-			cascade.counterUsers.add(element);
-			const name = counterName.trim();
-			const counters = getCounterSet(cascade, element);
-			const index = findInnermost(counters, name);
-			return CSSValues.formatCounterValue(
-				index === -1 ? 0 : counters[index].value,
-				style?.trim() || "decimal",
-			);
-		},
-	);
+	return CSSValues.unquoteContent(content, (name, args) => {
+		if (name !== "counter" && name !== "counters") {
+			return null;
+		}
+		cascade.counterUsers.add(element);
+		const [counterName, ...rest] = splitArguments(args);
+		const counters = getCounters(cascade, element, pseudoType);
+		const values = counters
+			.filter((counter) => counter.name === counterName)
+			.map((counter) => counter.value);
+		if (values.length === 0) {
+			values.push(0);
+		}
+		if (name === "counter") {
+			return CSSValues.formatCounterValue(values.at(-1)!, rest[0] || "decimal");
+		}
+		const separator = CSSValues.unquoteContent(rest[0] ?? "\"\"");
+		return values
+			.map((value) => CSSValues.formatCounterValue(value, rest[1] || "decimal"))
+			.join(separator);
+	});
+}
+
+// Commas outside a string part a function's arguments.
+function splitArguments(args: string): string[] {
+	const parts: string[] = [];
+	let current = "";
+	let quote: string | null = null;
+	for (let index = 0; index < args.length; index++) {
+		const char = args[index];
+		if (quote !== null) {
+			current += char;
+			if (char === "\\") {
+				current += args[++index] ?? "";
+			} else if (char === quote) {
+				quote = null;
+			}
+		} else if (char === "\"" || char === "'") {
+			quote = char;
+			current += char;
+		} else if (char === ",") {
+			parts.push(current.trim());
+			current = "";
+		} else {
+			current += char;
+		}
+	}
+	parts.push(current.trim());
+	return parts;
 }
 
 function *flatDescendants(element: Element): Generator<Element> {
@@ -7434,8 +7467,8 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 		hasResults: cascade.hasResults,
 		pseudoElementStyleCache: cascade.pseudoElementStyleCache,
 		counterSets: cascade.counterSets,
+		counterEnds: cascade.counterEnds,
 		counterKeys: cascade.counterKeys,
-		counterHidden: cascade.counterHidden,
 		countersCounted: cascade.countersCounted,
 		sharedRoot: cascade.sharedRoot,
 	};
@@ -7813,10 +7846,12 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 	}
 }
 
-// What an element's counters are computed from, or null for an element
-// that changes none of them. Such an element passes on what it inherits,
-// so adding or removing it leaves every other element's counters as
-// they were.
+const COUNTING_PSEUDO_ELEMENTS = ["::before", "::after"] as const;
+
+// What an element's counters are computed from, its ::before's and
+// ::after's included, or null for an element that changes none of them.
+// Such an element passes on what it inherits, so adding or removing it
+// leaves every other element's counters as they were.
 function getCounterKey(cascade: Cascade, element: Element): string | null {
 	const slots = _(cascade.declarationFor(element));
 	const parts: string[] = [];
@@ -7827,15 +7862,17 @@ function getCounterKey(cascade: Cascade, element: Element): string | null {
 		cascade.counterRulesExist ||
 		(attributeOf(element, "style") ?? "").includes("counter")
 	) {
-		for (const property of [
-			"counter-reset",
-			"counter-increment",
-			"counter-set",
-		]) {
-			const value = slots._computedValue(property);
-			if (value && value !== "none") {
-				parts.push(`${property}:${value}`);
-			}
+		const own = describeCounterEffects(
+			getElementCounterEffects(cascade, element),
+		);
+		if (own !== "") {
+			parts.push(own);
+		}
+	}
+	for (const type of COUNTING_PSEUDO_ELEMENTS) {
+		const effects = getPseudoCounterEffects(cascade, element, type);
+		if (effects !== null) {
+			parts.push(`${type}${describeCounterEffects(effects)}`);
 		}
 	}
 	const tag = element.tagName;
@@ -7901,177 +7938,322 @@ function forgetCounters(cascade: Cascade): void {
 	cascade.countersStale = false;
 	cascade.countersCounted = false;
 	cascade.counterSets = new WeakMap();
+	cascade.counterEnds = new WeakMap();
 	cascade.counterKeys = new WeakMap();
-	cascade.counterHidden = new WeakSet();
 }
 
+interface CounterEntry {
+	name: string;
+	// The box that made the counter, and the node holding it, whose other
+	// children are its siblings. A pseudo-element is held by its host.
+	origin: object;
+	holder: Node | null;
+	value: number;
+}
+
+// The counters an element's own properties leave, those its ::before
+// leaves, which its first child starts from, and whether it shows.
+interface CounterStart {
+	own: readonly CounterEntry[];
+	inner: readonly CounterEntry[];
+	hidden: boolean;
+}
+
+// What its ::after reads, if it has one, and what the subtree leaves,
+// ::after included, which the next sibling takes its values from.
+interface CounterEnd {
+	after: readonly CounterEntry[] | null;
+	end: readonly CounterEntry[];
+}
+
+interface CounterEffects {
+	resets: Array<[string, number]>;
+	increments: Array<[string, number]>;
+	sets: Array<[string, number]>;
+}
+
+const NO_EFFECTS: CounterEffects = {resets: [], increments: [], sets: []};
+
+const NO_COUNTERS: readonly CounterEntry[] = [];
+
 /**
- * The counters in scope at an element, innermost last (css-lists-3
- * §4.4). An element inherits the counters of its parent and of its
- * previous sibling, at the values of the element before it in tree
- * order, then applies its own counter-reset, counter-increment and
- * counter-set, in that order.
+ * The counters in scope where an element's content reads them, innermost
+ * last (css-lists-3 §4.4): the element's own for its ::marker, after its
+ * ::before for its ::before, and after its last child for its ::after.
+ * A box inherits the counters of its parent and of its previous sibling,
+ * at the values the box before it in tree order left, then applies its
+ * own counter-reset, counter-increment and counter-set. ::before is its
+ * host's first child and ::after its last.
  *
- * By induction on tree order, an element's counters begin with its
- * parent's, and so with those of every ancestor: an element starts from
- * its parent's and appends, and only ever removes a counter one of its
- * siblings made. The element before E in tree order is E's previous
- * sibling, or one of that sibling's descendants, or E's parent, so its
- * counters begin with the ones E inherits, at the values E inherits
- * them with. Inheriting is cutting that list to the length of the
- * previous sibling's, or the parent's.
+ * By induction on tree order, a box's counters begin with its parent's,
+ * and so with those of every ancestor: it starts from its parent's and
+ * appends, and only ever removes a counter one of its siblings made. The
+ * box before B in tree order is B's previous sibling, or one of that
+ * sibling's descendants, or B's parent, so its counters begin with the
+ * ones B inherits, at the values B inherits them with. Inheriting is
+ * cutting that list to the length of the previous sibling's, or the
+ * parent's.
  */
-function getCounterSet(
+function getCounters(
 	cascade: Cascade,
 	element: Element,
+	pseudoType: string | null,
 ): readonly CounterEntry[] {
-	const counted = cascade.counterSets.get(element);
-	if (counted !== undefined) {
-		return counted;
+	if (pseudoType === "::after") {
+		countCounters(cascade, element, "end");
+		return cascade.counterEnds.get(element)!.after ?? NO_COUNTERS;
 	}
-	// The elements a set is built from come first in tree order, so they
-	// are counted first, from a stack rather than by recursion, since a
-	// long list asks through every item before.
-	const stack = [element];
+	countCounters(cascade, element, "start");
+	const start = cascade.counterSets.get(element)!;
+	return pseudoType === "::before" ? start.inner : start.own;
+}
+
+// What each count is made from comes first in tree order, so it is
+// counted first, from a stack rather than by recursion, since a long
+// list asks through every item before.
+function countCounters(
+	cascade: Cascade,
+	element: Element,
+	part: "start" | "end",
+): void {
+	const isCounted = ([each, which]: [Element, "start" | "end"]) =>
+		which === "start"
+			? cascade.counterSets.has(each)
+			: cascade.counterEnds.has(each);
+	const stack: Array<[Element, "start" | "end"]> = [[element, part]];
 	while (stack.length > 0) {
-		const each = stack.at(-1)!;
-		if (cascade.counterSets.has(each)) {
+		const top = stack.at(-1)!;
+		if (isCounted(top)) {
 			stack.pop();
 			continue;
 		}
-		const parent = each.parentElement;
-		const sibling = each.previousElementSibling;
-		const before = getElementBefore(each);
-		const missing = [parent, sibling, before].filter(
-			(source): source is Element =>
-				source !== null && !cascade.counterSets.has(source),
-		);
+		const [each, which] = top;
+		const needs: Array<[Element, "start" | "end"]> = [];
+		if (which === "start") {
+			const sibling = each.previousElementSibling;
+			if (sibling !== null) {
+				needs.push([sibling, "start"], [sibling, "end"]);
+			} else if (each.parentElement !== null) {
+				needs.push([each.parentElement, "start"]);
+			}
+		} else {
+			needs.push([each, "start"]);
+			const last = each.lastElementChild;
+			if (last !== null) {
+				needs.push([last, "start"], [last, "end"]);
+			}
+		}
+		const missing = needs.filter((need) => !isCounted(need));
 		if (missing.length > 0) {
 			stack.push(...missing);
 			continue;
 		}
 		stack.pop();
-		countElement(cascade, each, parent, sibling, before);
+		if (which === "start") {
+			countStart(cascade, each);
+		} else {
+			countEnd(cascade, each);
+		}
 	}
-	return cascade.counterSets.get(element)!;
 }
 
-interface CounterEntry {
-	name: string;
-	origin: Element;
-	value: number;
-}
-
-const NO_COUNTERS: readonly CounterEntry[] = [];
-
-function getElementBefore(element: Element): Element | null {
-	let before = element.previousElementSibling;
-	if (before === null) {
-		return element.parentElement;
-	}
-	while (before.lastElementChild !== null) {
-		before = before.lastElementChild;
-	}
-	return before;
-}
-
-function countElement(
-	cascade: Cascade,
-	element: Element,
-	parent: Element | null,
-	sibling: Element | null,
-	before: Element | null,
-): void {
-	cascade.countersCounted = true;
-	const inherits = sibling ?? parent;
-	const length = inherits === null
-		? 0
-		: cascade.counterSets.get(inherits)!.length;
-	const preceding = before === null
-		? NO_COUNTERS
-		: cascade.counterSets.get(before)!;
-	const inherited = preceding.length === length
+function inherit(
+	base: readonly CounterEntry[],
+	preceding: readonly CounterEntry[],
+): readonly CounterEntry[] {
+	return preceding.length === base.length
 		? preceding
-		: preceding.slice(0, length);
+		: preceding.slice(0, base.length);
+}
+
+function countStart(cascade: Cascade, element: Element): void {
+	cascade.countersCounted = true;
+	const sibling = element.previousElementSibling;
+	const parent = element.parentElement;
+	const parentStart = parent === null ? null : cascade.counterSets.get(parent)!;
+	const inherited = sibling !== null
+		? inherit(
+			cascade.counterSets.get(sibling)!.own,
+			cascade.counterEnds.get(sibling)!.end,
+		)
+		: parentStart?.inner ?? NO_COUNTERS;
 	const key = getCounterKey(cascade, element);
-	const hidden =
-		(parent !== null && cascade.counterHidden.has(parent)) ||
-		(key !== null && key.startsWith("hidden"));
 	if (key !== null) {
 		cascade.counterKeys.set(element, key);
 	}
-	if (hidden) {
-		cascade.counterHidden.add(element);
+	const hidden =
+		parentStart?.hidden === true || (key !== null && key.startsWith("hidden"));
+	if (key === null || hidden) {
+		cascade.counterSets.set(element, {
+			own: inherited,
+			inner: inherited,
+			hidden,
+		});
+		return;
 	}
-	cascade.counterSets.set(
+	const own = applyCounters(
+		getElementCounterEffects(cascade, element),
+		inherited,
 		element,
-		key === null || hidden
-			? inherited
-			: applyCounters(cascade, element, inherited),
+		element.parentNode,
 	);
+	const before = getPseudoCounterEffects(cascade, element, "::before");
+	cascade.counterSets.set(element, {
+		own,
+		inner: before === null ? own : applyCounters(before, own, {}, element),
+		hidden,
+	});
+}
+
+function countEnd(cascade: Cascade, element: Element): void {
+	const start = cascade.counterSets.get(element)!;
+	const last = element.lastElementChild;
+	const base = last === null ? start.inner : cascade.counterSets.get(last)!.own;
+	const preceding = last === null
+		? start.inner
+		: cascade.counterEnds.get(last)!.end;
+	const after =
+		start.hidden ||
+			!hasGeneratedContent(cascade, element, "::after")
+			? null
+			: applyCounters(
+				getPseudoCounterEffects(cascade, element, "::after") ?? NO_EFFECTS,
+				inherit(base, preceding),
+				{},
+				element,
+			);
+	cascade.counterEnds.set(element, {after, end: after ?? preceding});
+}
+
+function describeCounterEffects(effects: CounterEffects): string {
+	const describe = (pairs: Array<[string, number]>) =>
+		pairs.map(([name, value]) => `${name} ${value}`).join(" ");
+	return effects.resets.length === 0 &&
+			effects.increments.length === 0 &&
+			effects.sets.length === 0
+		? ""
+		: `reset:${describe(effects.resets)};increment:${
+			describe(effects.increments)
+		};set:${describe(effects.sets)}`;
+}
+
+function readCounterEffects(
+	read: (property: string) => string | undefined,
+): CounterEffects {
+	const declared = (property: string, fallback: number) => {
+		const value = read(property);
+		return value && value !== "none"
+			? CSSValues.getCounterPairs(value, fallback)
+			: [];
+	};
+	return {
+		resets: declared("counter-reset", 0),
+		increments: declared("counter-increment", 1),
+		sets: declared("counter-set", 0),
+	};
 }
 
 // An element's own counter-reset, counter-increment and counter-set,
 // with the list-item counter HTML's lists keep: a list resets it, an
 // item steps it, and an item's value sets it.
-function applyCounters(
+function getElementCounterEffects(
 	cascade: Cascade,
 	element: Element,
-	inherited: readonly CounterEntry[],
-): readonly CounterEntry[] {
-	const counters = [...inherited];
+): CounterEffects {
 	const slots = _(cascade.declarationFor(element));
-	const declared = (property: string, fallback: number) => {
-		const value = slots._computedValue(property);
-		return value && value !== "none"
-			? CSSValues.getCounterPairs(value, fallback)
-			: [];
-	};
-	const resets = declared("counter-reset", 0);
-	const increments = declared("counter-increment", 1);
-	const sets = declared("counter-set", 0);
+	const effects = readCounterEffects((property) =>
+		slots._computedValue(property) ?? undefined,
+	);
 	const names = (pairs: Array<[string, number]>) => pairs.map(([name]) => name);
 	const tag = element.tagName;
-	if ((tag === "OL" || tag === "UL") && !names(resets).includes("list-item")) {
-		resets.push(["list-item", getListStart(element)]);
+	if (
+		(tag === "OL" || tag === "UL") &&
+		!names(effects.resets).includes("list-item")
+	) {
+		effects.resets.push(["list-item", getListStart(element)]);
 	}
 	if (tag === "LI") {
 		const list = element.parentElement;
-		if (!names(increments).includes("list-item")) {
-			increments.push([
+		if (!names(effects.increments).includes("list-item")) {
+			effects.increments.push([
 				"list-item",
 				list?.tagName === "OL" && hasAttributeOf(list, "reversed") ? -1 : 1,
 			]);
 		}
 		const value = parseInt(attributeOf(element, "value") ?? "", 10);
-		if (Number.isFinite(value) && !names(sets).includes("list-item")) {
-			sets.push(["list-item", value]);
+		if (Number.isFinite(value) && !names(effects.sets).includes("list-item")) {
+			effects.sets.push(["list-item", value]);
 		}
 	}
+	return effects;
+}
+
+// A pseudo-element's counter properties, when it generates a box and
+// sets any: a ::before or ::after with no content is no box.
+function getPseudoCounterEffects(
+	cascade: Cascade,
+	element: Element,
+	type: string,
+): CounterEffects | null {
+	if (
+		!cascade.counterRulesExist || !hasGeneratedContent(cascade, element, type)
+	) {
+		return null;
+	}
+	const style = computePseudoElementStyle(cascade, element, type);
+	const effects = readCounterEffects((property) => style[property]);
+	return describeCounterEffects(effects) === "" ? null : effects;
+}
+
+function hasGeneratedContent(
+	cascade: Cascade,
+	element: Element,
+	type: string,
+): boolean {
+	if (!(cascade.pseudoRulesByType.get(type)?.length)) {
+		return false;
+	}
+	const style = computePseudoElementStyle(cascade, element, type);
+	const content = style.content;
+	return content !== undefined &&
+		content !== "none" &&
+		content !== "normal" &&
+		style.display !== "none";
+}
+
+// A reset makes a counter, in place of one of the same name a sibling
+// made. A step or a set reaches the innermost of the name, made here at
+// zero if there is none.
+function applyCounters(
+	effects: CounterEffects,
+	inherited: readonly CounterEntry[],
+	origin: object,
+	holder: Node | null,
+): readonly CounterEntry[] {
+	const counters = [...inherited];
 	const instantiate = (name: string, value: number): number => {
 		const index = counters.findIndex((counter) =>
 			counter.name === name &&
-			(counter.origin === element ||
-				counter.origin.parentNode === element.parentNode),
+			(counter.origin === origin || counter.holder === holder),
 		);
 		if (index !== -1) {
 			counters.splice(index, 1);
 		}
-		counters.push({name, origin: element, value});
+		counters.push({name, origin, holder, value});
 		return counters.length - 1;
 	};
 	const innermost = (name: string): number => {
 		const index = findInnermost(counters, name);
 		return index === -1 ? instantiate(name, 0) : index;
 	};
-	for (const [name, value] of resets) {
+	for (const [name, value] of effects.resets) {
 		instantiate(name, value);
 	}
-	for (const [name, step] of increments) {
+	for (const [name, step] of effects.increments) {
 		const index = innermost(name);
 		counters[index] = {...counters[index], value: counters[index].value + step};
 	}
-	for (const [name, value] of sets) {
+	for (const [name, value] of effects.sets) {
 		const index = innermost(name);
 		counters[index] = {...counters[index], value};
 	}
@@ -8883,6 +9065,7 @@ function invalidateElementCaches(
 	}
 	cascade.pseudoElementStyleCache.delete(element);
 	cascade.counterSets.delete(element);
+	cascade.counterEnds.delete(element);
 	noteCounterChange(cascade, element);
 }
 
@@ -10568,9 +10751,7 @@ function getPseudoContent(
 		return null;
 	}
 
-	const textContent = CSSValues.unquoteContent(content);
-
-	return resolveCounterFunction(cascade, hostElement, textContent);
+	return evaluateContent(cascade, hostElement, pseudoType, content);
 }
 
 function attachPseudoElements(cascade: Cascade): void {

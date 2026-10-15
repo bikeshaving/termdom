@@ -133,3 +133,43 @@ test("a list item's value sets the list-item counter", async () => {
 		),
 	).toEqual(["4) a", "9) b", "10) c"]);
 });
+
+test("a ::before counts, as its element's first child", async () => {
+	expect(
+		await render(
+			"body { counter-reset: section } " +
+				"h2::before { counter-increment: section; " +
+				"content: counter(section) \". \" } h2 { margin: 0 }",
+			"<h2>a</h2><h2>b</h2><h2>c</h2>",
+		),
+	).toEqual(["1. a", "2. b", "3. c"]);
+});
+
+test("a ::after counts, as its element's last child", async () => {
+	expect(
+		await render(
+			NUMBERED + " .a::after { counter-increment: n 10; content: \"\" }",
+			"<div class=n>a</div><div class=a>b</div><div class=n>c</div>",
+		),
+	).toEqual(["1. a", "b", "12. c"]);
+});
+
+test("counters() joins every counter of the name in scope", async () => {
+	expect(
+		await render(
+			"ol { counter-reset: item; list-style: none; padding: 0 } " +
+				"li { counter-increment: item } " +
+				"li::before { content: counters(item, \".\") \" \" }",
+			"<ol><li>a<ol><li>b</li><li>c</li></ol></li><li>d</li></ol>",
+		),
+	).toEqual(["1 a", "1.1 b", "1.2 c", "2 d"]);
+});
+
+test("a string that spells counter() is only text", async () => {
+	expect(
+		await render(
+			NUMBERED + " .s::before { content: \"counter(n) \" }",
+			"<div class=s>a</div>",
+		),
+	).toEqual(["counter(n) a"]);
+});
