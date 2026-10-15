@@ -567,13 +567,23 @@ export class LayoutNode {
 		return this.currentStyle;
 	}
 
+	// A child's size depends on what its parent lays it out as, a row in
+	// a table or a box in a block, so another display drops what the
+	// children kept.
 	set style(style: Style) {
 		const change =
 			Number(isOutOfFlowType(style.positionType)) -
 			Number(isOutOfFlowType(this.currentStyle.positionType));
+		const relaid = style.displayType !== this.currentStyle.displayType;
 		this.currentStyle = style;
 		if (change !== 0) {
 			countOutOfFlow(this, change);
+		}
+		if (relaid) {
+			for (const child of this.children) {
+				child.stale = true;
+			}
+			this.invalidate();
 		}
 	}
 
@@ -695,12 +705,14 @@ export function forgetLayout(node: LayoutNode): void {
 	node.measured = null;
 }
 
+// What a node kept was for the parent it was laid out under.
 export function insertChild(
 	layoutNode: LayoutNode,
 	child: LayoutNode,
 	index: number,
 ): void {
 	child.parent = layoutNode;
+	child.stale = true;
 	layoutNode.children.splice(index, 0, child);
 	if (child.outOfFlowCount !== 0) {
 		countOutOfFlow(layoutNode, child.outOfFlowCount);
@@ -2836,14 +2848,16 @@ function stackAnonymousCell(
 	return height + below;
 }
 
-// An element, or a run of text. The white space between a row's cells
-// never reaches a table as a run (css-tables-3 §3.3).
+// Anything in a row but a cell: an element, a run of text, and a row,
+// a group or a table, which the anonymous cell then holds in a table of
+// its own (CSS2 §17.2.1). The white space between a row's cells never
+// reaches a table as a run (css-tables-3 §3.3).
 function isAnonymousCellContent(node: LayoutNode): boolean {
 	const type = node.style.displayType;
 	const owner = node.owner as {nodeType?: number} | null;
 	return (owner?.nodeType === 1 || owner?.nodeType === 3) &&
 		type !== "none" &&
-		!type.startsWith("table") &&
+		type !== "table-cell" &&
 		!isOutOfFlowType(node.style.positionType);
 }
 
