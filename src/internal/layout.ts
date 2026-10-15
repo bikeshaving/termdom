@@ -3576,14 +3576,13 @@ function getPrefixWidths(
 	return widths;
 }
 
+// Set while a run is measured when its content's size depends on the
+// width the run is given other than through where its lines break.
+let readsLineWidth = false;
+
 // Only the placing measurement's lines become the box's. A probe's are
 // a result about a box nothing was laid out in, and painting them
 // rendered a stretched item at its narrowest.
-// Set while a run is measured when its content holds a percentage that
-// resolves against the width the run is given, whether or not this
-// request gave one.
-let resolvedPercentage = false;
-
 function measureInlineRun(
 	layout: Layout,
 	box: Box,
@@ -3592,11 +3591,11 @@ function measureInlineRun(
 	placing: boolean,
 	left: number,
 ): Size {
-	const outer = resolvedPercentage;
-	resolvedPercentage = false;
+	const outer = readsLineWidth;
+	readsLineWidth = hasPercentage(box.container, ["text-indent"]);
 	const breakResult = breakNodes(layout, box, width, widthSpace, left);
-	const widthDependent = resolvedPercentage;
-	resolvedPercentage = outer || widthDependent;
+	const widthDependent = readsLineWidth;
+	readsLineWidth = outer || widthDependent;
 	if (Number.isFinite(width)) {
 		breakResult.containerWidth = width;
 	}
@@ -3727,6 +3726,25 @@ function collectLeafNodes(
 	return leafNodes;
 }
 
+const ATOMIC_WIDTH_PROPERTIES = [
+	"width",
+	"min-width",
+	"max-width",
+	"margin-left",
+	"margin-right",
+	"padding-left",
+	"padding-right",
+];
+
+function hasPercentage(
+	element: Element,
+	properties: readonly string[],
+): boolean {
+	return properties.some((property) =>
+		getComputedValue(element, property).includes("%"),
+	);
+}
+
 function collectLeaves(
 	layout: Layout,
 	root: Node,
@@ -3772,6 +3790,14 @@ function collectLeaves(
 		} else if (nodeTypeOf(node) === node.ELEMENT_NODE) {
 			const element = node as Element;
 			const display = getLayoutDisplay(element);
+			// A box sized whole on the line takes a percentage of the line's
+			// width however it is sized, and with no width takes it as auto.
+			if (
+				isAtomicInline(display) &&
+				hasPercentage(element, ATOMIC_WIDTH_PROPERTIES)
+			) {
+				readsLineWidth = true;
+			}
 
 			if (getLayoutDisplay(element) === "none" || isOutOfFlow(element)) {
 				// Neither occupies run space nor interrupts the run. Before the
@@ -3837,9 +3863,6 @@ function collectLeaves(
 					const widthValue = CSSValues.parseUnitValue(
 						getComputedValue(element, "width"),
 					);
-					if (widthValue !== null && typeof widthValue === "object") {
-						resolvedPercentage = true;
-					}
 					if (
 						widthValue !== null &&
 						typeof widthValue === "object" &&
@@ -3950,9 +3973,6 @@ function collectLeaves(
 					element,
 				);
 				let maxWidthCap: number | undefined;
-				if (maxWidthValue && typeof maxWidthValue === "object") {
-					resolvedPercentage = true;
-				}
 				if (typeof maxWidthValue === "number") {
 					maxWidthCap = maxWidthValue;
 				} else if (
