@@ -42,3 +42,19 @@ test("elementFromPoint finds a box an inline-block lays out low on the page", as
 	expect(document.elementFromPoint(1, 7)!.id).toBe("b");
 	dom.dispose();
 });
+
+test("elementFromPoint finds content that overflows an inline-block", async () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 40, rows: 12}).transport,
+	});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div>" +
+		"<span style=\"display: inline-block\"><div style=\"height: 1px\">" +
+		"<div id=a>first</div><div id=b>second</div><div id=c>third</div>" +
+		"</div></span>";
+	await nextFrame(dom);
+	expect(document.elementFromPoint(1, 7)!.id).toBe("b");
+	expect(document.elementFromPoint(1, 8)!.id).toBe("c");
+	dom.dispose();
+});
