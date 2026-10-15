@@ -186,3 +186,23 @@ test("only a details element's first summary is its marker", async () => {
 	expect([display("new"), display("old")]).toEqual(["list-item", "block"]);
 	dom.dispose();
 });
+
+test("generated content renumbers when an enclosing element's counter changes", async () => {
+	const {dom, document} = await mount(
+		"<style>body { counter-reset: n } .n { counter-increment: n } " +
+			"#c::before { content: counter(n) \". \" }</style>" +
+			"<div id=a><div id=b class=n><div id=c class=n>c</div></div></div>",
+	);
+	const text = () => dom.renderANSI().replace(/\x1b\[[0-9;]*m/g, "");
+	expect(text()).toContain("2. c");
+	document.getElementById("a").className = "n";
+	await nextFrame(dom);
+	expect(text()).toContain("3. c");
+	document.getElementById("b").style.counterIncrement = "n 5";
+	await nextFrame(dom);
+	expect(text()).toContain("7. c");
+	document.getElementById("a").className = "";
+	await nextFrame(dom);
+	expect(text()).toContain("6. c");
+	dom.dispose();
+});

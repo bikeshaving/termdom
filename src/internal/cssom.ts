@@ -6200,6 +6200,13 @@ export class Cascade {
 	pseudoRulesByType: Map<string, ParsedCSSRule[]>;
 	counterRulesExist: boolean;
 	listItemRulesExist: boolean;
+	// The elements whose generated content reads a counter, and the
+	// counters each element declared when its scope was built. A counter
+	// one element changes renumbers the content of others, which nothing
+	// restyles, so a change sets countersStale and those elements restyle.
+	counterUsers: Set<Element>;
+	counterDeclarations: WeakMap<Element, string>;
+	countersStale: boolean;
 
 	// Whether any rule is scoped, which is what adds proximity to the sort.
 	scopedRulesExist: boolean;
@@ -6318,6 +6325,9 @@ export class Cascade {
 		this.pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 		this.counterRulesExist = false;
 		this.listItemRulesExist = false;
+		this.counterUsers = new Set();
+		this.counterDeclarations = new WeakMap();
+		this.countersStale = false;
 		this.scopedRulesExist = false;
 		this.hasRulesExist = false;
 		this.hasAnchors = new Set();
@@ -6561,6 +6571,9 @@ export function handleMutations(
 						shouldSyncStylesheets = true;
 					}
 					removedElements = true;
+					if (cascade.counterUsers.size > 0 && !cascade.countersStale) {
+						cascade.countersStale = declaresCounters(cascade, element);
+					}
 				}
 			}
 			// A child that came or went changes what `li + li`,
@@ -6701,6 +6714,7 @@ export function handleMutations(
 		}
 		releaseRemovedNodes(cascade.document);
 	}
+	refreshCounters(cascade);
 	if (shouldSyncStylesheets) {
 		cascade.syncStylesheets();
 	}
@@ -6745,6 +6759,7 @@ export function handleStateChange(
 		return;
 	}
 	invalidateForState(cascade, element, states);
+	refreshCounters(cascade);
 	// No mutation record describes the change, so the frame that decides
 	// whether anything needs painting is notified here. The elements
 	// restyled name their rows.
@@ -7155,6 +7170,7 @@ function resolveCounterFunction(
 	return content.replace(
 		/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g,
 		(_match, counterName, style) => {
+			cascade.counterUsers.add(element);
 			const trimmedName = counterName.trim();
 			const trimmedStyle = style?.trim() || "decimal";
 			return CSSValues.formatCounterValue(
@@ -7633,6 +7649,68 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 
 // The parent's scope is read, never built. Building it recursively up a
 // deep tree is what this avoids.
+function getCounterDeclaration(
+	reset: string | null | undefined,
+	increment: string | null | undefined,
+): string {
+	return `${reset || "none"}|${increment || "none"}`;
+}
+
+// Whether an element restyled now declares other counters than its scope
+// was built from. Asked only of a document whose generated content reads
+// a counter, since answering resolves the element's new style.
+function noteCounterChange(cascade: Cascade, element: Element): void {
+	if (cascade.counterUsers.size === 0 || cascade.countersStale) {
+		return;
+	}
+	const before =
+		cascade.counterDeclarations.get(element) ??
+		getCounterDeclaration(null, null);
+	const slots = _(cascade.declarationFor(element));
+	const after = getCounterDeclaration(
+		slots._computedValue("counter-reset"),
+		slots._computedValue("counter-increment"),
+	);
+	if (before !== after) {
+		cascade.countersStale = true;
+	}
+}
+
+// Whether a removed subtree declared a counter, which renumbers what
+// came after it.
+function declaresCounters(cascade: Cascade, root: Element): boolean {
+	const none = getCounterDeclaration(null, null);
+	for (
+		let element: Element | null = root;
+		element !== null;
+		element = nextElementUnder(element, root)
+	) {
+		const declared = cascade.counterDeclarations.get(element);
+		if (declared !== undefined && declared !== none) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Every counter is counted again, and the content that reads one is made
+// again from the new counts.
+function refreshCounters(cascade: Cascade): void {
+	if (!cascade.countersStale) {
+		return;
+	}
+	cascade.countersStale = false;
+	cascade.counterScopes = new WeakMap();
+	const users = [...cascade.counterUsers];
+	cascade.counterUsers.clear();
+	for (const element of users) {
+		if (element.isConnected) {
+			invalidateElementCaches(cascade, element);
+			attachPseudoElementsToElement(cascade, element);
+		}
+	}
+}
+
 // Built on first read, not on invalidation: a counter's value depends
 // on the element's ancestors, and for a list item on the items before
 // it, so the parent is built first and a dropped scope comes back when
@@ -7679,6 +7757,10 @@ function initializeCounters(cascade: Cascade, element: Element): void {
 		parent: parentScope,
 	};
 	cascade.counterScopes.set(element, scope);
+	cascade.counterDeclarations.set(
+		element,
+		getCounterDeclaration(counterReset, counterIncrement),
+	);
 
 	if (counterReset && counterReset !== "none") {
 		CSSValues.parseCounterReset(scope, counterReset);
@@ -8230,6 +8312,7 @@ function tickTransitions(cascade: Cascade): void {
 		}
 		invalidateElementCaches(cascade, element);
 	}
+	refreshCounters(cascade);
 	cascade.layout.invalidateFrame(false);
 	flushTransitionEvents(cascade);
 	// A window no engine set up has no requestAnimationFrame, and its reads
@@ -8540,6 +8623,7 @@ function invalidateElementCaches(
 	}
 	cascade.pseudoElementStyleCache.delete(element);
 	cascade.counterScopes.delete(element);
+	noteCounterChange(cascade, element);
 }
 
 // Properties the painter reads and layout never does. A rule declaring
