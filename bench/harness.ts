@@ -3,7 +3,9 @@
  * by its first argument, so the runner can point the same scenario at two
  * checkouts, and prints one JSON line per measurement.
  */
+import {spawn} from "node:child_process";
 import {readFileSync} from "node:fs";
+import {availableParallelism} from "node:os";
 
 export const root = process.argv[2];
 
@@ -76,4 +78,72 @@ export async function measure(
 		times.push(cpuMs() - start);
 	}
 	report(label, times);
+}
+
+/**
+ * Reports wall times as a measurement, and prints their percentiles, which
+ * a median alone hides, to stderr.
+ */
+export function describeLatency(label: string, times: number[]): void {
+	report(label, times);
+	const sorted = [...times].sort((a, b) => a - b);
+	const at = (q: number): string =>
+		sorted[Math.floor(sorted.length * q)].toFixed(1);
+	console.error(
+		`${label}: p50 ${at(0.5)} p90 ${at(0.9)} p99 ${at(0.99)} max ${sorted.at(-1)!.toFixed(1)}`,
+	);
+}
+
+/**
+ * Times each key from reaching the program to its frame reaching the
+ * terminal, typed at a person's pace.
+ */
+export function keyLatency(
+	proc: any,
+): (key: string) => Promise<number> {
+	let wrote: (() => void) | null = null;
+	proc.stdout.write = (_chunk: unknown, enc?: unknown, cb?: unknown) => {
+		wrote?.();
+		const callback = typeof enc === "function" ? enc : cb;
+		if (typeof callback === "function") {
+			(callback as () => void)();
+		}
+		return true;
+	};
+	return async (key) => {
+		await new Promise((resolve) => setTimeout(resolve, 40));
+		const painted = new Promise<void>((resolve) => {
+			wrote = resolve;
+		});
+		const start = performance.now();
+		proc.stdin.simulateResponse(key);
+		await painted;
+		wrote = null;
+		return performance.now() - start;
+	};
+}
+
+/** Runs the work with an idle machine, every core busy, and two spinners a core. */
+export async function underLoad(
+	label: string,
+	work: () => Promise<number[]>,
+): Promise<void> {
+	describeLatency(`${label}, idle`, await work());
+	for (const [load, perCore] of [
+		["every core busy", 1],
+		["two spinners a core", 2],
+	] as const) {
+		const spinners = Array.from(
+			{length: availableParallelism() * perCore},
+			() => spawn(process.execPath, ["-e", "for (;;) {}"], {stdio: "ignore"}),
+		);
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		try {
+			describeLatency(`${label}, ${load}`, await work());
+		} finally {
+			for (const spinner of spinners) {
+				spinner.kill();
+			}
+		}
+	}
 }
