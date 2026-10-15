@@ -219,11 +219,88 @@ for (let seed = 1; seed <= 24; seed++) {
 }
 
 // Seeds that once found a bug, run as long as they did then: a grid cell
-// rounded again from rounded values (1012, 1066, 1093), and restyles
-// inside an inline-block repainting rows counted from its own top (1020,
-// 1193, 1200, 1260).
-for (const seed of [1012, 1020, 1066, 1093, 1193, 1200, 1260]) {
+// rounded again from rounded values (1012, 1066, 1093), restyles inside
+// an inline-block repainting rows counted from its own top (1020, 1193,
+// 1200, 1260), and an inline-block's width its measure did not hear of
+// (1481), and a positioned row group zeroed by its table when stray
+// content joined it (1140).
+for (const seed of [1012, 1020, 1066, 1093, 1140, 1193, 1200, 1260, 1481]) {
 	test(`seeded changes render as a fresh page does: seed ${seed}`, async () => {
 		await run(seed, 25);
 	});
 }
+
+// Each change, applied a frame apart, against the page drawn fresh after
+// each one.
+async function replay(
+	html: string,
+	changes: Array<(document: any) => void>,
+): Promise<void> {
+	const {dom, terminal} = mount();
+	dom.document.head.innerHTML = HEAD;
+	dom.document.body.innerHTML = html;
+	await nextFrame(dom);
+	for (const [index, apply] of changes.entries()) {
+		apply(dom.document);
+		await nextFrame(dom);
+		const expected = await fresh(dom.document);
+		expect(`after change ${index}\n${rects(dom.document).join("\n")}`)
+			.toBe(`after change ${index}\n${expected.rects.join("\n")}`);
+		expect(`after change ${index}\n${terminal.getScreenContents()}`)
+			.toBe(`after change ${index}\n${expected.screen}`);
+	}
+	dom.dispose();
+}
+
+test("a cell taken out of flow leaves its table", async () => {
+	await replay(
+		"<table id=t><tr><td id=a class=box>x</td><td>y y</td></tr></table>",
+		[(document) => document.getElementById("a").style.position = "absolute"],
+	);
+});
+
+test("a positioned row group keeps its positioned cells laid out", async () => {
+	await replay(
+		"<table id=t><tbody id=g><tr><td id=a>x</td><td id=b>y y</td></tr>" +
+			"</tbody></table>",
+		[
+			(document) => document.getElementById("b").classList.add("abs"),
+			(document) => document.getElementById("g").classList.add("abs"),
+			(document) => document.getElementById("t").append("stray"),
+		],
+	);
+});
+
+test("an inline-block grows with a child made wider", async () => {
+	await replay(
+		"<div id=f class=row><div id=a class=box>one</div><div>two</div></div>",
+		[
+			(document) => document.getElementById("f").classList.add("ib"),
+			(document) => document.getElementById("a").style.width = "87px",
+		],
+	);
+});
+
+test("an inline-block lays out a block put inside its inline content", async () => {
+	await replay("<div class=col><div id=c>above</div></div>", [
+		(document) => {
+			const span = document.createElement("span");
+			span.id = "s";
+			span.textContent = "gamma delta";
+			document.getElementById("c").prepend(span);
+		},
+		(document) => document.getElementById("c").classList.add("ib"),
+		(document) => {
+			const p = document.createElement("p");
+			p.textContent = "e";
+			document.getElementById("s").append(p);
+		},
+	]);
+});
+
+test("a flex item made an inline-block takes the width it is given", async () => {
+	await replay("<div class=row><div>one</div><div id=a>two words</div></div>", [
+		(document) => document.getElementById("a").classList.add("ib"),
+		(document) => document.getElementById("a").style.width = "23%",
+	]);
+});

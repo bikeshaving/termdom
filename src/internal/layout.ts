@@ -1284,8 +1284,11 @@ function sizeReplacedBox(
 }
 
 // What the run measurer reads beyond the style record: the properties
-// that decide where text breaks and how wide it is.
+// that decide where text breaks and how wide it is, and the size of an
+// inline-block, which its measure reads rather than its record.
 const MEASURE_PROPERTIES = [
+	"width",
+	"height",
 	"white-space",
 	"direction",
 	"word-break",
