@@ -11298,17 +11298,18 @@ function toViewportRect(
 	element: Element | null,
 ): globalThis.DOMRect {
 	const attachedSlots = _(attached);
+	const {x, y, width, height} = _(rect as unknown as DOMRect).rectValues;
 	const scrolled =
-		element !== null &&
-		attachedSlots.extra.layout.isInFixedSpace(element)
-			? rect
-			: new DOMRect(
-				rect.x,
-				rect.y - attachedSlots.extra.framebuffer.scrollTop,
-				rect.width,
-				rect.height,
-			);
-	return toPixelRect(attached as unknown as Node, scrolled);
+		element !== null && attachedSlots.extra.layout.isInFixedSpace(element)
+			? 0
+			: attachedSlots.extra.framebuffer.scrollTop;
+	const cell = getCellSize(attached as unknown as globalThis.Node);
+	return new DOMRect(
+		x * cell.width,
+		(y - scrolled) * cell.height,
+		width * cell.width,
+		height * cell.height,
+	);
 }
 
 // Cells to the CSS pixels every geometry API reports in.
