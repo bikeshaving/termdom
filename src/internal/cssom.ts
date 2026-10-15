@@ -6576,6 +6576,14 @@ export function handleMutations(
 			) {
 				continue;
 			}
+			// A list's numbering reads these, and renumbers markers that
+			// belong to other elements than the one changed.
+			if (
+				LIST_NUMBERING_ATTRIBUTES.has(mutation.attributeName!) &&
+				(localNameOf(element) === "ol" || localNameOf(element) === "li")
+			) {
+				cascade.layout.invalidateFrame();
+			}
 			// A change to keys whose rules declare only paint properties
 			// leaves every box where it was. The styles are dropped so the
 			// next read resolves them, and layout is not told.
@@ -6627,8 +6635,9 @@ export function handleMutations(
 				invalidateElementCaches(cascade, element, notifyLayout);
 				attachPseudoElementsToElement(cascade, element);
 			}
+			// Each element restyled names its rows for the frame.
 			if (!notifyLayout) {
-				cascade.layout.invalidateFrame();
+				cascade.layout.invalidateFrame(false);
 			}
 			// `.on ~ .light` matches a FOLLOWING sibling whose cached
 			// styles know nothing of this change.
@@ -6730,8 +6739,9 @@ export function handleStateChange(
 	}
 	invalidateForState(cascade, element, states);
 	// No mutation record describes the change, so the frame that decides
-	// whether anything needs painting is notified here.
-	cascade.layout.invalidateFrame();
+	// whether anything needs painting is notified here. The elements
+	// restyled name their rows.
+	cascade.layout.invalidateFrame(false);
 }
 
 // The same staleness a focus move leaves, scoped to the symmetric
@@ -8213,7 +8223,7 @@ function tickTransitions(cascade: Cascade): void {
 		}
 		invalidateElementCaches(cascade, element);
 	}
-	cascade.layout.invalidateFrame();
+	cascade.layout.invalidateFrame(false);
 	flushTransitionEvents(cascade);
 	// A window no engine set up has no requestAnimationFrame, and its reads
 	// interpolate on their own.
@@ -8524,6 +8534,13 @@ function invalidateElementCaches(
 	cascade.pseudoElementStyleCache.delete(element);
 	cascade.counterScopes.delete(element);
 }
+
+const LIST_NUMBERING_ATTRIBUTES = new Set([
+	"start",
+	"value",
+	"reversed",
+	"type",
+]);
 
 // Properties the painter reads and layout never does. A rule declaring
 // only these moves nothing when it starts or stops matching.

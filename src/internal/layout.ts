@@ -5434,8 +5434,12 @@ export class Layout {
 		this.touched = new Set<Node>();
 		this.measureNodes = new Set<LayoutNode>();
 
+		// The initial containing block is a formatting context of its own, so
+		// the root element's margins stay inside it rather than escaping to
+		// nothing.
 		const root = new LayoutNode();
 		root.style.displayType = "block";
+		root.style.blockFormattingContext = true;
 		root.style.width = toValue(width);
 		root.style.height = toValue(height);
 		this.initialBlock = root;
@@ -6502,7 +6506,7 @@ function getSelectionRows(layout: Layout): [number, number] | null {
 export function takeDamageBands(
 	layout: Layout,
 	offset: number,
-	paintsAsBefore: (element: Element, key: object) => boolean,
+	paintsAsBefore: (element: Element, key: object) => boolean | "whole",
 ): Array<[number, number]> | undefined {
 	const selectionRows = getSelectionRows(layout);
 	const previousSelection = layout.selectionRows;
@@ -6518,9 +6522,14 @@ export function takeDamageBands(
 		add(top, bottom, fixed);
 	}
 	for (const [element, key] of layout.restyledForPaint) {
-		if (
-			!element.isConnected || (key !== null && paintsAsBefore(element, key))
-		) {
+		if (!element.isConnected) {
+			continue;
+		}
+		const same = key === null ? false : paintsAsBefore(element, key);
+		if (same === "whole") {
+			return undefined;
+		}
+		if (same) {
 			continue;
 		}
 		let box: Element | null = element;
