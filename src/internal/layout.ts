@@ -1034,13 +1034,16 @@ interface Styling {
 const stylings = new WeakMap<LayoutNode, Styling>();
 
 interface Extent {
-	// The box's own top, in absolute document rows, and its left edge and
-	// size, which a repaint compares to find what moved.
+	// The root its rows are counted from: the document's, or the one an
+	// inline-block lays its own content out under, whose rows start at 0.
+	frame: LayoutNode;
+	// The box's own top, in absolute rows of its frame, and its left edge
+	// and size, which a repaint compares to find what moved.
 	origin: number;
 	left: number;
 	width: number;
 	height: number;
-	// The rows the subtree can paint, in absolute document rows. Absolutely
+	// The rows the subtree can paint, in rows of its frame. Absolutely
 	// positioned children push it outside the box.
 	top: number;
 	bottom: number;
@@ -1081,11 +1084,17 @@ function computePaintExtents(
 	originTop: number,
 	settled = false,
 	fixed = false,
+	frame = node,
 ): Extent {
 	const top = originTop + node.grid.top;
 	const left = originLeft + node.grid.left;
 	let extent = extents.get(node);
-	if (settled && extent !== undefined && extent.origin === top) {
+	if (
+		settled &&
+		extent !== undefined &&
+		extent.origin === top &&
+		extent.frame === frame
+	) {
 		return extent;
 	}
 	fixed ||= node.style.positionType === "fixed";
@@ -1120,6 +1129,7 @@ function computePaintExtents(
 	}
 	if (extent === undefined) {
 		extent = {
+			frame,
 			origin: top,
 			left: 0,
 			width: 0,
@@ -1182,6 +1192,7 @@ function computePaintExtents(
 			top,
 			settled || node.settled,
 			fixed,
+			frame,
 		);
 		if (childExtent.top < previousTop || childExtent.bottom < previousBottom) {
 			rowOrdered = false;
@@ -1225,6 +1236,7 @@ function computePaintExtents(
 			bottom = Math.max(bottom, child.grid.top + childExtent.overflowBottom);
 		}
 	}
+	extent.frame = frame;
 	extent.origin = top;
 	extent.left = left;
 	extent.width = getComputedWidth(node);
@@ -5305,18 +5317,12 @@ function hitTestInFlow(
 			) {
 				return null;
 			}
-			// A box measured on a line is covered by the line's extent. One an
-			// inline-block's own root counts is in that root's rows, not the
-			// document's, so it rules nothing out, and nor does no extent.
+			// A box measured on a line is covered by the line's extent. With no
+			// extent counted in document rows, nothing is ruled out.
 			const node =
 				getLayoutNode(layout, element) ?? getBox(layout, element)?.layoutNode;
-			const extent = node ? paintExtent(node) : undefined;
-			if (
-				node &&
-				extent !== undefined &&
-				isInDocumentTree(layout, node) &&
-				(y < extent.top || y >= extent.bottom)
-			) {
+			const extent = node ? paintExtent(node, layout.initialBlock) : undefined;
+			if (extent !== undefined && (y < extent.top || y >= extent.bottom)) {
 				return null;
 			}
 		}
@@ -7039,14 +7045,6 @@ function invalidateHost(layout: Layout, host: Element): void {
 	invalidateEnclosingMeasure(layout, host);
 }
 
-export function isInDocumentTree(layout: Layout, node: LayoutNode): boolean {
-	let root = node;
-	while (root.parent !== null) {
-		root = root.parent;
-	}
-	return root === layout.initialBlock;
-}
-
 function isInFixedBox(node: LayoutNode): boolean {
 	for (let at: LayoutNode | null = node; at !== null; at = at.parent) {
 		if (at.style.positionType === "fixed") {
@@ -7124,7 +7122,9 @@ export function takeDamageBands(
 		// A box an inline-block lays out in its own context has rows counted
 		// from that context. The inline-block's own rows hold them.
 		while (
-			box !== null && node !== undefined && !isInDocumentTree(layout, node)
+			box !== null &&
+			node !== undefined &&
+			getExtentFrame(node) !== layout.initialBlock
 		) {
 			box = getEnclosingIndependentFormattingContext(
 				layout,
@@ -7132,7 +7132,9 @@ export function takeDamageBands(
 			);
 			node = box === null ? undefined : layout.nodeMap.get(box);
 		}
-		const extent = node === undefined ? undefined : extents.get(node);
+		const extent = node === undefined
+			? undefined
+			: paintExtent(node, layout.initialBlock);
 		if (node === undefined || extent === undefined) {
 			return undefined;
 		}
@@ -7188,10 +7190,7 @@ function getVisibleChildren(
 		// A measure-function leaf never decomposes into layout children, so
 		// empty children[] means "not decomposed," not "nothing to paint."
 		layoutNode.measure !== null ||
-		// Its children's extents are counted from an inline-block's own
-		// root, not in the rows asked about.
-		!isInDocumentTree(layout, layoutNode) ||
-		extents.get(layoutNode)?.unstackedChildren !== 0 ||
+		paintExtent(layoutNode, layout.initialBlock)?.unstackedChildren !== 0 ||
 		layoutNode.style.displayType !== "block" ||
 		// Cheap proxy for "every DOM child has exactly one children[]
 		// entry". A run member owns no layout node, and a pseudo-element is a
@@ -7478,8 +7477,19 @@ export function getLayoutNode(
 }
 
 /** The rows a node's subtree can paint, in document rows. */
-export function paintExtent(node: LayoutNode): Extent | undefined {
-	return extents.get(node);
+// The extent, when its rows are counted in the frame the caller counts
+// in. Rows of another frame mean nothing there, so there is none.
+export function paintExtent(
+	node: LayoutNode,
+	frame: LayoutNode,
+): Extent | undefined {
+	const extent = extents.get(node);
+	return extent?.frame === frame ? extent : undefined;
+}
+
+// The root a node's extent counts from, once it has one.
+export function getExtentFrame(node: LayoutNode): LayoutNode | undefined {
+	return extents.get(node)?.frame;
 }
 
 /**
