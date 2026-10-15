@@ -77,10 +77,14 @@ export interface Size {
 // `placing` is true for the measurement that places the box and
 // false for the sizing probes before it. Only the placing one may keep
 // its line breaks.
+// left is the absolute left edge of the content box, unrounded, as the
+// box was last placed, so text can break against the whole columns it is
+// drawn across. NaN before the box is first placed.
 type Measure = (
 	width: number,
 	widthSpace: AvailableSpace,
 	placing: boolean,
+	left: number,
 ) => Size;
 
 // The origin of CSS 2 §10.3.7's hypothetical box, in the containing
@@ -494,6 +498,13 @@ export class LayoutNode {
 	gridTop: number;
 	// Whether the last roundToGrid left the children as they were.
 	settled: boolean;
+	// The box's left edge as its parent last placed it, and that edge
+	// summed down from the root, both unrounded. The text in a box breaks
+	// against the columns these say it is drawn across, and measuredLeft is
+	// the edge it last broke against.
+	rawLeft: number;
+	rawAbsoluteLeft: number;
+	measuredLeft: number;
 	// Whether a child left since the last paint extents, whose rows then
 	// show nothing it painted.
 	lostChild: boolean;
@@ -514,6 +525,9 @@ export class LayoutNode {
 		this.gridLeft = NaN;
 		this.gridTop = NaN;
 		this.settled = false;
+		this.rawLeft = 0;
+		this.rawAbsoluteLeft = NaN;
+		this.measuredLeft = NaN;
 		this.lostChild = false;
 		this.currentStyle = createStyle();
 		this.result = createResult();
@@ -610,7 +624,28 @@ export class LayoutNode {
 			true,
 		);
 
-		roundToGrid(this, 0, 0);
+		// Text measured at an edge it did not land on breaks again where it
+		// landed. A box placed at a whole cell, as most are, never does.
+		for (let pass = 0; pass < 3; pass++) {
+			const misplaced: LayoutNode[] = [];
+			roundToGrid(this, 0, 0, 0, true, misplaced);
+			if (misplaced.length === 0 || pass === 2) {
+				break;
+			}
+			for (const node of misplaced) {
+				node.invalidate();
+			}
+			layoutNode(
+				this,
+				availableWidth,
+				availableHeight,
+				widthSpace,
+				!Number.isNaN(availableHeight) ? "definite" : "indefinite",
+				ownerWidth,
+				ownerHeight,
+				true,
+			);
+		}
 		this.stale = false;
 	}
 }
@@ -1153,7 +1188,13 @@ function layoutMeasuredContent(
 		return;
 	}
 
-	const measured = node.measure!(innerWidth, widthSpace, placing);
+	node.measuredLeft = node.rawAbsoluteLeft;
+	const measured = node.measure!(
+		innerWidth,
+		widthSpace,
+		placing,
+		node.rawAbsoluteLeft + node.style.border.left + node.result.padding.left,
+	);
 
 	const width = widthSpace === "definite"
 		? availableWidth - marginRow
@@ -6162,8 +6203,22 @@ function roundToGrid(
 	node: LayoutNode,
 	absoluteLeft: number,
 	absoluteTop: number,
+	rawAbsoluteLeft: number,
+	placedByParent: boolean,
+	misplaced: LayoutNode[],
 ): void {
 	const nodeLeft = node.result.left;
+	if (placedByParent) {
+		node.rawLeft = nodeLeft;
+	}
+	node.rawAbsoluteLeft = rawAbsoluteLeft + node.rawLeft;
+	if (
+		node.measure !== null &&
+		node.measuresText &&
+		!isSameFraction(node.measuredLeft, node.rawAbsoluteLeft)
+	) {
+		misplaced.push(node);
+	}
 	const nodeTop = node.result.top;
 	const nodeWidth = !Number.isNaN(node.result.width) ? node.result.width : 0;
 	const nodeHeight = !Number.isNaN(node.result.height) ? node.result.height : 0;
@@ -6185,6 +6240,7 @@ function roundToGrid(
 	node.result.height =
 		roundValue(absBottom, isText, false) - roundValue(absTop, isText, false);
 
+	const laidOut = Number.isNaN(node.gridLeft);
 	node.settled = absLeft === node.gridLeft && absTop === node.gridTop;
 	if (node.settled) {
 		return;
@@ -6192,8 +6248,38 @@ function roundToGrid(
 	node.gridLeft = absLeft;
 	node.gridTop = absTop;
 	for (const child of node.children) {
-		roundToGrid(child, absLeft, absTop);
+		roundToGrid(
+			child,
+			absLeft,
+			absTop,
+			node.rawAbsoluteLeft,
+			laidOut,
+			misplaced,
+		);
 	}
+}
+
+// Whether two edges fall at the same place within a cell, which is all
+// that decides how many columns a width starting there is drawn across.
+// An edge not yet known breaks as one at a whole cell.
+function isSameFraction(a: number, b: number): boolean {
+	const fraction = (value: number) =>
+		Number.isNaN(value) ? 0 : value - Math.floor(value);
+	const difference = Math.abs(fraction(a) - fraction(b));
+	return difference < 0.0001 || difference > 0.9999;
+}
+
+/**
+ * How many columns a width starting at an unrounded edge is drawn
+ * across, as roundToGrid snaps a box's edges to the nearest cell. An edge
+ * not yet known is taken to be at a whole cell.
+ */
+export function getDrawnColumns(left: number, width: number): number {
+	if (Number.isNaN(left)) {
+		return roundValue(width, false, false);
+	}
+	return roundValue(left + width, false, false) -
+		roundValue(left, false, false);
 }
 
 function roundValue(

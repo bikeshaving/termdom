@@ -49,6 +49,7 @@ import {
 	getComputedGridTracks,
 	getComputedHeight,
 	getComputedWidth,
+	getDrawnColumns,
 	type Gutter,
 	insertChild,
 	isContainingBlock,
@@ -1989,8 +1990,8 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 				if (styledFrom) {
 					styleLayoutNode(styledFrom, layoutNode, layout.positionedElements);
 				}
-				layoutNode.measure = (width, widthSpace, placing) =>
-					measureInlineRun(layout, entry, width, widthSpace, placing);
+				layoutNode.measure = (width, widthSpace, placing, left) =>
+					measureInlineRun(layout, entry, width, widthSpace, placing, left);
 				layout.measureNodes.add(layoutNode);
 				layout.anonymousBoxes.set(layoutNode, entry);
 				layoutNode.owner = entry.head;
@@ -2315,8 +2316,8 @@ function addElementNode(
 		return;
 	} else if (asRun) {
 		const box = getPrincipalBox(layout, element);
-		layoutNode.measure = (width, widthSpace, placing) =>
-			measureInlineRun(layout, box, width, widthSpace, placing);
+		layoutNode.measure = (width, widthSpace, placing, left) =>
+			measureInlineRun(layout, box, width, widthSpace, placing, left);
 		layout.measureNodes.add(layoutNode);
 
 		if (layoutNode && parentLayoutNode) {
@@ -2399,8 +2400,8 @@ function addTextNode(
 	}
 
 	const own = getPrincipalBox(layout, text);
-	layoutNode.measure = (width, widthSpace, placing) =>
-		measureInlineRun(layout, own, width, widthSpace, placing);
+	layoutNode.measure = (width, widthSpace, placing, left) =>
+		measureInlineRun(layout, own, width, widthSpace, placing, left);
 	layout.measureNodes.add(layoutNode);
 
 	insertChild(parentLayoutNode, layoutNode, parentLayoutNode.children.length);
@@ -3301,8 +3302,9 @@ function measureInlineRun(
 	width: number,
 	widthSpace: AvailableSpace,
 	placing: boolean,
+	left: number,
 ): Size {
-	const breakResult = breakNodes(layout, box, width, widthSpace);
+	const breakResult = breakNodes(layout, box, width, widthSpace, left);
 	if (Number.isFinite(width)) {
 		breakResult.containerWidth = width;
 	}
@@ -3869,6 +3871,7 @@ function breakNodes(
 	source: Box,
 	width: number,
 	widthSpace: AvailableSpace,
+	left = NaN,
 ): BreakResult {
 	// An `indefinite` request is indefinite (NaN), so percentages in
 	// the content cannot resolve. Any definite request, an `shrink-to-fit` 0
@@ -3897,12 +3900,13 @@ function breakNodes(
 
 	// A width of 0 is a real constraint, the min-content probe. Treated as
 	// unlimited it returned max-content, making min-content zero
-	// everywhere. A line fits a width when both round to the same cells,
-	// since its pieces are drawn at whole columns: a fraction of a margin
-	// does not wrap the word after it.
+	// everywhere. A line fits the whole columns its box is drawn across,
+	// since its pieces are drawn at whole columns too: a fraction of a
+	// margin does not wrap the word after it, and a box 30.5 cells wide
+	// drawn across 30 columns does not take a line of 31.
 	const maxWidth = widthSpace === "indefinite"
 		? Number.MAX_SAFE_INTEGER
-		: width > 0 ? Math.round(width) + 0.4999 : width;
+		: width > 0 ? getDrawnColumns(left, width) + 0.4999 : width;
 
 	const processedContent = processWhitespace(layout, leafNodes);
 	// `pre` suppresses wrapping as `nowrap` does. Treating it as wrappable

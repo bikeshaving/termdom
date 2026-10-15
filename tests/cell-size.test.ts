@@ -661,3 +661,35 @@ test("an overflow: hidden box at a fractional column keeps its child's left bord
 	]);
 	dom.dispose();
 });
+
+// A box whose edges fall at half cells is drawn across the whole columns
+// its rounded edges span, and its text breaks to those, not to its width
+// rounded. Under an 8px margin at 16px cells, a 30.5 cell box is drawn
+// 30 columns wide, and a line of 31 crossed its border.
+test("text breaks to the columns a box at a half cell is drawn across", () => {
+	for (const [margin, lines] of [
+		[
+			"8px",
+			["│Lecture on the Connexion of   │", "│the Physical Sciences at the  │"],
+		],
+		[
+			"0",
+			[
+				"│Lecture on the Connexion of the│",
+				"│Physical Sciences at the hall  │",
+			],
+		],
+	] as const) {
+		const {dom} = make({width: 16, height: 32}, 100, 40);
+		dom.document.body.style.margin = "0";
+		dom.document.body.innerHTML =
+			`<div style="margin: ${margin}">` +
+			"<div style=\"width: 520px; border: 1px solid\"><div>Lecture on the " +
+			"Connexion of the Physical Sciences at the hall</div></div></div>";
+		expect(
+			dom.renderANSI().replace(/\x1b\[[0-9;]*m/g, "").split("\n").slice(1, 3)
+				.map((line) => line.trim()),
+		).toEqual([...lines]);
+		dom.dispose();
+	}
+});

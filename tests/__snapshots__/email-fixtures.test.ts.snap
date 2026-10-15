@@ -2538,11 +2538,11 @@ exports[`email fixture: post-buttons-mention.html 1`] = `
            xxx xxxxxxxx xxxx xxxx xxx xxxxxxxx xxx xxxxxxxxxxxxxxxx xx xxxxx xxxxxxxxx xx
            xxxxx xxxxxxxxx xx xxx xxxxx xxxxxxxxxx xxx xxxxxxxx xx xxxxxx xx xxx xxxxxxxx
            xx xxxxxxxxx xx xxxxxxx xx xxxxx xxxx xxx xxxx xx xxxxxxxxxx xx xx xxxxx xxxxx
-           xxxxxx xxxxx xxxxxxxxxx xxxx xxxxxxxxxx xxxx xxxx xxxx xxxxx xxx xxxxx xxxxxxxx
-           xxxx xxxxxxxx xxxxxxxx xxxx x xxxxxxxxxxx xx xxxx xxxxx xxxxxxxx xx xxxxx xxx
-           xxxxxxxxx xx xxxx xxxxxxx xxxxxxx xxxx xxxxx xxxxxxx xx xxxx xxxx xxx xxxx
-           xxxxxxxxxx xxxx xx xxxx xxxxx xxx xxxxx xxx xxxx xxxxxx xxx xxxxxx xxx xxxxxxxx
-           xx xxxxxxxxxx xxxx xx xxx xxxxxxxxxxx
+           xxxxxx xxxxx xxxxxxxxxx xxxx xxxxxxxxxx xxxx xxxx xxxx xxxxx xxx xxxxx
+           xxxxxxxx xxxx xxxxxxxx xxxxxxxx xxxx x xxxxxxxxxxx xx xxxx xxxxx xxxxxxxx xx
+           xxxxx xxx xxxxxxxxx xx xxxx xxxxxxx xxxxxxx xxxx xxxxx xxxxxxx xx xxxx xxxx
+           xxx xxxx xxxxxxxxxx xxxx xx xxxx xxxxx xxx xxxxx xxx xxxx xxxxxx xxx xxxxxx
+           xxx xxxxxxxx xx xxxxxxxxxx xxxx xx xxx xxxxxxxxxxx
 
            xx xxxx xx xxxxxxx xxx xxxxxxxx xx xxxxx xxxx xxxxx xx xxxxxxxxx xxxxxx
            xxxxxxxxx xxx xxxx xxxxxxxxxxx xxxxxxxxxx xxx xxxxxxx xxxxxxxx xxxxx xx
@@ -2558,8 +2558,8 @@ exports[`email fixture: post-buttons-mention.html 1`] = `
                 xxxxxxx xxx xxxxxxxxxxx xx x xxxxxxxxxxx xxxxx xxxxxxx xxx xxxxxxx
                 xxxxxxxx xxxxxxx xxxxx xxxxxxxxxx xxx xxxxxxxx xxxxxxxxxx xxxxxxx
                 xxxxxxx xxxxx xx xxxxxxx xxxxxxxxx xxxxxx xx xxxxxx xxx xxxxxxxxx
-                xxxxxxx xxx xxxxxxxxxx xxx xxxx xxxxx xxxxxxxxxxx xx xxxxxxxx xxxxxxx
-                xx xxxxx xxxxx
+                xxxxxxx xxx xxxxxxxxxx xxx xxxx xxxxx xxxxxxxxxxx xx xxxxxxxx
+                xxxxxxx xx xxxxx xxxxx
 
 
                                              xxxxx xxxx
