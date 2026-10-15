@@ -3629,7 +3629,14 @@ function measureInlineRun(
 	left: number,
 ): Size {
 	const outer = readsLineWidth;
-	readsLineWidth = hasPercentage(box.container, ["text-indent"]);
+	// The block the lines are indented in: the run's container, or for a
+	// box measured as a run of its own, the box's element.
+	const block = box.parent !== null
+		? box.container
+		: box.node !== null && nodeTypeOf(box.node) === box.node.ELEMENT_NODE
+		? (box.node as Element)
+		: box.node === null ? null : flatParentElement(box.node);
+	readsLineWidth = block !== null && hasPercentage(block, ["text-indent"]);
 	const breakResult = breakNodes(layout, box, width, widthSpace, left);
 	const widthDependent = readsLineWidth;
 	readsLineWidth = outer || widthDependent;
