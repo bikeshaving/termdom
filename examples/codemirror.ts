@@ -52,6 +52,7 @@ const theme = EditorView.theme(
     // the dotted outline the base theme draws around the wrapper.
     "&.cm-focused": {outline: "none"},
     ".cm-content": {caretColor: "white"},
+    ".cm-line": {padding: "0 1ch"},
     ".cm-gutters": {
       backgroundColor: "#101418",
       color: "#606060",
@@ -59,6 +60,7 @@ const theme = EditorView.theme(
     },
     ".cm-activeLine": {backgroundColor: "#1a2028"},
     ".cm-activeLineGutter": {backgroundColor: "#1a2028"},
+    ".cm-lineNumbers .cm-gutterElement": {padding: "0 1ch"},
   },
   {dark: true},
 );
