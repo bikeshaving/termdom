@@ -18,7 +18,7 @@ import {fileURLToPath} from "node:url";
 
 import {parse} from "webidl2";
 
-import {getInterfaceObjects} from "../src/internal/window.ts";
+import {getWindowClasses} from "../src/internal/window.ts";
 
 const require = createRequire(import.meta.url);
 const idlDir = dirname(require.resolve("@webref/idl/package.json"));
@@ -311,7 +311,7 @@ for (const definition of definitions) {
 	}
 }
 
-const windowInterfaces = new Set(getInterfaceObjects().keys());
+const windowInterfaces = new Set(Object.keys(getWindowClasses()));
 const exposed = new Set(
 	definitions
 		.filter(
