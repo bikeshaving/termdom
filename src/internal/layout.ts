@@ -2730,8 +2730,11 @@ function syncIndependentFormattingContext(
 	// steal back the container's boxes.
 	const grid = display === "inline-grid";
 	const table = display === "inline-table";
+	// Only a run's measure lays the root out, so a box no run measures, as
+	// an out-of-flow one, lays its content out on its own node.
 	if (
 		!establishesIndependentFormattingContext(element) ||
+		!isMeasuredAsRun(element) ||
 		(!grid && !table && !hasBlockLevelBox(element))
 	) {
 		if (box.independentFormattingContext) {
