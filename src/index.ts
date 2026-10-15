@@ -1,7 +1,13 @@
 import "./internal/inspector.ts";
 
 import type {CanvasCellGridContext} from "./internal/canvas.ts";
-import {Cascade, dispose, hoverRulesExist} from "./internal/cssom.ts";
+import {
+	Cascade,
+	checkStylesFromScratch,
+	dispose,
+	hoverRulesExist,
+	styleCheck,
+} from "./internal/cssom.ts";
 import {
 	applyMutations,
 	attachDocument,
@@ -1601,6 +1607,9 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	applyMutations(termDOM.document);
 	runFocusFixup(termDOM.document);
 
+	if (styleCheck.enabled) {
+		checkStylesFromScratch(termDOMSlots.cascade);
+	}
 	termDOMSlots.layout.performLayout();
 	if (layoutCheck.enabled) {
 		checkLayoutFromScratch(termDOMSlots.layout);
