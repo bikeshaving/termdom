@@ -62,7 +62,6 @@ import {
 	collectStackingLayers,
 	type Display,
 	fullWidthFixedRows,
-	getAtomicHeight,
 	getExtentFrame,
 	getLayoutNode,
 	getLineAlignOffset,
@@ -1426,8 +1425,7 @@ function paintMember(
 	const element = node as Element;
 	const leaf = run.leaves.get(element);
 	if (leaf !== undefined) {
-		const height = getAtomicHeight(element, leaf.leaf, leaf.rect.height);
-		paintAtomic(painter, element, leaf.leaf, {...leaf.rect, height}, ctx);
+		paintAtomic(painter, element, leaf.leaf, leaf.rect, ctx);
 		return;
 	}
 	if (hoistedToLayer(painter.layout, element)) {
@@ -1647,9 +1645,9 @@ function resolveRun(
 				const shift = getShift(leaf.node);
 				const rect = {
 					left: lineX + segment.x + shift.x,
-					top: lineY + shift.y,
+					top: lineY + segment.dy + shift.y,
 					width: segment.width,
-					height: line.height,
+					height: segment.height,
 				};
 				run.leaves.set(leaf.node, {rect, leaf});
 				coverAncestors(boxLines, leaf.node, container, lineY, rect);
@@ -1659,9 +1657,9 @@ function resolveRun(
 				const shift = getShift(leaf.node);
 				const rect = {
 					left: lineX + segment.x + shift.x,
-					top: lineY + shift.y,
+					top: lineY + line.textTop + shift.y,
 					width: segment.width,
-					height: line.height,
+					height: line.height - line.textTop,
 				};
 				coverAncestors(boxLines, leaf.node, container, lineY, rect);
 				const margin = Math.max(0, leaf.margin);
@@ -1676,9 +1674,9 @@ function resolveRun(
 			const shift = getShift(textNode);
 			const rect = {
 				left: span.left + shift.x,
-				top: lineY + shift.y,
+				top: lineY + line.textTop + shift.y,
 				width: span.right - span.left,
-				height: line.height,
+				height: line.height - line.textTop,
 			};
 			let fragments = run.texts.get(textNode);
 			if (fragments === undefined) {

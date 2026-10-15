@@ -574,3 +574,57 @@ test("whitespace between columns takes no room at font-size 0", () => {
 	}
 	dom.dispose();
 });
+
+// css2 §10.8.1: an atomic inline sits with its baseline on the line's, so
+// the text beside it lines up with its last line of text, an
+// inline-table's first, or the bottom edge of a box that clips.
+async function lineRows(html: string): Promise<string[]> {
+	const terminal = new MockProcess({cols: 30, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = html;
+	await nextFrame(dom);
+	const rows = terminal.getPlainText()
+		.split("\n")
+		.map((line) => line.replace(/\s+$/, ""))
+		.filter((line) => line !== "");
+	dom.dispose();
+	return rows;
+}
+
+test("text beside an inline-block sits on its last line", async () => {
+	expect(
+		await lineRows(
+			"before <span style=\"display: inline-block\"><div>one</div>" +
+				"<div>two</div></span> after",
+		),
+	).toEqual(["       one", "before two after"]);
+});
+
+test("vertical-align: top puts an inline-block's top on the line's", async () => {
+	expect(
+		await lineRows(
+			"before <span style=\"display: inline-block; vertical-align: top\">" +
+				"<div>one</div><div>two</div></span> after",
+		),
+	).toEqual(["before one after", "       two"]);
+});
+
+test("text beside an inline-table sits on its first row", async () => {
+	expect(
+		await lineRows(
+			"before <span style=\"display: inline-table\">" +
+				"<span style=\"display: table-row\"><span style=\"display: table-cell\">" +
+				"one</span></span><span style=\"display: table-row\">" +
+				"<span style=\"display: table-cell\">two</span></span></span> after",
+		),
+	).toEqual(["before one after", "       two"]);
+});
+
+test("text beside an inline-block that clips sits on its bottom edge", async () => {
+	expect(
+		await lineRows(
+			"before <span style=\"display: inline-block; overflow: hidden\">" +
+				"<div>one</div><div>two</div><div>three</div></span> after",
+		),
+	).toEqual(["       one", "       two", "before three after"]);
+});
