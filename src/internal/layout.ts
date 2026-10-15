@@ -2701,6 +2701,10 @@ function flowChildren(
 	return into;
 }
 
+// The box each independent formatting context's root lays content out
+// for, which places the root's rows on a line of its own frame.
+const contextHosts = new WeakMap<LayoutNode, Element>();
+
 // An inline-block is measured as ONE unit by its run, and a run ends at
 // a block-level box, so block content inside it is laid out by the box's
 // own measurement. Only the run that placed the box knows its content
@@ -2730,6 +2734,7 @@ function syncIndependentFormattingContext(
 	if (!root) {
 		root = new LayoutNode();
 		box.independentFormattingContext = root;
+		contextHosts.set(root, element);
 		// A change inside, a restyle no run records, leaves the box's
 		// measure answering with the old size unless the box hears of it.
 		root.onStale = () => {
@@ -5046,7 +5051,8 @@ function getStickyShift(
 	let x = 0;
 	let y = 0;
 	let scroller: LayoutNode | null = null;
-	for (let current = node; current.parent !== null; current = current.parent) {
+	let current = node;
+	for (; current.parent !== null; current = current.parent) {
 		x += current.grid.left;
 		y += current.grid.top;
 		if (current !== node && current.style.positionType === "sticky") {
@@ -5059,11 +5065,56 @@ function getStickyShift(
 			break;
 		}
 	}
+	// Past an inline-block's own root the walk goes on from the
+	// inline-block, which places the root's rows in its own frame. Both it
+	// and the scroller are read where they are drawn, and the scroller's
+	// own offset undone, so the position counts as the scroller's do.
+	let crossedScroller: Element | null = null;
+	let crossedRect: DOMRect | null = null;
+	if (scroller === null && current !== layout.initialBlock) {
+		const host = contextHosts.get(current);
+		const hostRect = host === undefined ? null : layout.getRect(host);
+		if (host === undefined || hostRect === null) {
+			return {x: 0, y: 0};
+		}
+		const hostBox = getBoxModel(host);
+		x += hostRect.x + hostBox.borderLeftWidth + hostBox.paddingLeft;
+		y += hostRect.y + hostBox.borderTopWidth + hostBox.paddingTop;
+		for (
+			let outer = flatParentElement(host);
+			outer !== null;
+			outer = flatParentElement(outer)
+		) {
+			if (isScrollContainer(outer) && !isRootBox(layout, outer)) {
+				crossedRect = layout.getRect(outer);
+				crossedScroller = crossedRect === null ? null : outer;
+				break;
+			}
+		}
+		if (crossedScroller !== null) {
+			x += getScrollOffset(crossedScroller, "left") - crossedRect!.x;
+			y += getScrollOffset(crossedScroller, "top") - crossedRect!.y;
+		}
+	}
 	let portLeft = 0;
 	let portTop: number;
 	let portWidth: number;
 	let portHeight: number;
-	if (scroller === null) {
+	if (crossedScroller !== null) {
+		const box = getBoxModel(crossedScroller);
+		portLeft =
+			(box.borderLeftWidth || 0) + getScrollOffset(crossedScroller, "left");
+		portTop =
+			(box.borderTopWidth || 0) + getScrollOffset(crossedScroller, "top");
+		portWidth =
+			crossedRect!.width -
+			(box.borderLeftWidth || 0) -
+			(box.borderRightWidth || 0);
+		portHeight =
+			crossedRect!.height -
+			(box.borderTopWidth || 0) -
+			(box.borderBottomWidth || 0);
+	} else if (scroller === null) {
 		// scrollY is CSS pixels: a whole number of rows, each a cell tall.
 		const window = layout.window;
 		portTop = window.scrollY / getCellSize(window.document).height;
@@ -5742,7 +5793,7 @@ export class Layout {
 	// The rows each sticky box painted at the last solve, shift included.
 	// A shift moves a box's rows with no change to its rect, and only a
 	// solve or a scroll changes one, so a solve compares them.
-	stickyRows: Map<LayoutNode, [number, number, boolean]>;
+	stickyRows: Map<LayoutNode, StickyRows>;
 	// The rows the selection covered at the last frame, from its ends.
 	selectionRows: [number, number] | null;
 
@@ -6686,51 +6737,100 @@ export function invalidateTextMeasurement(layout: Layout): void {
 }
 
 // A sticky box's extent holds its descendants', so its rows before and
-// after cover everything its shift moved.
+// after cover everything its shift moved. One an inline-block lays out
+// moves only within the box it flows in, inside the inline-block, so the
+// inline-block's rows cover it.
 function damageShiftedStickyBoxes(layout: Layout): void {
 	const before = layout.stickyRows;
-	const after = new Map<LayoutNode, [number, number, boolean]>();
+	const after = new Map<LayoutNode, StickyRows>();
 	for (const element of layout.positionedElements) {
 		const node = layout.nodeMap.get(element);
-		const extent = node && extents.get(node);
-		if (
-			node?.style.positionType !== "sticky" ||
-			extent === undefined ||
-			!isInLayoutTree(layout, node)
-		) {
+		if (node?.style.positionType !== "sticky") {
 			continue;
 		}
-		const shift = getScrollShift(layout, node, false).y;
-		const rows: [number, number, boolean] = [
-			extent.top + shift,
-			extent.bottom + shift,
-			isInFixedSpace(node),
-		];
+		const rows = getStickyRows(layout, node);
+		if (rows === "unknown") {
+			layout.wholeDamage = true;
+			layout.collecting = false;
+			continue;
+		}
+		if (rows === null) {
+			continue;
+		}
 		after.set(node, rows);
 		const old = before.get(node);
-		if (old === undefined || old[0] !== rows[0] || old[1] !== rows[1]) {
-			pushDamage(layout, ...rows);
+		if (
+			old === undefined ||
+			old.top !== rows.top ||
+			old.bottom !== rows.bottom ||
+			old.shift !== rows.shift
+		) {
+			pushDamage(layout, rows.top, rows.bottom, rows.fixed);
 			if (old !== undefined) {
-				pushDamage(layout, ...old);
+				pushDamage(layout, old.top, old.bottom, old.fixed);
 			}
 		}
 		before.delete(node);
 	}
 	for (const old of before.values()) {
-		pushDamage(layout, ...old);
+		pushDamage(layout, old.top, old.bottom, old.fixed);
 	}
 	layout.stickyRows = after;
 }
 
-function isInLayoutTree(layout: Layout, node: LayoutNode): boolean {
-	let current: LayoutNode | null = node;
-	while (current.parent !== null) {
-		if (current.style.displayType === "none") {
-			return false;
+interface StickyRows {
+	top: number;
+	bottom: number;
+	fixed: boolean;
+	shift: number;
+}
+
+// The document rows a sticky box paints on, and its shift. Null for one
+// that shows nowhere, and "unknown" for one whose rows no extent in the
+// document's rows covers.
+function getStickyRows(
+	layout: Layout,
+	node: LayoutNode,
+): StickyRows | null | "unknown" {
+	let root: LayoutNode = node;
+	for (; root.parent !== null; root = root.parent) {
+		if (root.style.displayType === "none") {
+			return null;
 		}
-		current = current.parent;
 	}
-	return current === layout.initialBlock;
+	const shift = getStickyShift(layout, node).y;
+	if (root === layout.initialBlock) {
+		const extent = paintExtent(node, layout.initialBlock);
+		if (extent === undefined) {
+			return null;
+		}
+		const moved = getScrollShift(layout, node, false).y;
+		return {
+			top: extent.top + moved,
+			bottom: extent.bottom + moved,
+			fixed: isInFixedSpace(node),
+			shift,
+		};
+	}
+	const host = contextHosts.get(root);
+	if (host === undefined || !host.isConnected) {
+		return null;
+	}
+	const hostNode =
+		getLayoutNode(layout, host) ?? getBox(layout, host)?.layoutNode;
+	const extent = hostNode
+		? paintExtent(hostNode, layout.initialBlock)
+		: undefined;
+	if (!hostNode || extent === undefined) {
+		return "unknown";
+	}
+	const moved = getScrollShift(layout, hostNode, false).y;
+	return {
+		top: extent.top + moved,
+		bottom: extent.bottom + moved,
+		fixed: isInFixedSpace(hostNode),
+		shift,
+	};
 }
 
 function isInFixedSpace(node: LayoutNode): boolean {

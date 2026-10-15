@@ -161,3 +161,23 @@ test("an absolute box ignores a scroller outside its containing block", async ()
 	expect(dom.document.elementFromPoint(1, 2)).toBe(tag);
 	dom.dispose();
 });
+
+test("a sticky heading an inline-block lays out holds the scroller around it", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div>top</div><div id=\"pane\" style=\"height:4px;overflow-y:auto\">" +
+		"<span style=\"display:inline-block\">" +
+		makeSections(5) +
+		"</span></div>";
+	await nextFrame(dom);
+	dom.document.getElementById("pane")!.scrollTop = 2;
+	await nextFrame(dom);
+	const rows = terminal.getVisibleText().split("\n");
+	expect(rows[1]).toContain("Heading 0");
+	expect(rows[2]).toContain("s0 row 2");
+	expect(dom.document.getElementById("h0")!.getBoundingClientRect().top).toBe(
+		1,
+	);
+	dom.dispose();
+});
