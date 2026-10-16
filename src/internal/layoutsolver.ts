@@ -254,8 +254,14 @@ interface LayoutResult {
 	top: number;
 	width: number;
 	height: number;
-	margin: Edges<number>;
-	padding: Edges<number>;
+	marginLeft: number;
+	marginTop: number;
+	marginRight: number;
+	marginBottom: number;
+	paddingLeft: number;
+	paddingTop: number;
+	paddingRight: number;
+	paddingBottom: number;
 	computedFlexBasis: number;
 
 	// css-flexbox-1 §4.5, along the parent's main axis.
@@ -1103,8 +1109,14 @@ function createResult(): LayoutResult {
 		top: 0,
 		width: NaN,
 		height: NaN,
-		margin: {left: 0, top: 0, right: 0, bottom: 0},
-		padding: {left: 0, top: 0, right: 0, bottom: 0},
+		marginLeft: 0,
+		marginTop: 0,
+		marginRight: 0,
+		marginBottom: 0,
+		paddingLeft: 0,
+		paddingTop: 0,
+		paddingRight: 0,
+		paddingBottom: 0,
 		computedFlexBasis: NaN,
 		automaticMinimumSize: NaN,
 		gridColumns: null,
@@ -1346,10 +1358,10 @@ function constrainMaxSizeForMode(
 }
 
 function resolveNodeMargins(node: LayoutNode, ownerWidth: number): void {
-	node.result.margin.left = resolveMargin(node.style.margin.left, ownerWidth);
-	node.result.margin.top = resolveMargin(node.style.margin.top, ownerWidth);
-	node.result.margin.right = resolveMargin(node.style.margin.right, ownerWidth);
-	node.result.margin.bottom = resolveMargin(
+	node.result.marginLeft = resolveMargin(node.style.margin.left, ownerWidth);
+	node.result.marginTop = resolveMargin(node.style.margin.top, ownerWidth);
+	node.result.marginRight = resolveMargin(node.style.margin.right, ownerWidth);
+	node.result.marginBottom = resolveMargin(
 		node.style.margin.bottom,
 		ownerWidth,
 	);
@@ -2970,16 +2982,16 @@ function placeAnonymousCellContent(
 ): void {
 	resolveNodeMargins(node, cellWidth);
 	layoutBlockChild(node, cellWidth, true, cellWidth, NaN, true);
-	const leading = node.result.margin.left;
+	const leading = node.result.marginLeft;
 	const free =
-		cellWidth - node.result.width - leading - node.result.margin.right;
+		cellWidth - node.result.width - leading - node.result.marginRight;
 	const leadingAuto = node.style.margin.left.unit === "auto";
 	const trailingAuto = node.style.margin.right.unit === "auto";
 	const offset = leadingAuto && trailingAuto
 		? Math.max(free, 0) / 2
 		: leadingAuto ? Math.max(free, 0) : 0;
 	node.result.left = cellLeft + leading + offset;
-	node.result.top = node.result.margin.top;
+	node.result.top = node.result.marginTop;
 }
 
 // The blocks an anonymous cell wraps, one below another, with the
@@ -3002,11 +3014,11 @@ function stackAnonymousCell(
 			resolveNodeMargins(node, cellWidth);
 			layoutBlockChild(node, cellWidth, true, cellWidth, NaN, false);
 		}
-		const {top, bottom} = node.result.margin;
+		const top = node.result.marginTop;
 		const gap = index === 0 ? top : Math.max(below, top);
 		node.result.top = cellTop + height + gap;
 		height += gap + node.result.height;
-		below = bottom;
+		below = node.result.marginBottom;
 	});
 	return height + below;
 }
@@ -5809,14 +5821,14 @@ function getCollapsedMargin(set: MarginSet): number {
 // The child's own margin, plus what escapes its edge.
 function readCollapseTop(child: LayoutNode, into: MarginSet): void {
 	resetMarginSet(into);
-	addMargin(into, child.result.margin.top);
+	addMargin(into, child.result.marginTop);
 	into.positive = Math.max(into.positive, child.result.collapseTopPositive);
 	into.negative = Math.min(into.negative, child.result.collapseTopNegative);
 }
 
 function readCollapseBottom(child: LayoutNode, into: MarginSet): void {
 	resetMarginSet(into);
-	addMargin(into, child.result.margin.bottom);
+	addMargin(into, child.result.marginBottom);
 	into.positive = Math.max(into.positive, child.result.collapseBottomPositive);
 	into.negative = Math.min(into.negative, child.result.collapseBottomNegative);
 }
@@ -6089,8 +6101,8 @@ function layoutBlock(
 
 	for (let i = 0; i < inFlow.length; i++) {
 		const child = inFlow[i];
-		const leading = child.result.margin.left;
-		const trailing = child.result.margin.right;
+		const leading = child.result.marginLeft;
+		const trailing = child.result.marginRight;
 		const leadingAuto = child.style.margin.left.unit === "auto";
 		const trailingAuto = child.style.margin.right.unit === "auto";
 		const free = contentWidth - child.result.width - leading - trailing;
@@ -6357,10 +6369,10 @@ function layoutNodeImpl(
 	placing: boolean,
 ): void {
 	node.gridLeft = NaN;
-	node.result.padding.left = getPadding(node, "left", ownerWidth);
-	node.result.padding.top = getPadding(node, "top", ownerWidth);
-	node.result.padding.right = getPadding(node, "right", ownerWidth);
-	node.result.padding.bottom = getPadding(node, "bottom", ownerWidth);
+	node.result.paddingLeft = getPadding(node, "left", ownerWidth);
+	node.result.paddingTop = getPadding(node, "top", ownerWidth);
+	node.result.paddingRight = getPadding(node, "right", ownerWidth);
+	node.result.paddingBottom = getPadding(node, "bottom", ownerWidth);
 
 	resolveNodeMargins(node, ownerWidth);
 
@@ -6544,7 +6556,7 @@ function roundToGrid(
 function getContentLeft(node: LayoutNode): number {
 	return node.rawAbsoluteLeft +
 		node.style.border.left +
-		node.result.padding.left;
+		node.result.paddingLeft;
 }
 
 // Whether text measured before its box landed where it did would break
