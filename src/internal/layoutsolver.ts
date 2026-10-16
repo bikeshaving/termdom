@@ -962,7 +962,53 @@ function getSharedKey(value: unknown): string | null {
 	return id === undefined ? null : `#${id}`;
 }
 
+// Siblings and cousins mostly style alike, a list's items or a table's
+// cells, so a finished record is first checked against the last few
+// shared of its kind, field by field, before it is keyed.
+const RECENT_RECORDS = 16;
+const recentRecords = new Map<string, {records: object[]; next: number}>();
+
+function isSameRecord(a: object, b: object): boolean {
+	for (const name in b) {
+		if (
+			!Object.is(
+				(a as Record<string, unknown>)[name],
+				(b as Record<string, unknown>)[name],
+			)
+		) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function findRecentRecord<T extends object>(kind: string, record: T): T | null {
+	const recent = recentRecords.get(kind);
+	if (recent !== undefined) {
+		for (const candidate of recent.records) {
+			if (isSameRecord(candidate, record)) {
+				return candidate as T;
+			}
+		}
+	}
+	return null;
+}
+
+function rememberRecentRecord(kind: string, record: object): void {
+	let recent = recentRecords.get(kind);
+	if (recent === undefined) {
+		recent = {records: [], next: 0};
+		recentRecords.set(kind, recent);
+	}
+	recent.records[recent.next] = record;
+	recent.next = (recent.next + 1) % RECENT_RECORDS;
+}
+
 function shareRecord<T extends object>(kind: string, record: T): T {
+	const recent = findRecentRecord(kind, record);
+	if (recent !== null) {
+		return recent;
+	}
 	let key = kind;
 	for (const value of Object.values(record)) {
 		const part = getSharedKey(value);
@@ -976,11 +1022,12 @@ function shareRecord<T extends object>(kind: string, record: T): T {
 		shared = Object.freeze(record);
 		sharedRecords.set(key, shared);
 	}
+	rememberRecentRecord(kind, shared);
 	return shared as T;
 }
 
 /** Shares a finished style's edge records with every style that has the same. */
-export function shareStyleEdges(style: Style): void {
+function shareStyleEdges(style: Style): void {
 	style.margin = shareRecord("margin", style.margin);
 	style.padding = shareRecord("padding", style.padding);
 	style.position = shareRecord("position", style.position);
@@ -1098,6 +1145,77 @@ export function createStyle(): Style {
 const DEFAULT_STYLE: Style = createStyle();
 shareStyleEdges(DEFAULT_STYLE);
 Object.freeze(DEFAULT_STYLE);
+
+function isSameNumber(a: number, b: number): boolean {
+	return a === b || (Number.isNaN(a) && Number.isNaN(b));
+}
+
+function isSameStyle(a: Style, b: Style): boolean {
+	return (
+		a.displayType === b.displayType &&
+		a.width === b.width &&
+		a.height === b.height &&
+		a.positionType === b.positionType &&
+		a.margin === b.margin &&
+		a.padding === b.padding &&
+		a.border === b.border &&
+		a.position === b.position &&
+		a.gap === b.gap &&
+		a.flexDirection === b.flexDirection &&
+		a.justifyContent === b.justifyContent &&
+		a.alignContent === b.alignContent &&
+		a.alignItems === b.alignItems &&
+		a.alignSelf === b.alignSelf &&
+		a.flexWrap === b.flexWrap &&
+		a.clipsOverflow === b.clipsOverflow &&
+		a.scrollContainer === b.scrollContainer &&
+		a.containsPositioned === b.containsPositioned &&
+		a.justifyItems === b.justifyItems &&
+		a.justifySelf === b.justifySelf &&
+		a.gridTemplateColumns === b.gridTemplateColumns &&
+		a.gridTemplateRows === b.gridTemplateRows &&
+		a.gridTemplateAreas === b.gridTemplateAreas &&
+		a.gridAutoColumns === b.gridAutoColumns &&
+		a.gridAutoRows === b.gridAutoRows &&
+		a.gridAutoFlowColumn === b.gridAutoFlowColumn &&
+		a.gridAutoFlowDense === b.gridAutoFlowDense &&
+		a.gridRowStart === b.gridRowStart &&
+		a.gridRowEnd === b.gridRowEnd &&
+		a.gridColumnStart === b.gridColumnStart &&
+		a.gridColumnEnd === b.gridColumnEnd &&
+		a.colSpan === b.colSpan &&
+		a.rowSpan === b.rowSpan &&
+		a.borderCollapse === b.borderCollapse &&
+		a.tableLayoutFixed === b.tableLayoutFixed &&
+		a.blockFormattingContext === b.blockFormattingContext &&
+		a.order === b.order &&
+		a.flexBasis === b.flexBasis &&
+		a.widthSizing === b.widthSizing &&
+		a.minWidth === b.minWidth &&
+		a.minHeight === b.minHeight &&
+		a.maxWidth === b.maxWidth &&
+		a.maxHeight === b.maxHeight &&
+		isSameNumber(a.flexGrow, b.flexGrow) &&
+		isSameNumber(a.flexShrink, b.flexShrink) &&
+		isSameNumber(a.aspectRatio, b.aspectRatio)
+	);
+}
+
+/** A frozen style equal to the finished style, shared when one was recent. */
+export function shareStyle(style: Style): Style {
+	shareStyleEdges(style);
+	const recent = recentRecords.get("style");
+	if (recent !== undefined) {
+		for (const candidate of recent.records as Style[]) {
+			if (isSameStyle(candidate, style)) {
+				return candidate;
+			}
+		}
+	}
+	Object.freeze(style);
+	rememberRecentRecord("style", style);
+	return style;
+}
 
 function getDefaultStyle(): Style {
 	return DEFAULT_STYLE;

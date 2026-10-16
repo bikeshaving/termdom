@@ -64,7 +64,7 @@ import {
 	type PositionType,
 	releaseCache,
 	resolveValue,
-	shareStyleEdges,
+	shareStyle,
 	type Size,
 	type Sizing,
 	type Style,
@@ -1323,8 +1323,7 @@ function styleLayoutNode(
 ): void {
 	const style = createStyle();
 	styleLayoutNodeProperties(element, style, positionedElements);
-	shareStyleEdges(style);
-	layoutNode.style = style;
+	layoutNode.style = shareStyle(style);
 	stylings.set(layoutNode, {
 		pass,
 		measureKey: getMeasureKey(element),
