@@ -7963,11 +7963,11 @@ function pruneDisconnectedNodes(layout: Layout): void {
 // now generates is derived where every box is derived.
 // Measures are dropped after every restyle has dropped its enumerations,
 // as handleMutations does with records.
-// The style values each box's measure last read, by the element read,
-// and the boxes that read each element. A measure's result is a function
-// of what it read, so it stands until one of those reads differently.
-const measureReads =
-	new WeakMap<LayoutNode, Map<Element, Map<string, string>>>();
+// The style values each box's measure last read, as element, read and
+// value in turn, and the boxes that read each element. A measure's result
+// is a function of what it read, so it stands until one of those reads
+// differently.
+const measureReads = new WeakMap<LayoutNode, Array<Element | string>>();
 const measureReaders = new WeakMap<Element, Set<LayoutNode>>();
 
 // The readers are registered once the measure has returned, and only
@@ -7979,24 +7979,26 @@ function recordReads(
 	measure: Measure,
 ): Measure {
 	return (width, widthSpace, placing, left) => {
-		const reads = new Map<Element, Map<string, string>>();
-		// Reads come in runs on one element.
-		let lastElement: Element | null = null;
-		let lastReads: Map<string, string> | undefined;
+		const reads: Array<Element | string> = [];
+		// Reads come in runs on one element, and a run reads few
+		// properties, so a read is looked for only in its own run.
+		let runStart = 0;
 		const size = recordStyleReads((element, read, value) => {
-			if (element !== lastElement) {
-				lastElement = element;
-				lastReads = reads.get(element);
-				if (lastReads === undefined) {
-					lastReads = new Map();
-					reads.set(element, lastReads);
+			if (reads[runStart] !== element) {
+				runStart = reads.length;
+			}
+			for (let i = runStart; i < reads.length; i += 3) {
+				if (reads[i + 1] === read) {
+					reads[i + 2] = value;
+					return;
 				}
 			}
-			lastReads!.set(read, value);
+			reads.push(element, read, value);
 		}, () => measure(width, widthSpace, placing, left));
 		forgetReads(node);
 		if (layout.measureNodes.has(node)) {
-			for (const element of reads.keys()) {
+			for (let i = 0; i < reads.length; i += 3) {
+				const element = reads[i] as Element;
 				let readers = measureReaders.get(element);
 				if (readers === undefined) {
 					readers = new Set();
@@ -8013,10 +8015,13 @@ function recordReads(
 // A box that leaves takes its reads with it, so no element it read keeps
 // it.
 function forgetReads(node: LayoutNode): void {
-	for (const element of measureReads.get(node)?.keys() ?? []) {
-		measureReaders.get(element)?.delete(node);
+	const reads = measureReads.get(node);
+	if (reads !== undefined) {
+		for (let i = 0; i < reads.length; i += 3) {
+			measureReaders.get(reads[i] as Element)?.delete(node);
+		}
+		measureReads.delete(node);
 	}
-	measureReads.delete(node);
 }
 
 // Every measure that read the element and would read it differently now
@@ -8027,13 +8032,16 @@ function invalidateMeasureReaders(element: Element): void {
 		return;
 	}
 	for (const node of readers) {
-		const reads = measureReads.get(node)?.get(element);
-		if (reads === undefined) {
+		const reads = measureReads.get(node);
+		if (reads === undefined || !reads.includes(element)) {
 			readers.delete(node);
 			continue;
 		}
-		for (const [read, value] of reads) {
-			if (readStyleAgain(element, read) !== value) {
+		for (let i = 0; i < reads.length; i += 3) {
+			if (
+				reads[i] === element &&
+				readStyleAgain(element, reads[i + 1] as string) !== reads[i + 2]
+			) {
 				node.invalidate();
 				break;
 			}
