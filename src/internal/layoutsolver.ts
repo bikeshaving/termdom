@@ -679,6 +679,9 @@ export class LayoutNode {
 	// Whether a child left since the last paint extents, whose rows then
 	// show nothing it painted.
 	lostChild: boolean;
+	// The rows the box paints and where its overflow reaches, as the last
+	// paint extents found them. Layout's to read and write.
+	extent: object | undefined;
 	// Called when the tree this node roots goes stale. The root of a box's
 	// own formatting context tells the box, whose measure lays it out.
 	onStale: (() => void) | null;
@@ -709,6 +712,7 @@ export class LayoutNode {
 		this.measuredWidth = NaN;
 		this.measured = null;
 		this.lostChild = false;
+		this.extent = undefined;
 		this.onStale = null;
 		this.currentStyle = getDefaultStyle();
 		this.result = createResult();
