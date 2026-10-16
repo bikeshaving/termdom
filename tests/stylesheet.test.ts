@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {getBoxModel} from "../src/internal/cssom.ts";
+import {getStyleKey} from "../src/internal/cssom.ts";
 import {
 	getPseudoHost,
 	getPseudoName,
@@ -635,12 +635,12 @@ test("a :has() that reads only down the tree restyles a changed item's ancestors
 		"</ul>";
 	await nextFrame(termdom);
 	const items = [...document.querySelectorAll("li")];
-	const before = items.map((item) => getBoxModel(item));
+	const before = items.map((item) => getStyleKey(item));
 	document.getElementById("s3")!.classList.add("on");
 	await nextFrame(termdom);
-	const after = items.map((item) => getBoxModel(item));
-	// The box model is kept until its element restyles.
-	expect(after.map((model, i) => model === before[i])).toEqual([
+	const after = items.map((item) => getStyleKey(item));
+	// The style key is kept until its element restyles.
+	expect(after.map((key, i) => key === before[i])).toEqual([
 		true,
 		true,
 		true,
