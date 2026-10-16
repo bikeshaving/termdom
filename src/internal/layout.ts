@@ -1903,10 +1903,22 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	// contents flip left the old box in place, holding rows nothing removed.
 	dropSteppedOver(layout, container);
 
-	box.children = children;
+	for (const child of children) {
+		if (child.kind === "anonymous") {
+			child.members = fitToLength(child.members);
+		}
+	}
+	box.children = fitToLength(children);
 	box.heads = heads;
 	layout.derivedContainers.add(container);
 	return box;
+}
+
+// A list grown by push keeps room for many more entries than most of
+// what layout keeps ever holds, so a list that is kept is copied to its
+// length.
+function fitToLength<T>(list: T[]): T[] {
+	return list.slice();
 }
 
 const TABLE_PARTS = new Set<Display>([
@@ -4862,7 +4874,7 @@ function buildLines(
 			toVisualLine(layout, lineNodes, bestBreakWidth, base);
 
 			lines.push({
-				segments: lineNodes,
+				segments: fitToLength(lineNodes),
 				y: currentY + Math.floor(leading / 2),
 				height: lineHeight,
 				width: bestBreakWidth,
@@ -4880,7 +4892,7 @@ function buildLines(
 		lineStart = bestBreak;
 	}
 
-	return {lines, wrapped, height: currentY};
+	return {lines: fitToLength(lines), wrapped, height: currentY};
 }
 
 // css2 §10.8: each box on a line is placed by its vertical-align, text on
@@ -8006,7 +8018,7 @@ function recordReads(
 				}
 				readers.add(node);
 			}
-			measureReads.set(node, reads);
+			measureReads.set(node, fitToLength(reads));
 		}
 		return size;
 	};
