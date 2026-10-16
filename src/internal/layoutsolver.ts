@@ -1050,21 +1050,25 @@ export function toValue(input: Length): CSSValues.Value {
 	return AUTO_VALUE;
 }
 
-const AUTO_PLACEMENT: CSSValues.GridPlacement = {
+const AUTO_PLACEMENT: CSSValues.GridPlacement = Object.freeze({
 	span: false,
 	index: null,
 	name: null,
-};
+});
 
 /** The `auto` track size: the initial value of grid-auto-rows/columns. */
-const AUTO_TRACK: CSSValues.TrackSize = {
-	min: {kind: "auto"},
-	max: {kind: "auto"},
-};
+const AUTO_TRACK: CSSValues.TrackSize = Object.freeze({
+	min: Object.freeze({kind: "auto"}),
+	max: Object.freeze({kind: "auto"}),
+});
 
-const EMPTY_TRACK_LIST: CSSValues.TrackList = {parts: [], endNames: []};
+const EMPTY_TRACK_LIST: CSSValues.TrackList = Object.freeze({
+	parts: Object.freeze([]) as unknown as CSSValues.TrackList["parts"],
+	endNames: Object.freeze([]) as unknown as CSSValues.TrackList["endNames"],
+});
 
-const AUTO_TRACKS: CSSValues.TrackSize[] = [AUTO_TRACK];
+const AUTO_TRACKS: CSSValues.TrackSize[] =
+	Object.freeze([AUTO_TRACK]) as unknown as CSSValues.TrackSize[];
 
 // Browser defaults, not Yoga's: row direction, align-content stretch,
 // flex-shrink 1.
