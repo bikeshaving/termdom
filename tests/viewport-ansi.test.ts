@@ -91,6 +91,27 @@ describe("Viewport Integration Tests", () => {
 		expect(mock.getOutput()).not.toContain("\x1b[?2026h");
 	});
 
+	test("a change on the bottom row moves there in one step, not a newline a row", async () => {
+		const mock = createRawMockProcess(24, 80);
+		const termdom = new TermDOM({
+			transport: transportFromProcess(mock.process as any),
+		});
+		for (let row = 0; row < 24; row++) {
+			const div = termdom.document.createElement("div");
+			div.textContent = `row ${row}`;
+			termdom.document.body.appendChild(div);
+		}
+		await nextFrame(termdom);
+		const before = mock.getOutput().length;
+
+		termdom.document.body.lastElementChild!.textContent = "row 2X";
+		await nextFrame(termdom);
+
+		const frame = mock.getOutput().slice(before);
+		expect(frame).toContain("\x1b[24;6HX");
+		expect(frame).not.toContain("\r\n");
+	});
+
 	// --- Anchor placement, driven by real cursor detection --------------------
 
 	test("content renders from the detected command-start row", async () => {
