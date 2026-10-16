@@ -1120,11 +1120,21 @@ function computePaintExtents(
 	const top = originTop + node.grid.top;
 	const left = originLeft + node.grid.left;
 	let extent = getStoredExtent(node);
+	// A box rounding left alone, with nothing under it laid out again, keeps
+	// its record while it holds its place and size, though its parent was
+	// laid out again around it. Measured lines can change in place, and a
+	// child that left takes rows with it, so neither keeps one.
 	if (
-		settled &&
 		extent !== undefined &&
 		extent.origin === top &&
-		extent.frame === frame
+		extent.frame === frame &&
+		(settled ||
+			(node.settled &&
+				node.measure === null &&
+				!node.lostChild &&
+				extent.left === left &&
+				extent.width === getComputedWidth(node) &&
+				extent.height === getComputedHeight(node)))
 	) {
 		return extent;
 	}
