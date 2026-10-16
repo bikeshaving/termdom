@@ -1756,7 +1756,7 @@ export class Box {
 
 	// Null until a derivation has run, which is not the same as none.
 	children: Box[] | null;
-	heads: Map<Node, Box> | null;
+	heads: Heads | null;
 	// The anonymous table each of a container's children falls in, for
 	// those that fall in one. The children stay in the container's list,
 	// in order, and their layout nodes hang from the table's.
@@ -1831,7 +1831,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 		return box;
 	}
 
-	const heads = new Map<Node, Box>();
+	const heads: Array<Node | Box> = [];
 	const children: Box[] = [];
 	// Matched by ordinal. Only a change to the NUMBER of runs creates or
 	// drops a box.
@@ -1850,7 +1850,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 				// Named here so the one path that builds a box reaches them.
 				// Neither joins the run around it.
 				const own = getPrincipalBox(layout, child, box);
-				heads.set(child, run ?? own);
+				heads.push(child, run ?? own);
 				children.push(own);
 				continue;
 			}
@@ -1859,7 +1859,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 			// box.
 			if (!isInlineLevel(element)) {
 				const own = getPrincipalBox(layout, child, box);
-				heads.set(child, own);
+				heads.push(child, own);
 				children.push(own);
 				run = null;
 				continue;
@@ -1877,7 +1877,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 			children.push(run);
 		}
 		run.members.push(child);
-		heads.set(child, run);
+		heads.push(child, run);
 	}
 
 	// A box whose membership changed measures differently at the same
@@ -1909,9 +1909,40 @@ function getContainerBox(layout: Layout, container: Element): Box {
 		}
 	}
 	box.children = fitToLength(children);
-	box.heads = heads;
+	box.heads = packHeads(heads);
 	layout.derivedContainers.add(container);
 	return box;
+}
+
+// Which box each flow child of a container falls under. Most containers
+// hold a few children, kept as node and box in turn, which costs a
+// fraction of a map. A container with more keeps a map, so a lookup
+// stays one step.
+type Heads = Array<Node | Box> | Map<Node, Box>;
+
+const LISTED_HEADS = 8;
+
+function packHeads(pairs: Array<Node | Box>): Heads {
+	if (pairs.length <= LISTED_HEADS * 2) {
+		return fitToLength(pairs);
+	}
+	const heads = new Map<Node, Box>();
+	for (let i = 0; i < pairs.length; i += 2) {
+		heads.set(pairs[i] as Node, pairs[i + 1] as Box);
+	}
+	return heads;
+}
+
+function getHead(heads: Heads, node: Node): Box | undefined {
+	if (!Array.isArray(heads)) {
+		return heads.get(node);
+	}
+	for (let i = 0; i < heads.length; i += 2) {
+		if (heads[i] === node) {
+			return heads[i + 1] as Box;
+		}
+	}
+	return undefined;
 }
 
 // A list grown by push keeps room for many more entries than most of
@@ -2120,7 +2151,7 @@ function getBoxEntry(layout: Layout, node: Node): Box | null {
 	// Up to whichever ancestor the container counts among its flow
 	// children.
 	for (let current: Node = node; current !== container;) {
-		const entry = heads.get(current);
+		const entry = getHead(heads, current);
 		if (entry) {
 			return entry;
 		}
@@ -2655,7 +2686,7 @@ function addElementNode(
 			getNodeType(child) === child.TEXT_NODE
 		) {
 			let known: Box | null | undefined;
-			const entry = heads?.get(child);
+			const entry = heads === null ? undefined : getHead(heads, child);
 			if (entry !== undefined && !isOutOfFlow(child)) {
 				known = entry.kind === "anonymous" ? entry : null;
 			}
@@ -5663,7 +5694,7 @@ function getStaticPosition(
 	const children = box.children!;
 	let entry: Box | null = null;
 	for (let current: Node = element; current !== container;) {
-		const found = box.heads!.get(current);
+		const found = getHead(box.heads!, current);
 		if (found) {
 			entry = found;
 			break;
