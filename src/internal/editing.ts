@@ -20,6 +20,7 @@ import {
 import {getNextGraphemeBoundary, getPreviousGraphemeBoundary} from "./text.ts";
 import {
 	ELEMENT_NODE,
+	getHTMLLocalName,
 	getLocalName,
 	getNodeType,
 	nodeContains,
@@ -45,7 +46,7 @@ const NBSP = "\u00a0";
 const COLLAPSIBLE_ONLY = /^[ \t\n\r\f]*$/;
 
 // A control edits its own value and keeps its keys, whatever it sits in.
-const FORM_CONTROL_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+const FORM_CONTROL_TAGS = new Set(["input", "textarea", "select"]);
 
 const HEADING_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
 
@@ -1166,7 +1167,8 @@ function collapseTo(
 
 function isFormControl(node: globalThis.Node | null): boolean {
 	const element = node === null ? null : asElement(node);
-	return element !== null && FORM_CONTROL_TAGS.has(element.tagName);
+	return element !== null &&
+		FORM_CONTROL_TAGS.has(getHTMLLocalName(element) ?? "");
 }
 
 function getChildIndex(node: globalThis.Node): number {

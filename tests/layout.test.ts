@@ -1459,6 +1459,18 @@ test("a br has one empty rect where its line breaks", async () => {
 	expect(alone.getBoundingClientRect().height).toBe(1);
 });
 
+test("a br named with an HTML prefix breaks its line", () => {
+	// createElementNS gives an HTML element a prefix, so its tagName is H:BR
+	// while it is a br all the same.
+	const dom = layoutDOM("<div>one</div>");
+	const div = dom.document.querySelector("div")!;
+	div.append(
+		dom.document.createElementNS("http://www.w3.org/1999/xhtml", "h:br"),
+		"two",
+	);
+	expect(div.getBoundingClientRect().height).toBe(2);
+});
+
 test("box-sizing decides what a declared width names", async () => {
 	const termdom = new TermDOM({transport: new MockProcess().transport});
 	const {document, window} = termdom;

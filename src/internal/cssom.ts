@@ -70,7 +70,11 @@ import {
 	type Slots,
 	type Step,
 } from "./slots.ts";
-import {getStringWidth, splitOnASCIIWhitespace} from "./text.ts";
+import {
+	getStringWidth,
+	splitOnASCIIWhitespace,
+	toASCIILowercase,
+} from "./text.ts";
 import {clearTimeout, queueMicrotask, setTimeout} from "./timers.ts";
 import {
 	ELEMENT_NODE,
@@ -78,6 +82,7 @@ import {
 	getAttributeValue,
 	getDefaultView,
 	getDocumentExchange,
+	getHTMLLocalName,
 	getLocalName,
 	getNamespace,
 	getNodeType,
@@ -518,7 +523,7 @@ function getListNestingDepth(element: Element): number {
 	for (
 		let parent = element.parentElement; parent; parent = parent.parentElement
 	) {
-		if (parent.tagName === "UL" || parent.tagName === "OL") {
+		if (isListElement(parent)) {
 			depth++;
 		}
 	}
@@ -545,7 +550,7 @@ function getListGutterWidth(listElement: Element): number {
 
 		let widest = 0;
 		for (const child of Array.from(listElement.children)) {
-			if (child.tagName !== "LI") {
+			if (getHTMLLocalName(child) !== "li") {
 				continue;
 			}
 			const marker = cascade
@@ -3064,7 +3069,7 @@ class CSSStyleSheet {
 	_sync?(this: Slots<CSSStyleSheet>): void {
 		const slots = this;
 		const node = slots.ownerNode;
-		if (!node || node.tagName !== "STYLE") {
+		if (!node || getHTMLLocalName(node as Element) !== "style") {
 			return;
 		}
 		const text = node.textContent ?? "";
@@ -6233,7 +6238,7 @@ function attachPseudoElementsToElement(
 	const tags = getPseudoSubjects(cascade);
 	if (
 		tags !== null &&
-		!tags.has(element.tagName) &&
+		!tags.has(toASCIILowercase(getLocalName(element))) &&
 		!hasAttributeByName(element, "part") &&
 		pseudoElementCount(element) === 0 &&
 		!(getAttributeValue(element, "style") ?? "").includes("list-item")
@@ -6248,10 +6253,15 @@ function attachPseudoElementsToElement(
 
 const FOCUS_STATES = ["focus", "focus-within", "focus-visible"];
 
+function isListElement(element: Element): boolean {
+	const name = getHTMLLocalName(element);
+	return name === "ul" || name === "ol";
+}
+
 function isStyleElement(element: Element): boolean {
 	return (
-		element.tagName === "STYLE" ||
-		(element.tagName === "LINK" &&
+		getHTMLLocalName(element) === "style" ||
+		(getHTMLLocalName(element) === "link" &&
 			getAttributeValue(element, "rel") === "stylesheet")
 	);
 }
@@ -6262,11 +6272,7 @@ function isStyleElement(element: Element): boolean {
 // cascade. Computing it during block layout deletes this.
 function mutationChangesListItems(mutation: MutationRecord): boolean {
 	const target = mutation.target;
-	if (
-		getNodeType(target) === 1 &&
-		((target as Element).tagName === "UL" ||
-			(target as Element).tagName === "OL")
-	) {
+	if (getNodeType(target) === 1 && isListElement(target as Element)) {
 		return true;
 	}
 	for (const list of [getAddedNodes(mutation), getRemovedNodes(mutation)]) {
@@ -6275,7 +6281,10 @@ function mutationChangesListItems(mutation: MutationRecord): boolean {
 				continue;
 			}
 			const element = node as Element;
-			if (element.tagName === "LI" || element.querySelector("li") !== null) {
+			if (
+				getHTMLLocalName(element) === "li" ||
+				element.querySelector("li") !== null
+			) {
 				return true;
 			}
 		}
@@ -6681,7 +6690,7 @@ export function handleMutations(
 		if (mutation.type === "childList") {
 			// A <style>'s children ARE its stylesheet text. A shadow
 			// sheet's sync stays inside its root.
-			if ((mutation.target as Element).tagName === "STYLE") {
+			if (getHTMLLocalName(mutation.target as Element) === "style") {
 				reparseOwnerText(getSheet(mutation.target as Element));
 				const styleRoot = mutation.target.getRootNode();
 				if (isShadowRoot(styleRoot)) {
@@ -6702,7 +6711,7 @@ export function handleMutations(
 				if (getNodeType(node) === Node.ELEMENT_NODE) {
 					const element = node as Element;
 					if (isStyleElement(element)) {
-						const addedRoot = element.tagName === "STYLE"
+						const addedRoot = getHTMLLocalName(element) === "style"
 							? element.getRootNode()
 							: null;
 						if (addedRoot !== null && isShadowRoot(addedRoot)) {
@@ -6865,7 +6874,7 @@ export function handleMutations(
 			}
 		} else if (mutation.type === "characterData") {
 			const owner = mutation.target.parentElement;
-			if (owner?.tagName === "STYLE") {
+			if (owner !== null && getHTMLLocalName(owner) === "style") {
 				reparseOwnerText(getSheet(owner));
 				const ownerRoot = owner.getRootNode();
 				if (isShadowRoot(ownerRoot)) {
@@ -7865,17 +7874,17 @@ const PART_PSEUDOS: Readonly<Record<
 		selection: ["::selection"],
 		"details-content": ["::details-content"],
 	},
-	SELECT: {picker: ["::picker(select)"], indicator: ["::picker-icon"]},
-	INPUT: {
+	select: {picker: ["::picker(select)"], indicator: ["::picker-icon"]},
+	input: {
 		track: ["::slider-track"],
 		fill: ["::slider-fill"],
 		thumb: ["::slider-thumb"],
 	},
-	PROGRESS: {
+	progress: {
 		track: ["::slider-track", "::-webkit-progress-bar"],
 		bar: ["::slider-fill", "::-webkit-progress-value", "::-moz-progress-bar"],
 	},
-	METER: {
+	meter: {
 		track: ["::slider-track", "::-webkit-meter-bar"],
 		bar: ["::slider-fill", "::-moz-meter-bar"],
 		optimum: ["::-webkit-meter-optimum-value"],
@@ -8359,19 +8368,23 @@ function getElementCounterEffects(
 		declares ? (slots._computedValue(property) ?? undefined) : undefined,
 	);
 	const names = (pairs: Array<[string, number]>) => pairs.map(([name]) => name);
-	const tag = element.tagName;
+	const tag = getHTMLLocalName(element);
 	if (
-		(tag === "OL" || tag === "UL") &&
+		(tag === "ol" || tag === "ul") &&
 		!names(effects.resets).includes("list-item")
 	) {
 		effects.resets.push(["list-item", getListStart(element)]);
 	}
-	if (tag === "LI") {
+	if (tag === "li") {
 		const list = element.parentElement;
 		if (!names(effects.increments).includes("list-item")) {
 			effects.increments.push([
 				"list-item",
-				list?.tagName === "OL" && hasAttributeByName(list, "reversed") ? -1 : 1,
+				list !== null &&
+					getHTMLLocalName(list) === "ol" &&
+					hasAttributeByName(list, "reversed")
+					? -1
+					: 1,
 			]);
 		}
 		const value = parseInt(getAttributeValue(element, "value") ?? "", 10);
@@ -8468,7 +8481,7 @@ function findInnermost(
 
 // One before the first item's number, so the first step gives it.
 function getListStart(list: Element): number {
-	if (list.tagName !== "OL") {
+	if (getHTMLLocalName(list) !== "ol") {
 		return 0;
 	}
 	const reversed = hasAttributeByName(list, "reversed");
@@ -9396,7 +9409,7 @@ function invalidateEnclosingList(cascade: Cascade, target: Node): void {
 			: target.parentElement;
 
 	for (; element; element = element.parentElement) {
-		if (element.tagName !== "UL" && element.tagName !== "OL") {
+		if (!isListElement(element)) {
 			continue;
 		}
 
@@ -10829,7 +10842,7 @@ function getPartPseudos(element: Element, root: Node): string[] {
 	if (part === null) {
 		return [];
 	}
-	const host = (root as unknown as ShadowRoot).host.tagName;
+	const host = getHTMLLocalName((root as unknown as ShadowRoot).host) ?? "";
 	const pseudos: string[] = [];
 	for (const name of part.split(/\s+/)) {
 		pseudos.push(
@@ -10990,7 +11003,7 @@ function getPseudoSubjects(cascade: Cascade): Set<string> | null {
 			if (!rule.subjectTag) {
 				return (cascade.pseudoSubjectTags = null);
 			}
-			tags.add(rule.subjectTag.toUpperCase());
+			tags.add(toASCIILowercase(rule.subjectTag));
 		}
 	}
 	return (cascade.pseudoSubjectTags = tags);
@@ -11008,8 +11021,8 @@ function pseudoRuleCouldMatch(
 	if (pseudoType === "::marker") {
 		// Markers exist only on display:list-item boxes.
 		return (
-			element.tagName === "LI" ||
-			element.tagName === "SUMMARY" ||
+			getHTMLLocalName(element) === "li" ||
+			getHTMLLocalName(element) === "summary" ||
 			cascade.listItemRulesExist ||
 			(getAttributeValue(element, "style") ?? "").includes("list-item")
 		);
