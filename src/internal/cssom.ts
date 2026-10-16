@@ -30,6 +30,7 @@ import {
 	flushStyle,
 	getAddedNodes,
 	getClassTokens,
+	getFullscreenElement,
 	getHighlightRegistry,
 	getPseudoHost,
 	getPseudoName,
@@ -75,6 +76,7 @@ import {
 	ELEMENT_NODE,
 	getAttributeList,
 	getAttributeValue,
+	getDefaultView,
 	getDocumentExchange,
 	getLocalName,
 	getNamespace,
@@ -108,9 +110,9 @@ function getElementDefaults(
 		return undefined;
 	}
 	const name = getLocalName(element);
-	const document = element.ownerDocument;
-	if (document !== null && document.fullscreenElement === element) {
-		const window = document.defaultView;
+	const document = getOwnerDocument(element);
+	if (document !== null && getFullscreenElement(document) === element) {
+		const window = getDefaultView(document);
 		if (window) {
 			return {
 				position: "fixed",
@@ -3920,11 +3922,34 @@ export function readStyleAgain(element: Element, read: string): string {
 		: readComputedValue(element, read.slice(bar + 1), read.slice(0, bar));
 }
 
+// Layout reads many properties of one element in a row. The last
+// element's declaration is kept with the cache it came from, so those
+// reads skip the lookups. Dropping an element's declaration forgets it.
+let lastRead: {
+	element: Element | null;
+	cache: object | null;
+	slots: Slots<ComputedStyleDeclaration> | null;
+} = {element: null, cache: null, slots: null};
+
+function forgetLastRead(element: Element): void {
+	if (lastRead.element === element) {
+		lastRead = {element: null, cache: null, slots: null};
+	}
+}
+
 function readComputedValue(
 	element: Element,
 	property: string,
 	pseudoElement: string,
 ): string {
+	if (
+		pseudoElement === "" &&
+		lastRead.element === element &&
+		lastRead.cache === lastRead.slots!.cascade!.computedStyleCache &&
+		lastRead.slots!.cascade!.document === getOwnerDocument(element)
+	) {
+		return lastRead.slots!._computedValue(property);
+	}
 	// A pseudo-element node's style is its host's declaration for the
 	// pseudo-element it fills. It matches no selector of its own.
 	const host = getPseudoHost(element);
@@ -3946,11 +3971,14 @@ function readComputedValue(
 	if (!cascade) {
 		return "";
 	}
-	return pseudoElement
-		? _(getPseudoDeclaration(cascade, element, pseudoElement))._computedValue(
-			property,
-		)
-		: computedSlotsFor(cascade, element)._computedValue(property);
+	if (pseudoElement) {
+		return _(
+			getPseudoDeclaration(cascade, element, pseudoElement),
+		)._computedValue(property);
+	}
+	const slots = computedSlotsFor(cascade, element);
+	lastRead = {element, cache: cascade.computedStyleCache, slots};
+	return slots._computedValue(property);
 }
 
 // A box with nothing to contain or transform: no box at all, or a plain
@@ -4231,7 +4259,7 @@ function isShareable(element: Element): boolean {
 		getNamespace(element) === HTML_NAMESPACE &&
 		!UNSHARED_ELEMENTS.has(getLocalName(element)) &&
 		getAttributeValue(element, "dir") !== "auto" &&
-		element.ownerDocument?.fullscreenElement !== element &&
+		getFullscreenElement(getOwnerDocument(element)!) !== element &&
 		getPseudoHost(element) === null
 	);
 }
@@ -5456,7 +5484,8 @@ function resolvePropertyValueRaw(
 	// ancestor's own rules apply. A custom property always inherits; there
 	// is no fixed list of names.
 	if (CSSValues.isInheritedProperty(property)) {
-		const window = declarationSlots.element.ownerDocument?.defaultView;
+		const document = getOwnerDocument(declarationSlots.element);
+		const window = document && getDefaultView(document);
 		if (window) {
 			// Flat-tree parents. Inheritance crosses the shadow boundary (host
 			// to shadow child) and reaches slotted content through its slot's
@@ -6105,7 +6134,7 @@ function isSelectedBy(
 	scope: Node,
 	shadow: Node | null = null,
 ): boolean {
-	const cascade = documentCascades.get(element.ownerDocument as object);
+	const cascade = documentCascades.get(getOwnerDocument(element) as object);
 	return matchesCompiled(element as unknown as DOMElement, selector, {
 		scope: scope as unknown as DOMNode,
 		shadow: shadow as DOMNode | null,
@@ -8904,6 +8933,7 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 		storeTransitionFallback(cascade, element, "", dropped.resolved);
 	}
 	cascade.computedStyleCache.delete(element);
+	forgetLastRead(element);
 	cascade.hasResults = null;
 	const hadPseudoStyles = cascade.pseudoElementStyleCache.delete(element);
 	// A style change can flip display: contents, which moves the node's
@@ -9125,6 +9155,7 @@ function invalidateElementCaches(
 		storeTransitionFallback(cascade, element, "", dropped.resolved);
 	}
 	cascade.computedStyleCache.delete(element);
+	forgetLastRead(element);
 	cascade.hasResults = null;
 	const droppedPseudos = cascade.pseudoElementStyleCache.get(element);
 	if (droppedPseudos) {

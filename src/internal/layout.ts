@@ -93,7 +93,14 @@ import {
 	toVisualOrder,
 	writeClusterWidths,
 } from "./text.ts";
-import {getAttributeValue, getLocalName, getNodeType} from "./tree.ts";
+import {
+	getAttributeValue,
+	getCharacterData,
+	getDefaultView,
+	getLocalName,
+	getNodeType,
+	getOwnerDocument,
+} from "./tree.ts";
 import {getCellSize, pxFromCells, UNIT_CELL} from "./units.ts";
 
 type Position = "static" | "relative" | "absolute" | "fixed" | "sticky";
@@ -556,7 +563,8 @@ export function renderTextFragment(
 // White space renders nothing where the run it would open has no
 // content to sit beside (css2 §9.4.2 with css-text-3 §4.1.1).
 function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
-	if (!textNode.textContent || !COLLAPSIBLE_ONLY.test(textNode.textContent)) {
+	const data = getCharacterData(textNode);
+	if (!data || !COLLAPSIBLE_ONLY.test(data)) {
 		return false;
 	}
 
@@ -1406,7 +1414,8 @@ function styleLayoutNodeProperties(
 	style: Style,
 	positionedElements?: Set<Element>,
 ): void {
-	const window = element.ownerDocument?.defaultView;
+	const document = getOwnerDocument(element);
+	const window = document && getDefaultView(document);
 	if (!window) {
 		throw new Error("Element must have an ownerDocument with defaultView");
 	}
@@ -3836,8 +3845,9 @@ function collectLeaves(
 		if (getNodeType(node) === node.TEXT_NODE) {
 			const textNode = node as Text;
 
-			if (textNode.textContent) {
-				const isWhitespaceOnly = COLLAPSIBLE_ONLY.test(textNode.textContent);
+			const content = getCharacterData(textNode);
+			if (content) {
+				const isWhitespaceOnly = COLLAPSIBLE_ONLY.test(content);
 
 				if (isWhitespaceOnly && shouldCollapseWhitespaceTextNode(textNode)) {
 					cursor = flowNext(node, root, false);
@@ -3848,11 +3858,7 @@ function collectLeaves(
 					continue;
 				}
 
-				leafNodes.push({
-					type: "text",
-					node: textNode,
-					content: textNode.textContent,
-				});
+				leafNodes.push({type: "text", node: textNode, content});
 			}
 			cursor = flowNext(node, root, false);
 			pushExitedEdges(leafNodes, node, cursor, root);
@@ -4439,12 +4445,13 @@ function renderLeaf(
 	textNode: Text,
 	whiteSpace: string,
 ): {text: string; offsets: Int32Array | null} {
-	const key = `${whiteSpace}\u0000${textNode.data}`;
+	const data = getCharacterData(textNode);
+	const key = `${whiteSpace}\u0000${data}`;
 	const cached = layout.renderedLeaves.get(textNode);
 	if (cached?.key === key) {
 		return cached;
 	}
-	const rendered = renderWhiteSpaceOffsets(textNode.data, whiteSpace);
+	const rendered = renderWhiteSpaceOffsets(data, whiteSpace);
 	layout.renderedLeaves.set(textNode, {
 		key,
 		text: rendered.text,
@@ -6087,7 +6094,7 @@ export class Layout {
 		pruneDisconnectedNodes(this);
 
 		for (const node of this.invalidatedNodes) {
-			if (node.isConnected) {
+			if (isConnectedNode(node)) {
 				// The flat-tree BOX parent. A shadow root's direct child has no
 				// parentElement, and attaching under a display:contents element
 				// strands the child in an orphan subtree.

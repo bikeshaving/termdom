@@ -24015,7 +24015,7 @@ function getFullscreenStack(document: Document): Element[] {
 }
 
 // The top of the stack is the element the viewport shows alone.
-function getFullscreenElement(document: Document): Element | null {
+export function getFullscreenElement(document: Document): Element | null {
 	const stack = fullscreenStacks.get(document);
 	return stack?.length ? stack[stack.length - 1] : null;
 }

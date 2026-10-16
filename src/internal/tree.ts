@@ -4,7 +4,14 @@
  * slots. Nothing here builds or changes a tree, so every module that walks
  * one can import it without importing the DOM.
  */
-import type {Attr, AttributeSlots, Document, Element, Node} from "./dom.ts";
+import type {
+	Attr,
+	AttributeSlots,
+	CharacterData,
+	Document,
+	Element,
+	Node,
+} from "./dom.ts";
 import type {Exchange} from "./exchange.ts";
 import {
 	_,
@@ -163,6 +170,19 @@ export function getNodeType(node: globalThis.Node): number {
 export function getOwnerDocument(node: globalThis.Node): Document | null {
 	const document = _(node as Node).document;
 	return document === (node as unknown) ? null : document;
+}
+
+/** The document's window, read without going through its binding. */
+export function getDefaultView(
+	document: globalThis.Document,
+): (globalThis.Window & typeof globalThis) | null {
+	return _(document as unknown as Document).extra.defaultView as
+		(globalThis.Window & typeof globalThis) | null;
+}
+
+/** A Text or comment node's data, read without going through its binding. */
+export function getCharacterData(node: globalThis.CharacterData): string {
+	return _(node as unknown as CharacterData).data;
 }
 
 /** The element's localName, read without going through its binding. */
