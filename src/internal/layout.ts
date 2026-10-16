@@ -1185,11 +1185,11 @@ function computePaintExtents(
 	if (lines !== undefined) {
 		right = Math.max(
 			right,
-			node.style.border.left + node.result.padding.left + lines.maxLineWidth,
+			node.style.border.left + node.result.paddingLeft + lines.maxLineWidth,
 		);
 		// An inline-block on a line paints its content, which can reach past
 		// its own box and the line.
-		const contentTop = top + node.style.border.top + node.result.padding.top;
+		const contentTop = top + node.style.border.top + node.result.paddingTop;
 		for (const [reach, overflow] of getInlineBlockReaches(layout, lines)) {
 			highest = Math.min(highest, contentTop + reach);
 			lowest = Math.max(lowest, contentTop + overflow);
@@ -1205,9 +1205,9 @@ function computePaintExtents(
 			scrollRight = scrollBottom = null;
 		} else {
 			scrollRight =
-				node.style.border.left + node.result.padding.left + own.maxLineWidth;
+				node.style.border.left + node.result.paddingLeft + own.maxLineWidth;
 			scrollBottom =
-				node.style.border.top + node.result.padding.top + own.totalHeight;
+				node.style.border.top + node.result.paddingTop + own.totalHeight;
 		}
 	}
 	let rowOrdered = true;
@@ -4995,7 +4995,7 @@ function getLineInTree(
 		const line = lines !== undefined && lines.lines.length > 0
 			? (first ? lines.lines[0] : lines.lines.at(-1)!).y +
 				child.style.border.top +
-				child.result.padding.top
+				child.result.paddingTop
 			: getLineInTree(layout, child, first);
 		if (line !== null) {
 			return child.grid.top + line;
@@ -5644,9 +5644,9 @@ function getStaticPosition(
 	const offsetLeft = origin.x - containingOrigin.x;
 	const offsetTop = origin.y - containingOrigin.y;
 	const contentLeft =
-		containerNode.style.border.left + containerNode.result.padding.left;
+		containerNode.style.border.left + containerNode.result.paddingLeft;
 	const contentTop =
-		containerNode.style.border.top + containerNode.result.padding.top;
+		containerNode.style.border.top + containerNode.result.paddingTop;
 
 	const box = getContainerBox(layout, container);
 	const children = box.children!;
@@ -5701,7 +5701,7 @@ function getStaticPosition(
 				(!Number.isNaN(previousNode.result.height)
 					? previousNode.result.height
 					: 0) +
-				previousNode.result.margin.bottom,
+				previousNode.result.marginBottom,
 		};
 	}
 	return {left: offsetLeft + contentLeft, top: offsetTop + contentTop};
@@ -6290,11 +6290,11 @@ export class Layout {
 		let bottom: number;
 		if (node !== undefined) {
 			const {border} = node.style;
-			const {padding} = node.result;
-			left = border.left + padding.left;
-			top = border.top + padding.top;
-			right = border.right + padding.right;
-			bottom = border.bottom + padding.bottom;
+			const {result} = node;
+			left = border.left + result.paddingLeft;
+			top = border.top + result.paddingTop;
+			right = border.right + result.paddingRight;
+			bottom = border.bottom + result.paddingBottom;
 			// Edges its measure counts in its size are not on its node.
 			const masked = getMaskedEdges(element);
 			if (masked.length > 0) {
@@ -9266,7 +9266,7 @@ function measureScrollExtent(
 		return null;
 	}
 	const border = layoutNode.style.border;
-	const padding = layoutNode.result.padding;
+	const result = layoutNode.result;
 	let right: number | null = 0;
 	let bottom = 0;
 	const extent = layoutNode.style.clipsOverflow
@@ -9286,8 +9286,8 @@ function measureScrollExtent(
 			if (lines === undefined) {
 				return null;
 			}
-			right = border.left + padding.left + lines.maxLineWidth;
-			bottom = border.top + padding.top + lines.totalHeight;
+			right = border.left + result.paddingLeft + lines.maxLineWidth;
+			bottom = border.top + result.paddingTop + lines.totalHeight;
 		}
 		for (const child of layoutNode.children) {
 			// A display:none placeholder holds a stale layout.
@@ -9311,9 +9311,11 @@ function measureScrollExtent(
 	return {
 		width: right === null
 			? null
-			: Math.round(Math.max(clientWidth, right - border.left + padding.right)),
+			: Math.round(
+				Math.max(clientWidth, right - border.left + result.paddingRight),
+			),
 		height: Math.round(
-			Math.max(clientHeight, bottom - border.top + padding.bottom),
+			Math.max(clientHeight, bottom - border.top + result.paddingBottom),
 		),
 	};
 }
