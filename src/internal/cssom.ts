@@ -5430,7 +5430,8 @@ function resolveCascadedValue(
 	// `currentcolor` is the element's own color, which is what a resolved
 	// value reports. On `color` itself it means the parent's.
 	if (
-		value.toLowerCase() === "currentcolor" &&
+		value.length === 12 &&
+		toASCIILowercase(value) === "currentcolor" &&
 		CSSValues.isColorProperty(property)
 	) {
 		// The COMPUTED color, on the engine's own read path. The author path
