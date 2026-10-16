@@ -53,6 +53,7 @@ import {type Framebuffer, repaintAll, requestFrame} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";
 import {
 	getAttributeValue,
+	getHTMLLocalName,
 	getLocalName,
 	getNodeType,
 	hasAttributeByName,
@@ -846,8 +847,8 @@ function deliverPaste(input: Input, text: string): void {
 			}),
 		),
 	);
-	const tag = target.tagName;
-	if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
+	const tag = getHTMLLocalName(target);
+	if (proceed && (tag === "input" || tag === "textarea")) {
 		const event = constructInternal(() =>
 			new input.window.InputEvent("beforeinput", {
 				inputType: "insertFromPaste",
@@ -1018,8 +1019,8 @@ const KEYLESS_INPUTS = new Set([
 // Elements whose own keys a scrolling key would take: controls that edit,
 // step or pick with them, and editable content.
 function takesKeys(element: Element, key: string): boolean {
-	const tag = element.tagName;
-	if (tag === "INPUT") {
+	const tag = getHTMLLocalName(element);
+	if (tag === "input") {
 		const type = (element as HTMLInputElement).type;
 		if (type === "radio") {
 			return key.startsWith("Arrow");
@@ -1027,7 +1028,7 @@ function takesKeys(element: Element, key: string): boolean {
 		return !KEYLESS_INPUTS.has(type);
 	}
 	return (
-		tag === "TEXTAREA" || tag === "SELECT" || getEditingHost(element) !== null
+		tag === "textarea" || tag === "select" || getEditingHost(element) !== null
 	);
 }
 
@@ -1531,8 +1532,8 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 }
 
 function insertText(input: Input, target: Element, text: string): void {
-	const tag = target.tagName;
-	if (tag !== "INPUT" && tag !== "TEXTAREA") {
+	const tag = getHTMLLocalName(target);
+	if (tag !== "input" && tag !== "textarea") {
 		requestEditingInsert(target, "insertText", text);
 		return;
 	}

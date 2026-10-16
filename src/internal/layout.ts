@@ -99,6 +99,7 @@ import {
 	getAttributeValue,
 	getCharacterData,
 	getDefaultView,
+	getHTMLLocalName,
 	getLocalName,
 	getNodeType,
 	getOwnerDocument,
@@ -1675,7 +1676,7 @@ function styleLayoutNodeProperties(
 	// (css-contain-2 §3.2).
 	style.blockFormattingContext =
 		isDocumentElement(element) ||
-		element.tagName === "BODY" ||
+		getHTMLLocalName(element) === "body" ||
 		(display !== "block" && display !== "list-item") ||
 		getComputedValue(element, "overflow") !== "visible" ||
 		isOutOfFlow(element) ||
@@ -3965,7 +3966,7 @@ function collectLeaves(
 				if (cursor === null) {
 					break;
 				}
-			} else if (element.tagName === "BR") {
+			} else if (getHTMLLocalName(element) === "br") {
 				leafNodes.push({type: "br", node: element as HTMLBRElement});
 				cursor = flowNext(node, root, false);
 				pushExitedEdges(leafNodes, node, cursor, root);
@@ -4058,7 +4059,7 @@ function collectLeaves(
 				const widthSizing =
 					declaredSizing === "none" &&
 						boxModel.width === undefined &&
-						element.tagName !== "TEXTAREA" &&
+						getHTMLLocalName(element) !== "textarea" &&
 						Number.isFinite(availableWidth) &&
 						availableWidth < Number.MAX_SAFE_INTEGER
 						? "fit-content"
@@ -4084,7 +4085,7 @@ function collectLeaves(
 						boxModel.marginRight,
 					);
 					contentWidthMode = "shrink-to-fit";
-				} else if (element.tagName === "TEXTAREA") {
+				} else if (getHTMLLocalName(element) === "textarea") {
 					// cols sizes the CONTENT box (spec default 20). The UA
 					// sheet carries no width for it. A constant that pre-baked
 					// the UA chrome could not be undone by an author's `border:
@@ -4238,7 +4239,7 @@ function collectLeaves(
 				// browser would scroll inside a fixed box. cols fix the
 				// reported width. The box is attribute-sized however short the
 				// value is.
-				if (element.tagName === "TEXTAREA") {
+				if (getHTMLLocalName(element) === "textarea") {
 					if (boxModel.height === undefined) {
 						const rows = parseInt(getAttributeValue(element, "rows") ?? "", 10);
 						finalContentHeight = Math.max(
@@ -8577,7 +8578,7 @@ function textPointAt(node: Node, offset: number): [Text, number] | null {
 
 function isLineBreak(node: Node): boolean {
 	return getNodeType(node) === node.ELEMENT_NODE &&
-		(node as Element).tagName === "BR";
+		getHTMLLocalName(node as Element) === "br";
 }
 
 function firstTextIn(node: Node): Text | null {

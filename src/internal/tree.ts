@@ -216,6 +216,16 @@ export function hasAttributeByName(
 	return getAttributeByName(element as Element, qualifiedName) !== null;
 }
 
+/**
+ * The element's localName when it is an HTML element, or null. Engine
+ * checks of an element's kind read this rather than tagName, which is
+ * lowercase in an XML document and names a foreign element the same.
+ */
+export function getHTMLLocalName(element: globalThis.Element): string | null {
+	const slots = _(element as Element);
+	return slots.namespace === HTML_NAMESPACE ? slots.localName : null;
+}
+
 /** The element's namespaceURI, read without going through its binding. */
 export function getNamespace(element: globalThis.Element): string | null {
 	return _(element as Element).namespace;
