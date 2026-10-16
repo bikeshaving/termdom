@@ -648,7 +648,7 @@ class CSSStyleDeclaration {
 		}
 		slots._sync!();
 		slots.declarations = NO_DECLARATIONS;
-		slots.byName = null;
+		slots.byName?.clear();
 		for (const declaration of CSSValues.parseDeclarationText(text ?? "")) {
 			if (!isSupportedDeclaration(this, declaration.name)) {
 				continue;
@@ -784,7 +784,7 @@ class CSSStyleDeclaration {
 		}
 		slots.attributeText = text;
 		slots.declarations = NO_DECLARATIONS;
-		slots.byName = null;
+		slots.byName?.clear();
 		for (const declaration of CSSValues.parseDeclarationText(text)) {
 			applyDeclaration(
 				getOwner(this),
