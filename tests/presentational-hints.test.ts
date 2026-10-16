@@ -17,7 +17,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {UA_DOCUMENT_STYLES} from "../src/internal/useragent.ts";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame, stripControlCodes} from "./test-utils.js";
 
 /** The computed value of a property on the element an id names. */
 function computed(html: string, id: string, property: string): string {
@@ -359,6 +359,64 @@ test("changing a table's cellpadding restyles its cells", () => {
 	expect(window.getComputedStyle(cell).paddingLeft).toBe("1px");
 	document.getElementById("t")!.setAttribute("cellpadding", "4");
 	expect(window.getComputedStyle(cell).paddingLeft).toBe("4px");
+});
+
+test("a table with border=\"0\" draws no borders on its cells", async () => {
+	const render = async (html: string): Promise<string> => {
+		const terminal = new MockProcess({cols: 20, rows: 6});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML = html;
+		await nextFrame(dom);
+		const output = stripControlCodes(terminal.getStaticANSI());
+		dom.dispose();
+		return output;
+	};
+	const cells = "<tr><td>a</td><td>b</td></tr>";
+	const plain = await render(`<table border="0">${cells}</table>`);
+	expect(plain).toContain("a");
+	expect(plain).toContain("b");
+	expect(plain).not.toMatch(/[\u2500-\u257f]/);
+	expect(await render(`<table>${cells}</table>`)).toMatch(/[\u2500-\u257f]/);
+});
+
+test("border=\"0\" on a table yields to author borders and stops at nested tables", () => {
+	expect(
+		computed(
+			"<table border=\"0\"><tr><td id=\"c\">x</td></tr></table>",
+			"c",
+			"border-top-style",
+		),
+	).toBe("none");
+	expect(
+		computed(
+			"<style>td { border: 1px solid }</style>" +
+				"<table border=\"0\"><tr><td id=\"c\">x</td></tr></table>",
+			"c",
+			"border-top-style",
+		),
+	).toBe("solid");
+	expect(
+		computed(
+			"<table border=\"0\"><tr><td>" +
+				"<table><tr><td id=\"c\">x</td></tr></table>" +
+				"</td></tr></table>",
+			"c",
+			"border-top-style",
+		),
+	).toBe("solid");
+});
+
+test("changing a table's border restyles its cells", () => {
+	const {window, document} = new TermDOM({
+		html:
+			"<!DOCTYPE html><html><body><table id=\"t\"><tr>" +
+			"<td id=\"c\">x</td></tr></table></body></html>",
+		transport: new MockProcess().transport,
+	});
+	const cell = document.getElementById("c")!;
+	expect(window.getComputedStyle(cell).borderTopStyle).toBe("solid");
+	document.getElementById("t")!.setAttribute("border", "0");
+	expect(window.getComputedStyle(cell).borderTopStyle).toBe("none");
 });
 
 test("list type attributes reach list-style-type", () => {

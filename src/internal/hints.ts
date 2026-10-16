@@ -302,6 +302,12 @@ export function getPresentationalHints(element: Element): Hints | null {
 		if (padding !== null) {
 			setEdges(hints, "padding-*", padding);
 		}
+		// The UA sheet borders every cell, which suits a table written for a
+		// terminal. A table that asks for no border, as layout tables do,
+		// takes it off its own cells too.
+		if (parsePixels(table?.getAttribute("border") ?? null) === "0px") {
+			setEdges(hints, "border-*-style", "none");
+		}
 	}
 
 	if (name === "col" || name === "colgroup") {
