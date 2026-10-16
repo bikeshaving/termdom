@@ -599,6 +599,8 @@ function getCacheSlot(
 	);
 }
 
+const NO_CHILDREN: LayoutNode[] = Object.freeze([]) as unknown as LayoutNode[];
+
 export class LayoutNode {
 	measureFn: Measure | null;
 	staticPositionFn: StaticPosition | null;
@@ -676,7 +678,7 @@ export class LayoutNode {
 	onStale: (() => void) | null;
 
 	constructor(pool: CachePool = sharedPool) {
-		this.children = [];
+		this.children = NO_CHILDREN;
 		this.parent = null;
 		this.ownerFree = false;
 		this.measureFn = null;
@@ -859,7 +861,11 @@ export function insertChild(
 ): void {
 	child.parent = layoutNode;
 	child.stale = true;
-	layoutNode.children.splice(index, 0, child);
+	if (layoutNode.children === NO_CHILDREN) {
+		layoutNode.children = [child];
+	} else {
+		layoutNode.children.splice(index, 0, child);
+	}
 	if (child.outOfFlowCount !== 0) {
 		countOutOfFlow(layoutNode, child.outOfFlowCount);
 	}
