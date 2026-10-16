@@ -2192,7 +2192,10 @@ function runBreakResult(layout: Layout, node: Node): BreakResult | undefined {
 // box of the container that reached the layout tree.
 function syncContainerRuns(layout: Layout, container: Element): void {
 	layout.dirtyRunContainers.delete(container);
-	if (getLayoutDisplay(container) === "none" || isHiddenByAncestor(container)) {
+	if (
+		getLayoutDisplay(container) === "none" ||
+		isHiddenByAncestor(layout, container)
+	) {
 		// The only pass that ever visits a hidden container.
 		dropHiddenContent(layout, container);
 		return;
@@ -2468,15 +2471,18 @@ function isReachableFrom(from: LayoutNode | null, target: LayoutNode): boolean {
 // `known` is the anonymous run box holding the node, or null when the
 // node has a box of its own, from a caller that has the container's box
 // list in hand. Undefined asks for it, which climbs to the container.
+// `shownAncestors` is set by a parent adding its own children, having
+// been shown itself.
 function addNode(
 	layout: Layout,
 	node: Node,
 	parentLayoutNode: LayoutNode | null = null,
 	known?: Box | null,
+	shownAncestors = false,
 ): void {
 	// Fresh builds never descend past a display:none boundary, and rebuild
 	// sweeps must not bring descendants back in under it.
-	if (isHiddenByAncestor(node)) {
+	if (!shownAncestors && isHiddenByAncestor(layout, node)) {
 		dropLayoutNode(layout, node);
 		if (getNodeType(node) === node.ELEMENT_NODE) {
 			dropHiddenContent(layout, node as Element);
@@ -2690,7 +2696,7 @@ function addElementNode(
 			if (entry !== undefined && !isOutOfFlow(child)) {
 				known = entry.kind === "anonymous" ? entry : null;
 			}
-			addNode(layout, child, layoutNode, known);
+			addNode(layout, child, layoutNode, known, true);
 		}
 	}
 
@@ -3011,17 +3017,32 @@ function getContainingBlockLayoutNode(
 	return layout.nodeMap.get(layout.rootElement) ?? null;
 }
 
-function isHiddenByAncestor(node: Node): boolean {
+function isHiddenByAncestor(layout: Layout, node: Node): boolean {
+	const memo = layout.hiddenElements;
+	const unknown: Element[] = [];
+	let hidden = false;
 	for (
 		let ancestor = flatParentElement(node);
 		ancestor;
 		ancestor = flatParentElement(ancestor)
 	) {
+		const known = memo?.get(ancestor);
+		if (known !== undefined) {
+			hidden = known;
+			break;
+		}
+		unknown.push(ancestor);
 		if (getLayoutDisplay(ancestor) === "none") {
-			return true;
+			hidden = true;
+			break;
 		}
 	}
-	return false;
+	if (memo !== null) {
+		for (const element of unknown) {
+			memo.set(element, hidden);
+		}
+	}
+	return hidden;
 }
 
 function getLayoutRoot(node: LayoutNode): LayoutNode {
@@ -6038,6 +6059,10 @@ export class Layout {
 	// Counts layout passes, so a node styled in this pass is not styled
 	// again when a container re-adds it.
 	pass: number;
+	// Whether each element looked up during a pass is hidden, by its own
+	// display or an ancestor's, which no pass can change. Null between
+	// passes.
+	hiddenElements: Map<Element, boolean> | null;
 	// Counts the passes that solved the tree, so a reader can tell whether
 	// geometry changed since it last looked.
 	solves: number;
@@ -6069,6 +6094,7 @@ export class Layout {
 	constructor(window: Window, width: number, height: number) {
 		this.geometryMoved = false;
 		this.pass = 0;
+		this.hiddenElements = null;
 		this.solves = 0;
 		this.damage = [];
 		this.wholeDamage = true;
@@ -6144,6 +6170,15 @@ export class Layout {
 	}
 
 	performLayout(): void {
+		this.hiddenElements = new Map();
+		try {
+			this.runLayoutPass();
+		} finally {
+			this.hiddenElements = null;
+		}
+	}
+
+	runLayoutPass(): void {
 		this.pass++;
 		// Built on the first pass, not at construction. The engine is
 		// constructed before the cascade that provides display exists.
