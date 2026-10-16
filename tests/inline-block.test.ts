@@ -7,6 +7,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {LayoutNode} from "../src/internal/layoutsolver.ts";
 import {MockProcess, nextFrame} from "./test-utils";
 
 function getHeight(_dom: TermDOM, el: Element): number | undefined {
@@ -627,4 +628,36 @@ test("text beside an inline-block that clips sits on its bottom edge", async () 
 				"<div>one</div><div>two</div><div>three</div></span> after",
 		),
 	).toEqual(["       one", "       two", "before three after"]);
+});
+
+test("an inline-block's boxes stay laid out through changes elsewhere", async () => {
+	const proc = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({transport: proc.transport});
+	dom.document.body.innerHTML =
+		"<p>before <span style=\"display: inline-block\"><div>a " +
+		"<span style=\"display: inline-block\"><div id=inside><b>one</b></div>" +
+		"<div id=two>two</div></span> b</div></span> after</p>" +
+		"<p id=elsewhere>status</p>";
+	await nextFrame(dom);
+	dom.document.getElementById("two")!.textContent = "three";
+	await nextFrame(dom);
+	const inside = dom.document.getElementById("inside")!;
+	const invalidate = LayoutNode.prototype.invalidate;
+	const touched: unknown[] = [];
+	LayoutNode.prototype.invalidate = function (this: LayoutNode) {
+		if (this.owner !== null && inside.contains(this.owner as Node)) {
+			touched.push(this.owner);
+		}
+		invalidate.call(this);
+	};
+	try {
+		for (const text of ["1%", "2%", "3%"]) {
+			dom.document.getElementById("elsewhere")!.textContent = text;
+			await nextFrame(dom);
+		}
+	} finally {
+		LayoutNode.prototype.invalidate = invalidate;
+	}
+	expect(touched).toEqual([]);
+	dom.dispose();
 });

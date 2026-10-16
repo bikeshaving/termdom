@@ -2328,9 +2328,14 @@ function syncRunMembers(layout: Layout, run: Box): void {
 			addNode(layout, element, null);
 			continue;
 		}
-		// Whether it lays its content out under a root of its own, and as
-		// what, follows its display as it is now.
-		syncIndependentFormattingContext(layout, element);
+		// Whether it lays its content out under a root of its own follows
+		// its display as it is now. A root it keeps is restyled with it.
+		if (
+			needsContextRoot(element) !==
+			Boolean(getPrincipalBox(layout, element).independentFormattingContext)
+		) {
+			syncIndependentFormattingContext(layout, element);
+		}
 		// A member is measured by its run, and has no box of its own for a
 		// node to describe. One left from an earlier shape answers for where
 		// the element was.
@@ -2723,6 +2728,24 @@ function flowChildren(
 // for, which places the root's rows on a line of its own frame.
 const contextHosts = new WeakMap<LayoutNode, Element>();
 
+// An inline-grid or inline-table always lays its own content out,
+// because a line cannot contain a grid or a table piecemeal. An
+// inline-block does so only once it holds a block-level box. Never a
+// plain inline: it is broken instead, and taking its content here would
+// steal back the container's boxes. Only a run's measure lays the root
+// out, so a box no run measures, as an out-of-flow one, lays its content
+// out on its own node.
+function needsContextRoot(element: Element): boolean {
+	const display = getLayoutDisplay(element);
+	return (
+		establishesIndependentFormattingContext(element) &&
+		isMeasuredAsRun(element) &&
+		(display === "inline-grid" ||
+			display === "inline-table" ||
+			hasBlockLevelBox(element))
+	);
+}
+
 // An inline-block is measured as ONE unit by its run, and a run ends at
 // a block-level box, so block content inside it is laid out by the box's
 // own measurement. Only the run that placed the box knows its content
@@ -2732,21 +2755,7 @@ function syncIndependentFormattingContext(
 	element: Element,
 ): void {
 	const box = getPrincipalBox(layout, element);
-	const display = getLayoutDisplay(element);
-	// An inline-grid or inline-table always lays its own content out,
-	// because a line cannot contain a grid or a table piecemeal. An
-	// inline-block does so only once it holds a block-level box. Never a
-	// plain inline: it is broken instead, and taking its content here would
-	// steal back the container's boxes.
-	const grid = display === "inline-grid";
-	const table = display === "inline-table";
-	// Only a run's measure lays the root out, so a box no run measures, as
-	// an out-of-flow one, lays its content out on its own node.
-	if (
-		!establishesIndependentFormattingContext(element) ||
-		!isMeasuredAsRun(element) ||
-		(!grid && !table && !hasBlockLevelBox(element))
-	) {
+	if (!needsContextRoot(element)) {
 		if (box.independentFormattingContext) {
 			dropIndependentFormattingContext(box);
 			invalidateOutOfFlowDescendants(layout, element);
@@ -2767,8 +2776,8 @@ function syncIndependentFormattingContext(
 		root.onStale = () => {
 			layout.staleHosts.add(element);
 		};
+		styleContextRoot(element, root);
 	}
-	styleContextRoot(element, root);
 
 	for (const child of flowContent(element)) {
 		if (
