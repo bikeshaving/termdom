@@ -785,4 +785,50 @@ describe("what a measurement produced, not only how big it was", () => {
 		expect(rect(shrinking).width).toBe(4);
 		expect(placed.lines).toEqual(breakWords(4));
 	});
+
+	test("a line no wider than its bound is not measured again when the bound moves", () => {
+		// An editor's content: a block that grows to fill a 94-cell row, its
+		// basis the width of its longest line, holding a line per text. The
+		// long line grows by a cell, which moves the width the block is sized
+		// at, 75 then 76. The short line fits either and is placed at 94 both
+		// times, so neither pass measures it again.
+		const root = node();
+		root.style.flexDirection = "row";
+		root.style.width = toValue(94);
+		const content = box(root);
+		content.style.displayType = "block";
+		content.style.flexGrow = 1;
+
+		const textLine = (text: {value: string}, calls: {count: number}) => {
+			const line = box(content);
+			line.style.displayType = "block";
+			line.measure = (width, widthSpace) => {
+				calls.count++;
+				const limit = widthSpace === "indefinite" ? Infinity : width;
+				const length = text.value.length;
+				return {
+					width: Math.min(length, limit),
+					height: Math.max(1, Math.ceil(length / limit)),
+				};
+			};
+			return line;
+		};
+		const long = {value: "x".repeat(75)};
+		const longLine = textLine(long, {count: 0});
+		const shortCalls = {count: 0};
+		const shortLine = textLine({value: "y".repeat(30)}, shortCalls);
+
+		root.performLayout(NaN, NaN);
+		long.value += "x";
+		longLine.invalidate();
+		root.performLayout(NaN, NaN);
+		const before = shortCalls.count;
+		long.value += "x";
+		longLine.invalidate();
+		root.performLayout(NaN, NaN);
+
+		expect(shortCalls.count).toBe(before);
+		expect(rect(shortLine).width).toBe(94);
+		expect(rect(shortLine).height).toBe(1);
+	});
 });

@@ -569,6 +569,25 @@ function isCachedSizeValid(
 	return false;
 }
 
+// Text breaks into the same lines at any width between the widest line
+// it broke into and the bound it broke against, since each line ended at
+// a word that did not fit the bound. So a measured box's size under such
+// a bound, or with none, gives its height at a definite width in that
+// range, and the definite width is its own.
+function isSameBreakWidth(
+	cachedSpace: number,
+	cachedAvailable: number,
+	cachedComputed: number,
+	mode: number,
+	available: number,
+): boolean {
+	if (mode !== DEFINITE || available < cachedComputed) {
+		return false;
+	}
+	return cachedSpace === INDEFINITE ||
+		(cachedSpace === SHRINK_TO_FIT && available <= cachedAvailable);
+}
+
 function isMinContent(mode: AvailableSpace, available: number): boolean {
 	return mode === "shrink-to-fit" && available === 0;
 }
@@ -1558,8 +1577,12 @@ function layoutMeasuredContent(
 		placing,
 		getContentLeft(node),
 	);
-	node.measuredWidth = innerWidth;
-	node.measured = measured;
+	// What the placed lines were measured at, which a probe leaves while
+	// that layout stands.
+	if (placing || !node.hasCachedLayout) {
+		node.measuredWidth = innerWidth;
+		node.measured = measured;
+	}
 
 	const width = widthSpace === "definite"
 		? availableWidth - marginRow
@@ -6359,6 +6382,15 @@ function layoutNode(
 							cache[at + WIDTH],
 							widthCode,
 							availableWidth - marginRow,
+						) || (
+							node.measure !== null &&
+							isSameBreakWidth(
+								cache[at + WIDTH_SPACE],
+								cache[at + AVAILABLE_WIDTH] - marginRow,
+								cache[at + WIDTH],
+								widthCode,
+								availableWidth - marginRow,
+							)
 						)) &&
 					isCachedSizeValid(
 						cache[at + HEIGHT_SPACE],
@@ -6374,8 +6406,18 @@ function layoutNode(
 			}
 		}
 		if (hit !== -1) {
-			node.result.width = cache[hit + WIDTH];
-			node.result.height = cache[hit + HEIGHT];
+			if (widthCode === DEFINITE && cache[hit + WIDTH_SPACE] !== DEFINITE) {
+				setMeasuredSize(
+					node,
+					availableWidth - getAxisMargin(node, "row", ownerWidth),
+					cache[hit + HEIGHT],
+					ownerWidth,
+					ownerHeight,
+				);
+			} else {
+				node.result.width = cache[hit + WIDTH];
+				node.result.height = cache[hit + HEIGHT];
+			}
 			return;
 		}
 	}
@@ -6422,8 +6464,13 @@ function layoutNode(
 		node.hasCachedLayout = true;
 	} else {
 		// A sizing pass that ran wrote its own results over the subtree the
-		// last full layout placed, so that layout no longer stands.
-		node.hasCachedLayout = false;
+		// last full layout placed, so that layout no longer stands. A
+		// measured box has no subtree, and a probe leaves the lines it
+		// placed, so its layout stands while nothing in it resolves against
+		// the owner, which the probe may have offered another size.
+		if (node.measure === null || !node.ownerFree) {
+			node.hasCachedLayout = false;
+		}
 		reserveCache(
 			node,
 			Math.max((hasCache(node) ? node.cachedSizeCount : 0) + 2, 3),
