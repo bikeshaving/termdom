@@ -702,7 +702,7 @@ export class LayoutNode {
 		this.measured = null;
 		this.lostChild = false;
 		this.onStale = null;
-		this.currentStyle = createStyle();
+		this.currentStyle = getDefaultStyle();
 		this.result = createResult();
 	}
 
@@ -1081,6 +1081,14 @@ export function createStyle(): Style {
 		maxHeight: UNDEFINED_VALUE,
 		aspectRatio: NaN,
 	};
+}
+
+const DEFAULT_STYLE: Style = createStyle();
+shareStyleEdges(DEFAULT_STYLE);
+Object.freeze(DEFAULT_STYLE);
+
+function getDefaultStyle(): Style {
+	return DEFAULT_STYLE;
 }
 
 function createResult(): LayoutResult {
