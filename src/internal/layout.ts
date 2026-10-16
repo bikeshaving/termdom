@@ -1411,9 +1411,11 @@ function styleLayoutNodeProperties(
 	}
 
 	const display = getLayoutDisplay(element);
-	style.clipsOverflow =
-		getUsedOverflow(element, "x") !== "visible" ||
-		getUsedOverflow(element, "y") !== "visible";
+	const overflowX = getUsedOverflow(element, "x");
+	const overflowY = getUsedOverflow(element, "y");
+	style.clipsOverflow = overflowX !== "visible" || overflowY !== "visible";
+	style.scrollContainer =
+		isScrollingOverflow(overflowX) || isScrollingOverflow(overflowY);
 	// A blockified inline's width applies like any block's. Forced
 	// auto, `<span style="width:30ch">` in a flex row came out as wide as its
 	// text.

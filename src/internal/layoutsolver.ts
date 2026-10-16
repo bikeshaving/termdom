@@ -190,6 +190,8 @@ export interface Style {
 	// Whether the box clips what overflows it, so its scrollable overflow
 	// stops at its own edges (css-overflow-3 §2.2).
 	clipsOverflow: boolean;
+	// Whether the box is a scroll container: an axis hidden, auto or scroll.
+	scrollContainer: boolean;
 	// Whether a static box contains its positioned descendants anyway, as
 	// containment, a transform or a filter makes it.
 	containsPositioned: boolean;
@@ -872,6 +874,7 @@ export function createStyle(): Style {
 		flexWrap: "nowrap",
 		displayType: "flex",
 		clipsOverflow: false,
+		scrollContainer: false,
 		containsPositioned: false,
 
 		gap: {column: 0, row: 0},
@@ -1941,8 +1944,8 @@ function resolveFlexibleLengths(
 
 // css-flexbox-1 §4.5: min-width/height `auto` floors a flex item at
 // its min-content size, or it shrinks to nothing and its text paints
-// over its neighbour. NaN when a specified minimum wins or the item
-// cannot shrink.
+// over its neighbour. NaN when a specified minimum wins, the item cannot
+// shrink, or it is a scroll container, whose automatic minimum is zero.
 function getAutoMinimumMainSize(
 	node: LayoutNode,
 	child: LayoutNode,
@@ -1960,7 +1963,7 @@ function getAutoMinimumMainSize(
 		return NaN;
 	}
 
-	if (resolveFlexShrink(child) === 0) {
+	if (resolveFlexShrink(child) === 0 || child.style.scrollContainer) {
 		return NaN;
 	}
 

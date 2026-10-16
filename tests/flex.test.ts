@@ -673,6 +673,25 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		expect(rect(wide).width).toBeLessThan(15);
 	});
 
+	test("a scroll container's automatic minimum is zero", () => {
+		// 15 + 4 in a 12-wide row, 7 to lose. The scroll container has no floor.
+		// Shrunk by base size, the narrow item would fall to 4 - 7 * 4/19 = 2.5,
+		// below its floor of 4, so it freezes at 4 and the scroll container
+		// takes the rest: 12 - 4 = 8.
+		const root = node();
+		root.style.width = toValue(12);
+		root.style.height = toValue(3);
+
+		const scroller = textItem(root, 15, 15);
+		scroller.style.scrollContainer = true;
+		const narrow = textItem(root, 4, 4);
+
+		root.performLayout(12, 3);
+
+		expect(rect(scroller).width).toBe(8);
+		expect(rect(narrow).width).toBe(4);
+	});
+
 	test("an item that cannot shrink is unaffected", () => {
 		const root = node();
 		root.style.width = toValue(12);
