@@ -220,6 +220,10 @@ type ModeName = keyof typeof MODE_SPELLINGS;
 
 const MODE_RESTORE_ORDER = Object.keys(MODE_SPELLINGS) as ModeName[];
 
+const CURSOR_SHAPE_RESET = "\x1b[0 q";
+// OSC 112.
+const CURSOR_COLOR_RESET = "\x1b]112\x07";
+
 // Written engaged or not, so each reset must be a no-op on a terminal
 // the mode never touched.
 const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
@@ -905,6 +909,10 @@ export interface ExchangeSlots extends EventTargetSlots {
 	// waits on rather than asking again.
 	cellQuery: Promise<{width: number; height: number} | null> | null;
 	engagedModes: Set<ModeName>;
+	// The cursor style and color the terminal last got: a DECSCUSR style,
+	// 0 for its own, and 0xRRGGBB, null for its own.
+	cursorShape: number;
+	cursorColor: number | null;
 	anchorDetectionEnabled: boolean;
 	window: Window;
 	layout: Layout;
@@ -1005,6 +1013,8 @@ export class Exchange extends EventTarget {
 		slots.asking = asking;
 		slots.cellQuery = null;
 		slots.engagedModes = new Set<ModeName>();
+		slots.cursorShape = 0;
+		slots.cursorColor = null;
 		// Anchor detection only makes sense when a shell's rows are above ours.
 		slots.anchorDetectionEnabled = transport.sharesScreen && asking;
 		slots.window = window;
@@ -1289,6 +1299,54 @@ export function setDisplayType(
 }
 
 /**
+ * DECSCUSR, CSI Ps SP q, for the cursor's style, and OSC 12 for its
+ * color. Each is written when it changes, so a terminal the page never
+ * styled the cursor of is never reset either.
+ */
+function getCursorShapeEscape(shape: number): string {
+	return `\x1b[${shape} q`;
+}
+
+function getCursorColorEscape(color: number | null): string {
+	if (color === null) {
+		return CURSOR_COLOR_RESET;
+	}
+	const channel = (shift: number) =>
+		((color >> shift) & 0xff).toString(16).padStart(2, "0");
+	return `\x1b]12;rgb:${channel(16)}/${channel(8)}/${channel(0)}\x07`;
+}
+
+/** Draws the cursor as the caret asks, writing only what changed. */
+export function setCursorStyle(
+	exchange: Exchange,
+	shape: number,
+	color: number | null,
+): void {
+	const slots = _(exchange);
+	if (!slots.interactive) {
+		return;
+	}
+	if (shape !== slots.cursorShape) {
+		slots.cursorShape = shape;
+		void exchange.write(getCursorShapeEscape(shape));
+	}
+	if (color !== slots.cursorColor) {
+		slots.cursorColor = color;
+		void exchange.write(getCursorColorEscape(color));
+	}
+}
+
+function resetCursorStyle(exchange: Exchange): void {
+	const slots = _(exchange);
+	if (slots.cursorShape !== 0) {
+		void exchange.write(CURSOR_SHAPE_RESET);
+	}
+	if (slots.cursorColor !== null) {
+		void exchange.write(CURSOR_COLOR_RESET);
+	}
+}
+
+/**
  * Resets every engaged mode without forgetting it, so the terminal is
  * the shell's while the program is suspended.
  */
@@ -1299,6 +1357,7 @@ export function releaseModes(exchange: Exchange): void {
 			void exchange.write(MODE_SPELLINGS[name].reset);
 		}
 	}
+	resetCursorStyle(exchange);
 	if (slots.priorBidiMode === 1) {
 		void exchange.write(BIDI_IMPLICIT);
 	}
@@ -1315,6 +1374,12 @@ export function reclaimModes(exchange: Exchange): void {
 			void exchange.write(MODE_SPELLINGS[name].set);
 		}
 	}
+	if (slots.cursorShape !== 0) {
+		void exchange.write(getCursorShapeEscape(slots.cursorShape));
+	}
+	if (slots.cursorColor !== null) {
+		void exchange.write(getCursorColorEscape(slots.cursorColor));
+	}
 }
 
 export function restoreEngagedModes(exchange: Exchange): void {
@@ -1323,6 +1388,9 @@ export function restoreEngagedModes(exchange: Exchange): void {
 			void exchange.write(MODE_SPELLINGS[name].reset);
 		}
 	}
+	resetCursorStyle(exchange);
+	_(exchange).cursorShape = 0;
+	_(exchange).cursorColor = null;
 }
 
 export function flushExchange(exchange: Exchange): Promise<void> {
@@ -2409,6 +2477,38 @@ export interface ProcessLike {
 // transport. Each process counts its engaged transports, and only the
 // last to let go hands its terminal back.
 const engagedProcesses = new Map<ProcessLike, number>();
+
+// Whether a process's terminal has the page's cursor style or color, as
+// its stream last set or reset them, so the panic paths reset those too,
+// and only those, since a reset takes back what the shell itself set.
+const styledCursors = new WeakMap<
+	ProcessLike,
+	{shape: boolean; color: boolean}
+>();
+
+function noteCursorStyle(proc: ProcessLike, chunk: string): void {
+	if (!chunk.includes(" q") && !chunk.includes("\x1b]1")) {
+		return;
+	}
+	const styled = styledCursors.get(proc) ?? {shape: false, color: false};
+	for (const match of chunk.matchAll(/\x1b\[(\d) q/g)) {
+		styled.shape = match[1] !== "0";
+	}
+	const colorSet = chunk.lastIndexOf("\x1b]12;");
+	const colorReset = chunk.lastIndexOf(CURSOR_COLOR_RESET);
+	if (colorSet !== colorReset) {
+		styled.color = colorSet > colorReset;
+	}
+	styledCursors.set(proc, styled);
+}
+
+function getPanicRestore(proc: ProcessLike): string {
+	const styled = styledCursors.get(proc);
+	return PANIC_RESTORE +
+		(styled?.shape === true ? CURSOR_SHAPE_RESET : "") +
+		(styled?.color === true ? CURSOR_COLOR_RESET : "");
+}
+
 const ownSignalListeners = new WeakSet<object>();
 let exitHookInstalled = false;
 
@@ -2418,7 +2518,7 @@ function restoreEngagedProcesses(): void {
 			continue;
 		}
 		try {
-			proc.stdout.write(PANIC_RESTORE);
+			proc.stdout.write(getPanicRestore(proc));
 		} catch (_err) {
 			// The stream may already be gone.
 		}
@@ -2563,7 +2663,7 @@ export function transportFromProcess(
 		// terminal had modes to restore.
 		if (proc.stdout.isTTY === true) {
 			try {
-				proc.stdout.write(PANIC_RESTORE);
+				proc.stdout.write(getPanicRestore(proc));
 			} catch (_err) {
 				// The terminal is gone, and its modes with it.
 			}
@@ -2653,6 +2753,7 @@ export function transportFromProcess(
 		// terminal has the bytes.
 		write: (chunk) => {
 			writes++;
+			noteCursorStyle(proc, chunk);
 			const written = new Promise<void>((resolve, reject) => {
 				proc.stdout.write(chunk, "utf8", (error?: Error) => {
 					if (error) {
