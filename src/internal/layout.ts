@@ -45,6 +45,7 @@ import {
 import {
 	type Align,
 	type AvailableSpace,
+	CachePool,
 	createStyle,
 	type Edge,
 	type FlexDirection,
@@ -61,6 +62,7 @@ import {
 	LayoutNode,
 	type Measure,
 	type PositionType,
+	releaseCache,
 	resolveValue,
 	shareStyleEdges,
 	type Size,
@@ -2073,6 +2075,7 @@ function dropAnonymousBox(layout: Layout, box: Box): void {
 	forgetReads(layoutNode);
 	layout.anonymousBoxes.delete(layoutNode);
 	layoutNode.owner = null;
+	releaseCache(layoutNode);
 }
 
 function getBox(layout: Layout, node: Node): Box | null {
@@ -2226,7 +2229,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 				layoutNode = null;
 			}
 			if (!layoutNode) {
-				layoutNode = new LayoutNode();
+				layoutNode = new LayoutNode(layout.cachePool);
 				entry.layoutNode = layoutNode;
 				entry.styledFrom = styledFrom;
 				if (styledFrom) {
@@ -2302,7 +2305,7 @@ function placeTableBox(
 ): void {
 	let wrapper = table.layoutNode;
 	if (!wrapper) {
-		wrapper = new LayoutNode();
+		wrapper = new LayoutNode(containerFlex.pool);
 		const style = createStyle();
 		style.displayType = "table";
 		wrapper.style = style;
@@ -2574,7 +2577,7 @@ function addElementNode(
 
 	let layoutNode = layout.nodeMap.get(element);
 	if (!layoutNode) {
-		layoutNode = new LayoutNode();
+		layoutNode = new LayoutNode(layout.cachePool);
 		trackNode(layout, element, layoutNode);
 	}
 
@@ -2690,7 +2693,7 @@ function addTextNode(
 
 	let layoutNode = layout.nodeMap.get(text);
 	if (!layoutNode) {
-		layoutNode = new LayoutNode();
+		layoutNode = new LayoutNode(layout.cachePool);
 		trackNode(layout, text, layoutNode);
 	}
 
@@ -2775,7 +2778,7 @@ function syncIndependentFormattingContext(
 
 	let root = box.independentFormattingContext;
 	if (!root) {
-		root = new LayoutNode();
+		root = new LayoutNode(layout.cachePool);
 		box.independentFormattingContext = root;
 		contextHosts.set(root, element);
 		// What it holds moves under another root, so an out-of-flow box among
@@ -3057,6 +3060,7 @@ function untrackNode(layout: Layout, domNode: Node): void {
 	if (layoutNode) {
 		layoutNode.owner = null;
 		forgetReads(layoutNode);
+		releaseCache(layoutNode);
 	}
 	// The lines are the product of the layout node that is being removed,
 	// and would describe a box that no longer exists.
@@ -5877,6 +5881,32 @@ function layoutRect(engine: Layout, element: Element): DOMRect | null {
 	return element.isConnected ? engine.getRect(element) : null;
 }
 
+// Every layout node the document can reach: its trees, the detached
+// nodes it keeps for the re-add sweep, and the trees of its independent
+// formatting contexts.
+function *getLiveLayoutNodes(layout: Layout): Generator<LayoutNode> {
+	const pending: LayoutNode[] = [layout.initialBlock];
+	for (const [node, layoutNode] of layout.nodeMap) {
+		pending.push(layoutNode);
+		const root = layout.boxes.get(node)?.independentFormattingContext;
+		if (root) {
+			pending.push(root);
+		}
+	}
+	for (const layoutNode of layout.anonymousBoxes.keys()) {
+		pending.push(layoutNode);
+	}
+	const seen = new Set<LayoutNode>();
+	while (pending.length > 0) {
+		const node = pending.pop()!;
+		if (!seen.has(node)) {
+			seen.add(node);
+			yield node;
+			pending.push(...node.children);
+		}
+	}
+}
+
 export class Layout {
 	domRect: typeof DOMRect;
 	rootElement: Element;
@@ -5884,6 +5914,9 @@ export class Layout {
 
 	// The terminal-sized root every box hangs from. It has no DOM node.
 	initialBlock: LayoutNode;
+
+	// The cached results of every layout node of the document.
+	cachePool: CachePool;
 
 	// Not every node has one. A run member is measured by the run around
 	// it and owns none, which is what getOwnLayoutNode checks.
@@ -6030,7 +6063,8 @@ export class Layout {
 		// The initial containing block is a formatting context of its own, so
 		// the root element's margins stay inside it rather than escaping to
 		// nothing.
-		const root = new LayoutNode();
+		this.cachePool = new CachePool(() => getLiveLayoutNodes(this));
+		const root = new LayoutNode(this.cachePool);
 		root.style.displayType = "block";
 		root.style.blockFormattingContext = true;
 		root.style.width = toValue(width);

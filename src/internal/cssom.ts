@@ -572,7 +572,7 @@ interface CSSStyleDeclarationSlots {
 	declarations: CSSValues.CSSDeclaration[];
 	// `all` expands to every longhand there is, and a scan per lookup would
 	// make serializing such a block cubic in its size.
-	byName: Map<string, CSSValues.CSSDeclaration>;
+	byName: Map<string, CSSValues.CSSDeclaration> | null;
 	// The `style` attribute text CSSStyleDeclaration object last serialized or parsed.
 	attributeText: string | null;
 	// The declarations expanded to longhands for the cascade.
@@ -581,6 +581,8 @@ interface CSSStyleDeclarationSlots {
 	indexed: number;
 	_sync: Step<CSSStyleDeclaration["_sync"]>;
 }
+
+const NO_DECLARATIONS: CSSValues.CSSDeclaration[] = [];
 
 interface CSSStyleDeclaration {
 	readonly [internals]: CSSStyleDeclarationSlots;
@@ -599,8 +601,8 @@ class CSSStyleDeclaration {
 	) {
 		seal(this, new.target, CSSStyleDeclaration);
 		const slots = _(this);
-		slots.declarations = [];
-		slots.byName = new Map<string, CSSValues.CSSDeclaration>();
+		slots.declarations = NO_DECLARATIONS;
+		slots.byName = null;
 		slots.attributeText = null;
 		slots.block = null;
 		slots.indexed = 0;
@@ -645,8 +647,8 @@ class CSSStyleDeclaration {
 			return;
 		}
 		slots._sync!();
-		slots.declarations = [];
-		slots.byName.clear();
+		slots.declarations = NO_DECLARATIONS;
+		slots.byName = null;
 		for (const declaration of CSSValues.parseDeclarationText(text ?? "")) {
 			if (!isSupportedDeclaration(this, declaration.name)) {
 				continue;
@@ -781,8 +783,8 @@ class CSSStyleDeclaration {
 			return;
 		}
 		slots.attributeText = text;
-		slots.declarations = [];
-		slots.byName.clear();
+		slots.declarations = NO_DECLARATIONS;
+		slots.byName = null;
 		for (const declaration of CSSValues.parseDeclarationText(text)) {
 			applyDeclaration(
 				getOwner(this),
@@ -958,7 +960,7 @@ function findDeclaration(
 	declaration: CSSStyleDeclaration,
 	property: string,
 ): CSSValues.CSSDeclaration | undefined {
-	return _(declaration).byName.get(property);
+	return _(declaration).byName?.get(property);
 }
 
 const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
@@ -1012,8 +1014,11 @@ function storeDeclaration(
 	}
 	const entry = {name, value, important};
 	const declarationSlots = _(declaration);
+	if (declarationSlots.declarations === NO_DECLARATIONS) {
+		declarationSlots.declarations = [];
+	}
 	declarationSlots.declarations.push(entry);
-	declarationSlots.byName.set(name, entry);
+	(declarationSlots.byName ??= new Map()).set(name, entry);
 	return true;
 }
 
@@ -1029,7 +1034,7 @@ function removeDeclaration(
 		return false;
 	}
 	declarationSlots.declarations.splice(index, 1);
-	declarationSlots.byName.delete(name);
+	declarationSlots.byName?.delete(name);
 	return true;
 }
 
