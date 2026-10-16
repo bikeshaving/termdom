@@ -74,4 +74,4 @@ jobs:
             echo "## Benchmarks, job ${{ matrix.job }}: median CPU time, $REF against ${GITHUB_SHA::8}"
             echo
             node bench/run.ts --runs "$RUNS" --against "$REF" --markdown
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
