@@ -236,6 +236,7 @@ terminal. An ordinary rule can override any of these defaults.
 | `pre` | `white-space: pre` |
 | `fieldset`, `textarea`, `dialog`, `[popover]` | A solid border with `0 1ch` padding |
 | `td`, `th` | A solid border with `0 1ch` padding, collapsed with the table's border |
+| `table[border="0"]` `td`, `th` | No border on the table's own cells, as layout tables like Hacker News's expect. Cells of a nested table follow that table's `border` |
 | `button` | The label between `[` and `]` |
 | `summary` | A `::marker` of `▸` when closed and `▾` when open; `list-style: none` hides it |
 | `progress`, `meter` | A `10ch` bar, filled to the value over a gray track. `progress` is blue. `meter` is green, yellow, or red depending on how good the value is |
