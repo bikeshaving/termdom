@@ -8011,7 +8011,28 @@ function pruneDisconnectedNodes(layout: Layout): void {
 // is a function of what it read, so it stands until one of those reads
 // differently.
 const measureReads = new WeakMap<LayoutNode, Array<Element | string>>();
-const measureReaders = new WeakMap<Element, Set<LayoutNode>>();
+// Most elements are read by one box, kept alone until a second reads it.
+const measureReaders = new WeakMap<Element, LayoutNode | Set<LayoutNode>>();
+
+function addMeasureReader(element: Element, node: LayoutNode): void {
+	const readers = measureReaders.get(element);
+	if (readers === undefined) {
+		measureReaders.set(element, node);
+	} else if (readers instanceof Set) {
+		readers.add(node);
+	} else if (readers !== node) {
+		measureReaders.set(element, new Set([readers, node]));
+	}
+}
+
+function removeMeasureReader(element: Element, node: LayoutNode): void {
+	const readers = measureReaders.get(element);
+	if (readers === node) {
+		measureReaders.delete(element);
+	} else if (readers instanceof Set) {
+		readers.delete(node);
+	}
+}
 
 // The readers are registered once the measure has returned, and only
 // while the layout still measures the box: a measure can drop its own box
@@ -8041,13 +8062,7 @@ function recordReads(
 		forgetReads(node);
 		if (layout.measureNodes.has(node)) {
 			for (let i = 0; i < reads.length; i += 3) {
-				const element = reads[i] as Element;
-				let readers = measureReaders.get(element);
-				if (readers === undefined) {
-					readers = new Set();
-					measureReaders.set(element, readers);
-				}
-				readers.add(node);
+				addMeasureReader(reads[i] as Element, node);
 			}
 			measureReads.set(node, fitToLength(reads));
 		}
@@ -8061,7 +8076,7 @@ function forgetReads(node: LayoutNode): void {
 	const reads = measureReads.get(node);
 	if (reads !== undefined) {
 		for (let i = 0; i < reads.length; i += 3) {
-			measureReaders.get(reads[i] as Element)?.delete(node);
+			removeMeasureReader(reads[i] as Element, node);
 		}
 		measureReads.delete(node);
 	}
@@ -8074,10 +8089,10 @@ function invalidateMeasureReaders(element: Element): void {
 	if (readers === undefined) {
 		return;
 	}
-	for (const node of readers) {
+	for (const node of readers instanceof Set ? readers : [readers]) {
 		const reads = measureReads.get(node);
 		if (reads === undefined || !reads.includes(element)) {
-			readers.delete(node);
+			removeMeasureReader(element, node);
 			continue;
 		}
 		for (let i = 0; i < reads.length; i += 3) {
