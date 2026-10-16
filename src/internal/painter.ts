@@ -29,6 +29,7 @@ import {
 	getTopLayer,
 	hasPaintedHighlights,
 	HTMLElement,
+	isDocumentElement,
 	renderedTopLayer,
 	takesTextCursor,
 	type Window,
@@ -93,7 +94,7 @@ import {
 } from "./mathml.ts";
 import {isReplacedBox, renderReplaced} from "./replaced.ts";
 import {getStringWidth} from "./text.ts";
-import {getNodeType, nodeContains} from "./tree.ts";
+import {getLocalName, getNodeType, nodeContains} from "./tree.ts";
 import {getCellSize} from "./units.ts";
 
 function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
@@ -896,8 +897,8 @@ function paintContent(
 ): void {
 	const layout = painter.layout;
 	const isRoot =
-		element === painter.document.body ||
-		element === painter.document.documentElement;
+		isDocumentElement(element) ||
+		(getLocalName(element) === "body" && element === painter.document.body);
 	const scrolledRows = isRoot ? 0 : getScrollOffset(element, "top");
 	const scrolledCols = isRoot ? 0 : getScrollOffset(element, "left");
 	const origin: Origin = {
