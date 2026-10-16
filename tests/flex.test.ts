@@ -786,6 +786,47 @@ describe("what a measurement produced, not only how big it was", () => {
 		expect(placed.lines).toEqual(breakWords(4));
 	});
 
+	test("a block lays out only the line that changed, and moves the rest when it grows", () => {
+		// A 20-cell block of three one-line texts. The middle one changes to
+		// text of the same length, which leaves every line where it was, so
+		// the others are not measured. Then it wraps to two lines, and the
+		// last line moves down a row.
+		const root = node();
+		root.style.displayType = "block";
+		root.style.width = toValue(20);
+		const texts = [{value: "aaaa"}, {value: "bbbb"}, {value: "cccc"}];
+		const calls = [0, 0, 0];
+		const lines = texts.map((text, i) => {
+			const line = box(root);
+			line.style.displayType = "block";
+			line.measure = (width, widthSpace) => {
+				calls[i]++;
+				const limit = widthSpace === "indefinite" ? Infinity : width;
+				return {
+					width: Math.min(text.value.length, limit),
+					height: Math.max(1, Math.ceil(text.value.length / limit)),
+				};
+			};
+			return line;
+		});
+		root.performLayout(NaN, NaN);
+
+		const before = [...calls];
+		texts[1].value = "BBBB";
+		lines[1].invalidate();
+		root.performLayout(NaN, NaN);
+		expect(calls[0]).toBe(before[0]);
+		expect(calls[2]).toBe(before[2]);
+		expect(rect(lines[2]).top).toBe(2);
+
+		texts[1].value = "b".repeat(30);
+		lines[1].invalidate();
+		root.performLayout(NaN, NaN);
+		expect(rect(lines[1]).height).toBe(2);
+		expect(rect(lines[2]).top).toBe(3);
+		expect(rect(root).height).toBe(4);
+	});
+
 	test("a line no wider than its bound is not measured again when the bound moves", () => {
 		// An editor's content: a block that grows to fill a 94-cell row, its
 		// basis the width of its longest line, holding a line per text. The

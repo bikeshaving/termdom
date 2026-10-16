@@ -639,6 +639,10 @@ export class LayoutNode {
 	children: LayoutNode[];
 	parent: LayoutNode | null;
 	stale: boolean;
+	// Whether the node itself changed, rather than only something under it,
+	// which leaves its stale ancestors' own requests and children as they
+	// were.
+	selfStale: boolean;
 
 	// One sizing result per query shape (getCacheSlot), so a placing pass's
 	// several probes of one child keep their own. `stale` invalidates both.
@@ -690,6 +694,10 @@ export class LayoutNode {
 	// across.
 	grid: {left: number; top: number; width: number; height: number};
 	rawAbsoluteLeft: number;
+	rawAbsoluteTop: number;
+	// Whether the last layout of a block laid out only its stale children
+	// and left the rest where they were, so rounding visits those alone.
+	keptChildren: boolean;
 	// What the last measure broke the box's text to: the width it was
 	// given, and the Size fields that say whether another edge would break
 	// it differently.
@@ -712,6 +720,7 @@ export class LayoutNode {
 		this.measureFn = null;
 		this.staticPositionFn = null;
 		this.stale = true;
+		this.selfStale = true;
 		this.pool = pool;
 		this.cacheAt = 0;
 		this.cacheCapacity = 0;
@@ -728,6 +737,8 @@ export class LayoutNode {
 		this.settled = false;
 		this.grid = {left: 0, top: 0, width: 0, height: 0};
 		this.rawAbsoluteLeft = NaN;
+		this.rawAbsoluteTop = NaN;
+		this.keptChildren = false;
 		this.measuredWidth = NaN;
 		this.measured = null;
 		this.lostChild = false;
@@ -758,6 +769,7 @@ export class LayoutNode {
 		if (relaid) {
 			for (const child of this.children) {
 				child.stale = true;
+				child.selfStale = true;
 			}
 			this.invalidate();
 		}
@@ -791,6 +803,7 @@ export class LayoutNode {
 			this.children.splice(index, 1);
 			child.parent = null;
 			this.lostChild = true;
+			this.selfStale = true;
 			if (child.outOfFlowCount !== 0) {
 				countOutOfFlow(this, -child.outOfFlowCount);
 			}
@@ -800,6 +813,7 @@ export class LayoutNode {
 
 	invalidate(): void {
 		this.stale = true;
+		this.selfStale = true;
 		invalidateAncestors(this);
 	}
 
@@ -861,6 +875,7 @@ export class LayoutNode {
 			);
 		}
 		this.stale = false;
+		this.selfStale = false;
 	}
 }
 
@@ -871,6 +886,7 @@ export class LayoutNode {
  */
 export function forgetLayout(node: LayoutNode): void {
 	node.stale = true;
+	node.selfStale = true;
 	releaseCache(node);
 	node.hasCachedLayout = false;
 	node.cachedSizeCount = 0;
@@ -878,6 +894,8 @@ export function forgetLayout(node: LayoutNode): void {
 	node.gridTop = NaN;
 	node.settled = false;
 	node.rawAbsoluteLeft = NaN;
+	node.rawAbsoluteTop = NaN;
+	node.keptChildren = false;
 	node.measuredWidth = NaN;
 	node.measured = null;
 }
@@ -890,6 +908,8 @@ export function insertChild(
 ): void {
 	child.parent = layoutNode;
 	child.stale = true;
+	child.selfStale = true;
+	layoutNode.selfStale = true;
 	if (layoutNode.children === NO_CHILDREN) {
 		layoutNode.children = [child];
 	} else {
@@ -6422,6 +6442,26 @@ function layoutNode(
 		}
 	}
 
+	if (
+		placing &&
+		node.stale &&
+		!node.selfStale &&
+		relayOutStaleChildren(
+			node,
+			availableWidth,
+			availableHeight,
+			widthCode,
+			heightCode,
+			ownerWidth,
+			ownerHeight,
+		)
+	) {
+		node.stale = false;
+		node.keptChildren = true;
+		return;
+	}
+	node.keptChildren = false;
+
 	// Whatever dirtied the node invalidated every cached result.
 	if (node.stale) {
 		node.hasCachedLayout = false;
@@ -6439,6 +6479,15 @@ function layoutNode(
 		placing,
 	);
 
+	// Nothing lays out a child that generates no box, so its flags are
+	// cleared here, or it would hold its ancestors stale for good. A child
+	// that starts to generate one is invalidated by the change.
+	for (const child of node.children) {
+		if (child.style.displayType === "none") {
+			child.stale = false;
+			child.selfStale = false;
+		}
+	}
 	node.ownerFree = isOwnerFree(node);
 	node.widthDependent = node.measure !== null
 		? node.measured?.widthDependent === true
@@ -6529,6 +6578,112 @@ function layoutNode(
 		}
 	}
 	node.stale = false;
+	node.selfStale = false;
+}
+
+function getAvailableSpace(code: number): AvailableSpace {
+	return code === INDEFINITE
+		? "indefinite"
+		: code === DEFINITE ? "definite" : "shrink-to-fit";
+}
+
+// A block whose own request, style and children are as its placed layout
+// had them, stale only for something under it, lays out its stale
+// children again under the requests they were placed under. When every
+// one comes back the same size, with the same margins, nothing in the
+// block moves and its layout stands. Otherwise the block lays out whole,
+// and the children answer from what was just found. A request follows
+// the child's own style too, so a child that changed itself sends the
+// block the whole way. So does a block sized to its content, whose width
+// follows what its children hold rather than where they land, and one
+// holding a positioned box, which its containing block's own pass
+// places.
+function relayOutStaleChildren(
+	node: LayoutNode,
+	availableWidth: number,
+	availableHeight: number,
+	widthCode: number,
+	heightCode: number,
+	ownerWidth: number,
+	ownerHeight: number,
+): boolean {
+	if (
+		widthCode !== DEFINITE ||
+		node.measure !== null ||
+		node.style.displayType !== "block" ||
+		node.outOfFlowCount !== 0 ||
+		!node.hasCachedLayout ||
+		!hasCache(node) ||
+		!isMatchingConstraints(
+			node.pool.data,
+			node.cacheAt * ENTRY,
+			availableWidth,
+			availableHeight,
+			widthCode,
+			heightCode,
+			ownerWidth,
+			ownerHeight,
+			node.ownerFree,
+		)
+	) {
+		return false;
+	}
+	for (const child of node.children) {
+		if (!child.stale) {
+			continue;
+		}
+		if (child.selfStale || !child.hasCachedLayout || !hasCache(child)) {
+			return false;
+		}
+		const cache = child.pool.data;
+		const at = child.cacheAt * ENTRY;
+		const {result} = child;
+		const left = result.left;
+		const top = result.top;
+		const width = result.width;
+		const height = result.height;
+		const marginLeft = result.marginLeft;
+		const marginTop = result.marginTop;
+		const marginRight = result.marginRight;
+		const marginBottom = result.marginBottom;
+		const collapseTopPositive = result.collapseTopPositive;
+		const collapseTopNegative = result.collapseTopNegative;
+		const collapseBottomPositive = result.collapseBottomPositive;
+		const collapseBottomNegative = result.collapseBottomNegative;
+		const selfCollapsing = result.selfCollapsing;
+		const widthDependent = child.widthDependent;
+		const ownerFree = child.ownerFree;
+		layoutNode(
+			child,
+			cache[at + AVAILABLE_WIDTH],
+			cache[at + AVAILABLE_HEIGHT],
+			getAvailableSpace(cache[at + WIDTH_SPACE]),
+			getAvailableSpace(cache[at + HEIGHT_SPACE]),
+			cache[at + OWNER_WIDTH],
+			cache[at + OWNER_HEIGHT],
+			true,
+		);
+		result.left = left;
+		result.top = top;
+		if (
+			!Object.is(result.width, width) ||
+			!Object.is(result.height, height) ||
+			result.marginLeft !== marginLeft ||
+			result.marginTop !== marginTop ||
+			result.marginRight !== marginRight ||
+			result.marginBottom !== marginBottom ||
+			result.collapseTopPositive !== collapseTopPositive ||
+			result.collapseTopNegative !== collapseTopNegative ||
+			result.collapseBottomPositive !== collapseBottomPositive ||
+			result.collapseBottomNegative !== collapseBottomNegative ||
+			result.selfCollapsing !== selfCollapsing ||
+			child.widthDependent !== widthDependent ||
+			child.ownerFree !== ownerFree
+		) {
+			return false;
+		}
+	}
+	return true;
 }
 
 function layoutNodeImpl(
@@ -6696,7 +6851,13 @@ function roundToGrid(
 ): void {
 	const absLeft = parentLeft + node.result.left;
 	const absTop = parentTop + node.result.top;
+	const kept =
+		node.keptChildren &&
+		absLeft === node.rawAbsoluteLeft &&
+		absTop === node.rawAbsoluteTop;
+	node.keptChildren = false;
 	node.rawAbsoluteLeft = absLeft;
+	node.rawAbsoluteTop = absTop;
 	if (node.measure !== null && breaksElsewhere(node)) {
 		misplaced.push(node);
 	}
@@ -6721,8 +6882,14 @@ function roundToGrid(
 	}
 	node.gridLeft = absLeft;
 	node.gridTop = absTop;
+	// Only a child laid out again had its origin forgotten. The others are
+	// where they were and would round as they did, settled.
 	for (const child of node.children) {
-		roundToGrid(child, absLeft, absTop, misplaced);
+		if (!kept || Number.isNaN(child.gridLeft)) {
+			roundToGrid(child, absLeft, absTop, misplaced);
+		} else {
+			child.settled = true;
+		}
 	}
 }
 
