@@ -374,20 +374,65 @@ function getBoxModelId(model: CSSValues.BoxModel): string {
 	return id;
 }
 
-export function getBoxModel(element: Element): CSSValues.BoxModel {
+/** The element's style key, as its document's cascade gives it. */
+export function getStyleKey(element: Element): object | null {
 	const document = getOwnerDocument(element);
 	const cascade = document ? documentCascades.get(document) : undefined;
-	const key = cascade?.getStyleKey(element) ?? null;
+	return cascade?.getStyleKey(element) ?? null;
+}
+
+export function getBoxModel(element: Element): CSSValues.BoxModel {
+	const key = getStyleKey(element);
 	let model = key === null ? undefined : boxModels.get(key);
 	if (model === undefined) {
 		// Recorded as one read, cached or not, rather than as the values
 		// that make it up.
-		model = recordStyleReads(() => {}, () => readBoxModel(element));
+		model = shareBoxModel(
+			recordStyleReads(() => {}, () => readBoxModel(element)),
+		);
 		if (key !== null) {
 			boxModels.set(key, model);
 		}
 	}
 	readRecorder?.(element, BOX_MODEL_READ, getBoxModelId(model));
+	return model;
+}
+
+// Most elements have one of a few box models, so a finished model is
+// checked against the last few shared, field by field, and held once.
+// What is shared is frozen.
+const RECENT_BOX_MODELS = 16;
+const recentBoxModels: CSSValues.BoxModel[] = [];
+let nextRecentBoxModel = 0;
+
+function isSameBoxModel(a: CSSValues.BoxModel, b: CSSValues.BoxModel): boolean {
+	return (
+		Object.is(a.width, b.width) &&
+		Object.is(a.height, b.height) &&
+		a.paddingTop === b.paddingTop &&
+		a.paddingRight === b.paddingRight &&
+		a.paddingBottom === b.paddingBottom &&
+		a.paddingLeft === b.paddingLeft &&
+		a.marginTop === b.marginTop &&
+		a.marginRight === b.marginRight &&
+		a.marginBottom === b.marginBottom &&
+		a.marginLeft === b.marginLeft &&
+		a.borderTopWidth === b.borderTopWidth &&
+		a.borderRightWidth === b.borderRightWidth &&
+		a.borderBottomWidth === b.borderBottomWidth &&
+		a.borderLeftWidth === b.borderLeftWidth
+	);
+}
+
+function shareBoxModel(model: CSSValues.BoxModel): CSSValues.BoxModel {
+	for (const recent of recentBoxModels) {
+		if (isSameBoxModel(recent, model)) {
+			return recent;
+		}
+	}
+	Object.freeze(model);
+	recentBoxModels[nextRecentBoxModel] = model;
+	nextRecentBoxModel = (nextRecentBoxModel + 1) % RECENT_BOX_MODELS;
 	return model;
 }
 
