@@ -284,15 +284,150 @@ interface LayoutResult {
 	selfCollapsing: boolean;
 }
 
-interface CachedSize {
-	availableWidth: number;
-	availableHeight: number;
-	widthSpace: AvailableSpace;
-	heightSpace: AvailableSpace;
-	ownerWidth: number;
-	ownerHeight: number;
-	width: number;
-	height: number;
+// A node's cached results, a block of entries in its pool. The first is
+// the full layout's, and the sizing results follow, by slot and oldest
+// first within one.
+const ENTRY = 9;
+const AVAILABLE_WIDTH = 0;
+const AVAILABLE_HEIGHT = 1;
+const WIDTH_SPACE = 2;
+const HEIGHT_SPACE = 3;
+const OWNER_WIDTH = 4;
+const OWNER_HEIGHT = 5;
+const WIDTH = 6;
+const HEIGHT = 7;
+const SLOT = 8;
+
+const INDEFINITE = 0;
+const DEFINITE = 1;
+const SHRINK_TO_FIT = 2;
+
+// The cached results of every node of one document, in one array. Blocks
+// are taken from the end. When the array fills, it doubles, unless half of
+// it is known to be dead or it has grown well past what was live when it
+// was last compacted. Then the blocks of the nodes the document can still
+// reach are copied into a fresh one, which drops the blocks of nodes that
+// are gone or outgrew theirs. A node the walk misses loses its results,
+// which costs a measurement and never a wrong answer.
+export class CachePool {
+	data: Float64Array;
+	used: number;
+	dead: number;
+	live: number;
+	generation: number;
+	liveNodes: (() => Iterable<LayoutNode>) | null;
+
+	constructor(liveNodes: (() => Iterable<LayoutNode>) | null = null) {
+		this.data = new Float64Array(ENTRY * 256);
+		this.used = 0;
+		this.dead = 0;
+		this.live = 0;
+		this.generation = 0;
+		this.liveNodes = liveNodes;
+	}
+}
+
+const sharedPool = new CachePool();
+
+function hasCache(node: LayoutNode): boolean {
+	return (
+		node.cacheCapacity > 0 && node.cacheGeneration === node.pool.generation
+	);
+}
+
+function compactPool(pool: CachePool, needed: number): void {
+	const old = pool.data;
+	const previous = pool.generation;
+	const live: LayoutNode[] = [];
+	let entries = 0;
+	for (const node of pool.liveNodes?.() ?? []) {
+		if (
+			node.pool === pool &&
+			node.cacheCapacity > 0 &&
+			node.cacheGeneration === previous
+		) {
+			node.cacheGeneration = previous + 1;
+			live.push(node);
+			entries += node.cacheCapacity;
+		}
+	}
+	const capacity = Math.max(old.length / ENTRY, 2 * (entries + needed));
+	const data = new Float64Array(capacity * ENTRY);
+	let used = 0;
+	for (const node of live) {
+		data.set(
+			old.subarray(
+				node.cacheAt * ENTRY,
+				(node.cacheAt + node.cacheCapacity) * ENTRY,
+			),
+			used * ENTRY,
+		);
+		node.cacheAt = used;
+		used += node.cacheCapacity;
+	}
+	pool.data = data;
+	pool.used = used;
+	pool.dead = 0;
+	pool.live = used;
+	pool.generation = previous + 1;
+}
+
+function growPool(pool: CachePool, needed: number): void {
+	if (pool.dead * 2 >= pool.used || pool.used > 4 * pool.live + 1024) {
+		compactPool(pool, needed);
+		return;
+	}
+	const grown = new Float64Array(
+		Math.max(pool.data.length * 2, (pool.used + needed) * ENTRY),
+	);
+	grown.set(pool.data);
+	pool.data = grown;
+}
+
+/** Gives the node's block back to its pool. */
+export function releaseCache(node: LayoutNode): void {
+	if (hasCache(node)) {
+		node.pool.dead += node.cacheCapacity;
+	}
+	node.cacheCapacity = 0;
+}
+
+// Gives the node a block of at least `entries` entries, carrying over the
+// results it holds.
+function reserveCache(node: LayoutNode, entries: number): void {
+	if (hasCache(node) && node.cacheCapacity >= entries) {
+		return;
+	}
+	const pool = node.pool;
+	const capacity = Math.max(
+		entries,
+		Math.ceil((hasCache(node) ? node.cacheCapacity : 0) * 1.5),
+	);
+	if ((pool.used + capacity) * ENTRY > pool.data.length) {
+		growPool(pool, capacity);
+	}
+	const at = pool.used;
+	pool.used += capacity;
+	if (hasCache(node)) {
+		pool.data.copyWithin(
+			at * ENTRY,
+			node.cacheAt * ENTRY,
+			(node.cacheAt + node.cacheCapacity) * ENTRY,
+		);
+		pool.dead += node.cacheCapacity;
+	} else {
+		node.hasCachedLayout = false;
+		node.cachedSizeCount = 0;
+	}
+	node.cacheAt = at;
+	node.cacheCapacity = capacity;
+	node.cacheGeneration = pool.generation;
+}
+
+function getSpaceCode(space: AvailableSpace): number {
+	return space === "indefinite"
+		? INDEFINITE
+		: space === "definite" ? DEFINITE : SHRINK_TO_FIT;
 }
 
 // Undefined constraints are NaN, and NaN !== NaN.
@@ -301,23 +436,24 @@ function isSameConstraint(a: number, b: number): boolean {
 }
 
 function isMatchingConstraints(
-	cache: CachedSize,
+	cache: Float64Array,
+	at: number,
 	availableWidth: number,
 	availableHeight: number,
-	widthSpace: AvailableSpace,
-	heightSpace: AvailableSpace,
+	widthSpace: number,
+	heightSpace: number,
 	ownerWidth: number,
 	ownerHeight: number,
 	ownerFree: boolean,
 ): boolean {
 	return (
-		cache.widthSpace === widthSpace &&
-		cache.heightSpace === heightSpace &&
-		isSameConstraint(cache.availableWidth, availableWidth) &&
-		isSameConstraint(cache.availableHeight, availableHeight) &&
+		cache[at + WIDTH_SPACE] === widthSpace &&
+		cache[at + HEIGHT_SPACE] === heightSpace &&
+		isSameConstraint(cache[at + AVAILABLE_WIDTH], availableWidth) &&
+		isSameConstraint(cache[at + AVAILABLE_HEIGHT], availableHeight) &&
 		(ownerFree ||
-			(isSameConstraint(cache.ownerWidth, ownerWidth) &&
-				isSameConstraint(cache.ownerHeight, ownerHeight)))
+			(isSameConstraint(cache[at + OWNER_WIDTH], ownerWidth) &&
+				isSameConstraint(cache[at + OWNER_HEIGHT], ownerHeight)))
 	);
 }
 
@@ -398,10 +534,10 @@ function isOwnerFree(node: LayoutNode): boolean {
 // `shrink-to-fit` bound the result still fits. Sizing only. A full layout
 // placed children against its request.
 function isCachedSizeValid(
-	cachedSpace: AvailableSpace,
+	cachedSpace: number,
 	cachedAvailable: number,
 	cachedComputed: number,
-	mode: AvailableSpace,
+	mode: number,
 	available: number,
 ): boolean {
 	if (cachedSpace === mode && isSameConstraint(cachedAvailable, available)) {
@@ -410,17 +546,17 @@ function isCachedSizeValid(
 	// A size measured under a narrower request than it came out at broke its
 	// lines for that request, and at its own width they would break fewer.
 	if (
-		mode === "definite" &&
+		mode === DEFINITE &&
 		available === cachedComputed &&
-		(cachedSpace === "indefinite" || !(cachedAvailable < cachedComputed))
+		(cachedSpace === INDEFINITE || !(cachedAvailable < cachedComputed))
 	) {
 		return true;
 	}
-	if (mode === "shrink-to-fit") {
-		if (cachedSpace === "indefinite") {
+	if (mode === SHRINK_TO_FIT) {
+		if (cachedSpace === INDEFINITE) {
 			return cachedComputed <= available;
 		}
-		if (cachedSpace === "shrink-to-fit") {
+		if (cachedSpace === SHRINK_TO_FIT) {
 			return cachedAvailable > available && cachedComputed <= available;
 		}
 	}
@@ -431,12 +567,10 @@ function isMinContent(mode: AvailableSpace, available: number): boolean {
 	return mode === "shrink-to-fit" && available === 0;
 }
 
-const CACHE_SLOT_COUNT = 9;
 // Answers kept per query shape. A table measures what it holds at every
 // width its parent tries, and a nested table at every width each of those
 // gives it.
 const CACHE_SLOT_DEPTH = 4;
-const NO_CACHED_SIZES: ReadonlyArray<CachedSize | null> = Object.freeze([]);
 
 // One cache slot per query shape, after Taffy, so the probes one pass makes
 // of a child (min-content, max-content, fixed) never evict each other. A
@@ -481,9 +615,14 @@ export class LayoutNode {
 
 	// One sizing result per query shape (getCacheSlot), so a placing pass's
 	// several probes of one child keep their own. `stale` invalidates both.
-	// Null until a sizing query is first cached, which many nodes never see.
-	cachedSizes: Array<CachedSize | null> | null;
-	cachedLayout: CachedSize | null;
+	// A block in the pool, none until a result is first cached. Clearing
+	// keeps the block for the next results.
+	pool: CachePool;
+	cacheAt: number;
+	cacheCapacity: number;
+	cacheGeneration: number;
+	hasCachedLayout: boolean;
+	cachedSizeCount: number;
 
 	// Whether the subtree's size depends on the width it is offered other
 	// than through where its lines break: a percentage that resolves
@@ -536,16 +675,20 @@ export class LayoutNode {
 	// own formatting context tells the box, whose measure lays it out.
 	onStale: (() => void) | null;
 
-	constructor() {
+	constructor(pool: CachePool = sharedPool) {
 		this.children = [];
 		this.parent = null;
 		this.ownerFree = false;
 		this.measureFn = null;
 		this.staticPositionFn = null;
 		this.stale = true;
-		this.cachedSizes = null;
+		this.pool = pool;
+		this.cacheAt = 0;
+		this.cacheCapacity = 0;
+		this.cacheGeneration = 0;
+		this.hasCachedLayout = false;
+		this.cachedSizeCount = 0;
 		this.widthDependent = false;
-		this.cachedLayout = null;
 		this.cellBaselineShift = 0;
 		this.owner = null;
 		this.measuresText = true;
@@ -697,8 +840,9 @@ export class LayoutNode {
  */
 export function forgetLayout(node: LayoutNode): void {
 	node.stale = true;
-	node.cachedLayout = null;
-	node.cachedSizes = null;
+	releaseCache(node);
+	node.hasCachedLayout = false;
+	node.cachedSizeCount = 0;
 	node.gridLeft = NaN;
 	node.gridTop = NaN;
 	node.settled = false;
@@ -861,6 +1005,8 @@ const AUTO_TRACK: CSSValues.TrackSize = {
 
 const EMPTY_TRACK_LIST: CSSValues.TrackList = {parts: [], endNames: []};
 
+const AUTO_TRACKS: CSSValues.TrackSize[] = [AUTO_TRACK];
+
 // Browser defaults, not Yoga's: row direction, align-content stretch,
 // flex-shrink 1.
 export function createStyle(): Style {
@@ -885,8 +1031,8 @@ export function createStyle(): Style {
 		gridTemplateColumns: EMPTY_TRACK_LIST,
 		gridTemplateRows: EMPTY_TRACK_LIST,
 		gridTemplateAreas: null,
-		gridAutoColumns: [AUTO_TRACK],
-		gridAutoRows: [AUTO_TRACK],
+		gridAutoColumns: AUTO_TRACKS,
+		gridAutoRows: AUTO_TRACKS,
 		gridAutoFlowColumn: false,
 		gridAutoFlowDense: false,
 
@@ -3429,7 +3575,7 @@ function layoutTable(
 		if (cell.node.cellBaselineShift !== shift) {
 			// Its content moves, which a layout cached for its size would not.
 			cell.node.cellBaselineShift = shift;
-			cell.node.cachedLayout = null;
+			cell.node.hasCachedLayout = false;
 		}
 	}
 
@@ -6015,69 +6161,77 @@ function layoutNode(
 	// size and skips its whole subtree. A full layout satisfies a sizing
 	// query. A sizing result never satisfies a layout query, since it
 	// placed no children.
+	const widthCode = getSpaceCode(widthSpace);
+	const heightCode = getSpaceCode(heightSpace);
 	if (!node.stale) {
-		let hit: CachedSize | null = null;
+		const cache = node.pool.data;
+		const base = node.cacheAt * ENTRY;
+		const count = hasCache(node) ? node.cachedSizeCount : 0;
+		let hit = -1;
 		if (
-			node.cachedLayout &&
+			node.hasCachedLayout &&
+			hasCache(node) &&
 			isMatchingConstraints(
-				node.cachedLayout,
+				cache,
+				base,
 				availableWidth,
 				availableHeight,
-				widthSpace,
-				heightSpace,
+				widthCode,
+				heightCode,
 				ownerWidth,
 				ownerHeight,
 				node.ownerFree,
 			)
 		) {
-			hit = node.cachedLayout;
+			hit = base;
 		} else if (!placing) {
 			// Margins are outside the size a measurement returns, so both
 			// requests are reduced to their content side before being compared.
 			const marginRow = getAxisMargin(node, "row", ownerWidth);
 			const marginColumn = getAxisMargin(node, "column", ownerWidth);
-			for (const cached of node.cachedSizes ?? NO_CACHED_SIZES) {
+			for (
+				let at = base + ENTRY; at <= base + count * ENTRY; at += ENTRY
+			) {
 				if (
-					cached !== null &&
 					(node.ownerFree ||
-						(isSameConstraint(cached.ownerWidth, ownerWidth) &&
-							isSameConstraint(cached.ownerHeight, ownerHeight))) &&
-					cached.width >= 0 &&
-					cached.height >= 0 &&
+						(isSameConstraint(cache[at + OWNER_WIDTH], ownerWidth) &&
+							isSameConstraint(cache[at + OWNER_HEIGHT], ownerHeight))) &&
+					cache[at + WIDTH] >= 0 &&
+					cache[at + HEIGHT] >= 0 &&
 					(node.widthDependent
-						? cached.widthSpace === widthSpace &&
-							isSameConstraint(cached.availableWidth, availableWidth)
+						? cache[at + WIDTH_SPACE] === widthCode &&
+							isSameConstraint(cache[at + AVAILABLE_WIDTH], availableWidth)
 						: isCachedSizeValid(
-							cached.widthSpace,
-							cached.availableWidth - marginRow,
-							cached.width,
-							widthSpace,
+							cache[at + WIDTH_SPACE],
+							cache[at + AVAILABLE_WIDTH] - marginRow,
+							cache[at + WIDTH],
+							widthCode,
 							availableWidth - marginRow,
 						)) &&
 					isCachedSizeValid(
-						cached.heightSpace,
-						cached.availableHeight - marginColumn,
-						cached.height,
-						heightSpace,
+						cache[at + HEIGHT_SPACE],
+						cache[at + AVAILABLE_HEIGHT] - marginColumn,
+						cache[at + HEIGHT],
+						heightCode,
 						availableHeight - marginColumn,
 					)
 				) {
-					hit = cached;
+					hit = at;
 					break;
 				}
 			}
 		}
-		if (hit) {
-			node.result.width = hit.width;
-			node.result.height = hit.height;
+		if (hit !== -1) {
+			node.result.width = cache[hit + WIDTH];
+			node.result.height = cache[hit + HEIGHT];
 			return;
 		}
 	}
 
 	// Whatever dirtied the node invalidated every cached result.
 	if (node.stale) {
-		node.cachedLayout = null;
-		node.cachedSizes = null;
+		node.hasCachedLayout = false;
+		node.cachedSizeCount = 0;
 	}
 
 	layoutNodeImpl(
@@ -6099,52 +6253,56 @@ function layoutNode(
 		);
 	// An entry already in the slot is written over rather than replaced. A
 	// node laid out every frame would otherwise leave one behind each time.
-	const write = (entry: CachedSize | null): CachedSize => {
-		if (entry === null) {
-			return {
-				availableWidth,
-				availableHeight,
-				widthSpace,
-				heightSpace,
-				ownerWidth,
-				ownerHeight,
-				width: node.result.width,
-				height: node.result.height,
-			};
-		}
-		entry.availableWidth = availableWidth;
-		entry.availableHeight = availableHeight;
-		entry.widthSpace = widthSpace;
-		entry.heightSpace = heightSpace;
-		entry.ownerWidth = ownerWidth;
-		entry.ownerHeight = ownerHeight;
-		entry.width = node.result.width;
-		entry.height = node.result.height;
-		return entry;
+	const write = (cache: Float64Array, at: number, slot: number): void => {
+		cache[at + AVAILABLE_WIDTH] = availableWidth;
+		cache[at + AVAILABLE_HEIGHT] = availableHeight;
+		cache[at + WIDTH_SPACE] = widthCode;
+		cache[at + HEIGHT_SPACE] = heightCode;
+		cache[at + OWNER_WIDTH] = ownerWidth;
+		cache[at + OWNER_HEIGHT] = ownerHeight;
+		cache[at + WIDTH] = node.result.width;
+		cache[at + HEIGHT] = node.result.height;
+		cache[at + SLOT] = slot;
 	};
 	if (placing) {
-		node.cachedLayout = write(node.cachedLayout);
+		reserveCache(node, 1);
+		write(node.pool.data, node.cacheAt * ENTRY, -1);
+		node.hasCachedLayout = true;
 	} else {
 		// A sizing pass that ran wrote its own results over the subtree the
 		// last full layout placed, so that layout no longer stands.
-		node.cachedLayout = null;
-		const sizes = (node.cachedSizes ??= new Array<CachedSize | null>(
-			CACHE_SLOT_COUNT * CACHE_SLOT_DEPTH,
-		).fill(null));
-		const start =
-			CACHE_SLOT_DEPTH *
-			getCacheSlot(availableWidth, availableHeight, widthSpace, heightSpace);
-		const end = start + CACHE_SLOT_DEPTH;
+		node.hasCachedLayout = false;
+		reserveCache(
+			node,
+			Math.max((hasCache(node) ? node.cachedSizeCount : 0) + 2, 3),
+		);
+		const cache = node.pool.data;
+		const base = node.cacheAt * ENTRY;
+		const count = node.cachedSizeCount;
+		const slot = getCacheSlot(
+			availableWidth,
+			availableHeight,
+			widthSpace,
+			heightSpace,
+		);
+		let start = 1;
+		while (start <= count && cache[base + start * ENTRY + SLOT] < slot) {
+			start++;
+		}
+		let end = start;
+		while (end <= count && cache[base + end * ENTRY + SLOT] === slot) {
+			end++;
+		}
 		let index = start;
 		while (
 			index < end &&
-			sizes[index] !== null &&
 			!isMatchingConstraints(
-				sizes[index]!,
+				cache,
+				base + index * ENTRY,
 				availableWidth,
 				availableHeight,
-				widthSpace,
-				heightSpace,
+				widthCode,
+				heightCode,
 				ownerWidth,
 				ownerHeight,
 				false,
@@ -6152,13 +6310,24 @@ function layoutNode(
 		) {
 			index++;
 		}
-		if (index === end) {
-			const oldest = sizes[start];
-			sizes.copyWithin(start, start + 1, end);
-			index = end - 1;
-			sizes[index] = oldest;
+		if (index < end) {
+			write(cache, base + index * ENTRY, slot);
+		} else if (end - start < CACHE_SLOT_DEPTH) {
+			cache.copyWithin(
+				base + (end + 1) * ENTRY,
+				base + end * ENTRY,
+				base + (count + 1) * ENTRY,
+			);
+			write(cache, base + end * ENTRY, slot);
+			node.cachedSizeCount = count + 1;
+		} else {
+			cache.copyWithin(
+				base + start * ENTRY,
+				base + (start + 1) * ENTRY,
+				base + end * ENTRY,
+			);
+			write(cache, base + (end - 1) * ENTRY, slot);
 		}
-		sizes[index] = write(sizes[index]);
 	}
 	node.stale = false;
 }
