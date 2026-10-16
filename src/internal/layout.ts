@@ -8099,7 +8099,9 @@ function recordReads(
 		forgetReads(node);
 		if (layout.measureNodes.has(node)) {
 			for (let i = 0; i < reads.length; i += 3) {
-				addMeasureReader(reads[i] as Element, node);
+				if (reads[i] !== reads[i - 3]) {
+					addMeasureReader(reads[i] as Element, node);
+				}
 			}
 			measureReads.set(node, fitToLength(reads));
 		}
@@ -8113,7 +8115,9 @@ function forgetReads(node: LayoutNode): void {
 	const reads = measureReads.get(node);
 	if (reads !== undefined) {
 		for (let i = 0; i < reads.length; i += 3) {
-			removeMeasureReader(reads[i] as Element, node);
+			if (reads[i] !== reads[i - 3]) {
+				removeMeasureReader(reads[i] as Element, node);
+			}
 		}
 		measureReads.delete(node);
 	}
