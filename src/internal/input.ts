@@ -52,11 +52,11 @@ import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import {type Framebuffer, repaintAll, requestFrame} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";
 import {
-	attributeOf,
-	containsOf,
-	hasAttributeOf,
-	localNameOf,
-	nodeTypeOf,
+	getAttributeValue,
+	getLocalName,
+	getNodeType,
+	hasAttributeByName,
+	nodeContains,
 } from "./tree.ts";
 import {pxFromCells} from "./units.ts";
 
@@ -195,7 +195,7 @@ interface SequentialEntry {
 }
 
 function getTabIndex(element: Element): number {
-	const parsed = parseInt(attributeOf(element, "tabindex") || "0", 10);
+	const parsed = parseInt(getAttributeValue(element, "tabindex") || "0", 10);
 	return Number.isNaN(parsed) ? 0 : parsed;
 }
 
@@ -227,7 +227,7 @@ function getSequentialFocusEntries(
 			ancestor;
 			ancestor = flatParentElement(ancestor)
 		) {
-			if (hasAttributeOf(ancestor, "inert")) {
+			if (hasAttributeByName(ancestor, "inert")) {
 				return true;
 			}
 		}
@@ -257,7 +257,7 @@ function getSequentialFocusEntries(
 			}
 		};
 		const visit = (node: Node): void => {
-			if (nodeTypeOf(node) !== 1) {
+			if (getNodeType(node) !== 1) {
 				return;
 			}
 			const element = node as Element;
@@ -274,7 +274,7 @@ function getSequentialFocusEntries(
 				push(ownerTabindex, expansion);
 				return;
 			}
-			if (localNameOf(element) === "slot") {
+			if (getLocalName(element) === "slot") {
 				const innerBarrier = ownerTabindex < 0 ? (barrier ?? element) : barrier;
 				const assigned = (element as HTMLSlotElement).assignedNodes();
 				const slotContents = assigned.length > 0
@@ -308,7 +308,7 @@ function getSequentialFocusEntries(
 		return entries.flatMap((entry) => entry.elements);
 	};
 
-	const roots = nodeTypeOf(root) === 9
+	const roots = getNodeType(root) === 9
 		? ((root as Document).documentElement
 			? [(root as Document).documentElement as Element]
 			: [])
@@ -1218,7 +1218,7 @@ function dispatchPress(
 		focusable = flatParentElement(focusable);
 	}
 	const host = getEditingHost(target);
-	if (host !== null && (focusable === null || !containsOf(host, focusable))) {
+	if (host !== null && (focusable === null || !nodeContains(host, focusable))) {
 		focusable = host;
 	}
 	const active = getFocusedElement(input.document);

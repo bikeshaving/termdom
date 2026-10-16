@@ -809,7 +809,7 @@ function *App(this: Context) {
     const index = pile.findIndex((card) => card.up);
     return index < 0 ? getLast(pile) : index;
   };
-  const topOf = (col: number): Place =>
+  const getTopPlace = (col: number): Place =>
     boardPlace(col, Math.max(0, getLast(pileAt(col))));
 
   const idAt = ({row, col, depth}: Place): string =>
@@ -867,7 +867,7 @@ function *App(this: Context) {
   };
 
   /** The place a source is picked up from: its own card, not the hit slop. */
-  const placeOf = (source: Held): Place =>
+  const getPickupPlace = (source: Held): Place =>
     source?.kind === "tableau"
       ? boardPlace(source.pile, source.index)
       : source?.kind === "foundation" ? homePlace(source.index) : FLIP;
@@ -970,7 +970,7 @@ function *App(this: Context) {
       held = source;
       message = "";
     });
-    seat(placeOf(source));
+    seat(getPickupPlace(source));
   };
 
   /** A card put back lies where it was, and the focus goes with it. */
@@ -1201,7 +1201,7 @@ function *App(this: Context) {
   };
 
   const moveFocus = (dx: number, dy: number): void => {
-    const cur = focused() ?? topOf(0);
+    const cur = focused() ?? getTopPlace(0);
     let next: Place = cur;
     if (dx !== 0) {
       if (cur.row === "top") {
@@ -1211,11 +1211,11 @@ function *App(this: Context) {
           col: TOP_COLS[(at + dx + TOP_COLS.length) % TOP_COLS.length],
         };
       } else {
-        next = topOf((cur.col + dx + 7) % 7);
+        next = getTopPlace((cur.col + dx + 7) % 7);
       }
     } else if (cur.row === "top") {
       if (dy > 0) {
-        next = topOf(cur.col === 2 ? 1 : cur.col);
+        next = getTopPlace(cur.col === 2 ? 1 : cur.col);
       }
     } else {
       const pile = pileAt(cur.col);

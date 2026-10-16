@@ -9,20 +9,20 @@
 
 import {getWhiteSpace} from "./cssom.ts";
 import {
-	appendChildOf,
+	appendChildNode,
 	constructInternal,
 	dispatchAsUserAgent,
 	getEditingHost,
 	getFocusedElement,
-	insertBeforeOf,
+	insertChildNode,
 	revealEditingCaret,
 } from "./dom.ts";
 import {getNextGraphemeBoundary, getPreviousGraphemeBoundary} from "./text.ts";
 import {
-	containsOf,
 	ELEMENT_NODE,
-	localNameOf,
-	nodeTypeOf,
+	getLocalName,
+	getNodeType,
+	nodeContains,
 	TEXT_NODE,
 } from "./tree.ts";
 
@@ -141,7 +141,7 @@ export function getEditingCaretPoint(
 	if (selection === null || selection.focusNode === null) {
 		return null;
 	}
-	if (!containsOf(active, selection.focusNode)) {
+	if (!nodeContains(active, selection.focusNode)) {
 		return null;
 	}
 	return {node: selection.focusNode, offset: selection.focusOffset};
@@ -228,7 +228,7 @@ function onEditingBeforeInput(event: globalThis.Event): void {
 function getInputTarget(host: globalThis.HTMLElement): globalThis.Element {
 	const selection = host.ownerDocument.getSelection();
 	const focus = selection === null ? null : selection.focusNode;
-	if (focus === null || !containsOf(host, focus)) {
+	if (focus === null || !nodeContains(host, focus)) {
 		return host;
 	}
 	return asElement(focus) ?? focus.parentElement ?? host;
@@ -250,7 +250,9 @@ function ensureCaretInside(
 	if (selection === null) {
 		return null;
 	}
-	if (selection.focusNode === null || !containsOf(host, selection.focusNode)) {
+	if (
+		selection.focusNode === null || !nodeContains(host, selection.focusNode)
+	) {
 		collapseTo(selection, getFirstCaretPoint(host));
 	}
 	return selection;
@@ -323,7 +325,9 @@ function moveEditingCaret(
 	const direction = forward ? "forward" : "backward";
 	const from = {node: selection.focusNode, offset: selection.focusOffset};
 	selection.modify(alter, direction, granularity);
-	if (selection.focusNode !== null && !containsOf(host, selection.focusNode)) {
+	if (
+		selection.focusNode !== null && !nodeContains(host, selection.focusNode)
+	) {
 		if (extend) {
 			selection.extend(from.node, from.offset);
 		} else {
@@ -369,7 +373,7 @@ function getUneditableIsland(
 ): globalThis.Element | null {
 	let island: globalThis.Element | null = null;
 	for (
-		let element = nodeTypeOf(node) === ELEMENT_NODE
+		let element = getNodeType(node) === ELEMENT_NODE
 			? node as globalThis.Element
 			: node.parentElement;
 		element !== null && element !== host;
@@ -388,7 +392,7 @@ function getFirstCaretPoint(element: globalThis.Element): EditingPoint {
 	let fallback: EditingPoint | null = null;
 	let node: globalThis.Node | null = element.firstChild;
 	while (node !== null) {
-		if (nodeTypeOf(node) === TEXT_NODE) {
+		if (getNodeType(node) === TEXT_NODE) {
 			const data = (node as globalThis.Text).data;
 			if (!COLLAPSIBLE_ONLY.test(data)) {
 				return {node, offset: data.search(/[^ \t\n\r\f]/)};
@@ -396,7 +400,7 @@ function getFirstCaretPoint(element: globalThis.Element): EditingPoint {
 			fallback ??= {node, offset: 0};
 		} else if (isAtomic(node)) {
 			fallback ??= {node: node.parentNode!, offset: getChildIndex(node)};
-		} else if (nodeTypeOf(node) === ELEMENT_NODE && node.firstChild === null) {
+		} else if (getNodeType(node) === ELEMENT_NODE && node.firstChild === null) {
 			fallback ??= {node, offset: 0};
 		}
 		if (node.firstChild !== null && !isAtomic(node)) {
@@ -414,16 +418,16 @@ function getFirstCaretPoint(element: globalThis.Element): EditingPoint {
 // A point in an element next to a text node is the same place as a point
 // in that text node, and the layout can only draw a caret in text.
 function normalizeCaretPoint(point: EditingPoint): EditingPoint {
-	if (nodeTypeOf(point.node) !== ELEMENT_NODE) {
+	if (getNodeType(point.node) !== ELEMENT_NODE) {
 		return point;
 	}
 	const children = point.node.childNodes;
 	const before = point.offset > 0 ? children[point.offset - 1] : null;
-	if (before !== null && nodeTypeOf(before) === TEXT_NODE) {
+	if (before !== null && getNodeType(before) === TEXT_NODE) {
 		return {node: before, offset: (before as globalThis.Text).data.length};
 	}
 	const after = children[point.offset] ?? null;
-	if (after !== null && nodeTypeOf(after) === TEXT_NODE) {
+	if (after !== null && getNodeType(after) === TEXT_NODE) {
 		return {node: after, offset: 0};
 	}
 	return point;
@@ -522,7 +526,7 @@ function insertEditingParagraph(
 			point = {node: block, offset: block.childNodes.length};
 		}
 	}
-	if (localNameOf(block) === "li" && !hasRenderedContent(block)) {
+	if (getLocalName(block) === "li" && !hasRenderedContent(block)) {
 		return leaveList(selection, block);
 	}
 	const document = host.ownerDocument;
@@ -532,8 +536,8 @@ function insertEditingParagraph(
 	const tail = document.createRange();
 	tail.setStart(point.node, point.offset);
 	tail.setEnd(block, block.childNodes.length);
-	appendChildOf(created, tail.extractContents());
-	insertBeforeOf(block.parentNode!, created, block.nextSibling);
+	appendChildNode(created, tail.extractContents());
+	insertChildNode(block.parentNode!, created, block.nextSibling);
 	fillEmptyBlock(block);
 	fillEmptyBlock(created);
 	collapseTo(selection, normalizeCaretPoint(getFirstCaretPoint(created)));
@@ -555,7 +559,7 @@ function insertEditingLineBreak(
 	// A break with nothing after it opens a line the layout has no reason
 	// to keep, so it gets the same placeholder an empty block gets.
 	if (isAtBlockEnd(host, after)) {
-		insertBeforeOf(
+		insertChildNode(
 			lineBreak.parentNode!,
 			document.createElement("br"),
 			lineBreak.nextSibling,
@@ -577,13 +581,13 @@ function leaveList(
 	}
 	const document = item.ownerDocument;
 	const block = document.createElement("div");
-	insertBeforeOf(list.parentNode, block, list.nextSibling);
+	insertChildNode(list.parentNode, block, list.nextSibling);
 	if (item.nextSibling !== null) {
-		const rest = document.createElement(localNameOf(list));
+		const rest = document.createElement(getLocalName(list));
 		while (item.nextSibling !== null) {
-			appendChildOf(rest, item.nextSibling);
+			appendChildNode(rest, item.nextSibling);
 		}
-		insertBeforeOf(block.parentNode!, rest, block.nextSibling);
+		insertChildNode(block.parentNode!, rest, block.nextSibling);
 	}
 	item.remove();
 	fillEmptyBlock(block);
@@ -598,7 +602,7 @@ function leaveList(
 // item split into their own kind; a heading does too, except at its end,
 // where what follows a heading is body text.
 function getSeparatorTag(block: globalThis.Element, atEnd: boolean): string {
-	const tag = localNameOf(block);
+	const tag = getLocalName(block);
 	if (tag === "li" || tag === "p") {
 		return tag;
 	}
@@ -622,7 +626,7 @@ function wrapLineInBlock(
 		top = top.parentNode;
 	}
 	if (top === null) {
-		appendChildOf(host, block);
+		appendChildNode(host, block);
 		return block;
 	}
 	let first = top;
@@ -636,10 +640,10 @@ function wrapLineInBlock(
 	while (last.nextSibling !== null && !isBlockElement(host, last.nextSibling)) {
 		last = last.nextSibling;
 	}
-	insertBeforeOf(host, block, first);
+	insertChildNode(host, block, first);
 	for (let node: globalThis.Node = first; ;) {
 		const next = node.nextSibling;
-		appendChildOf(block, node);
+		appendChildNode(block, node);
 		if (node === last || next === null) {
 			break;
 		}
@@ -662,7 +666,7 @@ function mergeBlocks(
 	const at =
 		normalizeCaretPoint({node: first, offset: first.childNodes.length});
 	while (second.firstChild !== null) {
-		appendChildOf(first, second.firstChild);
+		appendChildNode(first, second.firstChild);
 	}
 	removeWithEmptiedAncestors(second);
 	fillEmptyBlock(first);
@@ -711,7 +715,7 @@ function getEdgeBlockIn(
 	node: globalThis.Node,
 	forward: boolean,
 ): globalThis.Element | null {
-	if (nodeTypeOf(node) !== ELEMENT_NODE) {
+	if (getNodeType(node) !== ELEMENT_NODE) {
 		return null;
 	}
 	const element = node as globalThis.Element;
@@ -753,7 +757,7 @@ function fillEmptyBlock(block: globalThis.Element): void {
 	if (hasRenderedContent(block) || getPlaceholderBreak(block) !== null) {
 		return;
 	}
-	appendChildOf(block, block.ownerDocument.createElement("br"));
+	appendChildNode(block, block.ownerDocument.createElement("br"));
 }
 
 function hasRenderedContent(element: globalThis.Element): boolean {
@@ -768,20 +772,20 @@ function hasRenderedContent(element: globalThis.Element): boolean {
 }
 
 function insertNodeAt(point: EditingPoint, node: globalThis.Node): void {
-	if (nodeTypeOf(point.node) === TEXT_NODE) {
+	if (getNodeType(point.node) === TEXT_NODE) {
 		const text = point.node as globalThis.Text;
 		const parent = text.parentNode!;
 		if (point.offset === 0) {
-			insertBeforeOf(parent, node, text);
+			insertChildNode(parent, node, text);
 		} else if (point.offset >= text.data.length) {
-			insertBeforeOf(parent, node, text.nextSibling);
+			insertChildNode(parent, node, text.nextSibling);
 		} else {
-			insertBeforeOf(parent, node, text.splitText(point.offset));
+			insertChildNode(parent, node, text.splitText(point.offset));
 		}
 		return;
 	}
 	const element = point.node as globalThis.Element;
-	insertBeforeOf(element, node, element.childNodes[point.offset] ?? null);
+	insertChildNode(element, node, element.childNodes[point.offset] ?? null);
 }
 
 /** Whether nothing the layout would draw sits after the point in its block. */
@@ -789,7 +793,7 @@ function isAtBlockEnd(
 	host: globalThis.HTMLElement,
 	point: EditingPoint,
 ): boolean {
-	if (nodeTypeOf(point.node) === TEXT_NODE) {
+	if (getNodeType(point.node) === TEXT_NODE) {
 		if (point.offset < (point.node as globalThis.Text).data.length) {
 			return false;
 		}
@@ -813,7 +817,7 @@ function deleteEditingContent(
 		return deleteSelectionContents(host, selection);
 	}
 	const point = getCaretPoint(selection);
-	const text = nodeTypeOf(point.node) === TEXT_NODE
+	const text = getNodeType(point.node) === TEXT_NODE
 		? (point.node as globalThis.Text)
 		: null;
 	if (
@@ -826,7 +830,7 @@ function deleteEditingContent(
 	if (neighbor === null) {
 		return mergeAcrossBlocks(host, selection, point, forward);
 	}
-	if (nodeTypeOf(neighbor) === TEXT_NODE) {
+	if (getNodeType(neighbor) === TEXT_NODE) {
 		const data = neighbor as globalThis.Text;
 		return data.data.length > 0 &&
 			cutGrapheme(
@@ -898,16 +902,16 @@ function deleteSelectionContents(
 		return false;
 	}
 	const range = selection.getRangeAt(0);
-	if (!containsOf(host, range.startContainer)) {
+	if (!nodeContains(host, range.startContainer)) {
 		range.setStart(host, 0);
 	}
-	if (!containsOf(host, range.endContainer)) {
+	if (!nodeContains(host, range.endContainer)) {
 		range.setEnd(host, host.childNodes.length);
 	}
 	const first = getBlockContainer(host, range.startContainer);
 	const last = getBlockContainer(host, range.endContainer);
 	range.deleteContents();
-	if (first !== last && containsOf(host, first) && containsOf(host, last)) {
+	if (first !== last && nodeContains(host, first) && nodeContains(host, last)) {
 		mergeBlocks(first, last, selection);
 	} else {
 		fillEmptyBlock(first);
@@ -941,16 +945,16 @@ function openTextAt(
 	point: EditingPoint,
 ): {node: globalThis.Text; offset: number} {
 	takePlaceholderBreak(host, point);
-	if (nodeTypeOf(point.node) === TEXT_NODE) {
+	if (getNodeType(point.node) === TEXT_NODE) {
 		return {node: point.node as globalThis.Text, offset: point.offset};
 	}
 	const inside = normalizeCaretPoint(point);
-	if (nodeTypeOf(inside.node) === TEXT_NODE) {
+	if (getNodeType(inside.node) === TEXT_NODE) {
 		return {node: inside.node as globalThis.Text, offset: inside.offset};
 	}
 	const parent = point.node as globalThis.Element;
 	const created = parent.ownerDocument.createTextNode("");
-	insertBeforeOf(parent, created, parent.childNodes[point.offset] ?? null);
+	insertChildNode(parent, created, parent.childNodes[point.offset] ?? null);
 	return {node: created, offset: 0};
 }
 
@@ -976,11 +980,11 @@ function getBlockContainer(
 	node: globalThis.Node,
 ): globalThis.Element {
 	for (
-		let element = nodeTypeOf(node) === ELEMENT_NODE
+		let element = getNodeType(node) === ELEMENT_NODE
 			? node as globalThis.Element
 			: node.parentElement; element !== null; element = element.parentElement
 	) {
-		if (element === host || BLOCK_TAGS.has(localNameOf(element))) {
+		if (element === host || BLOCK_TAGS.has(getLocalName(element))) {
 			return element;
 		}
 	}
@@ -995,7 +999,7 @@ function getAdjacentNode(
 	forward: boolean,
 ): globalThis.Node | null {
 	let node = point.node;
-	let candidate: globalThis.Node | null = nodeTypeOf(node) === TEXT_NODE
+	let candidate: globalThis.Node | null = getNodeType(node) === TEXT_NODE
 		? (forward ? node.nextSibling : node.previousSibling)
 		: (node.childNodes[forward ? point.offset : point.offset - 1] ?? null);
 	while (candidate === null) {
@@ -1007,7 +1011,7 @@ function getAdjacentNode(
 		node = parent;
 	}
 	let found: globalThis.Node = candidate;
-	while (nodeTypeOf(found) === ELEMENT_NODE && !isAtomic(found)) {
+	while (getNodeType(found) === ELEMENT_NODE && !isAtomic(found)) {
 		const child = forward ? found.firstChild : found.lastChild;
 		if (child === null) {
 			break;
@@ -1099,7 +1103,7 @@ function hasRenderedSibling(
 // A line break holds no text of its own, so a space next to one still
 // collapses away and an empty block that ends in one is still empty.
 function isRenderedNode(node: globalThis.Node): boolean {
-	return nodeTypeOf(node) === ELEMENT_NODE
+	return getNodeType(node) === ELEMENT_NODE
 		? !isBreak(node)
 		: !COLLAPSIBLE_ONLY.test(node.textContent ?? "");
 }
@@ -1110,7 +1114,7 @@ function clampSelectionToHost(
 	forward: boolean,
 ): void {
 	const focus = selection.focusNode;
-	if (focus !== null && containsOf(host, focus)) {
+	if (focus !== null && nodeContains(host, focus)) {
 		return;
 	}
 	const edge = forward
@@ -1129,8 +1133,8 @@ function isSpace(character: string): boolean {
 }
 
 function isBreak(node: globalThis.Node): boolean {
-	return nodeTypeOf(node) === ELEMENT_NODE &&
-		localNameOf((node as globalThis.Element)) === "br";
+	return getNodeType(node) === ELEMENT_NODE &&
+		getLocalName((node as globalThis.Element)) === "br";
 }
 
 function isBlockElement(
@@ -1138,13 +1142,13 @@ function isBlockElement(
 	node: globalThis.Node,
 ): boolean {
 	return node === host ||
-		(nodeTypeOf(node) === ELEMENT_NODE &&
-			BLOCK_TAGS.has(localNameOf((node as globalThis.Element))));
+		(getNodeType(node) === ELEMENT_NODE &&
+			BLOCK_TAGS.has(getLocalName((node as globalThis.Element))));
 }
 
 function isAtomic(node: globalThis.Node): boolean {
 	const element = node as globalThis.Element;
-	return ATOMIC_TAGS.has(localNameOf(element)) ||
+	return ATOMIC_TAGS.has(getLocalName(element)) ||
 		(element as globalThis.HTMLElement).contentEditable === "false";
 }
 
@@ -1184,7 +1188,7 @@ function asNode(target: globalThis.EventTarget | null): globalThis.Node | null {
 }
 
 function asElement(node: globalThis.Node): globalThis.Element | null {
-	return nodeTypeOf(node) === ELEMENT_NODE
+	return getNodeType(node) === ELEMENT_NODE
 		? (node as globalThis.Element)
 		: null;
 }

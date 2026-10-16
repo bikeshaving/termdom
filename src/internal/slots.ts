@@ -12,7 +12,7 @@
  * The record's prototype mirrors the object's class chain. The internal
  * steps and defaults a class defines under names that start with "_"
  * move there from the public prototype, and run with the record as `this`, so a step
- * reads its own slots without a lookup. `ownerOf()` gives it the object.
+ * reads its own slots without a lookup. `getOwner()` gives it the object.
  *
  * A family, such as every element, makes its records one way instead:
  * one constructor and one prototype for all of them, and the slots its
@@ -36,7 +36,7 @@ const kSteps = Symbol("steps");
 
 /**
  * A record: the internals its class names, and the object they belong to,
- * which `objectOf()` returns. It cannot be mistaken for the object itself.
+ * which `getObject()` returns. It cannot be mistaken for the object itself.
  */
 export type Slots<T extends {readonly [internals]: object}> =
 	T[typeof internals] & {readonly [kObject]: T};
@@ -229,7 +229,7 @@ export function onSeal(
  * The class that made `value`, or null when it has no slots, as a
  * Proxy and an object a page made do not.
  */
-export function typeOf(value: unknown): Constructor | null {
+export function getSlotClass(value: unknown): Constructor | null {
 	if (value === newestObject) {
 		return newestRecord![kType] as Constructor | null;
 	}
@@ -268,7 +268,7 @@ export function declareSealedParent(
  * The class `type` takes its slots and steps from: the one it extends,
  * or the one declareSealedParent() named.
  */
-export function parentOf(type: Constructor): Constructor {
+export function getParentClass(type: Constructor): Constructor {
 	const parent =
 		sealedParents.get(type) ?? (Object.getPrototypeOf(type) as Constructor);
 	return interfaceObjects.get(parent) ?? parent;
@@ -292,7 +292,7 @@ export function defineHiddenMember(
 	descriptor: PropertyDescriptor,
 ): void {
 	Object.defineProperty(
-		hiddenPrototype(type, rootOf(type) ?? type),
+		hiddenPrototype(type, getSealedRoot(type) ?? type),
 		key,
 		descriptor,
 	);
@@ -300,15 +300,15 @@ export function defineHiddenMember(
 
 /** Whether the objects `type` makes are sealed. */
 export function isSealedClass(type: Constructor): boolean {
-	return rootOf(type) !== null;
+	return getSealedRoot(type) !== null;
 }
 
 // The sealed root at or above `type`, or null when it has none.
-function rootOf(type: Constructor): Constructor | null {
+function getSealedRoot(type: Constructor): Constructor | null {
 	for (
 		let current: unknown = type;
 		typeof current === "function";
-		current = parentOf(current as Constructor)
+		current = getParentClass(current as Constructor)
 	) {
 		if (sealedRoots.has(current as Constructor)) {
 			return current as Constructor;
@@ -330,7 +330,7 @@ export function prepareClasses(values: Iterable<unknown>): void {
 		}
 
 		const type = value as Constructor;
-		const root = rootOf(type);
+		const root = getSealedRoot(type);
 		if (root !== null && !familyPlans.has(type)) {
 			const plan = planFamilyRecord(type, root);
 			familyPlans.set(type, plan);
@@ -378,7 +378,7 @@ function planFamilyRecord(
 	for (
 		let current = type;
 		current !== root && familyRoot === null;
-		current = parentOf(current)
+		current = getParentClass(current)
 	) {
 		if (familyRoots.has(current)) {
 			familyRoot = current;
@@ -398,7 +398,9 @@ function planFamilyRecord(
 	const family = getFamily(familyRoot, root);
 	const steps = hiddenPrototype(type, root);
 	for (
-		let current = type; current !== familyRoot; current = parentOf(current)
+		let current = type;
+		current !== familyRoot;
+		current = getParentClass(current)
 	) {
 		addDispatchers(family, hiddenPrototype(current, root));
 	}
@@ -548,7 +550,7 @@ function remember(value: object, record: SlotRecord): void {
 }
 
 /** The record of `value`, typed as the tree links hold it. */
-export function slotsOf<T extends {readonly [internals]: object}>(
+export function getSlots<T extends {readonly [internals]: object}>(
 	value: T & {readonly [kObject]?: never},
 ): Slots<T> {
 	return _(value) as unknown as Slots<T>;
@@ -557,12 +559,12 @@ export function slotsOf<T extends {readonly [internals]: object}>(
 /**
  * The object a record belongs to.
  */
-export function objectOf<T extends {readonly [internals]:
+export function getObject<T extends {readonly [internals]:
 	object;}>(record: Slots<T>): T;
-export function objectOf<T extends {readonly [internals]:
+export function getObject<T extends {readonly [internals]:
 	object;}>(record: Slots<T> |
 	null): T | null;
-export function objectOf<T extends {readonly [internals]: object}>(
+export function getObject<T extends {readonly [internals]: object}>(
 	record: Slots<T> | null,
 ): T | null {
 	return record === null ? null : record[kObject];
@@ -617,7 +619,7 @@ export function adopt(
  * The object a record belongs to, for an internal step, which runs with
  * the record as `this`, to hand the object on.
  */
-export function ownerOf<T extends object>(record: {readonly [kObject]: T}): T {
+export function getOwner<T extends object>(record: {readonly [kObject]: T}): T {
 	return record[kObject];
 }
 
@@ -643,7 +645,7 @@ export function superStep(
 
 	let step = steps.get(key);
 	if (step === undefined) {
-		step = hiddenMember(parentOf(type), key);
+		step = hiddenMember(getParentClass(type), key);
 		steps.set(key, step);
 	}
 
@@ -655,7 +657,10 @@ function hiddenMember(
 	type: Constructor,
 	key: string,
 ): (this: object, ...args: unknown[]) => unknown {
-	const hidden = hiddenPrototype(type, roots.get(type) ?? rootOf(type) ?? type);
+	const hidden = hiddenPrototype(
+		type,
+		roots.get(type) ?? getSealedRoot(type) ?? type,
+	);
 	const member = (hidden as Record<string, unknown>)[key];
 	return member as (this: object, ...args: unknown[]) => unknown;
 }
@@ -669,7 +674,7 @@ export function moveLateMembers(): void {
 	for (const [type, hidden] of hiddenPrototypes) {
 		if (
 			hasMovableMembers(type.prototype) &&
-			hidden === hiddenPrototypes.get(parentOf(type))
+			hidden === hiddenPrototypes.get(getParentClass(type))
 		) {
 			throw new Error(
 				`${type.name} gained internal steps after its records were made`,
@@ -690,7 +695,9 @@ export function moveLateMembers(): void {
 function hiddenPrototype(type: Constructor, root: Constructor): object {
 	let hidden = hiddenPrototypes.get(type);
 	if (hidden === undefined) {
-		const parent = type === root ? null : hiddenPrototype(parentOf(type), root);
+		const parent = type === root
+			? null
+			: hiddenPrototype(getParentClass(type), root);
 		// A class that defines no internal steps of its own shares its
 		// parent's, so the records of a div and a span share a shape and a
 		// read of either stays fast.

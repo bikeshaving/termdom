@@ -20,7 +20,7 @@ import fc from "fast-check";
 import {nextFrame} from "../tests/test-utils.js";
 import {
 	type Action,
-	frameOf,
+	getFrame,
 	play,
 	type Run,
 	runArbitrary,
@@ -149,13 +149,13 @@ function bufferLine(buffer: any, index: number): string {
 }
 
 /** The rows above the visible screen: what the terminal has committed. */
-function scrollbackOf(scene: Scene): string[] {
+function getScrollback(scene: Scene): string[] {
 	const buffer = normalBuffer(scene);
 	return Array.from({length: buffer.baseY}, (_, i) => bufferLine(buffer, i));
 }
 
 /** Everything the main buffer holds, committed and visible. */
-function allRowsOf(scene: Scene): string[] {
+function getAllRows(scene: Scene): string[] {
 	const buffer = normalBuffer(scene);
 	return Array.from(
 		{length: buffer.baseY + scene.rows},
@@ -189,7 +189,7 @@ test(
 
 				const check = (scene: Scene): void => {
 					const buffer = normalBuffer(scene);
-					const committed = scrollbackOf(scene);
+					const committed = getScrollback(scene);
 					for (let i = 0; i < committed.length; i++) {
 						if (committed[i] !== before(i)) {
 							problems.push(
@@ -224,14 +224,14 @@ test(
 
 				// The seal is the one write that is allowed to commit: what
 				// the screen showed must survive it, whole.
-				const painted = frameOf(scene.terminal)
+				const painted = getFrame(scene.terminal)
 					.split("\n")
 					.map((line) => line.trimEnd())
 					.filter((line) => line !== "");
 				scene.dom.document.close();
 				await nextFrame(scene.dom);
 				await settle(scene, 10);
-				const sealed = new Set(allRowsOf(scene).map((line) => line.trimEnd()));
+				const sealed = new Set(getAllRows(scene).map((line) => line.trimEnd()));
 				for (const line of painted) {
 					if (!sealed.has(line)) {
 						problems.push(
@@ -360,7 +360,7 @@ test(
 					record: taken.record,
 				});
 				await settle(scene, 10);
-				const shifted = frameOf(scene.terminal);
+				const shifted = getFrame(scene.terminal);
 
 				// An empty document has no frame to repaint, and content past
 				// the screen leaves rows in the scrollback a repaint has no
@@ -379,7 +379,7 @@ test(
 				const forced = taken.mark();
 				scene.terminal.emit("SIGWINCH");
 				await settle(scene, 40);
-				const plain = frameOf(scene.terminal);
+				const plain = getFrame(scene.terminal);
 				const repaint = taken.since(forced);
 
 				await scene.dom.dispose();

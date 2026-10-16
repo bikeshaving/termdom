@@ -5,24 +5,24 @@ import type * as DOM from "./dom.ts";
 import type {Element, Node} from "./dom.ts";
 import {splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
 import {
-	attributeOf,
 	CDATA_SECTION_NODE,
 	DOCUMENT_NODE,
 	ELEMENT_NODE,
 	getAttributeList,
+	getAttributeValue,
 	getElementChildren,
 	getFirstChildNode,
+	getLocalName,
+	getNamespace,
 	getNextSiblingNode,
+	getNodeType,
 	getParentNode,
 	getPreviousSiblingNode,
 	getRoot,
-	hasAttributeOf,
+	hasAttributeByName,
 	HTML_NAMESPACE,
 	isElement,
-	localNameOf,
-	namespaceOf,
 	nextInTree,
-	nodeTypeOf,
 	parentElement,
 	SVG_NAMESPACE,
 	TEXT_NODE,
@@ -702,7 +702,7 @@ function compileCompound(
 		!compound.host &&
 		!parts.some((part) => part.type === "TypeSelector")
 	) {
-		compound.tests.push((element) => namespaceOf(element) === declared);
+		compound.tests.push((element) => getNamespace(element) === declared);
 	}
 	return compound;
 }
@@ -723,7 +723,7 @@ function compileSimple(
 			}
 			const folded = toASCIILowercase(id);
 			compound.tests.push((element) => {
-				const value = attributeOf(element, "id");
+				const value = getAttributeValue(element, "id");
 				if (value === null) {
 					return false;
 				}
@@ -740,7 +740,7 @@ function compileSimple(
 			}
 			const folded = toASCIILowercase(name);
 			compound.tests.push((element) => {
-				const value = attributeOf(element, "class");
+				const value = getAttributeValue(element, "class");
 				if (value === null) {
 					return false;
 				}
@@ -831,17 +831,17 @@ function compileType(name: string, compiling: Compiling): Predicate {
 	const {namespace, local} = qualifiedName(name, compiling.namespaces, false);
 	const folded = local === null ? null : toASCIILowercase(local);
 	return (element) => {
-		if (nodeTypeOf(element) !== ELEMENT_NODE) {
+		if (getNodeType(element) !== ELEMENT_NODE) {
 			return false;
 		}
-		const elementNamespace = namespaceOf(element);
+		const elementNamespace = getNamespace(element);
 		if (namespace !== undefined && elementNamespace !== namespace) {
 			return false;
 		}
 		if (local === null) {
 			return true;
 		}
-		const elementLocal = localNameOf(element);
+		const elementLocal = getLocalName(element);
 		if (elementLocal === local) {
 			return true;
 		}
@@ -929,7 +929,7 @@ function compileAttribute(
 	// HTML document lowercases its attribute names.
 	const read = (element: Element): string | null => {
 		const fold =
-			namespaceOf(element) === HTML_NAMESPACE && states.isHTMLNode(element);
+			getNamespace(element) === HTML_NAMESPACE && states.isHTMLNode(element);
 		const attributes = getAttributeList(element);
 		for (let index = 0; index < attributes.length; index++) {
 			const attribute = attributes[index];
@@ -968,7 +968,7 @@ function compileAttribute(
 		const insensitive =
 			flags === "i" ||
 			(flags === "" &&
-				namespaceOf(element) === HTML_NAMESPACE &&
+				getNamespace(element) === HTML_NAMESPACE &&
 				states.isHTMLNode(element) &&
 				CASE_INSENSITIVE_ATTRIBUTES.has(folded));
 		const subject = insensitive ? toASCIILowercase(value) : value;
@@ -1092,7 +1092,7 @@ function compilePseudoClass(
 		case "root":
 			compound.tests.push((element) => {
 				const parent = getParentNode(element);
-				return parent !== null && nodeTypeOf(parent) === DOCUMENT_NODE;
+				return parent !== null && getNodeType(parent) === DOCUMENT_NODE;
 			});
 			return;
 		case "empty":
@@ -1284,12 +1284,18 @@ function compilePseudoClass(
 			compound.tests.push((element) => states.getRangeMatch(element) === "out");
 			return;
 		case "required":
-			compound.tests.push((element) =>
-				isRequirable(element) && attributeOf(element, "required") !== null);
+			compound.tests.push(
+				(element) =>
+					isRequirable(element) &&
+					getAttributeValue(element, "required") !== null,
+			);
 			return;
 		case "optional":
-			compound.tests.push((element) =>
-				isRequirable(element) && attributeOf(element, "required") === null);
+			compound.tests.push(
+				(element) =>
+					isRequirable(element) &&
+					getAttributeValue(element, "required") === null,
+			);
 			return;
 		case "read-only":
 			compound.tests.push((element) => !isMutable(element));
@@ -1511,7 +1517,7 @@ function compileNth(
 	const fromEnd = name === "nth-last-child" || name === "nth-last-of-type";
 	const ofType = name === "nth-of-type" || name === "nth-last-of-type";
 	return (element, state) => {
-		if (nodeTypeOf(element) !== ELEMENT_NODE) {
+		if (getNodeType(element) !== ELEMENT_NODE) {
 			return false;
 		}
 		// The plain forms read the element's place in a list built once per
@@ -1599,16 +1605,17 @@ function matchesAnPlusB(step: AnPlusB, position: number): boolean {
 // HTML's a and area with an href, and SVG's a with an href or the older
 // xlink:href.
 function isHyperlink(element: Element): boolean {
-	const name = localNameOf(element);
-	if (namespaceOf(element) === HTML_NAMESPACE) {
+	const name = getLocalName(element);
+	if (getNamespace(element) === HTML_NAMESPACE) {
 		return (
-			(name === "a" || name === "area") && attributeOf(element, "href") !== null
+			(name === "a" || name === "area") &&
+			getAttributeValue(element, "href") !== null
 		);
 	}
 	return (
-		namespaceOf(element) === SVG_NAMESPACE &&
+		getNamespace(element) === SVG_NAMESPACE &&
 		name === "a" &&
-		(hasAttributeOf(element, "href") ||
+		(hasAttributeByName(element, "href") ||
 			element.hasAttributeNS(XLINK_NAMESPACE, "href"))
 	);
 }
@@ -1625,17 +1632,17 @@ const DISABLEABLE = new Set([
 
 function isDisableable(element: Element): boolean {
 	return (
-		(namespaceOf(element) === HTML_NAMESPACE &&
-			DISABLEABLE.has(localNameOf(element))) ||
+		(getNamespace(element) === HTML_NAMESPACE &&
+			DISABLEABLE.has(getLocalName(element))) ||
 		states.isFormAssociatedCustom(element)
 	);
 }
 
 function isRequirable(element: Element): boolean {
-	if (namespaceOf(element) !== HTML_NAMESPACE) {
+	if (getNamespace(element) !== HTML_NAMESPACE) {
 		return false;
 	}
-	const name = localNameOf(element);
+	const name = getLocalName(element);
 	if (name === "select" || name === "textarea") {
 		return true;
 	}
@@ -1651,15 +1658,15 @@ function isRequirable(element: Element): boolean {
 // `:read-write`: a text control the user can type into, or anything an
 // editing host contains.
 function isMutable(element: Element): boolean {
-	if (namespaceOf(element) === HTML_NAMESPACE) {
-		const name = localNameOf(element);
+	if (getNamespace(element) === HTML_NAMESPACE) {
+		const name = getLocalName(element);
 		if (name === "input" || name === "textarea") {
 			const type = name === "input"
 				? (element as unknown as {type: string}).type
 				: "text";
 			if (states.READONLY_INPUT_TYPES.has(type)) {
 				return (
-					attributeOf(element, "readonly") === null &&
+					getAttributeValue(element, "readonly") === null &&
 					!states.isActuallyDisabled(element)
 				);
 			}
@@ -1670,7 +1677,7 @@ function isMutable(element: Element): boolean {
 		node !== null;
 		node = parentElement(node)
 	) {
-		const editable = attributeOf(node, "contenteditable");
+		const editable = getAttributeValue(node, "contenteditable");
 		if (editable === null) {
 			continue;
 		}
@@ -1687,10 +1694,10 @@ function isMutable(element: Element): boolean {
 
 // The elements `:open` and `:closed` apply to.
 function canOpen(element: Element): boolean {
-	if (namespaceOf(element) !== HTML_NAMESPACE) {
+	if (getNamespace(element) !== HTML_NAMESPACE) {
 		return false;
 	}
-	const name = localNameOf(element);
+	const name = getLocalName(element);
 	return (
 		name === "details" ||
 		name === "dialog" ||
@@ -1705,12 +1712,12 @@ function isEmpty(element: Element): boolean {
 		child !== null;
 		child = getNextSiblingNode(child)
 	) {
-		if (nodeTypeOf(child) === ELEMENT_NODE) {
+		if (getNodeType(child) === ELEMENT_NODE) {
 			return false;
 		}
 		if (
-			(nodeTypeOf(child) === TEXT_NODE ||
-				nodeTypeOf(child) === CDATA_SECTION_NODE) &&
+			(getNodeType(child) === TEXT_NODE ||
+				getNodeType(child) === CDATA_SECTION_NODE) &&
 				(child.nodeValue ?? "") !== ""
 		) {
 			return false;
@@ -1839,7 +1846,7 @@ const AUTO_INPUT_TYPES = new Set([
 function compileDir(args: CSSTree.SelectorNode[]): Predicate {
 	const wanted = toASCIILowercase(getIdentifierArgument(args, "dir"));
 	return (element) =>
-		nodeTypeOf(element) === ELEMENT_NODE &&
+		getNodeType(element) === ELEMENT_NODE &&
 		getDirectionality(element) === wanted;
 }
 
@@ -1867,31 +1874,33 @@ export function getDirectionality(element: Element): "ltr" | "rtl" {
 
 // Includes `bdi`'s default.
 function getDeclaredDirection(element: Element): "ltr" | "rtl" | "auto" | null {
-	if (nodeTypeOf(element) !== ELEMENT_NODE) {
+	if (getNodeType(element) !== ELEMENT_NODE) {
 		return null;
 	}
-	const html = namespaceOf(element) === HTML_NAMESPACE;
-	const value = toASCIILowercase(attributeOf(element, "dir") ?? "");
+	const html = getNamespace(element) === HTML_NAMESPACE;
+	const value = toASCIILowercase(getAttributeValue(element, "dir") ?? "");
 	if (html && (value === "ltr" || value === "rtl" || value === "auto")) {
 		return value;
 	}
 	// A bdi with no direction of its own is what `dir=auto` was invented
 	// for. It isolates its content and reads the direction from it.
-	return html && localNameOf(element) === "bdi" ? "auto" : null;
+	return html && getLocalName(element) === "bdi" ? "auto" : null;
 }
 
 function getAutoDirection(element: Element): "ltr" | "rtl" {
-	if (namespaceOf(element) === HTML_NAMESPACE) {
-		const name = localNameOf(element);
+	if (getNamespace(element) === HTML_NAMESPACE) {
+		const name = getLocalName(element);
 		if (name === "input") {
-			const type = toASCIILowercase(attributeOf(element, "type") ?? "text");
+			const type = toASCIILowercase(
+				getAttributeValue(element, "type") ?? "text",
+			);
 			if (type === "tel") {
 				return "ltr";
 			}
 			if (!AUTO_INPUT_TYPES.has(type)) {
 				return "ltr";
 			}
-			return getFirstStrong(attributeOf(element, "value") ?? "");
+			return getFirstStrong(getAttributeValue(element, "value") ?? "");
 		}
 		if (name === "textarea") {
 			return getFirstStrong(getTextUnder(element, true));
@@ -1908,8 +1917,8 @@ function getTextUnder(element: Element, all: boolean): string {
 		child = getNextSiblingNode(child)
 	) {
 		if (
-			nodeTypeOf(child) === TEXT_NODE ||
-			nodeTypeOf(child) === CDATA_SECTION_NODE
+			getNodeType(child) === TEXT_NODE ||
+			getNodeType(child) === CDATA_SECTION_NODE
 		) {
 			text += child.nodeValue ?? "";
 			continue;
@@ -1920,7 +1929,7 @@ function getTextUnder(element: Element, all: boolean): string {
 		// A child that states its own direction, and one that isolates its
 		// content, both keep their text out of the scan above them.
 		if (
-			OPAQUE_TO_AUTO.has(localNameOf(child)) ||
+			OPAQUE_TO_AUTO.has(getLocalName(child)) ||
 			getDeclaredDirection(child) !== null
 		) {
 			continue;
@@ -1966,7 +1975,7 @@ function matchFrom(
 	if (featureless && !compound.host) {
 		return false;
 	}
-	if (nodeTypeOf(element) !== ELEMENT_NODE) {
+	if (getNodeType(element) !== ELEMENT_NODE) {
 		return false;
 	}
 	for (const test of compound.tests) {
@@ -2157,13 +2166,13 @@ function getSiblingIndex(element: Element, state: MatchState): SiblingIndex {
 // The siblings of the element's type and namespace, in order.
 function getTypeSiblings(element: Element, state: MatchState): Element[] {
 	const siblings = getSiblingIndex(element, state);
-	const key = `${namespaceOf(element) ?? ""}|${localNameOf(element)}`;
+	const key = `${getNamespace(element) ?? ""}|${getLocalName(element)}`;
 	let ofType = siblings.byType.get(key);
 	if (ofType === undefined) {
 		ofType = siblings.elements.filter(
 			(sibling) =>
-				localNameOf(sibling) === localNameOf(element) &&
-				namespaceOf(sibling) === namespaceOf(element),
+				getLocalName(sibling) === getLocalName(element) &&
+				getNamespace(sibling) === getNamespace(element),
 		);
 		siblings.byType.set(key, ofType);
 	}
