@@ -31,7 +31,6 @@ import {
 	clearInterval,
 	clearTimeout,
 	queueMicrotask,
-	queueTask,
 	setInterval,
 	setTimeout,
 } from "./timers.ts";
@@ -272,6 +271,8 @@ export interface WireMouse {
 	col: number;
 	row: number;
 	release: boolean;
+	// Wheel notches reported back to back at one cell, taken as one.
+	ticks: number;
 }
 
 export interface WirePaste {
@@ -811,7 +812,7 @@ function splitTrailingEscape(chunk: string, replyDue: boolean): number {
 function decodeControlToken(token: string): WireItem {
 	const mouse = decodeMouseEscape(token);
 	if (mouse) {
-		return {kind: "mouse", ...mouse};
+		return {kind: "mouse", ...mouse, ticks: 1};
 	}
 	if (/^\x1b\[\?[\d;]*c$/.test(token)) {
 		return {kind: "device-attributes"};
@@ -923,10 +924,6 @@ export interface ExchangeSlots extends EventTargetSlots {
 	disposed: boolean;
 	lastWrite: Promise<void>;
 	wireReader: WireReader;
-	// What the wire has said and the page has not been told yet, in order,
-	// and whether a task to tell it is queued.
-	queuedItems: WireItem[];
-	itemTaskQueued: boolean;
 	// The resize re-anchor saves and restores Exchange around its redraw.
 	hasDetectedAnchor: boolean;
 	cursorDetectionPromise: Promise<void> | null;
@@ -987,8 +984,6 @@ export class Exchange extends EventTarget {
 		slots.disposed = false;
 		slots.lastWrite = Promise.resolve();
 		slots.wireReader = new WireReader();
-		slots.queuedItems = [];
-		slots.itemTaskQueued = false;
 		slots.escapeTimer = null;
 		slots.hasDetectedAnchor = false;
 		slots.cursorDetectionPromise = null;
@@ -2150,33 +2145,30 @@ function drainChunk(session: Exchange, chunk: string): void {
 	}
 }
 
-// As a browser, each key, mouse report and paste is a task of its own, so
-// what a listener's microtasks and observers do settles before the next
-// one arrives, however many came in one chunk. A reply is read where it
-// falls in the stream.
+// A chunk is dispatched in one pass, so a burst of keys or wheel ticks
+// costs one round of the page's microtasks and one layout, not one each.
+// A reply is read where it falls in the stream.
 function routeItems(session: Exchange, items: WireItem[]): void {
+	let keys: WireKey[] = [];
 	const sessionSlots = _(session);
-	sessionSlots.queuedItems.push(...items);
-	if (!sessionSlots.itemTaskQueued) {
-		dispatchQueuedItems(session);
-	}
-}
-
-function dispatchQueuedItems(session: Exchange): void {
-	const sessionSlots = _(session);
-	const queue = sessionSlots.queuedItems;
 	const input = sessionSlots.input!;
-	while (queue.length > 0) {
+	const flushKeys = () => {
+		if (keys.length > 0) {
+			dispatchInput(input, keys);
+			keys = [];
+		}
+	};
+	for (let i = 0; i < items.length; i++) {
 		if (sessionSlots.disposed) {
-			queue.length = 0;
 			return;
 		}
-		const item = queue.shift()!;
+		const item = items[i];
 		switch (item.kind) {
 			case "key":
 				// Raw mode delivers Ctrl-C as data. Closing is the window's
 				// decision, and a close it allows is an interrupt.
 				if (item.ctrlKey && item.key === "c") {
+					flushKeys();
 					sessionSlots.interrupted = true;
 					sessionSlots.window.close();
 					if (!sessionSlots.window.closed) {
@@ -2184,25 +2176,43 @@ function dispatchQueuedItems(session: Exchange): void {
 					}
 					break;
 				}
-				dispatchInput(input, [item]);
+				keys.push(item);
 				break;
-			case "mouse":
+			case "mouse": {
+				flushKeys();
+				let ticks = 1;
+				while (isSameWheelNotch(item, items[i + ticks])) {
+					ticks++;
+				}
+				i += ticks - 1;
+				dispatchInput(input, ticks === 1 ? item : {...item, ticks});
+				break;
+			}
 			case "paste":
+				flushKeys();
 				dispatchInput(input, item);
 				break;
 			default:
+				flushKeys();
 				dispatchReply(session, item);
-				continue;
-		}
-		if (queue.length > 0) {
-			sessionSlots.itemTaskQueued = true;
-			queueTask(() => {
-				sessionSlots.itemTaskQueued = false;
-				dispatchQueuedItems(session);
-			});
-			return;
+				break;
 		}
 	}
+	flushKeys();
+}
+
+// A trackpad reports a notch at a time, dozens to a chunk. As a browser
+// coalesces wheel events, notches in a row at one cell are one wheel event
+// that scrolls by all of them.
+function isSameWheelNotch(wheel: WireMouse, next: WireItem | undefined): boolean {
+	return (
+		(wheel.button & 64) !== 0 &&
+		next?.kind === "mouse" &&
+		next.button === wheel.button &&
+		next.col === wheel.col &&
+		next.row === wheel.row &&
+		next.release === wheel.release
+	);
 }
 
 type ReplyItem<K extends WireItem["kind"]> = Extract<WireItem, {kind: K}>;

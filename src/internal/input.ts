@@ -633,6 +633,7 @@ function deliverMouseReport(input: Input, {
 	col,
 	row,
 	release: isRelease,
+	ticks,
 }: WireMouse): void {
 	const {
 		shiftKey,
@@ -644,7 +645,7 @@ function deliverMouseReport(input: Input, {
 		wheelDeltaX,
 		button,
 		buttons,
-	} = decodeMouseReport(code, isRelease);
+	} = decodeMouseReport(code, isRelease, ticks);
 
 	const {x, y, isInDocument} = getDocumentPoint(input, col, row);
 
@@ -877,7 +878,11 @@ function deliverKeys(input: Input, keys: WireKey[]): void {
 	}
 }
 
-function decodeMouseReport(code: number, isRelease: boolean): {
+function decodeMouseReport(
+	code: number,
+	isRelease: boolean,
+	ticks: number,
+): {
 	shiftKey: boolean;
 	altKey: boolean;
 	ctrlKey: boolean;
@@ -899,8 +904,9 @@ function decodeMouseReport(code: number, isRelease: boolean): {
 	const isMotion = (code & 32) !== 0;
 	const base = code & ~(4 | 8 | 16 | 32);
 
-	const vertical = base === 64 ? -3 : base === 65 ? 3 : null;
-	const sideways = base === 66 ? -3 : base === 67 ? 3 : null;
+	const notch = 3 * ticks;
+	const vertical = base === 64 ? -notch : base === 65 ? notch : null;
+	const sideways = base === 66 ? -notch : base === 67 ? notch : null;
 	const wheelDeltaY = shiftKey ? null : vertical;
 	const wheelDeltaX = sideways ?? (shiftKey ? vertical : null);
 

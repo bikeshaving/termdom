@@ -3060,11 +3060,11 @@ test("typing and moving in a long textarea keep the caret's line in view", async
 	dom.dispose();
 });
 
-test("each key in a chunk is a task of its own, so microtasks settle between keys", async () => {
-	// A paste without bracketed paste markers, fast typing or a slow link
-	// sends several keys at once. As in a browser, what one key's listeners
-	// start, an observer's records and a promise's reactions, has run by the
-	// time the next key arrives.
+test("the keys in a chunk are dispatched in one pass", async () => {
+	// Held keys, fast typing or a slow link send several keys at once. They
+	// are handled together, so a burst costs one round of the page's
+	// microtasks and one layout, and what one key's listeners start runs
+	// after the last key.
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
@@ -3087,6 +3087,8 @@ test("each key in a chunk is a task of its own, so microtasks settle between key
 	});
 	(terminal.stdin as any).emit("data", Buffer.from("abc"));
 	await inputDispatched();
-	expect(seen).toEqual(["a:  ", "b: a a", "c: ab ab"]);
+	expect(seen).toEqual(["a:  ", "b:  ", "c:  "]);
+	expect(observed.join("")).toBe("abc");
+	expect(settled.join("")).toBe("abc");
 	dom.dispose();
 });

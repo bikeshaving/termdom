@@ -90,6 +90,21 @@ test("wheel dispatches a cancelable WheelEvent; preventDefault stops the camera"
 	termdom.dispose();
 });
 
+test("wheel notches that arrive together at one cell are one WheelEvent", async () => {
+	const {proc, termdom, document} = makeDocumentModeApp(60);
+	await nextFrame(termdom);
+
+	const seen: number[] = [];
+	document.body.addEventListener("wheel", (event: any) => {
+		seen.push(event.deltaY);
+	});
+
+	await send(proc, "\x1b[<65;5;3M".repeat(4) + "\x1b[<65;6;3M");
+	expect(seen).toEqual([12, 3]);
+	expect(termdom.window.scrollY).toBe(15);
+	termdom.dispose();
+});
+
 test("mouse reports never leak into keyboard events", async () => {
 	const {proc, termdom, document} = makeDocumentModeApp();
 	await nextFrame(termdom);
