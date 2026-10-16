@@ -1140,7 +1140,7 @@ export class CellContext {
 	viewportOffset: number;
 	// Where a focused text control wants the real cursor. IME composition anchors
 	// there, so an inverse-cell caret is not enough for text entry.
-	caret: {col: number; row: number} | null;
+	caret: Caret | null;
 	// The overflow:hidden clip in document (row, col) space. An edge is
 	// +-Infinity on an axis that is not clipped. Null when none is active.
 	clipRect: {left: number; top: number; right: number; bottom: number} | null;
@@ -1194,8 +1194,8 @@ export class CellContext {
  */
 export function keptCaret(
 	context: CellContext,
-	previous: {col: number; row: number} | null,
-): {col: number; row: number} | null {
+	previous: Caret | null,
+): Caret | null {
 	if (!context.partial || context.caret !== null || previous === null) {
 		return context.caret;
 	}
@@ -1205,8 +1205,26 @@ export function keptCaret(
 		: previous;
 }
 
-export function setCaret(context: CellContext, x: number, y: number): void {
-	context.caret = {col: x, row: y};
+/**
+ * Where the caret is, and how the terminal draws its cursor there: the
+ * DECSCUSR style (0 leaves the terminal's own) and a color as 0xRRGGBB
+ * (null leaves the terminal's own).
+ */
+export interface Caret {
+	col: number;
+	row: number;
+	shape: number;
+	color: number | null;
+}
+
+export function setCaret(
+	context: CellContext,
+	x: number,
+	y: number,
+	shape = 0,
+	color: number | null = null,
+): void {
+	context.caret = {col: x, row: y, shape, color};
 }
 
 export function drawRect(
@@ -2065,7 +2083,7 @@ export class Framebuffer {
 	prevFrame: {
 		offset: number;
 		cursorRow: number | undefined;
-		caret: {col: number; row: number} | null;
+		caret: Caret | null;
 	} | null;
 
 	// The dropped grid, reused by the next frame of the same size.
@@ -2079,6 +2097,10 @@ export class Framebuffer {
 	// post-rewrap position minus the wrapped rows above this park point.
 	park: {row: number; col: number};
 	lastCaretVisible: boolean;
+	// How the last frame's caret asked the cursor to be drawn, while one
+	// was visible.
+	lastCaretShape: number;
+	lastCaretColor: number | null;
 	hasSavedCursor: boolean;
 	needsFullClear: boolean;
 	needsScreenReset: boolean;
@@ -2113,6 +2135,8 @@ export class Framebuffer {
 		this.prevContentHeight = 0;
 		this.park = {row: 0, col: 0};
 		this.lastCaretVisible = false;
+		this.lastCaretShape = 0;
+		this.lastCaretColor = null;
 		this.hasSavedCursor = false;
 		this.needsFullClear = false;
 		this.needsScreenReset = false;
@@ -2729,6 +2753,10 @@ export function beginFrame(
 			hasContent = true;
 		}
 		framebuffer.lastCaretVisible = caretVisible;
+		if (caretVisible) {
+			framebuffer.lastCaretShape = caret.shape;
+			framebuffer.lastCaretColor = caret.color;
+		}
 
 		if (scrolling) {
 			hasContent = true;
