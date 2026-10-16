@@ -878,11 +878,7 @@ function deliverKeys(input: Input, keys: WireKey[]): void {
 	}
 }
 
-function decodeMouseReport(
-	code: number,
-	isRelease: boolean,
-	ticks: number,
-): {
+function decodeMouseReport(code: number, isRelease: boolean, ticks: number): {
 	shiftKey: boolean;
 	altKey: boolean;
 	ctrlKey: boolean;

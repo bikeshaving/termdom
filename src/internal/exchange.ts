@@ -2204,7 +2204,10 @@ function routeItems(session: Exchange, items: WireItem[]): void {
 // A trackpad reports a notch at a time, dozens to a chunk. As a browser
 // coalesces wheel events, notches in a row at one cell are one wheel event
 // that scrolls by all of them.
-function isSameWheelNotch(wheel: WireMouse, next: WireItem | undefined): boolean {
+function isSameWheelNotch(
+	wheel: WireMouse,
+	next: WireItem | undefined,
+): boolean {
 	return (
 		(wheel.button & 64) !== 0 &&
 		next?.kind === "mouse" &&
