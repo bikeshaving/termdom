@@ -278,3 +278,20 @@ test("a runtime flip to position:absolute keeps pseudo-only content", async () =
 	);
 	dom.dispose();
 });
+
+test("a box clipped out of view takes no clicks", async () => {
+	const {dom} = await render(
+		`<div style="display: flex; flex-direction: column; height: 8em">` +
+			`<div id="header">Header</div>` +
+			`<div style="flex: 1; overflow: auto">` +
+			`<div style="contain: layout paint">` +
+			`<div><div id="hidden" style="position: absolute; top: -20em; ` +
+			`left: 0; height: 30em">x</div><p>body</p></div>` +
+			`</div></div></div>`,
+	);
+	const {document} = dom;
+	expect(document.getElementById("hidden")!.getBoundingClientRect().top)
+		.toBeLessThan(0);
+	expect(document.elementFromPoint(0, 0)?.id).toBe("header");
+	dom.dispose();
+});

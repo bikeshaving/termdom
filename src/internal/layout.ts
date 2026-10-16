@@ -5,6 +5,7 @@ import {
 	getBoxModel,
 	getCellBlockMargin,
 	getCellBlockSize,
+	getCellBorderWidths,
 	getCellPadding,
 	getComputedValue,
 	getDeclaredDisplay,
@@ -8661,6 +8662,104 @@ function getSelectionSpans(
 	return runs;
 }
 
+// Edges, not origin and size. An unclipped axis is +-Infinity, and an
+// edge computed from an infinite origin and size is NaN.
+export type ClipRect = {
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+};
+
+function isClippingOverflow(value: string): boolean {
+	return (
+		value === "hidden" ||
+		value === "clip" ||
+		value === "auto" ||
+		value === "scroll"
+	);
+}
+
+// The clip is the padding box, so scrolled-out content does not paint
+// over the border glyphs. Its edges round as the box's own border and
+// fill do, so a child flush with the box keeps its first column. An axis
+// that stays visible is unbounded, per axis.
+export function getOverflowClipRect(
+	element: Element,
+	rect: {left: number; top: number; width: number; height: number} | null,
+	overflowX: string,
+	overflowY: string,
+	parent: ClipRect | null,
+): ClipRect | null {
+	if (!rect) {
+		return parent;
+	}
+	const clipsX = isClippingOverflow(overflowX);
+	const clipsY = isClippingOverflow(overflowY);
+	if (!clipsX && !clipsY) {
+		return parent;
+	}
+
+	const border = getCellBorderWidths(element);
+	const x = Math.round(rect.left);
+	const y = Math.round(rect.top);
+	const left = clipsX ? x + border.left : -Infinity;
+	const right = clipsX ? x + Math.round(rect.width) - border.right : Infinity;
+	const top = clipsY ? y + border.top : -Infinity;
+	const bottom = clipsY
+		? y + Math.round(rect.height) - border.bottom
+		: Infinity;
+
+	if (!parent) {
+		return {left, top, right, bottom};
+	}
+	return {
+		left: Math.max(parent.left, left),
+		top: Math.max(parent.top, top),
+		right: Math.min(parent.right, right),
+		bottom: Math.min(parent.bottom, bottom),
+	};
+}
+
+// The context root's clip intersected with the overflow of the ancestors
+// in the box's containing block chain (css-overflow-3 §3). A relative or
+// sticky box is contained by its parent, so every scroller around it
+// clips it. An absolute box skips to its nearest positioned or containing
+// ancestor, and a fixed box to its nearest containing ancestor or the
+// viewport.
+export function getPositionedClip(
+	layout: Layout,
+	element: Element,
+	contextRoot: Element,
+	contextClip: ClipRect | null,
+): ClipRect | null {
+	let clip = contextClip;
+	let position = getComputedValue(element, "position");
+	for (
+		let ancestor = flatParentElement(element);
+		ancestor && ancestor !== contextRoot;
+		ancestor = flatParentElement(ancestor)
+	) {
+		if (
+			(position === "fixed" ||
+				(position === "absolute" && !isPositioned(ancestor))) &&
+			!establishesFixedContainingBlock(ancestor)
+		) {
+			continue;
+		}
+		position = getComputedValue(ancestor, "position");
+		const overflowX = getUsedOverflow(ancestor, "x");
+		const overflowY = getUsedOverflow(ancestor, "y");
+		if (isClippingOverflow(overflowX) || isClippingOverflow(overflowY)) {
+			const rect = layout.getRect(ancestor);
+			if (rect) {
+				clip = getOverflowClipRect(ancestor, rect, overflowX, overflowY, clip);
+			}
+		}
+	}
+	return clip;
+}
+
 function hitTestContext(
 	layout: Layout,
 	root: Element,
@@ -8668,6 +8767,7 @@ function hitTestContext(
 	y: number,
 	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
 	documentScrollTop: number,
+	contextClip: ClipRect | null = null,
 ): Element | null {
 	const bucket = layers.get(root) ?? null;
 	const probeMember = (element: Element): Element | null => {
@@ -8675,8 +8775,28 @@ function hitTestContext(
 		// property of the chain. An absolute box inside a fixed bar lives there
 		// too.
 		const probeY = layout.isInFixedSpace(element) ? y - documentScrollTop : y;
+		// Clipped as the painter clips it, so a box cut out of view takes
+		// no clicks.
+		const clip = getPositionedClip(layout, element, root, contextClip);
+		if (
+			clip &&
+			!(x >= clip.left &&
+				x < clip.right &&
+				probeY >= clip.top &&
+				probeY < clip.bottom)
+		) {
+			return null;
+		}
 		return isStackingContext(element)
-			? hitTestContext(layout, element, x, probeY, layers, documentScrollTop)
+			? hitTestContext(
+				layout,
+				element,
+				x,
+				probeY,
+				layers,
+				documentScrollTop,
+				clip,
+			)
 			: hitTestInFlow(layout, element, x, probeY);
 	};
 	if (bucket) {

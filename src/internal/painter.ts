@@ -1,7 +1,6 @@
 import {
 	type Cascade,
 	declaredPseudoProperties,
-	establishesFixedContainingBlock,
 	getBoxModel,
 	getCellBorderWidths,
 	getComputedValue,
@@ -67,12 +66,13 @@ import {
 	getLineAlignOffset,
 	getLineIndent,
 	getMathBox,
+	getOverflowClipRect,
+	getPositionedClip,
 	getRun,
 	hasItemParent,
 	hoistedToLayer,
 	type InlineBlockLeaf,
 	isAtomicInline,
-	isPositioned,
 	isStackingContext,
 	type Layout,
 	paintExtent,
@@ -95,60 +95,6 @@ import {isReplacedBox, renderReplaced} from "./replaced.ts";
 import {getStringWidth} from "./text.ts";
 import {containsOf, nodeTypeOf} from "./tree.ts";
 import {getCellSize} from "./units.ts";
-
-// Edges, not origin and size. An unclipped axis is +-Infinity, and an
-// edge computed from an infinite origin and size is NaN.
-type ClipRect = {left: number; top: number; right: number; bottom: number};
-
-function isClippingOverflow(value: string): boolean {
-	return (
-		value === "hidden" ||
-		value === "clip" ||
-		value === "auto" ||
-		value === "scroll"
-	);
-}
-
-// The clip is the padding box, so scrolled-out content does not paint
-// over the border glyphs. Its edges round as the box's own border and
-// fill do, so a child flush with the box keeps its first column. An axis
-// that stays visible is unbounded, per axis.
-function getOverflowClipRect(
-	element: Element,
-	rect: {left: number; top: number; width: number; height: number} | null,
-	overflowX: string,
-	overflowY: string,
-	parent: ClipRect | null,
-): ClipRect | null {
-	if (!rect) {
-		return parent;
-	}
-	const clipsX = isClippingOverflow(overflowX);
-	const clipsY = isClippingOverflow(overflowY);
-	if (!clipsX && !clipsY) {
-		return parent;
-	}
-
-	const border = getCellBorderWidths(element);
-	const x = Math.round(rect.left);
-	const y = Math.round(rect.top);
-	const left = clipsX ? x + border.left : -Infinity;
-	const right = clipsX ? x + Math.round(rect.width) - border.right : Infinity;
-	const top = clipsY ? y + border.top : -Infinity;
-	const bottom = clipsY
-		? y + Math.round(rect.height) - border.bottom
-		: Infinity;
-
-	if (!parent) {
-		return {left, top, right, bottom};
-	}
-	return {
-		left: Math.max(parent.left, left),
-		top: Math.max(parent.top, top),
-		right: Math.min(parent.right, right),
-		bottom: Math.min(parent.bottom, bottom),
-	};
-}
 
 function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
 	const number = CSSValues.parseFontWeight(weight);
@@ -773,7 +719,12 @@ function renderStackingContext(
 		const previousClip = ctx.clipRect;
 		const previousOffset = ctx.viewportOffset;
 		const previousScrolled = painter.scrolledRows;
-		ctx.clipRect = getPositionedClip(painter, element, root, contextClip);
+		ctx.clipRect = getPositionedClip(
+			painter.layout,
+			element,
+			root,
+			contextClip,
+		);
 		// Entered from its stacking context, not its ancestor chain.
 		painter.scrolledRows = scrolledAncestorRows(painter.layout, element);
 		// Fixed space cancels the document scroll for the whole subtree. An
@@ -1990,45 +1941,6 @@ function getMathCellStyle(
 		style = foldHighlight(style ?? {}, selection.paint);
 	}
 	return style;
-}
-
-// The context root's clip intersected with the overflow of the ancestors
-// in the box's containing block chain (css-overflow-3 §3). A relative or
-// sticky box is contained by its parent, so every scroller around it
-// clips it. An absolute box skips to its nearest positioned or containing
-// ancestor, and a fixed box to its nearest containing ancestor or the
-// viewport.
-function getPositionedClip(
-	painter: Painter,
-	element: Element,
-	contextRoot: Element,
-	contextClip: ClipRect | null,
-): ClipRect | null {
-	let clip = contextClip;
-	let position = getComputedValue(element, "position");
-	for (
-		let ancestor = flatParentElement(element);
-		ancestor && ancestor !== contextRoot;
-		ancestor = flatParentElement(ancestor)
-	) {
-		if (
-			(position === "fixed" ||
-				(position === "absolute" && !isPositioned(ancestor))) &&
-			!establishesFixedContainingBlock(ancestor)
-		) {
-			continue;
-		}
-		position = getComputedValue(ancestor, "position");
-		const overflowX = getUsedOverflow(ancestor, "x");
-		const overflowY = getUsedOverflow(ancestor, "y");
-		if (isClippingOverflow(overflowX) || isClippingOverflow(overflowY)) {
-			const rect = painter.layout.getRect(ancestor);
-			if (rect) {
-				clip = getOverflowClipRect(ancestor, rect, overflowX, overflowY, clip);
-			}
-		}
-	}
-	return clip;
 }
 
 function getGlyphText(element: Element): Text | null {
