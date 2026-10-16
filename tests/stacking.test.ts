@@ -287,7 +287,7 @@ test("a box clipped out of view takes no clicks", async () => {
 			`<div style="contain: layout paint">` +
 			`<div><div id="hidden" style="position: absolute; top: -20em; ` +
 			`left: 0; height: 30em">x</div><p>body</p></div>` +
-			`</div></div></div>`,
+			"</div></div></div>",
 	);
 	const {document} = dom;
 	expect(document.getElementById("hidden")!.getBoundingClientRect().top)
