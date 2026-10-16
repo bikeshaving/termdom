@@ -6581,6 +6581,32 @@ function layoutNode(
 	node.selfStale = false;
 }
 
+// What of a child its siblings and its block depend on: its size, its
+// margins and how they collapse, and as bits, whether it collapses through
+// and the two flags the block's own cache reuse is derived from.
+const SIBLING_STATE = 11;
+const SELF_COLLAPSING = 1;
+const WIDTH_DEPENDENT = 2;
+const OWNER_FREE = 4;
+
+function readSiblingState(child: LayoutNode, into: Float64Array): void {
+	const {result} = child;
+	into[0] = result.width;
+	into[1] = result.height;
+	into[2] = result.marginLeft;
+	into[3] = result.marginTop;
+	into[4] = result.marginRight;
+	into[5] = result.marginBottom;
+	into[6] = result.collapseTopPositive;
+	into[7] = result.collapseTopNegative;
+	into[8] = result.collapseBottomPositive;
+	into[9] = result.collapseBottomNegative;
+	into[10] =
+		(result.selfCollapsing ? SELF_COLLAPSING : 0) |
+		(child.widthDependent ? WIDTH_DEPENDENT : 0) |
+		(child.ownerFree ? OWNER_FREE : 0);
+}
+
 function getAvailableSpace(code: number): AvailableSpace {
 	return code === INDEFINITE
 		? "indefinite"
@@ -6628,6 +6654,8 @@ function relayOutStaleChildren(
 	) {
 		return false;
 	}
+	const before = new Float64Array(SIBLING_STATE);
+	const after = new Float64Array(SIBLING_STATE);
 	for (const child of node.children) {
 		if (!child.stale) {
 			continue;
@@ -6640,19 +6668,7 @@ function relayOutStaleChildren(
 		const {result} = child;
 		const left = result.left;
 		const top = result.top;
-		const width = result.width;
-		const height = result.height;
-		const marginLeft = result.marginLeft;
-		const marginTop = result.marginTop;
-		const marginRight = result.marginRight;
-		const marginBottom = result.marginBottom;
-		const collapseTopPositive = result.collapseTopPositive;
-		const collapseTopNegative = result.collapseTopNegative;
-		const collapseBottomPositive = result.collapseBottomPositive;
-		const collapseBottomNegative = result.collapseBottomNegative;
-		const selfCollapsing = result.selfCollapsing;
-		const widthDependent = child.widthDependent;
-		const ownerFree = child.ownerFree;
+		readSiblingState(child, before);
 		layoutNode(
 			child,
 			cache[at + AVAILABLE_WIDTH],
@@ -6665,22 +6681,11 @@ function relayOutStaleChildren(
 		);
 		result.left = left;
 		result.top = top;
-		if (
-			!Object.is(result.width, width) ||
-			!Object.is(result.height, height) ||
-			result.marginLeft !== marginLeft ||
-			result.marginTop !== marginTop ||
-			result.marginRight !== marginRight ||
-			result.marginBottom !== marginBottom ||
-			result.collapseTopPositive !== collapseTopPositive ||
-			result.collapseTopNegative !== collapseTopNegative ||
-			result.collapseBottomPositive !== collapseBottomPositive ||
-			result.collapseBottomNegative !== collapseBottomNegative ||
-			result.selfCollapsing !== selfCollapsing ||
-			child.widthDependent !== widthDependent ||
-			child.ownerFree !== ownerFree
-		) {
-			return false;
+		readSiblingState(child, after);
+		for (let i = 0; i < SIBLING_STATE; i++) {
+			if (!Object.is(before[i], after[i])) {
+				return false;
+			}
 		}
 	}
 	return true;
