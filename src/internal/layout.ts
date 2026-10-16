@@ -1100,7 +1100,9 @@ interface Extent {
 // Written after every solve, and read by the painter's row culling for
 // every child, so the records are kept and rewritten rather than remade.
 // A subtree roundToGrid left alone keeps its record while its top holds.
-const extents = new WeakMap<LayoutNode, Extent>();
+function getStoredExtent(node: LayoutNode): Extent | undefined {
+	return node.extent as Extent | undefined;
+}
 
 // The lines a measured box painted at the last paint extents, to tell a
 // box laid out again into the same lines from one whose text changed.
@@ -1117,7 +1119,7 @@ function computePaintExtents(
 ): Extent {
 	const top = originTop + node.grid.top;
 	const left = originLeft + node.grid.left;
-	let extent = extents.get(node);
+	let extent = getStoredExtent(node);
 	if (
 		settled &&
 		extent !== undefined &&
@@ -1172,7 +1174,7 @@ function computePaintExtents(
 			scrollRight: null,
 			scrollBottom: null,
 		};
-		extents.set(node, extent);
+		node.extent = extent;
 	}
 	let highest = top;
 	let lowest = top + getComputedHeight(node);
@@ -1304,7 +1306,7 @@ function *getInlineBlockReaches(
 				leaf.boxModel.borderTopWidth +
 				leaf.boxModel.paddingTop;
 			const context = layout.boxes.get(leaf.node)?.independentFormattingContext;
-			const extent = context ? extents.get(context) : undefined;
+			const extent = context ? getStoredExtent(context) : undefined;
 			if (extent !== undefined) {
 				yield [top + extent.top, top + extent.bottom];
 			} else if (leaf.breakResult !== undefined) {
@@ -7678,7 +7680,7 @@ function getVisibleChildren(
 	let hi = children.length;
 	while (lo < hi) {
 		const mid = (lo + hi) >>> 1;
-		if (extents.get(children[mid])!.bottom <= top) {
+		if (getStoredExtent(children[mid])!.bottom <= top) {
 			lo = mid + 1;
 		} else {
 			hi = mid;
@@ -7688,7 +7690,7 @@ function getVisibleChildren(
 	const result: Node[] = [];
 	for (let i = lo; i < children.length; i++) {
 		const child = children[i];
-		if (extents.get(child)!.top >= bottom) {
+		if (getStoredExtent(child)!.top >= bottom) {
 			break;
 		}
 		const domNode = child.owner as Node | undefined;
@@ -7944,13 +7946,13 @@ export function paintExtent(
 	node: LayoutNode,
 	frame: LayoutNode,
 ): Extent | undefined {
-	const extent = extents.get(node);
+	const extent = getStoredExtent(node);
 	return extent?.frame === frame ? extent : undefined;
 }
 
 // The root a node's extent counts from, once it has one.
 export function getExtentFrame(node: LayoutNode): LayoutNode | undefined {
-	return extents.get(node)?.frame;
+	return getStoredExtent(node)?.frame;
 }
 
 /**
@@ -9353,7 +9355,7 @@ function getDocumentContentHeight(engine: Layout): number {
 // than itself, and a fixed box moves with the viewport, not in it.
 function getDocumentOverflowBottom(engine: Layout): number {
 	const root = engine.nodeMap.get(engine.rootElement);
-	const extent = root ? extents.get(root) : undefined;
+	const extent = root ? getStoredExtent(root) : undefined;
 	return extent ? Math.ceil(root!.grid.top + extent.overflowBottom) : 0;
 }
 
@@ -9370,7 +9372,7 @@ function measureScrollExtent(
 	let right: number | null = 0;
 	let bottom = 0;
 	const extent = layoutNode.style.clipsOverflow
-		? extents.get(layoutNode)
+		? getStoredExtent(layoutNode)
 		: undefined;
 	if (extent !== undefined) {
 		// The layout pass found it.
@@ -9394,7 +9396,7 @@ function measureScrollExtent(
 			if (child.style.displayType === "none") {
 				continue;
 			}
-			const reach = extents.get(child)!;
+			const reach = getStoredExtent(child)!;
 			if (right !== null) {
 				right =
 					child.measure !== null &&
