@@ -139,10 +139,23 @@ The engine wraps each frame in synchronized output markers, so a
 terminal that supports them shows the whole frame at once.
 
 The engine hides the terminal cursor between frames. When a text field
-or an editing host has focus, the engine shows the cursor at its caret.
-The terminal's own cursor shape and blink then apply, and an input
-method can compose text at that spot. Any other focused element shows
-an outline instead.
+or an editing host has focus, the engine shows the cursor at its caret,
+and an input method can compose text at that spot. Any other focused
+element shows an outline instead.
+
+The caret's CSS styles the terminal's cursor:
+
+| Property | Effect |
+| --- | --- |
+| `caret-shape` | `block`, `underscore` or `bar` sets the cursor's shape. `auto` keeps the terminal's own |
+| `caret-animation` | With a shape set, `manual` holds the cursor steady and `auto` lets it blink |
+| `caret-color` | Sets the cursor's color. `auto` and system colors keep the terminal's own |
+
+An editor can show a block cursor in one mode and a bar in another by
+switching a class on the field. The engine writes the cursor's style
+only when it changes, and puts back the terminal's own when the session
+ends or is suspended, and only if a page set one. Terminals that do not
+support styling the cursor ignore these.
 
 When the document or a box scrolls, the engine asks the terminal to
 shift the rows itself. The diff then repaints any cells the shift got

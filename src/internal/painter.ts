@@ -35,6 +35,7 @@ import {
 } from "./dom.ts";
 import {getEditingCaretPoint} from "./editing.ts";
 import {
+	type Caret,
 	CellContext,
 	CellGrid,
 	type CellStyle,
@@ -177,6 +178,8 @@ const PAINTED_ELSEWHERE = [
 	"list-style-image",
 	"outline-offset",
 	"caret-color",
+	"caret-shape",
+	"caret-animation",
 	"direction",
 	"text-align",
 	"text-indent",
@@ -606,7 +609,7 @@ export const partialFrameCheck = {enabled: false, checked: 0};
 export function checkPartialFrame(
 	painter: Painter,
 	ctx: CellContext,
-	previousCaret: {col: number; row: number} | null,
+	previousCaret: Caret | null,
 ): void {
 	partialFrameCheck.checked++;
 	const whole = new CellContext(
@@ -1310,7 +1313,41 @@ function setCaretAt(
 	const lift = painter.layout.isInFixedSpace(element)
 		? painter.framebuffer.scrollTop
 		: 0;
-	setCaret(ctx, x, y + lift);
+	setCaret(ctx, x, y + lift, getCursorShape(element), getCursorColor(element));
+}
+
+// css-ui-4 §6.2: the shapes the terminal's cursor can take, as the
+// blinking DECSCUSR style. caret-animation: manual holds it steady, the
+// style after it. auto leaves the terminal's own.
+const CURSOR_SHAPES: Readonly<Record<string, number>> = {
+	block: 1,
+	underscore: 3,
+	bar: 5,
+};
+
+function getCursorShape(element: Element): number {
+	const shape = CURSOR_SHAPES[getComputedValue(element, "caret-shape")];
+	if (shape === undefined) {
+		return 0;
+	}
+	return getComputedValue(element, "caret-animation") === "manual"
+		? shape + 1
+		: shape;
+}
+
+// A color the terminal can take for its cursor, or null to leave its own:
+// for auto, a system color, which names the terminal's colors, and one it
+// could not show.
+function getCursorColor(element: Element): number | null {
+	let value = getComputedValue(element, "caret-color");
+	if (value === "auto") {
+		return null;
+	}
+	if (value.toLowerCase() === "currentcolor") {
+		value = getComputedValue(element, "color");
+	}
+	const parsed = CSSValues.parseColor(value);
+	return parsed === null || parsed.alpha === 0 ? null : parsed.color;
 }
 
 // A run's lines, from the box that broke them. The origin is the run's

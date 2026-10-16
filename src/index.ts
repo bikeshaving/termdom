@@ -71,6 +71,7 @@ import {
 	reserveRows,
 	restoreEngagedModes,
 	scrubProbeEcho,
+	setCursorStyle,
 	setDisplayType,
 	startExchange,
 	type TerminalCloseInfo,
@@ -1759,6 +1760,15 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		"cursorHidden",
 		!termDOMSlots.framebuffer.caretVisible,
 	);
+	// A hidden cursor keeps the style it had, which the next caret sets
+	// again if it asks for another.
+	if (termDOMSlots.framebuffer.caretVisible) {
+		setCursorStyle(
+			termDOMSlots.exchange,
+			termDOMSlots.framebuffer.lastCaretShape,
+			termDOMSlots.framebuffer.lastCaretColor,
+		);
+	}
 	afterRender(termDOM);
 }
 
