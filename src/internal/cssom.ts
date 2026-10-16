@@ -582,7 +582,8 @@ interface CSSStyleDeclarationSlots {
 	_sync: Step<CSSStyleDeclaration["_sync"]>;
 }
 
-const NO_DECLARATIONS: CSSValues.CSSDeclaration[] = [];
+const NO_DECLARATIONS: CSSValues.CSSDeclaration[] =
+	Object.freeze([]) as unknown as CSSValues.CSSDeclaration[];
 
 interface CSSStyleDeclaration {
 	readonly [internals]: CSSStyleDeclarationSlots;
@@ -800,11 +801,11 @@ class CSSStyleDeclaration {
 
 declareSealedRoot(CSSStyleDeclaration);
 
-const EMPTY_DECLARATIONS: CSSValues.DeclarationBlock = {
-	declarations: {},
-	important: {},
-	order: {},
-};
+const EMPTY_DECLARATIONS: CSSValues.DeclarationBlock = Object.freeze({
+	declarations: Object.freeze({}),
+	important: Object.freeze({}),
+	order: Object.freeze({}),
+});
 
 function getDeclarationBlock(
 	style: CSSStyleDeclaration,
@@ -5512,6 +5513,8 @@ function resolvePropertyValueRaw(
 	return getInitialValueFor(declarationSlots.element, property);
 }
 
+const NO_CUSTOM_NAMES: string[] = Object.freeze([]) as unknown as string[];
+
 // This element's own custom properties and every ancestor's, since a
 // custom property inherits.
 function getCustomNames(computed: ComputedStyleDeclaration): string[] {
@@ -5535,7 +5538,7 @@ function getCustomNames(computed: ComputedStyleDeclaration): string[] {
 			names.add(name);
 		}
 	}
-	computedSlots.custom = [...names];
+	computedSlots.custom = names.size === 0 ? NO_CUSTOM_NAMES : [...names];
 	return computedSlots.custom;
 }
 
@@ -6239,6 +6242,11 @@ export class Cascade {
 	// Each element's computed declaration, as its slots.
 	computedStyleCache: WeakMap<Element, Slots<ComputedStyleDeclaration>>;
 
+	// The matched rule lists shareRuleList last shared, oldest replaced
+	// first.
+	recentRuleLists: ParsedCSSRule[][];
+	nextRecentRuleList: number;
+
 	// The slots of every declaration resolved against the current cascade.
 	// Dropping one, or replacing the set, sends it back through
 	// _syncResolved on its next read. Weak, so a declaration nobody holds
@@ -6411,6 +6419,8 @@ export class Cascade {
 			Slots<ComputedStyleDeclaration>
 		>();
 		this.currentDeclarations = new WeakSet<object>();
+		this.recentRuleLists = [];
+		this.nextRecentRuleList = 0;
 		this.shadowRoots = new Set<ShadowRoot>();
 		this.sharedRoot = new Map();
 		this.pseudoElementStyleCache = new WeakMap<
@@ -7410,19 +7420,50 @@ function pseudoDeclarationsFor(
 	return declarations;
 }
 
+const RECENT_RULE_LISTS = 16;
+
+// Siblings and cousins mostly match alike, a list's items or a table's
+// cells, so a finished list is checked against the last few the cascade
+// shared and held once. What is shared is frozen. A list holding a shadow
+// tree's rule keeps its own, since the cascade outlives the tree.
+function shareRuleList(
+	cascade: Cascade,
+	rules: ParsedCSSRule[],
+): ParsedCSSRule[] {
+	for (const recent of cascade.recentRuleLists) {
+		if (
+			recent.length === rules.length &&
+			recent.every((rule, index) => rule === rules[index])
+		) {
+			return recent;
+		}
+	}
+	if (rules.some((rule) => rule.scope !== undefined)) {
+		return rules;
+	}
+	const shared = Object.freeze(rules.slice()) as ParsedCSSRule[];
+	cascade.recentRuleLists[cascade.nextRecentRuleList] = shared;
+	cascade.nextRecentRuleList =
+		(cascade.nextRecentRuleList + 1) % RECENT_RULE_LISTS;
+	return shared;
+}
+
 function getCascadeRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	parseStylesheetsIfStale(cascade);
 	const rules = getMatchingRules(cascade, element);
 	const hints = getHintRule(element);
 	if (hints === null) {
-		return rules;
+		return shareRuleList(cascade, rules);
 	}
 	// Author level, zero specificity, ahead of every author rule and
 	// layer (HTML §15.1).
 	const at = rules.findIndex((rule) => !rule.uaOrigin);
-	return at === -1
-		? [...rules, hints]
-		: [...rules.slice(0, at), hints, ...rules.slice(at)];
+	return shareRuleList(
+		cascade,
+		at === -1
+			? [...rules, hints]
+			: [...rules.slice(0, at), hints, ...rules.slice(at)],
+	);
 }
 
 // A state changed on the element. The element restyles. Its subtree and
@@ -8024,9 +8065,13 @@ interface CounterEffects {
 	sets: Array<[string, number]>;
 }
 
-const NO_EFFECTS: CounterEffects = {resets: [], increments: [], sets: []};
+const NO_EFFECTS: CounterEffects = Object.freeze({
+	resets: Object.freeze([]) as unknown as CounterEffects["resets"],
+	increments: Object.freeze([]) as unknown as CounterEffects["increments"],
+	sets: Object.freeze([]) as unknown as CounterEffects["sets"],
+});
 
-const NO_COUNTERS: readonly CounterEntry[] = [];
+const NO_COUNTERS: readonly CounterEntry[] = Object.freeze([]);
 
 /**
  * The counters in scope where an element's content reads them, innermost
