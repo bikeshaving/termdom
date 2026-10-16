@@ -635,6 +635,12 @@ interface CSSStyleDeclarationSlots {
 const NO_DECLARATIONS: CSSValues.CSSDeclaration[] =
 	Object.freeze([]) as unknown as CSSValues.CSSDeclaration[];
 
+// A page repeats its style attributes, a mail client's in the hundreds,
+// and what one parses to follows from its text alone. Each element gets
+// its own copies, which setProperty writes to.
+const PARSED_STYLE_TEXTS = 1024;
+const parsedStyleTexts = new Map<string, readonly CSSValues.CSSDeclaration[]>();
+
 interface CSSStyleDeclaration {
 	readonly [internals]: CSSStyleDeclarationSlots;
 }
@@ -836,13 +842,33 @@ class CSSStyleDeclaration {
 		slots.attributeText = text;
 		slots.declarations = NO_DECLARATIONS;
 		slots.byName?.clear();
-		for (const declaration of CSSValues.parseDeclarationText(text)) {
-			applyDeclaration(
-				getOwner(this),
-				declaration.name,
-				declaration.value,
-				declaration.important,
-				true,
+		const parsed = parsedStyleTexts.get(text);
+		if (parsed !== undefined) {
+			if (parsed.length > 0) {
+				slots.declarations = parsed.map((entry) => ({...entry}));
+				slots.byName ??= new Map();
+				for (const entry of slots.declarations) {
+					slots.byName.set(entry.name, entry);
+				}
+			}
+		} else {
+			for (const declaration of CSSValues.parseDeclarationText(text)) {
+				applyDeclaration(
+					getOwner(this),
+					declaration.name,
+					declaration.value,
+					declaration.important,
+					true,
+				);
+			}
+			if (parsedStyleTexts.size >= PARSED_STYLE_TEXTS) {
+				parsedStyleTexts.clear();
+			}
+			parsedStyleTexts.set(
+				text,
+				Object.freeze(
+					slots.declarations.map((entry) => Object.freeze({...entry})),
+				),
 			);
 		}
 		invalidateDeclaration(getOwner(this));
