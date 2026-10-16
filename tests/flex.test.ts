@@ -1,6 +1,7 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 
 import {
+	createStyle,
 	getComputedHeight,
 	getComputedWidth,
 	insertChild,
@@ -26,7 +27,9 @@ import {
 // termdom drives the engine with web defaults, which are also the CSS initial
 // values: flex-direction row, flex-shrink 1, align-content stretch.
 function node(): LayoutNode {
-	return new LayoutNode();
+	const created = new LayoutNode();
+	created.style = createStyle();
+	return created;
 }
 
 function box(parent: LayoutNode, index = parent.children.length): LayoutNode {

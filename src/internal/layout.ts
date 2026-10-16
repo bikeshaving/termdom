@@ -6065,6 +6065,7 @@ export class Layout {
 		// nothing.
 		this.cachePool = new CachePool(() => getLiveLayoutNodes(this));
 		const root = new LayoutNode(this.cachePool);
+		root.style = createStyle();
 		root.style.displayType = "block";
 		root.style.blockFormattingContext = true;
 		root.style.width = toValue(width);
