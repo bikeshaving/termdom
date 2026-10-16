@@ -184,7 +184,7 @@ function makeDOM(): {dom: any; terminal: any} {
 	return {dom, terminal};
 }
 
-function frameOf(terminal: any): string {
+function getFrame(terminal: any): string {
 	return terminal
 		.getPlainText()
 		.split("\n")
@@ -367,7 +367,7 @@ async function differs(
 		await apply(dom, action);
 		await nextFrame(dom);
 	}
-	const incremental = frameOf(terminal);
+	const incremental = getFrame(terminal);
 
 	const fresh = makeDOM();
 	for (const child of Array.from(dom.document.body.childNodes) as any[]) {
@@ -376,7 +376,7 @@ async function differs(
 		);
 	}
 	await nextFrame(fresh.dom);
-	const once = frameOf(fresh.terminal);
+	const once = getFrame(fresh.terminal);
 	dom.dispose();
 	fresh.dom.dispose();
 	return {differs: incremental !== once, incremental, fresh: once};

@@ -10,13 +10,13 @@ import * as CSSValues from "./cssvalues.ts";
 import type {CellStyle} from "./framebuffer.ts";
 import {getStringWidth, graphemeSegmenter} from "./text.ts";
 import {
-	attributeOf,
-	containsOf,
+	getAttributeValue,
 	getDocumentExchange,
-	localNameOf,
+	getLocalName,
+	getNamespace,
+	getNodeType,
 	MATHML_NAMESPACE,
-	namespaceOf,
-	nodeTypeOf,
+	nodeContains,
 } from "./tree.ts";
 import {getCellSize} from "./units.ts";
 
@@ -564,16 +564,16 @@ const INVISIBLE_OPERATORS = /^[\u2061-\u2064\u200b]$/u;
 
 export function isMathRoot(node: Node): boolean {
 	return (
-		nodeTypeOf(node) === node.ELEMENT_NODE &&
-		namespaceOf((node as Element)) === MATHML_NAMESPACE &&
-		localNameOf((node as Element)) === "math"
+		getNodeType(node) === node.ELEMENT_NODE &&
+		getNamespace((node as Element)) === MATHML_NAMESPACE &&
+		getLocalName((node as Element)) === "math"
 	);
 }
 
 function isMathElement(node: Node): boolean {
 	return (
-		nodeTypeOf(node) === node.ELEMENT_NODE &&
-		namespaceOf((node as Element)) === MATHML_NAMESPACE
+		getNodeType(node) === node.ELEMENT_NODE &&
+		getNamespace((node as Element)) === MATHML_NAMESPACE
 	);
 }
 
@@ -654,7 +654,7 @@ function createSourcedBox(
 function readTokenChars(element: Element): SourcedChar[] {
 	const chars: SourcedChar[] = [];
 	const walk = (node: Node): void => {
-		if (nodeTypeOf(node) === node.TEXT_NODE) {
+		if (getNodeType(node) === node.TEXT_NODE) {
 			chars.push(...readTextChars(node as Text));
 			return;
 		}
@@ -764,9 +764,9 @@ export function getMathCellRects(
 			const source = cell.source;
 			if (
 				source !== undefined &&
-				(nodeTypeOf(node) === node.TEXT_NODE
+				(getNodeType(node) === node.TEXT_NODE
 					? source.node === node
-					: containsOf(node, source.node))
+					: nodeContains(node, source.node))
 			) {
 				const last = rects[rects.length - 1];
 				if (
@@ -877,12 +877,12 @@ export function getBoxText(box: MathBox): string[] {
 function getLayoutChildren(element: Element): Node[] {
 	const children: Node[] = [];
 	for (const child of element.childNodes) {
-		if (nodeTypeOf(child) === child.ELEMENT_NODE) {
+		if (getNodeType(child) === child.ELEMENT_NODE) {
 			if (getComputedValue(child as Element, "display") !== "none") {
 				children.push(child);
 			}
 		} else if (
-			nodeTypeOf(child) === child.TEXT_NODE &&
+			getNodeType(child) === child.TEXT_NODE &&
 			(child as Text).data.trim() !== ""
 		) {
 			children.push(child);
@@ -892,7 +892,7 @@ function getLayoutChildren(element: Element): Node[] {
 }
 
 function layoutNode(node: Node, context: MathContext): MathBox {
-	if (nodeTypeOf(node) === node.TEXT_NODE) {
+	if (getNodeType(node) === node.TEXT_NODE) {
 		const parent = node.parentElement;
 		return createSourcedBox(
 			collapseChars(readTextChars(node as Text)),
@@ -909,12 +909,12 @@ function layoutNode(node: Node, context: MathContext): MathBox {
 	// A token holding elements, as KaTeX writes \overset with an mover
 	// inside an mo, renders its children as a row, as a browser does.
 	if (
-		TOKENS.has(localNameOf(element)) &&
+		TOKENS.has(getLocalName(element)) &&
 		getLayoutChildren(element).some((child) => isMathElement(child))
 	) {
 		return layoutRow(getLayoutChildren(element), element, local);
 	}
-	switch (localNameOf(element)) {
+	switch (getLocalName(element)) {
 		case "mi":
 		case "mn":
 		case "mo":
@@ -934,15 +934,16 @@ function layoutNode(node: Node, context: MathContext): MathBox {
 		}
 		case "ms": {
 			const quoted = [
-				...unsourced(attributeOf(element, "lquote") ?? "\""),
+				...unsourced(getAttributeValue(element, "lquote") ?? "\""),
 				...collapseChars(readTokenChars(element)),
-				...unsourced(attributeOf(element, "rquote") ?? "\""),
+				...unsourced(getAttributeValue(element, "rquote") ?? "\""),
 			];
 			return layoutTextToken(element, joinChars(quoted), local, quoted);
 		}
 		case "mspace": {
 			const width =
-				parseMathLength(element, attributeOf(element, "width"), false) ?? 0;
+				parseMathLength(element, getAttributeValue(element, "width"), false) ??
+				0;
 			return createEmptyBox(width > 0 ? Math.max(1, Math.round(width)) : 0);
 		}
 		case "maction":
@@ -1012,7 +1013,7 @@ function layoutTextToken(
 	let variant = getMathVariant(element);
 	if (
 		variant === null &&
-		localNameOf(element) === "mi" &&
+		getLocalName(element) === "mi" &&
 		isSingleGrapheme(collapsed) &&
 		getComputedValue(element, "text-transform") === "math-auto"
 	) {
@@ -1132,7 +1133,7 @@ function getMathVariant(element: Element): string | null {
 		current !== null && isMathElement(current);
 		current = current.parentElement
 	) {
-		const variant = attributeOf(current, "mathvariant");
+		const variant = getAttributeValue(current, "mathvariant");
 		if (variant !== null) {
 			return variant.trim().toLowerCase();
 		}
@@ -1220,7 +1221,7 @@ function getOperatorForm(
 	index: number,
 	count: number,
 ): OperatorForm {
-	const attribute = attributeOf(element, "form")?.trim().toLowerCase();
+	const attribute = getAttributeValue(element, "form")?.trim().toLowerCase();
 	if (
 		attribute === "prefix" || attribute === "infix" || attribute === "postfix"
 	) {
@@ -1237,7 +1238,7 @@ function getOperatorForm(
 
 // In ems, as the dictionary's eighteenths are.
 function readSpace(element: Element, name: string, fallback: number): number {
-	const value = attributeOf(element, name);
+	const value = getAttributeValue(element, name);
 	const match = value === null
 		? null
 		: /^\s*([+-]?\d*\.?\d+)\s*([a-z]*)\s*$/i.exec(value);
@@ -1259,7 +1260,7 @@ function readSpace(element: Element, name: string, fallback: number): number {
 }
 
 function readFlag(element: Element, name: string, fallback: boolean): boolean {
-	const value = attributeOf(element, name)?.trim().toLowerCase();
+	const value = getAttributeValue(element, name)?.trim().toLowerCase();
 	return value === "true" ? true : value === "false" ? false : fallback;
 }
 
@@ -1306,7 +1307,7 @@ function isNegation(operator: Operator): boolean {
 }
 
 function isOperatorElement(node: Node): boolean {
-	return isMathElement(node) && localNameOf((node as Element)) === "mo";
+	return isMathElement(node) && getLocalName((node as Element)) === "mo";
 }
 
 const SCRIPTED = new Set([
@@ -1330,19 +1331,19 @@ function getCoreOperator(node: Node): Element | null {
 		return null;
 	}
 	const element = node as Element;
-	if (localNameOf(element) === "mo") {
+	if (getLocalName(element) === "mo") {
 		return element;
 	}
 	const children = getLayoutChildren(element);
-	if (SCRIPTED.has(localNameOf(element)) && children.length > 0) {
+	if (SCRIPTED.has(getLocalName(element)) && children.length > 0) {
 		return getCoreOperator(children[0]);
 	}
-	if (WRAPPERS.has(localNameOf(element)) && children.length === 1) {
+	if (WRAPPERS.has(getLocalName(element)) && children.length === 1) {
 		return getCoreOperator(children[0]);
 	}
 	const last = children[children.length - 1];
 	if (
-		WRAPPERS.has(localNameOf(element)) &&
+		WRAPPERS.has(getLocalName(element)) &&
 		last !== undefined &&
 		isOperatorElement(last) &&
 		collapseTokenText((last as Element).textContent ?? "") === "\u2061"
@@ -1521,9 +1522,9 @@ function getSpacing(
 	if (
 		spacing.entry.largeop &&
 		context.display &&
-		(localNameOf(element) === "munder" ||
-			localNameOf(element) === "mover" ||
-			localNameOf(element) === "munderover") &&
+		(getLocalName(element) === "munder" ||
+			getLocalName(element) === "mover" ||
+			getLocalName(element) === "munderover") &&
 		box.width > layoutNode(core, context).width
 	) {
 		return {...spacing, gapBefore: false, gapAfter: false};
@@ -1565,12 +1566,12 @@ function layoutStretchedOperator(
 	}
 	const minsize = parseMathLength(
 		element,
-		attributeOf(element, "minsize"),
+		getAttributeValue(element, "minsize"),
 		true,
 	);
 	const maxsize = parseMathLength(
 		element,
-		attributeOf(element, "maxsize"),
+		getAttributeValue(element, "maxsize"),
 		true,
 	);
 	if (minsize !== null) {
@@ -1675,7 +1676,7 @@ const COMBINING_UNDER: Record<string, string> = {
  */
 function layoutRadical(element: Element, context: MathContext): MathBox {
 	const children = getLayoutChildren(element);
-	const isRoot = localNameOf(element) === "mroot";
+	const isRoot = getLocalName(element) === "mroot";
 	const radicand = isRoot
 		? layoutChild(children[0], context)
 		: layoutRow(children, element, context);
@@ -1751,7 +1752,7 @@ function layoutRadical(element: Element, context: MathContext): MathBox {
  */
 function layoutUnderOver(element: Element, context: MathContext): MathBox {
 	const children = getLayoutChildren(element);
-	const kind = localNameOf(element);
+	const kind = getLocalName(element);
 	let underNode = kind === "mover" ? undefined : children[1];
 	let overNode = kind === "mover"
 		? children[1]
@@ -1762,7 +1763,7 @@ function layoutUnderOver(element: Element, context: MathContext): MathBox {
 			result,
 			overNode,
 			"over",
-			attributeOf(element, "accent"),
+			getAttributeValue(element, "accent"),
 		);
 		if (combined !== null) {
 			result = combined;
@@ -1774,7 +1775,7 @@ function layoutUnderOver(element: Element, context: MathContext): MathBox {
 			result,
 			underNode,
 			"under",
-			attributeOf(element, "accentunder"),
+			getAttributeValue(element, "accentunder"),
 		);
 		if (combined !== null) {
 			result = combined;
@@ -1850,7 +1851,7 @@ function stretchAcross(
 	}
 	const minsize = parseMathLength(
 		element,
-		attributeOf(element, "minsize"),
+		getAttributeValue(element, "minsize"),
 		false,
 	);
 	const target = Math.max(base.width, width, Math.round(minsize ?? 0));
@@ -2113,7 +2114,7 @@ function layoutChild(node: Node | undefined, context: MathContext): MathBox {
 function layoutBase(node: Node | undefined, context: MathContext): MathBox {
 	return node !== undefined &&
 		isMathElement(node) &&
-		localNameOf((node as Element)) === "mrow" &&
+		getLocalName((node as Element)) === "mrow" &&
 		getLayoutChildren(node as Element).length === 0
 		? createEmptyBox(0)
 		: layoutChild(node, context);
@@ -2154,8 +2155,8 @@ function parenthesize(
 	if (
 		box.width <= 1 ||
 		(node !== undefined &&
-			nodeTypeOf(node) === node.ELEMENT_NODE &&
-			units.has(localNameOf((node as Element))))
+			getNodeType(node) === node.ELEMENT_NODE &&
+			units.has(getLocalName((node as Element))))
 	) {
 		return box;
 	}
@@ -2268,10 +2269,10 @@ function attachScripts(
 function layoutScriptElement(element: Element, context: MathContext): MathBox {
 	const children = getLayoutChildren(element);
 	const base = layoutBase(children[0], context);
-	const subNode = localNameOf(element) === "msup" ? undefined : children[1];
-	const supNode = localNameOf(element) === "msup"
+	const subNode = getLocalName(element) === "msup" ? undefined : children[1];
+	const supNode = getLocalName(element) === "msup"
 		? children[1]
-		: localNameOf(element) === "msubsup" ? children[2] : undefined;
+		: getLocalName(element) === "msubsup" ? children[2] : undefined;
 	return attachScripts(
 		base,
 		subNode === undefined ? null : layoutNode(subNode, scriptContext(context)),
@@ -2285,7 +2286,7 @@ function layoutScriptElement(element: Element, context: MathContext): MathBox {
 function isEmptyScript(node: Node | undefined): boolean {
 	return (
 		node === undefined ||
-		(isMathElement(node) && localNameOf((node as Element)) === "none")
+		(isMathElement(node) && getLocalName((node as Element)) === "none")
 	);
 }
 
@@ -2297,7 +2298,7 @@ function layoutMultiscripts(element: Element, context: MathContext): MathBox {
 	for (let index = 1; index < children.length; index++) {
 		const node = children[index];
 		if (
-			isMathElement(node) && localNameOf((node as Element)) === "mprescripts"
+			isMathElement(node) && getLocalName((node as Element)) === "mprescripts"
 		) {
 			pre = true;
 			continue;
@@ -2358,12 +2359,15 @@ function layoutFraction(element: Element, context: MathContext): MathBox {
 		) + 2;
 	const thickness = parseMathLength(
 		element,
-		attributeOf(element, "linethickness"),
+		getAttributeValue(element, "linethickness"),
 		true,
 	);
-	const numalign = parseAlignment(attributeOf(element, "numalign"), "center");
+	const numalign = parseAlignment(
+		getAttributeValue(element, "numalign"),
+		"center",
+	);
 	const denomalign = parseAlignment(
-		attributeOf(element, "denomalign"),
+		getAttributeValue(element, "denomalign"),
 		"center",
 	);
 	const top = placeInWidth(numerator, width, numalign);
@@ -2450,7 +2454,7 @@ function readKeyword(
 	element: Element | null,
 	name: string,
 ): string | undefined {
-	const value = element === null ? null : attributeOf(element, name);
+	const value = element === null ? null : getAttributeValue(element, name);
 	return value === null ? undefined : value.trim().toLowerCase();
 }
 
@@ -2512,7 +2516,7 @@ function getTableRows(
 ): Array<{row: Element | null; cells: Node[]}> {
 	const rows: Array<{row: Element | null; cells: Node[]}> = [];
 	for (const child of getLayoutChildren(element)) {
-		const name = isMathElement(child) ? localNameOf((child as Element)) : "";
+		const name = isMathElement(child) ? getLocalName((child as Element)) : "";
 		if (name === "mtr" || name === "mlabeledtr") {
 			const cells = getLayoutChildren(child as Element);
 			rows.push({
@@ -2556,12 +2560,12 @@ function layoutTable(element: Element, context: MathContext): MathBox {
 		}
 		return result!;
 	}
-	const columnAligns = parseList(attributeOf(element, "columnalign"));
-	const rowAligns = parseList(attributeOf(element, "rowalign"));
+	const columnAligns = parseList(getAttributeValue(element, "columnalign"));
+	const rowAligns = parseList(getAttributeValue(element, "rowalign"));
 	const grid: TableCell[][] = rows.map(({row, cells}, rowIndex) => {
 		const rowColumnAligns = row === null
 			? []
-			: parseList(attributeOf(row, "columnalign"));
+			: parseList(getAttributeValue(row, "columnalign"));
 		const rowAlign = parseRowAlignment(
 			readKeyword(row, "rowalign") ?? pickListValue(rowAligns, rowIndex),
 			"baseline",
@@ -2603,20 +2607,28 @@ function layoutTable(element: Element, context: MathContext): MathBox {
 	const columnSpacing = Math.max(
 		0,
 		Math.round(
-			parseMathLength(element, attributeOf(element, "columnspacing"), false) ??
-				1,
+			parseMathLength(
+				element,
+				getAttributeValue(element, "columnspacing"),
+				false,
+			) ?? 1,
 		),
 	);
 	const rowSpacing = Math.max(
 		0,
 		Math.round(
-			parseMathLength(element, attributeOf(element, "rowspacing"), true) ?? 0,
+			parseMathLength(
+				element,
+				getAttributeValue(element, "rowspacing"),
+				true,
+			) ??
+			0,
 		),
 	);
-	const columnLines = parseList(attributeOf(element, "columnlines"));
-	const rowLines = parseList(attributeOf(element, "rowlines"));
+	const columnLines = parseList(getAttributeValue(element, "columnlines"));
+	const rowLines = parseList(getAttributeValue(element, "rowlines"));
 	const framed = isLineValue(
-		attributeOf(element, "frame")?.trim().toLowerCase(),
+		getAttributeValue(element, "frame")?.trim().toLowerCase(),
 	);
 
 	// The columns where a vertical rule runs, for the rule rows to cross.
@@ -2698,7 +2710,7 @@ function layoutTable(element: Element, context: MathContext): MathBox {
 	if (framed) {
 		table = frameTable(table, ruleColumns, lines);
 	}
-	const align = attributeOf(element, "align")?.trim().toLowerCase();
+	const align = getAttributeValue(element, "align")?.trim().toLowerCase();
 	const baseline = align === "top"
 		? 0
 		: align === "bottom" ? table.height - 1 : (table.height - 1) >> 1;
@@ -2789,7 +2801,7 @@ function layoutPadded(element: Element, context: MathContext): MathBox {
 	const box = layoutRow(getLayoutChildren(element), element, context);
 	const resolve =
 		(name: string, current: number, vertical: boolean): number => {
-			const raw = attributeOf(element, name);
+			const raw = getAttributeValue(element, name);
 			const value = parseMathLength(element, raw, vertical);
 			if (raw === null || value === null) {
 				return current;
@@ -2805,7 +2817,8 @@ function layoutPadded(element: Element, context: MathContext): MathBox {
 	const left = Math.max(
 		0,
 		Math.round(
-			parseMathLength(element, attributeOf(element, "lspace"), false) ?? 0,
+			parseMathLength(element, getAttributeValue(element, "lspace"), false) ??
+			0,
 		),
 	);
 	const width = resolve("width", box.width + left, false);

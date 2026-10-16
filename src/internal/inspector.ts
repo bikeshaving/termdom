@@ -10,7 +10,7 @@ import {
 	NodeList,
 	Text,
 } from "./dom.ts";
-import {nodeTypeOf} from "./tree.ts";
+import {getNodeType} from "./tree.ts";
 
 const colors = {
 	attr: "\x1b[36m",
@@ -73,7 +73,7 @@ function inspectDocument(
 }
 
 function inspectNode(node: Node, options: InspectorOptions = {}): string {
-	switch (nodeTypeOf(node)) {
+	switch (getNodeType(node)) {
 		case 1:
 			return inspectElement(node as Element, options);
 		case 3:
@@ -195,7 +195,7 @@ function formatChildren(
 
 	const children = Array.from(element.childNodes);
 
-	if (children.length === 1 && nodeTypeOf(children[0]) === 3) {
+	if (children.length === 1 && getNodeType(children[0]) === 3) {
 		const text = children[0].textContent || "";
 		if (text.trim() && text.length < 50) {
 			return `${c.text}${text.trim()}${c.reset}`;

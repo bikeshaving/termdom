@@ -93,7 +93,7 @@ import {
 } from "./mathml.ts";
 import {isReplacedBox, renderReplaced} from "./replaced.ts";
 import {getStringWidth} from "./text.ts";
-import {containsOf, nodeTypeOf} from "./tree.ts";
+import {getNodeType, nodeContains} from "./tree.ts";
 import {getCellSize} from "./units.ts";
 
 function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
@@ -974,10 +974,10 @@ function paintContent(
 // nested block or inline-block lays out in lines of its own.
 function *getOwnLineText(element: Element): Generator<Text> {
 	for (const child of flowContent(element)) {
-		if (nodeTypeOf(child) === child.TEXT_NODE) {
+		if (getNodeType(child) === child.TEXT_NODE) {
 			yield child as Text;
 		} else if (
-			nodeTypeOf(child) === child.ELEMENT_NODE &&
+			getNodeType(child) === child.ELEMENT_NODE &&
 			getComputedValue(child as Element, "display") === "inline"
 		) {
 			yield *getOwnLineText(child as Element);
@@ -1094,7 +1094,7 @@ function paintNodes(
 		if (run !== null) {
 			paintRun(painter, run, childOrigin, ctx);
 		} else if (
-			nodeTypeOf(owner) === owner.ELEMENT_NODE &&
+			getNodeType(owner) === owner.ELEMENT_NODE &&
 			(owner instanceof HTMLElement || isMathRoot(owner)) &&
 			!hoistedToLayer(layout, owner as Element)
 		) {
@@ -1120,7 +1120,7 @@ function visibleChildren(
 		!extent.rowOrdered ||
 		node.measure !== null ||
 		(owner !== null &&
-			nodeTypeOf(owner) === owner.ELEMENT_NODE &&
+			getNodeType(owner) === owner.ELEMENT_NODE &&
 			layout.getBox(owner as Element)?.holdsFragments === true)
 	) {
 		return children;
@@ -1366,11 +1366,11 @@ function paintMember(
 	run: PainterRun,
 	ctx: CellContext,
 ): void {
-	if (nodeTypeOf(node) === node.TEXT_NODE) {
+	if (getNodeType(node) === node.TEXT_NODE) {
 		paintText(painter, node as Text, run, ctx);
 		return;
 	}
-	if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
+	if (getNodeType(node) !== node.ELEMENT_NODE) {
 		return;
 	}
 	const element = node as Element;
@@ -1533,7 +1533,7 @@ function resolveRun(
 		if (shift === undefined) {
 			shift = {x: 0, y: 0};
 			for (
-				let ancestor = nodeTypeOf(node) === node.ELEMENT_NODE
+				let ancestor = getNodeType(node) === node.ELEMENT_NODE
 					? (node as Element)
 					: flatParentElement(node);
 				ancestor !== null && ancestor !== container;
@@ -1834,7 +1834,7 @@ function renderEditingCaret(
 	const point = getEditingCaretPoint(painter.document);
 	if (
 		point === null ||
-		!containsOf(element, point.node) ||
+		!nodeContains(element, point.node) ||
 		painter.document.getSelection()?.isCollapsed === false
 	) {
 		return;
@@ -1844,7 +1844,7 @@ function renderEditingCaret(
 		setCaretAt(painter, element, ctx, Math.round(rect.x), Math.round(rect.y));
 		return;
 	}
-	const box = nodeTypeOf(point.node) === point.node.ELEMENT_NODE
+	const box = getNodeType(point.node) === point.node.ELEMENT_NODE
 		? (point.node as Element)
 		: (flatParentElement(point.node) ?? element);
 	const content = painter.layout.contentRect(box);

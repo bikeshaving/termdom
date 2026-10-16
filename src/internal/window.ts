@@ -25,7 +25,7 @@ import {
 	processTimers,
 	reportError,
 	runtime,
-	setAttributeOf,
+	setAttributeByName,
 	startPendingImages,
 	toImageDimension,
 	Window,
@@ -134,10 +134,10 @@ export function buildWindow(document: Document): Window {
 		}
 		const image = document.createElement("img");
 		if (width !== undefined) {
-			setAttributeOf(image, "width", String(toImageDimension(width)));
+			setAttributeByName(image, "width", String(toImageDimension(width)));
 		}
 		if (height !== undefined) {
-			setAttributeOf(image, "height", String(toImageDimension(height)));
+			setAttributeByName(image, "height", String(toImageDimension(height)));
 		}
 		return image;
 	} as unknown as typeof HTMLImageElement;

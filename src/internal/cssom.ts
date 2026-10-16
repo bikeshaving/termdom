@@ -16,7 +16,7 @@ import {
 import * as CSSTree from "./csstree.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
-	appendChildOf,
+	appendChildNode,
 	constructInternal,
 	dispatchAsUserAgent,
 	type Document as DOMDocument,
@@ -45,7 +45,7 @@ import {
 	pseudoElementCount,
 	releaseRemovedNodes,
 	reobserveShadowRoot,
-	setAttributeOf,
+	setAttributeByName,
 	setStyleHooks,
 	styleElementCount,
 	TransitionEvent,
@@ -63,8 +63,8 @@ import {
 	_maybe,
 	adopt as adoptSlots,
 	declareSealedRoot,
+	getOwner,
 	type internals,
-	ownerOf,
 	seal,
 	type Slots,
 	type Step,
@@ -72,19 +72,19 @@ import {
 import {getStringWidth, splitOnASCIIWhitespace} from "./text.ts";
 import {clearTimeout, queueMicrotask, setTimeout} from "./timers.ts";
 import {
-	attributeOf,
-	containsOf,
 	ELEMENT_NODE,
 	getAttributeList,
+	getAttributeValue,
 	getDocumentExchange,
-	hasAttributeOf,
+	getLocalName,
+	getNamespace,
+	getNodeType,
+	getOwnerDocument,
+	hasAttributeByName,
 	HTML_NAMESPACE,
-	localNameOf,
 	MATHML_NAMESPACE,
-	namespaceOf,
 	nextInTree,
-	nodeTypeOf,
-	ownerDocumentOf,
+	nodeContains,
 } from "./tree.ts";
 import {cellsFromPx, getCellSize, pxFromCells, UNIT_CELL} from "./units.ts";
 import {
@@ -101,13 +101,13 @@ import {windowMember} from "./webidl.ts";
 function getElementDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
-	if (namespaceOf(element) === MATHML_NAMESPACE) {
+	if (getNamespace(element) === MATHML_NAMESPACE) {
 		return getMathMLDefaults(element);
 	}
-	if (namespaceOf(element) !== HTML_NAMESPACE) {
+	if (getNamespace(element) !== HTML_NAMESPACE) {
 		return undefined;
 	}
-	const name = localNameOf(element);
+	const name = getLocalName(element);
 	const document = element.ownerDocument;
 	if (document !== null && document.fullscreenElement === element) {
 		const window = document.defaultView;
@@ -144,7 +144,7 @@ function getElementDefaults(
 		// attribute is set, the spec's 20 otherwise. It lives here rather than
 		// in the sheet so the attribute can override the default without a
 		// width the sheet cannot express (there is no attr() length).
-		const size = parseInt(attributeOf(input, "size") ?? "", 10);
+		const size = parseInt(getAttributeValue(input, "size") ?? "", 10);
 		return {width: `${Number.isFinite(size) && size > 0 ? size : 20}ch`};
 	}
 	return undefined;
@@ -156,15 +156,15 @@ function getMathMLDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
 	let defaults: Record<string, string> | undefined;
-	const color = attributeOf(element, "mathcolor");
+	const color = getAttributeValue(element, "mathcolor");
 	if (color !== null && color.trim() !== "") {
 		(defaults ??= {}).color = color.trim();
 	}
-	const background = attributeOf(element, "mathbackground");
+	const background = getAttributeValue(element, "mathbackground");
 	if (background !== null && background.trim() !== "") {
 		(defaults ??= {})["background-color"] = background.trim();
 	}
-	const displaystyle = attributeOf(element, "displaystyle")
+	const displaystyle = getAttributeValue(element, "displaystyle")
 		?.trim()
 		.toLowerCase();
 	if (displaystyle === "true" || displaystyle === "false") {
@@ -373,7 +373,7 @@ function getBoxModelId(model: CSSValues.BoxModel): string {
 }
 
 export function getBoxModel(element: Element): CSSValues.BoxModel {
-	const document = ownerDocumentOf(element);
+	const document = getOwnerDocument(element);
 	const cascade = document ? documentCascades.get(document) : undefined;
 	const key = cascade?.getStyleKey(element) ?? null;
 	let model = key === null ? undefined : boxModels.get(key);
@@ -456,8 +456,8 @@ function getDefaultMarkerContent(hostElement: Element): string | null {
 // absent on any other.
 function isListItem(element: Element): boolean {
 	return (
-		(localNameOf(element) === "li" &&
-			namespaceOf(element) === HTML_NAMESPACE) ||
+		(getLocalName(element) === "li" &&
+			getNamespace(element) === HTML_NAMESPACE) ||
 		getComputedValue(element, "display") === "list-item"
 	);
 }
@@ -558,7 +558,7 @@ const inlineStyles = new WeakMap<Element, CSSStyleDeclaration>();
 interface CSSStyleDeclarationSlots {
 	// Set on what getComputedStyle() hands a page: a plain declaration
 	// that reads through to the engine's own computed one.
-	viewOf?: CSSStyleDeclaration;
+	computedView?: CSSStyleDeclaration;
 	element: Element | null;
 	parentRule: CSSRule | null;
 	onChange: (() => void) | null;
@@ -611,17 +611,17 @@ class CSSStyleDeclaration {
 
 	get parentRule(): CSSRule | null {
 		const slots = _(this);
-		if (slots.viewOf !== undefined) {
-			return slots.viewOf.parentRule;
+		if (slots.computedView !== undefined) {
+			return slots.computedView.parentRule;
 		}
 		return slots.parentRule;
 	}
 
 	get length(): number {
 		const slots = _(this);
-		if (slots.viewOf !== undefined) {
+		if (slots.computedView !== undefined) {
 			syncViewIndices(this);
-			return slots.viewOf.length;
+			return slots.computedView.length;
 		}
 		slots._sync!();
 		return slots.declarations.length;
@@ -629,8 +629,8 @@ class CSSStyleDeclaration {
 
 	get cssText(): string {
 		const slots = _(this);
-		if (slots.viewOf !== undefined) {
-			return slots.viewOf.cssText;
+		if (slots.computedView !== undefined) {
+			return slots.computedView.cssText;
 		}
 		slots._sync!();
 		return serializeDeclarations(this);
@@ -638,8 +638,8 @@ class CSSStyleDeclaration {
 
 	set cssText(text: string) {
 		const slots = _(this);
-		if (slots.viewOf !== undefined) {
-			slots.viewOf.cssText = text;
+		if (slots.computedView !== undefined) {
+			slots.computedView.cssText = text;
 			return;
 		}
 		slots._sync!();
@@ -662,8 +662,8 @@ class CSSStyleDeclaration {
 
 	item(index: number): string {
 		const slots = _(this);
-		if (slots.viewOf !== undefined) {
-			return slots.viewOf.item(index);
+		if (slots.computedView !== undefined) {
+			return slots.computedView.item(index);
 		}
 		slots._sync!();
 		return slots.declarations[index]?.name ?? "";
@@ -671,9 +671,9 @@ class CSSStyleDeclaration {
 
 	[Symbol.iterator](): IterableIterator<string> {
 		const slots = _(this);
-		if (slots.viewOf !== undefined) {
+		if (slots.computedView !== undefined) {
 			syncViewIndices(this);
-			return slots.viewOf[Symbol.iterator]();
+			return slots.computedView[Symbol.iterator]();
 		}
 		slots._sync!();
 		return slots.declarations.map((entry) => entry.name)[Symbol.iterator]();
@@ -681,8 +681,8 @@ class CSSStyleDeclaration {
 
 	getPropertyValue(property: string): string {
 		const slots = _(this);
-		if (slots.viewOf !== undefined) {
-			return slots.viewOf.getPropertyValue(property);
+		if (slots.computedView !== undefined) {
+			return slots.computedView.getPropertyValue(property);
 		}
 		slots._sync!();
 		const name = CSSValues.normalizePropertyName(property);
@@ -696,8 +696,8 @@ class CSSStyleDeclaration {
 
 	getPropertyPriority(property: string): string {
 		const slots = _(this);
-		if (slots.viewOf !== undefined) {
-			return slots.viewOf.getPropertyPriority(property);
+		if (slots.computedView !== undefined) {
+			return slots.computedView.getPropertyPriority(property);
 		}
 		slots._sync!();
 		const name = CSSValues.normalizePropertyName(property);
@@ -717,8 +717,8 @@ class CSSStyleDeclaration {
 
 	setProperty(property: string, value: string, priority?: string): void {
 		const slots = _(this);
-		if (slots.viewOf !== undefined) {
-			slots.viewOf.setProperty(property, value, priority);
+		if (slots.computedView !== undefined) {
+			slots.computedView.setProperty(property, value, priority);
 			return;
 		}
 		slots._sync!();
@@ -749,8 +749,8 @@ class CSSStyleDeclaration {
 
 	removeProperty(property: string): string {
 		const slots = _(this);
-		if (slots.viewOf !== undefined) {
-			return slots.viewOf.removeProperty(property);
+		if (slots.computedView !== undefined) {
+			return slots.computedView.removeProperty(property);
 		}
 		slots._sync!();
 		const name = CSSValues.normalizePropertyName(property);
@@ -774,7 +774,7 @@ class CSSStyleDeclaration {
 		if (!slots.element) {
 			return;
 		}
-		const text = attributeOf(slots.element, "style") ?? "";
+		const text = getAttributeValue(slots.element, "style") ?? "";
 		if (text === slots.attributeText) {
 			return;
 		}
@@ -783,14 +783,14 @@ class CSSStyleDeclaration {
 		slots.byName.clear();
 		for (const declaration of CSSValues.parseDeclarationText(text)) {
 			applyDeclaration(
-				ownerOf(this),
+				getOwner(this),
 				declaration.name,
 				declaration.value,
 				declaration.important,
 				true,
 			);
 		}
-		invalidateDeclaration(ownerOf(this));
+		invalidateDeclaration(getOwner(this));
 	}
 }
 
@@ -931,7 +931,7 @@ function flushStyleAttribute(declaration: CSSStyleDeclaration): void {
 	const declarationSlots = _(declaration);
 	if (declarationSlots.element) {
 		declarationSlots.attributeText = serializeDeclarations(declaration);
-		setAttributeOf(
+		setAttributeByName(
 			declarationSlots.element,
 			"style",
 			declarationSlots.attributeText,
@@ -1172,7 +1172,7 @@ function getPageView(
 		_(view).indexed = 0;
 		views.set(pseudoElement, view);
 	}
-	_(view).viewOf = source;
+	_(view).computedView = source;
 	syncViewIndices(view);
 	return view;
 }
@@ -1181,7 +1181,7 @@ function getPageView(
 // its indices follow its length each time the page reads it.
 function syncViewIndices(view: CSSStyleDeclaration): void {
 	const viewSlots = _(view);
-	const length = viewSlots.viewOf!.length;
+	const length = viewSlots.computedView!.length;
 	for (let index = viewSlots.indexed; index < length; index++) {
 		Object.defineProperty(view, index, {
 			get(this: CSSStyleDeclaration): string {
@@ -3020,7 +3020,7 @@ class CSSStyleSheet {
 		}
 		slots.text = text;
 		slots.rules.length = 0;
-		slots.rules.push(...parseRules(text, ownerOf(this), null));
+		slots.rules.push(...parseRules(text, getOwner(this), null));
 		syncIndexed(slots.ruleList);
 	}
 }
@@ -3709,9 +3709,9 @@ function getShadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
 }
 
 function getTreeCascade(tree: Node): Cascade | undefined {
-	const document = nodeTypeOf(tree) === tree.DOCUMENT_NODE
+	const document = getNodeType(tree) === tree.DOCUMENT_NODE
 		? (tree as Document)
-		: ownerDocumentOf(tree);
+		: getOwnerDocument(tree);
 	return document ? documentCascades.get(document) : undefined;
 }
 
@@ -3930,7 +3930,7 @@ function readComputedValue(
 	const host = getPseudoHost(element);
 	if (host !== null) {
 		const name = getPseudoName(element) as string;
-		const hostDocument = ownerDocumentOf(host);
+		const hostDocument = getOwnerDocument(host);
 		const cascade = hostDocument
 			? documentCascades.get(hostDocument)
 			: undefined;
@@ -3938,7 +3938,7 @@ function readComputedValue(
 			? getPseudoDeclaration(cascade, host, name).nodeValue(property)
 			: getComputedValue(host, property, name);
 	}
-	const document = ownerDocumentOf(element);
+	const document = getOwnerDocument(element);
 	if (!document) {
 		return "";
 	}
@@ -4228,9 +4228,9 @@ const UNSHARED_ELEMENTS = new Set(["select", "ul", "ol"]);
 
 function isShareable(element: Element): boolean {
 	return (
-		namespaceOf(element) === HTML_NAMESPACE &&
-		!UNSHARED_ELEMENTS.has(localNameOf(element)) &&
-		attributeOf(element, "dir") !== "auto" &&
+		getNamespace(element) === HTML_NAMESPACE &&
+		!UNSHARED_ELEMENTS.has(getLocalName(element)) &&
+		getAttributeValue(element, "dir") !== "auto" &&
 		element.ownerDocument?.fullscreenElement !== element &&
 		getPseudoHost(element) === null
 	);
@@ -4256,7 +4256,7 @@ function getSharedResolved(
 	if (!isShareable(element)) {
 		return new Map();
 	}
-	let key = localNameOf(element);
+	let key = getLocalName(element);
 	for (const rule of rules) {
 		const id = getRuleId(rule);
 		if (id === -1) {
@@ -4465,14 +4465,14 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	_usedValue(this: Slots<ComputedStyleDeclaration>, property: string): string {
 		const slots = this;
 		const cascade = slots.cascade!;
-		const used = getUsedValues(cascade, ownerOf(this));
+		const used = getUsedValues(cascade, getOwner(this));
 		const memoized = used.get(property);
 		if (memoized !== undefined) {
 			return memoized;
 		}
 
 		const computed = slots._computedValue(property);
-		const value = measureUsedValue(ownerOf(this), property, computed);
+		const value = measureUsedValue(getOwner(this), property, computed);
 		used.set(property, value);
 		return value;
 	}
@@ -4490,8 +4490,8 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 					slots._baseValue(longhand),
 				)
 				: getAbsolutizedValue(
-					ownerOf(this),
-					toPhysicalProperty(ownerOf(this), property),
+					getOwner(this),
+					toPhysicalProperty(getOwner(this), property),
 				);
 			slots.resolved.set(property, value);
 		}
@@ -4518,9 +4518,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			slots.cssRules,
 		);
 		slots.styleVersion = {};
-		dropUsedValues(slots.cascade, ownerOf(this));
+		dropUsedValues(slots.cascade, getOwner(this));
 		if ((this as IndexedSlots).indexCount !== undefined) {
-			syncIndexed(ownerOf(this));
+			syncIndexed(getOwner(this));
 		}
 		// The re-resolution is a style change event. Whatever changed against
 		// the last snapshot starts, retargets or cancels transitions.
@@ -4570,7 +4570,7 @@ function getDeclaredCustomNames(
 		}
 	}
 	for (const name of Object.keys(
-		getInlineDeclarations(ownerOf(slots)).declarations,
+		getInlineDeclarations(getOwner(slots)).declarations,
 	)) {
 		if (name.startsWith("--") && !names.includes(name)) {
 			names.push(name);
@@ -5105,7 +5105,7 @@ function getInlineDeclarations(
 	if (block === null) {
 		const element = declarationSlots.element;
 		let style = inlineStyles.get(element);
-		if (style === undefined && hasAttributeOf(element, "style")) {
+		if (style === undefined && hasAttributeByName(element, "style")) {
 			getInlineStyle(element);
 			style = inlineStyles.get(element);
 		}
@@ -5202,7 +5202,7 @@ const declaredDisplays = new WeakMap<ComputedStyleDeclaration, string>();
  * display, blockified.
  */
 export function getDeclaredDisplay(element: Element): string {
-	const document = ownerDocumentOf(element);
+	const document = getOwnerDocument(element);
 	const cascade = document ? documentCascades.get(document) : undefined;
 	if (getPseudoHost(element) !== null || cascade === undefined) {
 		return getComputedValue(element, "display");
@@ -5423,8 +5423,8 @@ function resolvePropertyValueRaw(
 	// take precedence over anything inherited.
 	const element = declarationSlots.element;
 	const isList =
-		namespaceOf(element) === HTML_NAMESPACE &&
-		(localNameOf(element) === "ul" || localNameOf(element) === "ol");
+		getNamespace(element) === HTML_NAMESPACE &&
+		(getLocalName(element) === "ul" || getLocalName(element) === "ol");
 
 	// A list's marker gutter is sized to its widest marker rather than
 	// taken from the static table, so it has to be resolved first.
@@ -5438,7 +5438,7 @@ function resolvePropertyValueRaw(
 	// does not leak into a nested one, while an author rule that matches
 	// the nested list still wins because step 2 already returned it.
 	if (property === "list-style-type" && isList) {
-		if (localNameOf(element) === "ol") {
+		if (getLocalName(element) === "ol") {
 			return "decimal";
 		}
 		const bullets = ["disc", "circle", "square"];
@@ -5640,7 +5640,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		slots.resolved = new Map();
 		slots.nodeResolved.clear();
 		if ((this as IndexedSlots).indexCount !== undefined) {
-			syncIndexed(ownerOf(this));
+			syncIndexed(getOwner(this));
 		}
 		if (slots.cascade && slots.element && slots.pseudoElement) {
 			processTransitionStyle(
@@ -5691,7 +5691,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			const node = pseudoElement<Element>(originating, slots.pseudoElement);
 			if (node) {
 				return measureUsedValue(
-					getBoxView(ownerOf(this), node),
+					getBoxView(getOwner(this), node),
 					property,
 					computed,
 				);
@@ -5700,7 +5700,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		if (!computed.endsWith("%")) {
 			return computed;
 		}
-		const display = ownerOf(this).getPropertyValue("display");
+		const display = getOwner(this).getPropertyValue("display");
 		if (display === "none" || display === "contents") {
 			return computed;
 		}
@@ -5736,7 +5736,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			slots._syncResolved();
 		}
 		const value = slots._baseValue(property);
-		const transitional = getPseudoTransitionValue(ownerOf(this), property);
+		const transitional = getPseudoTransitionValue(getOwner(this), property);
 		return transitional ?? value;
 	}
 }
@@ -5945,13 +5945,13 @@ export function resolveBorderSides(element: Element): BorderSides {
 function getListItemOrdinal(listItem: Element, listParent: Element): number {
 	const items = getListItems(listParent);
 
-	const reversed = hasAttributeOf(listParent, "reversed");
-	const start = parseInt(attributeOf(listParent, "start") ?? "", 10);
+	const reversed = hasAttributeByName(listParent, "reversed");
+	const start = parseInt(getAttributeValue(listParent, "start") ?? "", 10);
 
 	let counter = Number.isFinite(start) ? start : reversed ? items.length : 1;
 
 	for (const item of items) {
-		const value = parseInt(attributeOf(item, "value") ?? "", 10);
+		const value = parseInt(getAttributeValue(item, "value") ?? "", 10);
 		if (Number.isFinite(value)) {
 			counter = value;
 		}
@@ -6152,9 +6152,9 @@ function attachPseudoElementsToElement(
 	if (
 		tags !== null &&
 		!tags.has(element.tagName) &&
-		!hasAttributeOf(element, "part") &&
+		!hasAttributeByName(element, "part") &&
 		pseudoElementCount(element) === 0 &&
-		!(attributeOf(element, "style") ?? "").includes("list-item")
+		!(getAttributeValue(element, "style") ?? "").includes("list-item")
 	) {
 		return;
 	}
@@ -6169,7 +6169,8 @@ const FOCUS_STATES = ["focus", "focus-within", "focus-visible"];
 function isStyleElement(element: Element): boolean {
 	return (
 		element.tagName === "STYLE" ||
-		(element.tagName === "LINK" && attributeOf(element, "rel") === "stylesheet")
+		(element.tagName === "LINK" &&
+			getAttributeValue(element, "rel") === "stylesheet")
 	);
 }
 
@@ -6180,7 +6181,7 @@ function isStyleElement(element: Element): boolean {
 function mutationChangesListItems(mutation: MutationRecord): boolean {
 	const target = mutation.target;
 	if (
-		nodeTypeOf(target) === 1 &&
+		getNodeType(target) === 1 &&
 		((target as Element).tagName === "UL" ||
 			(target as Element).tagName === "OL")
 	) {
@@ -6188,7 +6189,7 @@ function mutationChangesListItems(mutation: MutationRecord): boolean {
 	}
 	for (const list of [getAddedNodes(mutation), getRemovedNodes(mutation)]) {
 		for (const node of list) {
-			if (nodeTypeOf(node) !== 1) {
+			if (getNodeType(node) !== 1) {
 				continue;
 			}
 			const element = node as Element;
@@ -6500,7 +6501,7 @@ export class Cascade {
 	// resolved-value branch. Called thousands of times per frame, so it does
 	// the least it can.
 	declarationFor(element: Element): ComputedStyleDeclaration {
-		return ownerOf(computedSlotsFor(this, element));
+		return getOwner(computedSlotsFor(this, element));
 	}
 
 	/**
@@ -6559,7 +6560,7 @@ export function handleMutations(
 	if (cascade.hasRulesExist) {
 		const anchors = new Set<Element>();
 		for (const mutation of mutations) {
-			const start = nodeTypeOf(mutation.target) === 1
+			const start = getNodeType(mutation.target) === 1
 				? (mutation.target as Element)
 				: mutation.target.parentElement;
 			for (
@@ -6609,7 +6610,7 @@ export function handleMutations(
 			}
 
 			for (const node of getAddedNodes(mutation)) {
-				if (nodeTypeOf(node) === Node.ELEMENT_NODE) {
+				if (getNodeType(node) === Node.ELEMENT_NODE) {
 					const element = node as Element;
 					if (isStyleElement(element)) {
 						const addedRoot = element.tagName === "STYLE"
@@ -6631,7 +6632,7 @@ export function handleMutations(
 							next !== null;
 							next = nextInTree(next, element as unknown as DOMNode)
 						) {
-							if (nodeTypeOf(next) === Node.ELEMENT_NODE) {
+							if (getNodeType(next) === Node.ELEMENT_NODE) {
 								elements.push(next as unknown as Element);
 							}
 						}
@@ -6657,7 +6658,7 @@ export function handleMutations(
 			}
 
 			for (const node of getRemovedNodes(mutation)) {
-				if (nodeTypeOf(node) === Node.ELEMENT_NODE) {
+				if (getNodeType(node) === Node.ELEMENT_NODE) {
 					const element = node as Element;
 					if (isStyleElement(element)) {
 						shouldSyncStylesheets = true;
@@ -6674,7 +6675,7 @@ export function handleMutations(
 			// per parent per batch: appending n children one at a time
 			// is n records against the same parent.
 			if (
-				nodeTypeOf(mutation.target) === Node.ELEMENT_NODE &&
+				getNodeType(mutation.target) === Node.ELEMENT_NODE &&
 				getSiblingIndex(cascade, mutation.target as Element)?.reachesSiblings
 			) {
 				changedParents.add(mutation.target as Element);
@@ -6684,7 +6685,8 @@ export function handleMutations(
 			// A value written over itself changes no style.
 			if (
 				mutation.oldValue !== null &&
-				mutation.oldValue === attributeOf(element, mutation.attributeName!)
+				mutation.oldValue ===
+				getAttributeValue(element, mutation.attributeName!)
 			) {
 				continue;
 			}
@@ -6692,7 +6694,7 @@ export function handleMutations(
 			// belong to other elements than the one changed.
 			if (
 				LIST_NUMBERING_ATTRIBUTES.has(mutation.attributeName!) &&
-				(localNameOf(element) === "ol" || localNameOf(element) === "li")
+				(getLocalName(element) === "ol" || getLocalName(element) === "li")
 			) {
 				noteCounterChange(cascade, element);
 				cascade.layout.invalidateFrame();
@@ -6961,7 +6963,7 @@ export function getMarkerContent(
 	cascade: Cascade,
 	hostElement: Element,
 ): string | null {
-	if (!hostElement || nodeTypeOf(hostElement) !== hostElement.ELEMENT_NODE) {
+	if (!hostElement || getNodeType(hostElement) !== hostElement.ELEMENT_NODE) {
 		return null;
 	}
 
@@ -7140,10 +7142,10 @@ function getHasAnchors(selector: string): string[] {
 
 function couldAnchorHas(cascade: Cascade, element: Element): boolean {
 	const anchors = cascade.hasAnchors;
-	if (anchors.has("*") || anchors.has(localNameOf(element).toLowerCase())) {
+	if (anchors.has("*") || anchors.has(getLocalName(element).toLowerCase())) {
 		return true;
 	}
-	const id = attributeOf(element, "id");
+	const id = getAttributeValue(element, "id");
 	if (id !== null && anchors.has(`#${id}`)) {
 		return true;
 	}
@@ -7310,7 +7312,7 @@ function splitArguments(args: string): string[] {
 
 function *flatDescendants(element: Element): Generator<Element> {
 	for (const child of flatChildren(element)) {
-		if (nodeTypeOf(child) === ELEMENT_NODE) {
+		if (getNodeType(child) === ELEMENT_NODE) {
 			yield child as Element;
 			yield *flatDescendants(child as Element);
 		}
@@ -7610,7 +7612,7 @@ function attributeReachesDescendants(
 		}
 		return inlineChangeReachesDescendants(
 			oldValue,
-			attributeOf(element, "style") ?? "",
+			getAttributeValue(element, "style") ?? "",
 		);
 	}
 	if (name === "class") {
@@ -7622,7 +7624,7 @@ function attributeReachesDescendants(
 		}
 		// With no old value, the classes that LEFT cannot be known.
 		if (oldValue === null) {
-			return hasAttributeOf(element, "class");
+			return hasAttributeByName(element, "class");
 		}
 		// Only the classes that came or went can have changed a match.
 		const before = new Set(oldValue.split(/\s+/));
@@ -7648,7 +7650,7 @@ function attributeReachesDescendants(
 		if (oldValue !== null && cascade.reachingIds.has(oldValue)) {
 			return true;
 		}
-		const id = attributeOf(element, "id");
+		const id = getAttributeValue(element, "id");
 		return id !== null && cascade.reachingIds.has(id);
 	}
 	if (cascade.reachingAttributes.has(name)) {
@@ -8047,8 +8049,8 @@ function countCounters(
 		const [each, which] = top;
 		const needs: Array<[Element, "start" | "end"]> = [];
 		if (which === "start") {
-			const sibling = tree.previousOf(each);
-			const parent = tree.parentOf(each);
+			const sibling = tree.getPreviousSibling(each);
+			const parent = tree.getParent(each);
 			if (sibling !== null) {
 				needs.push([sibling, "start"], [sibling, "end"]);
 			} else if (parent !== null) {
@@ -8056,7 +8058,7 @@ function countCounters(
 			}
 		} else {
 			needs.push([each, "start"]);
-			const last = tree.lastOf(each);
+			const last = tree.getLastChild(each);
 			if (last !== null) {
 				needs.push([last, "start"], [last, "end"]);
 			}
@@ -8079,20 +8081,20 @@ function countCounters(
 // shadow tree's content is its host's and a slot's assigned nodes are
 // its own. Each parent's children are listed once a count.
 interface FlatElementTree {
-	parentOf(element: Element): Element | null;
-	previousOf(element: Element): Element | null;
-	lastOf(element: Element): Element | null;
+	getParent(element: Element): Element | null;
+	getPreviousSibling(element: Element): Element | null;
+	getLastChild(element: Element): Element | null;
 }
 
 function createFlatElementTree(): FlatElementTree {
 	const children = new Map<Element, Element[]>();
 	const indices = new Map<Element, number>();
-	const childrenOf = (parent: Element): Element[] => {
+	const getChildList = (parent: Element): Element[] => {
 		let list = children.get(parent);
 		if (list === undefined) {
 			list = [];
 			for (const child of flatChildren(parent)) {
-				if (nodeTypeOf(child) === ELEMENT_NODE) {
+				if (getNodeType(child) === ELEMENT_NODE) {
 					indices.set(child as Element, list.length);
 					list.push(child as Element);
 				}
@@ -8102,17 +8104,17 @@ function createFlatElementTree(): FlatElementTree {
 		return list;
 	};
 	return {
-		parentOf: (element) => flatParentElement(element) as Element | null,
-		previousOf: (element) => {
+		getParent: (element) => flatParentElement(element) as Element | null,
+		getPreviousSibling: (element) => {
 			const parent = flatParentElement(element) as Element | null;
 			if (parent === null) {
 				return null;
 			}
-			const list = childrenOf(parent);
+			const list = getChildList(parent);
 			const index = indices.get(element) ?? -1;
 			return index > 0 ? list[index - 1] : null;
 		},
-		lastOf: (element) => childrenOf(element).at(-1) ?? null,
+		getLastChild: (element) => getChildList(element).at(-1) ?? null,
 	};
 }
 
@@ -8131,8 +8133,8 @@ function countStart(
 	tree: FlatElementTree,
 ): void {
 	cascade.countersCounted = true;
-	const sibling = tree.previousOf(element);
-	const parent = tree.parentOf(element);
+	const sibling = tree.getPreviousSibling(element);
+	const parent = tree.getParent(element);
 	const parentStart = parent === null ? null : cascade.counterSets.get(parent)!;
 	const inherited = sibling !== null
 		? inherit(
@@ -8172,7 +8174,7 @@ function countEnd(
 	tree: FlatElementTree,
 ): void {
 	const start = cascade.counterSets.get(element)!;
-	const last = tree.lastOf(element);
+	const last = tree.getLastChild(element);
 	const base = last === null ? start.inner : cascade.counterSets.get(last)!.own;
 	const preceding = last === null
 		? start.inner
@@ -8228,7 +8230,7 @@ function getElementCounterEffects(
 	const slots = _(cascade.declarationFor(element));
 	const declares =
 		cascade.counterRulesExist ||
-		(attributeOf(element, "style") ?? "").includes("counter");
+		(getAttributeValue(element, "style") ?? "").includes("counter");
 	const effects = readCounterEffects((property) =>
 		declares ? (slots._computedValue(property) ?? undefined) : undefined,
 	);
@@ -8245,10 +8247,10 @@ function getElementCounterEffects(
 		if (!names(effects.increments).includes("list-item")) {
 			effects.increments.push([
 				"list-item",
-				list?.tagName === "OL" && hasAttributeOf(list, "reversed") ? -1 : 1,
+				list?.tagName === "OL" && hasAttributeByName(list, "reversed") ? -1 : 1,
 			]);
 		}
-		const value = parseInt(attributeOf(element, "value") ?? "", 10);
+		const value = parseInt(getAttributeValue(element, "value") ?? "", 10);
 		if (Number.isFinite(value) && !names(effects.sets).includes("list-item")) {
 			effects.sets.push(["list-item", value]);
 		}
@@ -8345,8 +8347,8 @@ function getListStart(list: Element): number {
 	if (list.tagName !== "OL") {
 		return 0;
 	}
-	const reversed = hasAttributeOf(list, "reversed");
-	const start = parseInt(attributeOf(list, "start") ?? "", 10);
+	const reversed = hasAttributeByName(list, "reversed");
+	const start = parseInt(getAttributeValue(list, "start") ?? "", 10);
 	if (reversed) {
 		return (Number.isFinite(start) ? start : getListItems(list).length) + 1;
 	}
@@ -8489,7 +8491,7 @@ function processTransitionStyle(
 	if (!cascade.transitionsExist && !active) {
 		// An inline transition written right before this event may not have
 		// parsed yet. The attribute text is the one place it already shows.
-		const attribute = attributeOf(element, "style");
+		const attribute = getAttributeValue(element, "style");
 		if (!attribute || !attribute.includes("transition")) {
 			return;
 		}
@@ -9064,7 +9066,7 @@ function changeReachesLaterSiblings(
 		return false;
 	}
 	if (attributeName === "id") {
-		const id = attributeOf(element, "id");
+		const id = getAttributeValue(element, "id");
 		return (oldValue !== null && keys.has(`#${oldValue}`)) ||
 			(id !== null && keys.has(`#${id}`)) ||
 			keys.has("[id]");
@@ -9078,7 +9080,7 @@ function isSiblingTested(index: SiblingIndex, element: Element): boolean {
 		return true;
 	}
 	const keys = index.keys;
-	if (keys.has(localNameOf(element))) {
+	if (keys.has(getLocalName(element))) {
 		return true;
 	}
 	for (const name of getClassTokens(element)) {
@@ -9086,7 +9088,7 @@ function isSiblingTested(index: SiblingIndex, element: Element): boolean {
 			return true;
 		}
 	}
-	const id = attributeOf(element, "id");
+	const id = getAttributeValue(element, "id");
 	if (id !== null && keys.has(`#${id}`)) {
 		return true;
 	}
@@ -9237,7 +9239,7 @@ function isPaintOnlyChange(
 			}
 		}
 	} else if (name === "id") {
-		for (const token of [oldValue, attributeOf(element, "id")]) {
+		for (const token of [oldValue, getAttributeValue(element, "id")]) {
 			if (token !== null && token !== "") {
 				keys.push(`#${token}`);
 			}
@@ -9262,7 +9264,7 @@ function isPaintOnlyChange(
 // mutationChangesListItems for why this lives in the cascade.
 function invalidateEnclosingList(cascade: Cascade, target: Node): void {
 	let element: Element | null =
-		nodeTypeOf(target) ===
+		getNodeType(target) ===
 		cascade.window.Node.ELEMENT_NODE
 			? (target as Element)
 			: target.parentElement;
@@ -10086,10 +10088,10 @@ function couldAnchor(element: Element, anchor: StateAnchor): boolean {
 		return false;
 	}
 	return (
-		(anchor.tag === null || anchor.tag === localNameOf(element)) &&
+		(anchor.tag === null || anchor.tag === getLocalName(element)) &&
 		anchor.classes.every((name) => getClassTokens(element).has(name)) &&
 		anchor.ids.every((id) => element.id === id) &&
-		anchor.attributes.every((name) => hasAttributeOf(element, name))
+		anchor.attributes.every((name) => hasAttributeByName(element, name))
 	);
 }
 
@@ -10489,7 +10491,7 @@ function getCandidateRules(
 	const index = getRuleIndex(cascade);
 	const id = getIdValue(element);
 	const classes = getClassTokens(element);
-	const tag = localNameOf(element);
+	const tag = getLocalName(element);
 	let key = id === null ? tag : `${tag} #${id}`;
 	for (const name of classes) {
 		key += ` .${name}`;
@@ -10534,7 +10536,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	const partPseudos = getPartPseudos(element, root as unknown as Node);
 	const rootNode = root as unknown as Node;
 	const shadowHost = isShadowRoot(root) ? root.host : null;
-	const partNames = (attributeOf(element, "part") ?? "")
+	const partNames = (getAttributeValue(element, "part") ?? "")
 		.split(/\s+/)
 		.filter(Boolean);
 	const matched = getCandidateRules(cascade, element).filter((rule) => {
@@ -10666,7 +10668,7 @@ function getScopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
 			candidate;
 			candidate = candidate.parentElement
 		) {
-			if (outer && candidate !== outer && !containsOf(outer, candidate)) {
+			if (outer && candidate !== outer && !nodeContains(outer, candidate)) {
 				break;
 			}
 			if (!isScopeRootMatch(candidate, condition, outer)) {
@@ -10697,7 +10699,7 @@ function getPartPseudos(element: Element, root: Node): string[] {
 	if (!isUAShadowTree(root)) {
 		return [];
 	}
-	const part = attributeOf(element, "part");
+	const part = getAttributeValue(element, "part");
 	if (part === null) {
 		return [];
 	}
@@ -10727,7 +10729,7 @@ function isRuleMatch(
 			return false;
 		}
 	} else if (rule.subjectTag !== undefined && !rule.reachesHost) {
-		const local = localNameOf(element);
+		const local = getLocalName(element);
 		// A foreign element's local name keeps its case (feGaussianBlur), so
 		// the rejection fires only when neither reading matches. The matcher
 		// decides the case sensitivity a selector really has.
@@ -10883,7 +10885,7 @@ function pseudoRuleCouldMatch(
 			element.tagName === "LI" ||
 			element.tagName === "SUMMARY" ||
 			cascade.listItemRulesExist ||
-			(attributeOf(element, "style") ?? "").includes("list-item")
+			(getAttributeValue(element, "style") ?? "").includes("list-item")
 		);
 	}
 	const rules = cascade.pseudoRulesByType.get(pseudoType);
@@ -10909,14 +10911,14 @@ function pseudoRuleCouldMatch(
 // whatever its case.
 function subjectCouldMatch(element: Element, rule: ParsedCSSRule): boolean {
 	if (rule.ofPart) {
-		return hasAttributeOf(element, "part");
+		return hasAttributeByName(element, "part");
 	}
 	if (rule.reachesHost) {
 		return true;
 	}
 	const tag = rule.subjectTag;
 	if (tag !== undefined) {
-		const local = localNameOf(element);
+		const local = getLocalName(element);
 		if (local !== tag && local.toLowerCase() !== tag) {
 			return false;
 		}
@@ -10994,7 +10996,7 @@ function attachPseudoElementToElementForType(
 	}
 	const node = ensurePseudoElement<Element>(element, pseudoType);
 	cascade.pseudoHosts.add(element);
-	appendChildOf(node, element.ownerDocument.createTextNode(content));
+	appendChildNode(node, element.ownerDocument.createTextNode(content));
 	cascade.layout.invalidate();
 	cascade.layout.invalidate(element);
 }
