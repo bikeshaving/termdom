@@ -1131,6 +1131,7 @@ function computePaintExtents(
 		extent.frame === frame &&
 		(settled ||
 			(node.settled &&
+				!node.movedSinceExtents &&
 				node.measure === null &&
 				!node.lostChild &&
 				extent.left === left &&
@@ -1159,7 +1160,7 @@ function computePaintExtents(
 			(node.measure !== null &&
 				(shifted ||
 					(!settled &&
-						!node.settled &&
+						(!node.settled || node.movedSinceExtents) &&
 						!isSameLines(node, lineRecords.get(node), lines))));
 		if (lines !== undefined) {
 			lineRecords.set(node, lines);
@@ -1232,7 +1233,7 @@ function computePaintExtents(
 			child,
 			left,
 			top,
-			settled || node.settled,
+			settled || (node.settled && !node.movedSinceExtents),
 			fixed,
 			frame,
 		);
@@ -1278,6 +1279,7 @@ function computePaintExtents(
 			bottom = Math.max(bottom, child.grid.top + childExtent.overflowBottom);
 		}
 	}
+	node.movedSinceExtents = false;
 	extent.frame = frame;
 	extent.origin = top;
 	extent.left = left;
@@ -3906,6 +3908,11 @@ function hasPercentage(
 	);
 }
 
+// How many times a measure has laid out an atomic inline's own content.
+// A probe that did leaves that content at the probe's width, so the box
+// it measured cannot keep the layout it was placed with.
+let contextLayouts = 0;
+
 function collectLeaves(
 	layout: Layout,
 	root: Node,
@@ -4180,6 +4187,7 @@ function collectLeaves(
 						contentHeightMode === "definite" ? contentHeight : Number.NaN,
 					);
 					computePaintExtents(layout, independentFormattingContext, 0, 0);
+					contextLayouts++;
 					finalContentWidth = getComputedWidth(independentFormattingContext);
 					finalContentHeight = getComputedHeight(independentFormattingContext);
 				} else {
@@ -8091,6 +8099,7 @@ function recordReads(
 	measure: Measure,
 ): Measure {
 	return (width, widthSpace, placing, left) => {
+		const contextLayoutsBefore = contextLayouts;
 		const reads: Array<Element | string> = [];
 		// Reads come in runs on one element, and a run reads few
 		// properties, so a read is looked for only in its own run.
@@ -8107,6 +8116,9 @@ function recordReads(
 			}
 			reads.push(element, read, value);
 		}, () => measure(width, widthSpace, placing, left));
+		if (!placing && contextLayouts !== contextLayoutsBefore) {
+			node.hasCachedLayout = false;
+		}
 		forgetReads(node);
 		if (layout.measureNodes.has(node)) {
 			for (let i = 0; i < reads.length; i += 3) {
