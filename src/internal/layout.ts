@@ -6999,6 +6999,14 @@ export class Layout {
 	// reparse, a shadow attachment, the bidi flip), and the record of what
 	// is derived is dropped whole.
 	invalidate(node?: Node): void {
+		// Before the first pass nothing is derived, and that pass builds the
+		// whole tree from the styles as they are then. Walking the tree now,
+		// as attaching a page to its terminal does, matched every rule
+		// against every element for nothing.
+		if (!this.nodeMap.has(this.rootElement)) {
+			this.invalidateFrame();
+			return;
+		}
 		if (node === undefined) {
 			// Every box re-derives, and takes its style as it does. The root
 			// element is no container's box, so it is restyled on its own.
