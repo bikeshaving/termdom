@@ -16,6 +16,7 @@ import {
 	hasLayoutOrPaintContainment,
 	readStyleAgain,
 	recordStyleReads,
+	resolveLength,
 	toCellBorder,
 	toCellLength,
 	toWholeCells,
@@ -61,6 +62,7 @@ import {
 	type Justify,
 	LayoutNode,
 	type Measure,
+	NO_TRANSLATION,
 	type PositionType,
 	releaseCache,
 	resolveValue,
@@ -69,6 +71,7 @@ import {
 	type Sizing,
 	type Style,
 	toValue,
+	type Translation,
 	type Wrap,
 } from "./layoutsolver.ts";
 import {
@@ -803,6 +806,76 @@ function applyMinMax(style: Style, element: Element): void {
 }
 
 const INSET_EDGES = ["left", "top", "right", "bottom"] as const;
+
+const TRANSFORM_FUNCTION = /([a-z0-9]+)\(([^()]*)\)/gi;
+const LENGTH = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)([a-z]*|%)$/i;
+
+// The part of `translate` and `transform` that moves the box, which is the
+// part a grid of cells can draw. A rotation, scale or skew draws the box
+// as it is.
+function getTranslation(element: Element): Translation {
+	const translation = {x: 0, y: 0, xPercent: 0, yPercent: 0};
+	const add = (value: string | undefined, vertical: boolean, unit = "") => {
+		const match = LENGTH.exec((value ?? "").trim());
+		if (match === null) {
+			return;
+		}
+		const number = parseFloat(match[1]);
+		if (match[2] === "%") {
+			translation[vertical ? "yPercent" : "xPercent"] += number;
+			return;
+		}
+		const px = match[2] === "" && unit === ""
+			? number === 0 ? 0 : null
+			: resolveLength(element, number, match[2] || unit, vertical);
+		const cells = px === null ? null : toCellLength(px, vertical, element);
+		if (typeof cells === "number") {
+			translation[vertical ? "y" : "x"] += cells;
+		}
+	};
+
+	const translate = getComputedValue(element, "translate");
+	if (translate !== "" && translate !== "none") {
+		const [x, y] = translate.trim().split(/\s+/);
+		add(x, false);
+		add(y, true);
+	}
+
+	const transform = getComputedValue(element, "transform");
+	if (transform !== "" && transform !== "none") {
+		for (const [, name, args] of transform.matchAll(TRANSFORM_FUNCTION)) {
+			const values = args.split(",");
+			switch (name.toLowerCase()) {
+				case "translate":
+				case "translate3d":
+					add(values[0], false);
+					add(values[1], true);
+					break;
+				case "translatex":
+					add(values[0], false);
+					break;
+				case "translatey":
+					add(values[0], true);
+					break;
+				case "matrix":
+					add(values[4], false, "px");
+					add(values[5], true, "px");
+					break;
+				case "matrix3d":
+					add(values[12], false, "px");
+					add(values[13], true, "px");
+					break;
+			}
+		}
+	}
+
+	return translation.x === 0 &&
+		translation.y === 0 &&
+		translation.xPercent === 0 &&
+		translation.yPercent === 0
+		? NO_TRANSLATION
+		: translation;
+}
 
 // `auto` is a declaration only an absolute box acts on ("wherever the
 // box would have been"). A relative or fixed box takes no offset on that
@@ -1693,6 +1766,7 @@ function styleLayoutNodeProperties(
 
 	const position = getPosition(element);
 	style.containsPositioned = establishesFixedContainingBlock(element);
+	style.translate = getTranslation(element);
 	// How the stacking-context painter finds positioned boxes without an
 	// O(document) sweep per frame.
 	if (positionedElements) {

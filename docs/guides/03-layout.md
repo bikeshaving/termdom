@@ -92,6 +92,13 @@ against the nearest scrolling ancestor. If it has no scrolling
 ancestor, it uses the viewport. A sticky box never leaves the box that
 contains it in normal flow.
 
+The `translate` property, and the translation in a `transform`
+(`translate()`, `translateX()`, `translateY()`, `translate3d()`, and
+the offsets in `matrix()`), draw a box away from where layout put it,
+as in a browser. The box takes clicks where it is drawn, and nothing
+around it moves. A percentage is a share of the box's own size. A
+rotation, scale, or skew has no effect, so the box is drawn as it is.
+
 `overflow: hidden` clips content to the box. `overflow: auto` and
 `overflow: scroll` also clip, and they make the box scrollable.
 `scrollTop`, `scrollTo`, `scrollIntoView`, and the mouse wheel scroll
