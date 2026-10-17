@@ -601,6 +601,34 @@ function isMinContent(mode: AvailableSpace, available: number): boolean {
 	return mode === "shrink-to-fit" && available === 0;
 }
 
+// Set while boxes are laid out only for their width, as a table finds its
+// columns and a shrink-to-fit block its widest child. No height is read
+// then, so a block or a table stops once it knows its width, and what is
+// cached under it carries no height.
+let widthOnly = false;
+
+// What a size laid out for its width alone has for a height.
+const NO_HEIGHT = -1;
+
+// Whether the layout in progress skipped a height somewhere below the
+// node it is laying out. A node with nothing skipped under it has a real
+// height, probe or not, and caches it.
+let heightSkipped = false;
+
+// What a probe skips is what it was asked not to find, and the box that
+// asked reads only its width.
+function measureWidth(lay: () => void): void {
+	const outer = widthOnly;
+	const skippedAbove = heightSkipped;
+	widthOnly = true;
+	try {
+		lay();
+	} finally {
+		widthOnly = outer;
+		heightSkipped = skippedAbove;
+	}
+}
+
 // Answers kept per query shape. A table measures what it holds at every
 // width its parent tries, and a nested table at every width each of those
 // gives it.
@@ -832,31 +860,72 @@ export class LayoutNode {
 	}
 
 	performLayout(ownerWidth: number, ownerHeight: number): void {
-		const width = resolveValue(this.style.width, ownerWidth);
-		const height = resolveValue(this.style.height, ownerHeight);
-
-		let availableWidth = !Number.isNaN(width) ? width : ownerWidth;
-		let widthSpace: AvailableSpace = !Number.isNaN(availableWidth)
-			? "definite"
-			: "indefinite";
-		// A sizing keyword on a root turns the owner's width from the used
-		// width into a probe: zero for min-content, a ceiling for fit-content,
-		// and no request at all for max-content.
-		if (Number.isNaN(width) && this.style.widthSizing !== "none") {
-			if (this.style.widthSizing === "min-content") {
-				availableWidth = 0;
-				widthSpace = "shrink-to-fit";
-			} else if (this.style.widthSizing === "max-content") {
-				availableWidth = NaN;
-				widthSpace = "indefinite";
-			} else if (!Number.isNaN(availableWidth)) {
-				widthSpace = "shrink-to-fit";
-			}
+		// A root laid out inside another's width probe, as an inline-block's
+		// content is, keeps what it lays out, heights and all.
+		const outer = widthOnly;
+		const skippedAbove = heightSkipped;
+		widthOnly = false;
+		try {
+			layOutRoot(this, ownerWidth, ownerHeight);
+		} finally {
+			widthOnly = outer;
+			heightSkipped = skippedAbove;
 		}
-		const availableHeight = !Number.isNaN(height) ? height : ownerHeight;
+	}
+}
 
+function layOutRoot(
+	node: LayoutNode,
+	ownerWidth: number,
+	ownerHeight: number,
+): void {
+	const width = resolveValue(node.style.width, ownerWidth);
+	const height = resolveValue(node.style.height, ownerHeight);
+
+	let availableWidth = !Number.isNaN(width) ? width : ownerWidth;
+	let widthSpace: AvailableSpace = !Number.isNaN(availableWidth)
+		? "definite"
+		: "indefinite";
+	// A sizing keyword on a root turns the owner's width from the used
+	// width into a probe: zero for min-content, a ceiling for fit-content,
+	// and no request at all for max-content.
+	if (Number.isNaN(width) && node.style.widthSizing !== "none") {
+		if (node.style.widthSizing === "min-content") {
+			availableWidth = 0;
+			widthSpace = "shrink-to-fit";
+		} else if (node.style.widthSizing === "max-content") {
+			availableWidth = NaN;
+			widthSpace = "indefinite";
+		} else if (!Number.isNaN(availableWidth)) {
+			widthSpace = "shrink-to-fit";
+		}
+	}
+	const availableHeight = !Number.isNaN(height) ? height : ownerHeight;
+
+	layoutNode(
+		node,
+		availableWidth,
+		availableHeight,
+		widthSpace,
+		!Number.isNaN(availableHeight) ? "definite" : "indefinite",
+		ownerWidth,
+		ownerHeight,
+		true,
+	);
+
+	// Text measured at an edge it did not land on breaks again where it
+	// landed. A box placed at a whole cell, as most are, never does.
+	for (let pass = 0; pass < 3; pass++) {
+		const misplaced: LayoutNode[] = [];
+		roundToGrid(node, 0, 0, misplaced);
+		if (misplaced.length === 0 || pass === 2) {
+			break;
+		}
+		for (const box of misplaced) {
+			box.invalidate();
+		}
 		layoutNode(
-			this,
+			node,
 			availableWidth,
 			availableHeight,
 			widthSpace,
@@ -865,32 +934,9 @@ export class LayoutNode {
 			ownerHeight,
 			true,
 		);
-
-		// Text measured at an edge it did not land on breaks again where it
-		// landed. A box placed at a whole cell, as most are, never does.
-		for (let pass = 0; pass < 3; pass++) {
-			const misplaced: LayoutNode[] = [];
-			roundToGrid(this, 0, 0, misplaced);
-			if (misplaced.length === 0 || pass === 2) {
-				break;
-			}
-			for (const node of misplaced) {
-				node.invalidate();
-			}
-			layoutNode(
-				this,
-				availableWidth,
-				availableHeight,
-				widthSpace,
-				!Number.isNaN(availableHeight) ? "definite" : "indefinite",
-				ownerWidth,
-				ownerHeight,
-				true,
-			);
-		}
-		this.stale = false;
-		this.selfStale = false;
 	}
+	node.stale = false;
+	node.selfStale = false;
 }
 
 /**
@@ -1551,6 +1597,16 @@ function resolveNodeMargins(node: LayoutNode, ownerWidth: number): void {
 		node.style.margin.bottom,
 		ownerWidth,
 	);
+}
+
+function setMeasuredWidth(
+	node: LayoutNode,
+	width: number,
+	ownerWidth: number,
+): void {
+	node.result.width = boundAxis(node, "row", width, ownerWidth, ownerWidth);
+	node.result.height = NO_HEIGHT;
+	heightSkipped = true;
 }
 
 function setMeasuredSize(
@@ -3350,15 +3406,17 @@ function getIntrinsicCellWidth(
 	ownerWidth: number,
 	ownerHeight: number,
 ): number {
-	layoutNode(
-		cell,
-		minContent ? 0 : NaN,
-		NaN,
-		minContent ? "shrink-to-fit" : "indefinite",
-		"indefinite",
-		ownerWidth,
-		ownerHeight,
-		false,
+	measureWidth(() =>
+		layoutNode(
+			cell,
+			minContent ? 0 : NaN,
+			NaN,
+			minContent ? "shrink-to-fit" : "indefinite",
+			"indefinite",
+			ownerWidth,
+			ownerHeight,
+			false,
+		),
 	);
 	return cell.result.width;
 }
@@ -3776,6 +3834,10 @@ function layoutTable(
 		(columnOverlaps[index + span - 1] - columnOverlaps[index]);
 
 	const contentWidth = Math.max(0, columnEdges[columnCount] - columnOverlap);
+	if (widthOnly && widthSpace !== "definite" && !placing) {
+		setMeasuredWidth(node, contentWidth + paddingBorderRow, ownerWidth);
+		return;
+	}
 
 	// A caption sits above the grid, as wide as it.
 	let captionHeight = 0;
@@ -6224,7 +6286,9 @@ function layoutBlock(
 	} else {
 		let widest = 0;
 		for (const child of inFlow) {
-			layoutBlockChild(child, innerWidth, false, NaN, innerHeight, false);
+			measureWidth(() =>
+				layoutBlockChild(child, innerWidth, false, NaN, innerHeight, false),
+			);
 			widest = Math.max(
 				widest,
 				child.result.width + getAxisMargin(child, "row", NaN),
@@ -6240,6 +6304,10 @@ function layoutBlock(
 		ownerWidth,
 	);
 	const contentWidth = Math.max(0, borderBoxWidth - paddingBorderRow);
+	if (widthOnly && widthSpace !== "definite" && !placing) {
+		setMeasuredWidth(node, borderBoxWidth, ownerWidth);
+		return;
+	}
 
 	const openTop =
 		!node.style.blockFormattingContext &&
@@ -6471,7 +6539,7 @@ function layoutNode(
 						(isSameConstraint(cache[at + OWNER_WIDTH], ownerWidth) &&
 							isSameConstraint(cache[at + OWNER_HEIGHT], ownerHeight))) &&
 					cache[at + WIDTH] >= 0 &&
-					cache[at + HEIGHT] >= 0 &&
+					(cache[at + HEIGHT] >= 0 || widthOnly) &&
 					(node.widthDependent
 						? cache[at + WIDTH_SPACE] === widthCode &&
 							isSameConstraint(cache[at + AVAILABLE_WIDTH], availableWidth)
@@ -6517,6 +6585,10 @@ function layoutNode(
 				node.result.width = cache[hit + WIDTH];
 				node.result.height = cache[hit + HEIGHT];
 			}
+			if (cache[hit + HEIGHT] === NO_HEIGHT) {
+				node.result.height = NO_HEIGHT;
+				heightSkipped = true;
+			}
 			return;
 		}
 	}
@@ -6547,16 +6619,34 @@ function layoutNode(
 		node.cachedSizeCount = 0;
 	}
 
-	layoutNodeImpl(
-		node,
-		availableWidth,
-		availableHeight,
-		widthSpace,
-		heightSpace,
-		ownerWidth,
-		ownerHeight,
-		placing,
+	// Columns that wrap break where their items' heights add up, so how
+	// wide they come out takes those heights.
+	const outer = widthOnly;
+	const skippedAbove = heightSkipped;
+	widthOnly &&= !(
+		node.style.displayType === "flex" &&
+		node.style.flexWrap !== "nowrap" &&
+		(node.style.flexDirection === "column" ||
+			node.style.flexDirection === "column-reverse")
 	);
+	heightSkipped = false;
+	let skipped = true;
+	try {
+		layoutNodeImpl(
+			node,
+			availableWidth,
+			availableHeight,
+			widthSpace,
+			heightSpace,
+			ownerWidth,
+			ownerHeight,
+			placing,
+		);
+		skipped = heightSkipped;
+	} finally {
+		widthOnly = outer;
+		heightSkipped = skippedAbove || skipped;
+	}
 
 	// Nothing lays out a child that generates no box, so its flags are
 	// cleared here, or it would hold its ancestors stale for good. A child
@@ -6583,7 +6673,7 @@ function layoutNode(
 		cache[at + OWNER_WIDTH] = ownerWidth;
 		cache[at + OWNER_HEIGHT] = ownerHeight;
 		cache[at + WIDTH] = node.result.width;
-		cache[at + HEIGHT] = node.result.height;
+		cache[at + HEIGHT] = skipped ? NO_HEIGHT : node.result.height;
 		cache[at + SLOT] = slot;
 	};
 	if (placing) {
