@@ -36186,6 +36186,24 @@ function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 }
 
 /**
+ * HTML's autofocus candidates for a document's own markup, which no
+ * insertion brings: the first element with `autofocus`, in tree order,
+ * that can take the focus gets it, unless something already has it.
+ */
+export function focusInitialAutofocus(document: globalThis.Document): void {
+	const active = document.activeElement;
+	if (active !== null && active !== document.body) {
+		return;
+	}
+	for (const candidate of document.querySelectorAll("[autofocus]")) {
+		(candidate as globalThis.HTMLElement).focus?.();
+		if (document.activeElement === candidate) {
+			return;
+		}
+	}
+}
+
+/**
  * HTML's focus fixup, a step of every rendering update. A focused
  * element that stopped being focusable without a mutation, because a
  * :focus rule hid it, say, loses the focus.

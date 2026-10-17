@@ -3092,3 +3092,28 @@ test("the keys in a chunk are dispatched in one pass", async () => {
 	expect(settled.join("")).toBe("abc");
 	dom.dispose();
 });
+
+test("the first autofocus element of the starting markup takes the keys", async () => {
+	// A page given whole, as a browser loads one, reaches the document with
+	// no insertion to see, as DuckDuckGo's search field does. The first
+	// field that can take the focus gets it, so a hidden one is passed over.
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+		html:
+			"<!DOCTYPE html><html><body>" +
+			"<input id=\"hidden\" autofocus hidden>" +
+			"<input id=\"q\" autofocus><input id=\"later\" autofocus>" +
+			"</body></html>",
+	});
+	dom.attach();
+	await nextFrame(dom);
+	const input = dom.document.getElementById("q") as HTMLInputElement;
+	expect(dom.document.activeElement).toBe(input);
+
+	terminal.stdin.simulateResponse("hi");
+	await inputDispatched();
+	await nextFrame(dom);
+	expect(input.value).toBe("hi");
+	dom.dispose();
+});
