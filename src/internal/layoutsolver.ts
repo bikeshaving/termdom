@@ -1612,16 +1612,33 @@ function layoutMeasuredContent(
 		return;
 	}
 
+	// A max-width caps where the text breaks, whatever the request, as
+	// constrainMaxSizeForMode caps it for the callers that call it. The
+	// probes of grid tracks and table columns ask with no width at all, and
+	// text broken wider than the box is drawn would come out a line short.
+	let breakWidth = innerWidth;
+	let breakSpace = widthSpace;
+	const maxWidth = resolveValue(node.style.maxWidth, ownerWidth);
+	if (!Number.isNaN(maxWidth) && maxWidth >= 0) {
+		const maxInner = Math.max(0, maxWidth - paddingBorderRow);
+		if (Number.isNaN(breakWidth)) {
+			breakWidth = maxInner;
+			breakSpace = "shrink-to-fit";
+		} else if (breakWidth > maxInner) {
+			breakWidth = maxInner;
+		}
+	}
+
 	const measured = node.measure!(
-		innerWidth,
-		widthSpace,
+		breakWidth,
+		breakSpace,
 		placing,
 		getContentLeft(node),
 	);
 	// What the placed lines were measured at, which a probe leaves while
 	// that layout stands.
 	if (placing || !node.hasCachedLayout) {
-		node.measuredWidth = innerWidth;
+		node.measuredWidth = breakWidth;
 		node.measured = measured;
 	}
 
