@@ -10584,6 +10584,9 @@ const UNSCOPED = Number.MAX_SAFE_INTEGER;
 interface RuleIndex {
 	rules: ParsedCSSRule[];
 	length: number;
+	// A quirks-mode document matches ids and classes without regard to
+	// case, so its rules are filed, and looked up, by the lowercase key.
+	quirks: boolean;
 	keyed: Map<string, number[]>;
 	// The rest by the element name their subject requires, so a span never
 	// tries the rules for inputs and table cells.
@@ -10596,19 +10599,21 @@ interface RuleIndex {
 
 const MAX_CANDIDATE_LISTS = 4096;
 
-function getRuleIndex(cascade: Cascade): RuleIndex {
+function getRuleIndex(cascade: Cascade, quirks: boolean): RuleIndex {
 	const rules = cascade.parsedRules;
 	let index = ruleIndexes.get(cascade);
 	if (
 		index !== undefined &&
 		index.rules === rules &&
-		index.length === rules.length
+		index.length === rules.length &&
+		index.quirks === quirks
 	) {
 		return index;
 	}
 	index = {
 		rules,
 		length: rules.length,
+		quirks,
 		keyed: new Map(),
 		tagged: new Map(),
 		unkeyedPositions: [],
@@ -10621,7 +10626,9 @@ function getRuleIndex(cascade: Cascade): RuleIndex {
 			index.unkeyedPositions.push(position);
 			continue;
 		}
-		const key = rule.subjectKey ?? rule.subjectTag;
+		const key = rule.subjectKey === undefined
+			? rule.subjectTag
+			: quirks ? toASCIILowercase(rule.subjectKey) : rule.subjectKey;
 		if (key === undefined) {
 			index.unkeyedPositions.push(position);
 			continue;
@@ -10650,18 +10657,18 @@ function getIdValue(element: Element): string | null {
 }
 
 // The rules an element could match, in the order they were parsed, which
-// the cascade's order of appearance relies on. A quirks-mode document
-// matches ids and classes without regard to case, so it tries them all.
+// the cascade's order of appearance relies on.
 function getCandidateRules(
 	cascade: Cascade,
 	element: Element,
 ): ParsedCSSRule[] {
-	if (element.ownerDocument?.compatMode === "BackCompat") {
-		return cascade.parsedRules;
-	}
-	const index = getRuleIndex(cascade);
-	const id = getIdValue(element);
-	const classes = getClassTokens(element);
+	const quirks = element.ownerDocument?.compatMode === "BackCompat";
+	const index = getRuleIndex(cascade, quirks);
+	const ownId = getIdValue(element);
+	const id = quirks && ownId !== null ? toASCIILowercase(ownId) : ownId;
+	const classes = quirks
+		? Array.from(getClassTokens(element), toASCIILowercase)
+		: getClassTokens(element);
 	const tag = getLocalName(element);
 	let key = id === null ? tag : `${tag} #${id}`;
 	for (const name of classes) {
