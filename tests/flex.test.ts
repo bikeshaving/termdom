@@ -915,3 +915,24 @@ test("text with a max-width breaks at the clamp after an unbounded probe", () =>
 	root.performLayout(NaN, NaN);
 	expect(rect(text).height).toBe(2);
 });
+
+test("text with a max-width breaks at it when a grid track asks with no width", () => {
+	// A grid sizes its auto column by asking the text for its max-content
+	// width, with no width given. 30 cells of text clamped to 20 is two
+	// lines there too, not one line 30 wide drawn 20 wide.
+	const root = node();
+	root.style.displayType = "grid";
+	root.style.width = toValue(25);
+	const text = box(root);
+	text.style.maxWidth = toValue(20);
+	text.measure = (width, widthSpace) => {
+		const limit = widthSpace === "indefinite" ? Infinity : width;
+		return {
+			width: Math.min(30, limit),
+			height: Math.ceil(30 / Math.min(limit, 30)),
+		};
+	};
+	root.performLayout(NaN, NaN);
+	expect(rect(text).width).toBe(20);
+	expect(rect(text).height).toBe(2);
+});
