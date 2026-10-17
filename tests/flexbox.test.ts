@@ -973,3 +973,51 @@ test("a padded inline flex item's text is inside its padding, painted and measur
 	expect(terminal.getVisibleText().split("\n")[1].indexOf("t000")).toBe(1);
 	dom.dispose();
 });
+
+test("an inline-flex box sits on its line and lays its children out in a row", () => {
+	const rows = (body: string): string[] => {
+		const dom =
+			new TermDOM({html: `<!DOCTYPE html><html><body>${body}</body></html>`});
+		return dom.renderANSI()
+			.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")
+			.split("\n")
+			.map((line) => line.trimEnd())
+			.filter((line) => line.length > 0);
+	};
+	expect(rows("a<span style=\"display:inline-flex\"><b>X</b><b>Y</b></span>b"))
+		.toEqual(["aXYb"]);
+	// A flex item's own inline-flex is a flex container too, as an icon
+	// button in a toolbar is: its brackets and label stay on one row.
+	expect(
+		rows(
+			"<div style=\"display:flex\"><button style=\"" +
+				"display:inline-flex;align-items:center;height:48px\">" +
+				"<span>Search</span></button></div>",
+		).join("\n"),
+	).toContain("[Search]");
+});
+
+test("a fit-content flex container takes its growing items' content, not their zero bases", () => {
+	// flex: 1 is a basis of 0, so a container fitting the bases came out
+	// as wide as its padding and squeezed every label to nothing. It fits
+	// their content, as DuckDuckGo's search mode toggle expects, within
+	// the room it has.
+	const measure = (parentWidth: string): {width: number; text: string} => {
+		const dom = new TermDOM({
+			html:
+				"<!DOCTYPE html><html><head><style>" +
+				".row { display: flex; width: fit-content }" +
+				".row span { flex: 1; min-width: 0; overflow: hidden }" +
+				"</style></head><body>" +
+				`<div style="width: ${parentWidth}"><div class="row">` +
+				"<span>Search</span><span>Duck</span></div></div></body></html>",
+		});
+		const text = dom.renderANSI().replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+		const row = dom.document.querySelector(".row")!;
+		return {width: row.getBoundingClientRect().width, text: text.trim()};
+	};
+	const roomy = measure("40ch");
+	expect(roomy.width).toBe(10);
+	expect(roomy.text).toBe("SearchDuck");
+	expect(measure("6ch").width).toBe(6);
+});
