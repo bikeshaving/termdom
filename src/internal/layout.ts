@@ -1123,8 +1123,9 @@ function computePaintExtents(
 	let extent = getStoredExtent(node);
 	// A box rounding left alone, with nothing under it laid out again, keeps
 	// its record while it holds its place and size, though its parent was
-	// laid out again around it. Measured lines can change in place, and a
-	// child that left takes rows with it, so neither keeps one.
+	// laid out again around it. A box that measured its lines again was laid
+	// out again, so it moved since the last extents. A child that left takes
+	// rows with it, so a box that lost one does not keep its record.
 	if (
 		extent !== undefined &&
 		extent.origin === top &&
@@ -1132,7 +1133,6 @@ function computePaintExtents(
 		(settled ||
 			(node.settled &&
 				!node.movedSinceExtents &&
-				node.measure === null &&
 				!node.lostChild &&
 				extent.left === left &&
 				extent.width === getComputedWidth(node) &&
