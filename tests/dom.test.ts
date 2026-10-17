@@ -1778,6 +1778,31 @@ test("a form attribute names the owner, and an unknown one leaves none", () => {
 	expect(document.getElementById("outer").elements.length).toBe(0);
 });
 
+test("a form's controls follow every change that moves one in or out", () => {
+	// The list is kept between reads, so each change that can move a control
+	// in or out of it has to be seen.
+	const document = make();
+	document.body.innerHTML =
+		"<form id=f><input id=a></form><input id=b form=g><input id=c>";
+	const form = document.getElementById("f");
+	const ids = () => [...form.elements].map((control: any) => control.id);
+	expect(ids()).toEqual(["a"]);
+	const added = document.createElement("textarea");
+	added.id = "t";
+	form.append(added);
+	expect(ids()).toEqual(["a", "t"]);
+	document.getElementById("b").setAttribute("form", "f");
+	expect(ids()).toEqual(["a", "t", "b"]);
+	document.getElementById("a").setAttribute("type", "image");
+	expect(ids()).toEqual(["t", "b"]);
+	form.id = "renamed";
+	expect(ids()).toEqual(["t"]);
+	document.getElementById("c").setAttribute("form", "renamed");
+	expect(ids()).toEqual(["t", "c"]);
+	added.remove();
+	expect(ids()).toEqual(["c"]);
+});
+
 test("a disconnected control has no owner, and gains one on insertion", () => {
 	const document = make();
 	document.body.innerHTML = "<form id=f></form>";
