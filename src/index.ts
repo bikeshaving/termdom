@@ -26,6 +26,7 @@ import {
 	type EventTargetSlots,
 	flushLayout,
 	flushObservers,
+	focusInitialAutofocus,
 	getGraphicsSettings,
 	getProcessTimers,
 	type GraphicsSetting,
@@ -626,6 +627,7 @@ export class TermDOM extends EventTarget {
 		// in the markup was read against a zero-width viewport. Attaching is
 		// a resize, and flips @media results the same way.
 		slots.cascade.syncStylesheets();
+		focusInitialAutofocus(this.document);
 
 		slots.input = new Input(
 			this.document,
