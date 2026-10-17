@@ -2174,6 +2174,27 @@ function getRelativeOffset(
 	return 0;
 }
 
+// The item's border-box size along the main axis with nothing to fit:
+// its max-content size there.
+function getMaxContentMainSize(
+	child: LayoutNode,
+	mainAxis: FlexDirection,
+	ownerWidth: number,
+	ownerHeight: number,
+): number {
+	layoutNode(
+		child,
+		NaN,
+		NaN,
+		"indefinite",
+		"indefinite",
+		ownerWidth,
+		ownerHeight,
+		false,
+	);
+	return isRow(mainAxis) ? child.result.width : child.result.height;
+}
+
 // css-flexbox-1 §9.7.
 function resolveFlexibleLengths(
 	line: FlexLine,
@@ -2235,13 +2256,33 @@ function resolveFlexibleLengths(
 	for (let i = 0; i < count; i++) {
 		hypotheticalTotal += target[i] + outerMargin(items[i]);
 	}
-	const growing = innerMain - hypotheticalTotal > 0;
+	let growing = innerMain - hypotheticalTotal > 0;
 
 	// Growing needs a definite main size. Under `shrink-to-fit` the container
-	// shrink-wraps. Shrinking still applies.
+	// shrink-wraps, around its items' max-content sizes rather than their
+	// bases (§9.9.1): an item a zero basis would grow from takes its content,
+	// as an icon button's label in a fit-content toolbar does. When they
+	// overflow the bound, they shrink to it.
 	if (growing && mainSpace !== "definite") {
-		commit();
-		return;
+		let contentTotal = 0;
+		for (let i = 0; i < count; i++) {
+			if (resolveFlexGrow(items[i]) > 0) {
+				const content = clampMain(
+					items[i],
+					getMaxContentMainSize(items[i], mainAxis, ownerWidth, ownerHeight),
+				);
+				if (content > target[i]) {
+					base[i] = content;
+					target[i] = content;
+				}
+			}
+			contentTotal += target[i] + outerMargin(items[i]);
+		}
+		if (contentTotal <= innerMain) {
+			commit();
+			return;
+		}
+		growing = false;
 	}
 
 	const getFactor = (i: number) =>
