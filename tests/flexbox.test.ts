@@ -996,3 +996,28 @@ test("an inline-flex box sits on its line and lays its children out in a row", (
 		).join("\n"),
 	).toContain("[Search]");
 });
+
+test("a fit-content flex container takes its growing items' content, not their zero bases", () => {
+	// flex: 1 is a basis of 0, so a container fitting the bases came out
+	// as wide as its padding and squeezed every label to nothing. It fits
+	// their content, as DuckDuckGo's search mode toggle expects, within
+	// the room it has.
+	const measure = (parentWidth: string): {width: number; text: string} => {
+		const dom = new TermDOM({
+			html:
+				"<!DOCTYPE html><html><head><style>" +
+				".row { display: flex; width: fit-content }" +
+				".row span { flex: 1; min-width: 0; overflow: hidden }" +
+				"</style></head><body>" +
+				`<div style="width: ${parentWidth}"><div class="row">` +
+				"<span>Search</span><span>Duck</span></div></div></body></html>",
+		});
+		const text = dom.renderANSI().replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+		const row = dom.document.querySelector(".row")!;
+		return {width: row.getBoundingClientRect().width, text: text.trim()};
+	};
+	const roomy = measure("40ch");
+	expect(roomy.width).toBe(10);
+	expect(roomy.text).toBe("SearchDuck");
+	expect(measure("6ch").width).toBe(6);
+});
