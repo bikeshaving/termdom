@@ -43,6 +43,7 @@ import {
 	requestFrame,
 	scrollTo,
 } from "./framebuffer.ts";
+import {isScriptedDocument, markScriptedDocument} from "./hints.ts";
 import {
 	getInterface,
 	getReflections,
@@ -34547,12 +34548,15 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 // Parses markup into a document carrying `registry`, which is none unless
 // the caller is making a window's or a frame's document. A document an
 // author builds carries none until a registry claims it, as one with no
-// browsing context does.
+// browsing context does. With `scripting`, <noscript> holds text, as a
+// browser running scripts parses it. Without, it holds the markup it
+// shows.
 export function parseHTMLDocument(
 	html: string,
 	url = "about:blank",
 	allowDeclarativeShadowRoots = true,
 	registry: CustomElementRegistry | null = null,
+	scripting = false,
 ): Document {
 	const adapter = createTreeAdapter(null);
 	const outerRegistry = parseRegistry;
@@ -34561,9 +34565,13 @@ export function parseHTMLDocument(
 	try {
 		document = Parse5.parse(html, {
 			treeAdapter: adapter as never,
+			scriptingEnabled: scripting,
 		}) as unknown as Document;
 	} finally {
 		parseRegistry = outerRegistry;
+	}
+	if (scripting) {
+		markScriptedDocument(document as unknown as globalThis.Document);
 	}
 	_(document).registry = registry;
 	_(document).extra.documentURL = url;
@@ -34589,6 +34597,9 @@ function parseHTMLFragment(
 	try {
 		parsed = Parse5.parseFragment(context as never, markup, {
 			treeAdapter: adapter as never,
+			scriptingEnabled: isScriptedDocument(
+				document as unknown as globalThis.Document,
+			),
 		}) as unknown as DocumentFragment;
 	} finally {
 		parseRegistry = outerRegistry;

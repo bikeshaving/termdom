@@ -71,6 +71,12 @@ Options:
   policy and every load is allowed, which is also what a browser does
   without the header. A program that shows untrusted markup should set
   a policy. The images guide has recipes.
+- `scripting?: boolean`: whether the page's scripts run, as far as its
+  markup is concerned. TermDOM runs no `<script>` itself, so you say.
+  With `false` (default), a `<noscript>`'s markup is parsed and shown,
+  as in a browser with scripting off. With `true`, it shows nothing. A
+  `csp` whose `script-src`, or `default-src` without one, is `'none'`
+  turns it off.
 - `images?: "auto" | "cells" | "none"`: how an `<img>` draws.
   - `"auto"` (default) uses the best method the terminal supports.
   - `"cells"` draws two pixels per cell with half-block characters.

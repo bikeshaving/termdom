@@ -117,6 +117,7 @@ import {
 	answerRequest,
 	checkInlineHandler,
 	type FetchEvent,
+	forbidsScripts,
 	isWindowFetch,
 	parseContentSecurityPolicies,
 	type RequestPolicy,
@@ -211,6 +212,16 @@ export interface TermDOMOptions {
 	 * not trust, such as email, sets one.
 	 */
 	csp?: string;
+
+	/**
+	 * Whether the page's scripts run, as far as its markup is concerned.
+	 * TermDOM runs no <script> itself, so it is the embedder who says so.
+	 * With `false`, the default, a <noscript>'s markup is parsed and shown,
+	 * as in a browser with scripting off. With `true` it shows nothing. A
+	 * `csp` whose script-src, or default-src without one, is 'none' turns
+	 * it off.
+	 */
+	scripting?: boolean;
 
 	/**
 	 * How an <img> draws.
@@ -524,6 +535,9 @@ export class TermDOM extends EventTarget {
 		const window = slots.window = createWindow(
 			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
 			url,
+			"text/html",
+			options.scripting === true &&
+				!forbidsScripts(parseContentSecurityPolicies(options.csp ?? "")),
 		);
 		this.window = window as unknown as globalThis.Window & typeof globalThis;
 
