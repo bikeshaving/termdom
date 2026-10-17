@@ -112,6 +112,22 @@ const UNDEFINED_VALUE: CSSValues.Value = Object.freeze({
 });
 const AUTO_VALUE: CSSValues.Value = Object.freeze({unit: "auto", value: NaN});
 
+// How far a transform moves a box, in cells plus a percentage of the box's
+// own size along each axis.
+export interface Translation {
+	x: number;
+	y: number;
+	xPercent: number;
+	yPercent: number;
+}
+
+export const NO_TRANSLATION: Translation = Object.freeze({
+	x: 0,
+	y: 0,
+	xPercent: 0,
+	yPercent: 0,
+});
+
 type Length = number | "auto" | {percentage: number} | undefined | null;
 
 export function resolveValue(
@@ -195,6 +211,10 @@ export interface Style {
 	// Whether a static box contains its positioned descendants anyway, as
 	// containment, a transform or a filter makes it.
 	containsPositioned: boolean;
+	// Where a transform draws the box, away from where layout put it. The
+	// box and what it holds paint and take pointer events there, and
+	// nothing around them moves.
+	translate: Translation;
 
 	gap: {column: number; row: number};
 
@@ -1143,6 +1163,7 @@ function shareStyleEdges(style: Style): void {
 	style.position = shareRecord("position", style.position);
 	style.border = shareRecord("border", style.border);
 	style.gap = shareRecord("gap", style.gap);
+	style.translate = shareRecord("translate", style.translate);
 }
 
 export function toValue(input: Length): CSSValues.Value {
@@ -1195,6 +1216,7 @@ export function createStyle(): Style {
 		clipsOverflow: false,
 		scrollContainer: false,
 		containsPositioned: false,
+		translate: NO_TRANSLATION,
 
 		gap: {column: 0, row: 0},
 
@@ -1284,6 +1306,7 @@ function isSameStyle(a: Style, b: Style): boolean {
 		a.clipsOverflow === b.clipsOverflow &&
 		a.scrollContainer === b.scrollContainer &&
 		a.containsPositioned === b.containsPositioned &&
+		a.translate === b.translate &&
 		a.justifyItems === b.justifyItems &&
 		a.justifySelf === b.justifySelf &&
 		a.gridTemplateColumns === b.gridTemplateColumns &&
@@ -7023,8 +7046,19 @@ function roundToGrid(
 	parentTop: number,
 	misplaced: LayoutNode[],
 ): void {
-	const absLeft = parentLeft + node.result.left;
-	const absTop = parentTop + node.result.top;
+	const width = !Number.isNaN(node.result.width) ? node.result.width : 0;
+	const height = !Number.isNaN(node.result.height) ? node.result.height : 0;
+	const {translate} = node.style;
+	const absLeft =
+		parentLeft +
+		node.result.left +
+		translate.x +
+		(translate.xPercent * width) / 100;
+	const absTop =
+		parentTop +
+		node.result.top +
+		translate.y +
+		(translate.yPercent * height) / 100;
 	const kept =
 		node.keptChildren &&
 		absLeft === node.rawAbsoluteLeft &&
@@ -7035,8 +7069,6 @@ function roundToGrid(
 	if (node.measure !== null && breaksElsewhere(node)) {
 		misplaced.push(node);
 	}
-	const width = !Number.isNaN(node.result.width) ? node.result.width : 0;
-	const height = !Number.isNaN(node.result.height) ? node.result.height : 0;
 	const isText = node.measure !== null && node.measuresText;
 
 	node.grid.left =
