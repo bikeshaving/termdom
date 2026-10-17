@@ -973,3 +973,26 @@ test("a padded inline flex item's text is inside its padding, painted and measur
 	expect(terminal.getVisibleText().split("\n")[1].indexOf("t000")).toBe(1);
 	dom.dispose();
 });
+
+test("an inline-flex box sits on its line and lays its children out in a row", () => {
+	const rows = (body: string): string[] => {
+		const dom =
+			new TermDOM({html: `<!DOCTYPE html><html><body>${body}</body></html>`});
+		return dom.renderANSI()
+			.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")
+			.split("\n")
+			.map((line) => line.trimEnd())
+			.filter((line) => line.length > 0);
+	};
+	expect(rows("a<span style=\"display:inline-flex\"><b>X</b><b>Y</b></span>b"))
+		.toEqual(["aXYb"]);
+	// A flex item's own inline-flex is a flex container too, as an icon
+	// button in a toolbar is: its brackets and label stay on one row.
+	expect(
+		rows(
+			"<div style=\"display:flex\"><button style=\"" +
+				"display:inline-flex;align-items:center;height:48px\">" +
+				"<span>Search</span></button></div>",
+		).join("\n"),
+	).toContain("[Search]");
+});

@@ -271,6 +271,7 @@ function applyTableContainer(style: Style, element: Element): void {
 // A box that sits on a line whole, measured as one opaque unit.
 export function isAtomicInline(display: Display): boolean {
 	return display === "inline-block" ||
+		display === "inline-flex" ||
 		display === "inline-grid" ||
 		display === "inline-table";
 }
@@ -954,6 +955,24 @@ function toCellTrackList(
 				},
 		),
 	};
+}
+
+function applyFlexContainer(style: Style, element: Element): void {
+	style.flexDirection = parseFlexDirection(
+		getComputedValue(element, "flex-direction"),
+	);
+	style.flexWrap = parseFlexWrap(getComputedValue(element, "flex-wrap"));
+	style.justifyContent = getJustifyContentConstant(
+		getComputedValue(element, "justify-content"),
+	);
+	style.alignItems = getAlignmentConstant(
+		getComputedValue(element, "align-items"),
+		"stretch",
+	);
+	style.alignContent = getAlignmentConstant(
+		getComputedValue(element, "align-content"),
+		"flex-start",
+	);
 }
 
 function applyGridContainer(style: Style, element: Element): void {
@@ -1644,22 +1663,9 @@ function styleLayoutNodeProperties(
 		style.rowSpan = Math.max(1, Math.floor(cell.rowSpan ?? 1) || 1);
 	}
 
-	if (display === "flex") {
-		style.flexDirection = parseFlexDirection(
-			getComputedValue(element, "flex-direction"),
-		);
-		style.flexWrap = parseFlexWrap(getComputedValue(element, "flex-wrap"));
-		style.justifyContent = getJustifyContentConstant(
-			getComputedValue(element, "justify-content"),
-		);
-		style.alignItems = getAlignmentConstant(
-			getComputedValue(element, "align-items"),
-			"stretch",
-		);
-		style.alignContent = getAlignmentConstant(
-			getComputedValue(element, "align-content"),
-			"flex-start",
-		);
+	if (display === "flex" || display === "inline-flex") {
+		style.displayType = "flex";
+		applyFlexContainer(style, element);
 	} else if (
 		display !== "none" &&
 		display !== "grid" &&
@@ -2881,9 +2887,17 @@ function styleContextRoot(element: Element, root: LayoutNode): void {
 	style.displayType = "block";
 	if (display === "inline-table") {
 		applyTableContainer(style, element);
-	} else if (display === "inline-grid") {
-		style.displayType = "grid";
-		applyGridContainer(style, element);
+	} else if (display === "inline-grid" || display === "inline-flex") {
+		// The root holds the box's content, so it lays its children out as
+		// the box would: an inline-flex box's children are flex items, not
+		// blocks stacked in turn.
+		if (display === "inline-grid") {
+			style.displayType = "grid";
+			applyGridContainer(style, element);
+		} else {
+			style.displayType = "flex";
+			applyFlexContainer(style, element);
+		}
 		const gaps: Array<[string, Gutter]> = [
 			["row-gap", "row"],
 			["column-gap", "column"],
