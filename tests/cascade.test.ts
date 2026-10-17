@@ -1081,6 +1081,21 @@ test("rules filed by id and class still cascade in order of appearance", async (
 	dom.dispose();
 });
 
+test("rules filed by id and class match without regard to case in quirks mode", () => {
+	const dom = domFor(
+		"<html><head><style>.Big { color: rgb(255, 0, 0) }" +
+			" #Main { font-weight: bold } p.big { text-align: center }</style>" +
+			"</head><body><p id=\"MAIN\" class=\"bIG\">x</p></body></html>",
+	);
+	const {document, window} = dom;
+	expect(document.compatMode).toBe("BackCompat");
+	const style = window.getComputedStyle(document.getElementById("MAIN")!);
+	expect(style.color).toBe("rgb(255, 0, 0)");
+	expect(style.fontWeight).toBe("700");
+	expect(style.textAlign).toBe("center");
+	dom.dispose();
+});
+
 test("a child's blockified display follows its parent's class change both ways", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
