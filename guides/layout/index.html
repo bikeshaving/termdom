@@ -45,7 +45,12 @@ one row. So <code>line-height: 2</code> places lines two rows apart.</p><h2 id="
 with <code>z-index</code> and stacking contexts.</p><p>A sticky box keeps its <code>top</code>, <code>bottom</code>, <code>left</code>, or <code>right</code> inset
 against the nearest scrolling ancestor. If it has no scrolling
 ancestor, it uses the viewport. A sticky box never leaves the box that
-contains it in normal flow.</p><p><code>overflow: hidden</code> clips content to the box. <code>overflow: auto</code> and
+contains it in normal flow.</p><p>The <code>translate</code> property, and the translation in a <code>transform</code>
+(<code>translate()</code>, <code>translateX()</code>, <code>translateY()</code>, <code>translate3d()</code>, and
+the offsets in <code>matrix()</code>), draw a box away from where layout put it,
+as in a browser. The box takes clicks where it is drawn, and nothing
+around it moves. A percentage is a share of the box&#039;s own size. A
+rotation, scale, or skew has no effect, so the box is drawn as it is.</p><p><code>overflow: hidden</code> clips content to the box. <code>overflow: auto</code> and
 <code>overflow: scroll</code> also clip, and they make the box scrollable.
 <code>scrollTop</code>, <code>scrollTo</code>, <code>scrollIntoView</code>, and the mouse wheel scroll
 the content by whole rows.</p><h2 id="mathml">MathML <a class="heading-anchor" href="#mathml">#</a></h2><p>The engine lays out a <code>&lt;math&gt;</code> element on the cell grid, following

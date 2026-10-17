@@ -32,7 +32,12 @@ every cell size.</p></li><li><p><code>csp?: string</code>: a <code>Content-Secur
 what the document&#039;s markup may load. If you leave it out, there is no
 policy and every load is allowed, which is also what a browser does
 without the header. A program that shows untrusted markup should set
-a policy. The images guide has recipes.</p></li><li><p><code>images?: &quot;auto&quot; | &quot;cells&quot; | &quot;none&quot;</code>: how an <code>&lt;img&gt;</code> draws.</p><ul><li><code>&quot;auto&quot;</code> (default) uses the best method the terminal supports.</li><li><code>&quot;cells&quot;</code> draws two pixels per cell with half-block characters.</li><li><code>&quot;none&quot;</code> draws nothing. The image loads nothing and shows its <code>alt</code>
+a policy. The images guide has recipes.</p></li><li><p><code>scripting?: boolean</code>: whether the page&#039;s scripts run, as far as its
+markup is concerned. TermDOM runs no <code>&lt;script&gt;</code> itself, so you say.
+With <code>false</code> (default), a <code>&lt;noscript&gt;</code>&#039;s markup is parsed and shown,
+as in a browser with scripting off. With <code>true</code>, it shows nothing. A
+<code>csp</code> whose <code>script-src</code>, or <code>default-src</code> without one, is <code>&#039;none&#039;</code>
+turns it off.</p></li><li><p><code>images?: &quot;auto&quot; | &quot;cells&quot; | &quot;none&quot;</code>: how an <code>&lt;img&gt;</code> draws.</p><ul><li><code>&quot;auto&quot;</code> (default) uses the best method the terminal supports.</li><li><code>&quot;cells&quot;</code> draws two pixels per cell with half-block characters.</li><li><code>&quot;none&quot;</code> draws nothing. The image loads nothing and shows its <code>alt</code>
 text.</li></ul></li><li><p><code>canvas?: &quot;auto&quot; | &quot;cells&quot; | &quot;none&quot;</code>: how the <code>&quot;2d&quot;</code> context of a
 canvas draws. The values mean the same as for <code>images</code>. With
 <code>&quot;none&quot;</code>, <code>getContext(&quot;2d&quot;)</code> returns <code>null</code> and the canvas shows its
