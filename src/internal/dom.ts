@@ -10966,6 +10966,7 @@ export class Element extends Node implements globalThis.Element {
 			slots.registry = rootSlots.registry;
 			tryToUpgrade(getOwner(this));
 		}
+		noteListedChange(getOwner(this));
 		resetTheFormOwner(getOwner(this));
 		syncFormDisabled(getOwner(this));
 		// A form that joins a tree becomes the owner of everything already in
@@ -10986,6 +10987,7 @@ export class Element extends Node implements globalThis.Element {
 		}
 		// The steps run once for every element of a removed tree, as on
 		// insertion, so this element only resets itself.
+		noteListedChange(getOwner(this));
 		resetTheFormOwner(getOwner(this));
 		syncFormDisabled(getOwner(this));
 		if (
@@ -11006,6 +11008,16 @@ export class Element extends Node implements globalThis.Element {
 		const slots = this;
 		if (localName === "class" && namespace === null) {
 			slots.classTokens = null;
+		}
+		// An id names a form a control's form attribute points at, and an
+		// image input is no form's control.
+		if (
+			namespace === null &&
+			(localName === "id" ||
+				((localName === "form" || localName === "type") &&
+					isListed(getOwner(this))))
+		) {
+			countListedChange();
 		}
 		if (
 			namespace === null &&
@@ -11760,6 +11772,7 @@ export class HTMLElement extends Element {
 		slots.upperName = null;
 		slots.localName = definition.localName;
 		slots.customState = "custom";
+		countListedChange();
 		slots.definition = definition;
 		slots.isValue = null;
 		slots.registry = definition.registry;
@@ -13270,6 +13283,7 @@ function createElementInternal(
 			);
 			_(failed).registry = inRegistry;
 			_(failed).customState = "failed";
+			countListedChange();
 			return failed;
 		}
 		_(result).prefix = prefix;
@@ -13929,6 +13943,7 @@ function upgradeElement(
 	}
 	elementSlots.definition = definition;
 	elementSlots.customState = "failed";
+	countListedChange();
 	for (const attribute of elementSlots.attributeList) {
 		enqueueCallbackReaction(element, "attributeChangedCallback", [
 			attribute.extra.localName,
@@ -13949,6 +13964,7 @@ function upgradeElement(
 			);
 		}
 		elementSlots.customState = "precustomized";
+		countListedChange();
 		const result = constructCustomElement(definition);
 		if (result !== element) {
 			throw new TypeError("That constructor built a different element");
@@ -13960,11 +13976,13 @@ function upgradeElement(
 		// the absence of one. Whoever runs the reaction reports the exception.
 		definition.constructionStack.pop();
 		elementSlots.customState = "failed";
+		countListedChange();
 		elementSlots.reactionQueue = null;
 		throw error;
 	}
 	definition.constructionStack.pop();
 	elementSlots.customState = "custom";
+	countListedChange();
 	stateChanged(element, ["defined"]);
 	// A form-associated element learns its owner and its disabled state as
 	// it becomes one, which is the first moment it has internals to notify.
@@ -16680,7 +16698,40 @@ class HTMLFormElement extends HTMLElement {
 
 declareExtraSlots(HTMLFormElement);
 
+// A form's controls are found by walking its whole tree, since a control
+// anywhere in it can name the form. They change only when a control or a
+// form joins or leaves a tree, an id or a control's form or type changes,
+// or a custom element becomes form-associated, each of which counts here,
+// so a form keeps the list it found until the count moves. Every frame
+// asks for a form's validity, and a long page has one form.
+let listedVersion = 0;
+interface ListedElements {
+	version: number;
+	controls: Element[];
+}
+const listedElements = new WeakMap<HTMLFormElement, ListedElements>();
+
+function countListedChange(): void {
+	listedVersion++;
+}
+
+function noteListedChange(element: Element): void {
+	if (isListed(element) || element instanceof HTMLFormElement) {
+		countListedChange();
+	}
+}
+
 function getListedElements(form: HTMLFormElement): Element[] {
+	const known = listedElements.get(form);
+	if (known !== undefined && known.version === listedVersion) {
+		return [...known.controls];
+	}
+	const controls = findListedElements(form);
+	listedElements.set(form, {version: listedVersion, controls});
+	return [...controls];
+}
+
+function findListedElements(form: HTMLFormElement): Element[] {
 	const controls: Element[] = [];
 	const root = getRoot(form);
 	for (const node of descendants(root)) {
