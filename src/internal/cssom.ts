@@ -7114,6 +7114,11 @@ export function getMarkerContent(
 
 // The document is being torn down.
 export function dispose(cascade: Cascade): void {
+	// The last read holds its element, and through the declaration the
+	// cascade and its document, past the document's end.
+	if (lastRead.slots?.cascade === cascade) {
+		lastRead = {element: null, cache: null, slots: null};
+	}
 	cascade.computedStyleCache = new WeakMap();
 	cascade.hasResults = null;
 	cascade.pseudoElementStyleCache = new WeakMap();
