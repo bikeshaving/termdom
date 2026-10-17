@@ -31735,7 +31735,13 @@ class Selection implements globalThis.Selection {
 	toString(): string {
 		const slots = _(this);
 		const range = slots.range;
-		if (range === null) {
+		// A click leaves the selection collapsed where it landed, and a
+		// collapsed range holds no text, rendered or not.
+		if (
+			range === null ||
+			(range.startContainer === range.endContainer &&
+				range.startOffset === range.endOffset)
+		) {
 			return "";
 		}
 		const document = slots.document;
@@ -31745,7 +31751,16 @@ class Selection implements globalThis.Selection {
 			return range.toString();
 		}
 		_(attached).extra.layout.performLayout();
-		const run = flattenSelectionText(getSelectionTextNodes(document, attached));
+		// The walk compares its nodes with the range's ends only when those
+		// are in the document's own tree. A selection in a shadow tree reads
+		// the whole text.
+		const inDocument =
+			getRoot(range.startContainer as unknown as Node) === document &&
+			getRoot(range.endContainer as unknown as Node) === document;
+		const within = inDocument ? range : undefined;
+		const run = flattenSelectionText(
+			getSelectionTextNodes(document, attached, within),
+		);
 		const start = getRenderedIndex(
 			run,
 			range.startContainer,
@@ -31861,9 +31876,13 @@ function getBlockOf(node: Node): Element | null {
 // The isSelectable filter checks each text node's parent rather than
 // pruning the subtree, because user-select: none does not inherit. A
 // `text` descendant inside a `none` ancestor is isSelectable again.
+// `within` keeps the walk to the subtrees a range reaches, where the
+// children are the node's own and so in tree order. A shadow root's or a
+// slot's children render somewhere else, and are collected whole.
 function getSelectionTextNodes(
 	document: Document,
 	attached: AttachedDocument | undefined,
+	within?: globalThis.Range,
 ): Array<Text | Element> {
 	const layout = attached === undefined ? null : _(attached).extra.layout;
 	const nodes: Array<Text | Element> = [];
@@ -31892,8 +31911,37 @@ function getSelectionTextNodes(
 		}
 		return children;
 	};
-	const collect = (node: Node): void => {
-		for (const child of renderedChildren(node)) {
+	// `inTree` holds while the walk is in the range's own tree. Below a
+	// shadow root's or a slot's content it is not, and no point there
+	// compares with the range's.
+	const collect = (node: Node, inTree: boolean): void => {
+		const children = renderedChildren(node);
+		const first = children.length === 0 ? null : children[0];
+		const own = first === null || objectOf(_(first).parent) === node;
+		const ordered = inTree && within !== undefined && own;
+		for (const child of children) {
+			if (ordered) {
+				if (
+					comparePoints(
+						child,
+						getNodeLength(child),
+						within.startContainer as unknown as Node,
+						within.startOffset,
+					) < 0
+				) {
+					continue;
+				}
+				if (
+					comparePoints(
+						child,
+						0,
+						within.endContainer as unknown as Node,
+						within.endOffset,
+					) > 0
+				) {
+					break;
+				}
+			}
 			if (nodeTypeOf(child) === TEXT_NODE) {
 				if (
 					isPaintedText(child as Text, layout) &&
@@ -31913,14 +31961,14 @@ function getSelectionTextNodes(
 			} else if (nodeTypeOf(child) === ELEMENT_NODE) {
 				const name = localNameOf((child as Element));
 				if (name !== "script" && name !== "style" && name !== "template") {
-					collect(child);
+					collect(child, ordered);
 				}
 			}
 		}
 	};
 	const root = document.body ?? document.documentElement;
 	if (root !== null) {
-		collect(root as unknown as Node);
+		collect(root as unknown as Node, true);
 	}
 	return nodes;
 }
