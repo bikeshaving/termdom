@@ -574,6 +574,15 @@ function isCachedSizeValid(
 // a word that did not fit the bound. So a measured box's size under such
 // a bound, or with none, gives its height at a definite width in that
 // range, and the definite width is its own.
+// A box whose cached width is the width its text broke to. A replaced box
+// scales with the width it is given, and a max-width can cut the cached
+// width below the width the text broke at.
+function isTextBrokenAtItsWidth(node: LayoutNode): boolean {
+	return node.measure !== null &&
+		node.measuresText &&
+		node.style.maxWidth.unit === "undefined";
+}
+
 function isSameBreakWidth(
 	cachedSpace: number,
 	cachedAvailable: number,
@@ -686,6 +695,10 @@ export class LayoutNode {
 	gridTop: number;
 	// Whether the last roundToGrid left the children as they were.
 	settled: boolean;
+	// Whether a roundToGrid since the last paint extents moved the box. A
+	// solve rounds more than once, and a later pass finds settled what an
+	// earlier one moved, so the extents read this, which only they clear.
+	movedSinceExtents: boolean;
 	// The box's place in its parent and its size in whole cells, which
 	// roundToGrid writes from result and nothing else does. Layout reads
 	// only result, which only layout writes, so no value it reads was ever
@@ -735,6 +748,7 @@ export class LayoutNode {
 		this.gridLeft = NaN;
 		this.gridTop = NaN;
 		this.settled = false;
+		this.movedSinceExtents = true;
 		this.grid = {left: 0, top: 0, width: 0, height: 0};
 		this.rawAbsoluteLeft = NaN;
 		this.rawAbsoluteTop = NaN;
@@ -893,6 +907,7 @@ export function forgetLayout(node: LayoutNode): void {
 	node.gridLeft = NaN;
 	node.gridTop = NaN;
 	node.settled = false;
+	node.movedSinceExtents = true;
 	node.rawAbsoluteLeft = NaN;
 	node.rawAbsoluteTop = NaN;
 	node.keptChildren = false;
@@ -6403,7 +6418,7 @@ function layoutNode(
 							widthCode,
 							availableWidth - marginRow,
 						) || (
-							node.measure !== null &&
+							isTextBrokenAtItsWidth(node) &&
 							isSameBreakWidth(
 								cache[at + WIDTH_SPACE],
 								cache[at + AVAILABLE_WIDTH] - marginRow,
@@ -6882,6 +6897,9 @@ function roundToGrid(
 		roundValue(absTop, isText, false);
 
 	node.settled = absLeft === node.gridLeft && absTop === node.gridTop;
+	if (!node.settled) {
+		node.movedSinceExtents = true;
+	}
 	if (node.settled) {
 		return;
 	}

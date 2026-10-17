@@ -873,3 +873,45 @@ describe("what a measurement produced, not only how big it was", () => {
 		expect(rect(shortLine).height).toBe(1);
 	});
 });
+
+test("a replaced box given a definite width after an unbounded probe scales its height", () => {
+	// An image 10 by 5 at its natural size, half as tall as it is wide when
+	// given a width. Stretched across a 20-cell column, it is 10 tall. The
+	// unbounded measurement holds only for text, which breaks into the
+	// same lines at any width it fits in, and an image does not break.
+	const root = node();
+	root.style.flexDirection = "column";
+	const image = box(root);
+	image.measuresText = false;
+	image.measure = (width, widthSpace) =>
+		widthSpace === "definite"
+			? {width, height: width / 2}
+			: {width: 10, height: 5};
+	root.performLayout(NaN, NaN);
+	expect(rect(image).height).toBe(5);
+	root.style.width = toValue(20);
+	root.invalidate();
+	root.performLayout(NaN, NaN);
+	expect(rect(image).height).toBe(10);
+});
+
+test("text with a max-width breaks at the clamp after an unbounded probe", () => {
+	// 30 cells of text clamped to 20 is two lines, though the unbounded
+	// measurement that came first broke it into one 30 wide.
+	const root = node();
+	root.style.flexDirection = "column";
+	const text = box(root);
+	text.style.maxWidth = toValue(20);
+	text.measure = (width, widthSpace) => {
+		const limit = widthSpace === "indefinite" ? Infinity : width;
+		return {
+			width: Math.min(30, limit),
+			height: Math.ceil(30 / Math.min(limit, 30)),
+		};
+	};
+	root.performLayout(NaN, NaN);
+	root.style.width = toValue(20);
+	root.invalidate();
+	root.performLayout(NaN, NaN);
+	expect(rect(text).height).toBe(2);
+});
