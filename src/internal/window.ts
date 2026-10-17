@@ -198,11 +198,12 @@ export function createWindow(
 	source: string,
 	url?: string,
 	contentType = "text/html",
+	scripting = false,
 ): Window {
 	getInterfaceObjects();
 	if (contentType === "text/html") {
 		return buildWindow(
-			parseHTMLDocument(source, url, true, createWindowRegistry()),
+			parseHTMLDocument(source, url, true, createWindowRegistry(), scripting),
 		);
 	}
 	const document = parseXMLDocument(source, contentType);

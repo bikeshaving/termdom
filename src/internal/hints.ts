@@ -200,6 +200,19 @@ function isLink(element: Element): boolean {
 }
 
 /** The declarations an element's attributes give it, or null for none. */
+// The documents scripting is enabled in. Their <noscript> parsed as text
+// and shows nothing, as in a browser running scripts. Elsewhere it parsed
+// as markup and shows it.
+const scriptedDocuments = new WeakSet<Document>();
+
+export function markScriptedDocument(document: Document): void {
+	scriptedDocuments.add(document);
+}
+
+export function isScriptedDocument(document: Document): boolean {
+	return scriptedDocuments.has(document);
+}
+
 export function getPresentationalHints(element: Element): Hints | null {
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return null;
@@ -208,6 +221,14 @@ export function getPresentationalHints(element: Element): Hints | null {
 	const get = (attribute: string): string | null =>
 		element.getAttribute(attribute);
 	const hints: Hints = {};
+
+	if (
+		name === "noscript" &&
+		element.ownerDocument !== null &&
+		isScriptedDocument(element.ownerDocument)
+	) {
+		hints.display = "none";
+	}
 
 	if (TABLE_PARTS.has(name) || name === "body") {
 		setColor(hints, "background-color", get("bgcolor"));

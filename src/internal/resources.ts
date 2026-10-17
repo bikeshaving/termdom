@@ -359,6 +359,21 @@ export function parseContentSecurityPolicies(
 	return serialized.split(",").map(parseContentSecurityPolicy);
 }
 
+/**
+ * Whether a policy lets no script run at all: its script-src, or its
+ * default-src without one, is 'none'.
+ */
+export function forbidsScripts(policies: ContentSecurityPolicy[]): boolean {
+	return policies.some((policy) => {
+		const sources =
+			policy.directives.get("script-src") ??
+			policy.directives.get("default-src");
+		return sources !== undefined &&
+			sources.length === 1 &&
+			sources[0].toLowerCase() === "'none'";
+	});
+}
+
 /** One serialized policy, as a meta tag carries it (CSP3 §2.2.1). */
 function parseContentSecurityPolicy(text: string): ContentSecurityPolicy {
 	const directives = new Map<string, string[]>();
