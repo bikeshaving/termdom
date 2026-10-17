@@ -983,6 +983,9 @@ export function getComputedHeight(layoutNode: LayoutNode): number {
 const sharedIds = new WeakMap<object, number>();
 let nextSharedId = 0;
 const sharedRecords = new Map<string, object>();
+// A page that animates a length makes a set of edges per frame. The table
+// starts over past this, and the records nodes hold stay theirs.
+const SHARED_RECORDS = 4096;
 sharedIds.set(UNDEFINED_VALUE, ++nextSharedId);
 sharedIds.set(AUTO_VALUE, ++nextSharedId);
 
@@ -1077,6 +1080,9 @@ function shareRecord<T extends object>(kind: string, record: T): T {
 	}
 	let shared = sharedRecords.get(key);
 	if (shared === undefined) {
+		if (sharedRecords.size >= SHARED_RECORDS) {
+			sharedRecords.clear();
+		}
 		shared = Object.freeze(record);
 		sharedRecords.set(key, shared);
 	}
