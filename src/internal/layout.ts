@@ -3649,6 +3649,9 @@ interface ProcessedContent {
 	// character. A fragment of a grapheme cluster carries none of its
 	// width.
 	getPrefixWidths: Float64Array;
+
+	// Whether any text keeps the spaces that end its lines.
+	keepsEndSpaces: boolean;
 }
 
 interface BreakPoint {
@@ -4712,7 +4715,19 @@ function processWhitespace(
 		}
 	}
 
-	return {items, text, getPrefixWidths: getPrefixWidths(items, text)};
+	const keepsEndSpaces = items.some((item) => {
+		if (item.leafNode.type !== "text") {
+			return false;
+		}
+		const whiteSpace = getWhiteSpace(item.leafNode.node);
+		return whiteSpace === "pre" || whiteSpace === "break-spaces";
+	});
+	return {
+		items,
+		text,
+		getPrefixWidths: getPrefixWidths(items, text),
+		keepsEndSpaces,
+	};
 }
 
 function hasNowrapLeaf(content: ProcessedContent): boolean {
@@ -5131,8 +5146,8 @@ function getHangingSpaces(
 	while (end - count - 1 > start && content.text[end - count - 1] === " ") {
 		count++;
 	}
-	if (count === 0) {
-		return 0;
+	if (count === 0 || !content.keepsEndSpaces) {
+		return count;
 	}
 	for (const item of content.items) {
 		if (
