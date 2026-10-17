@@ -1746,12 +1746,19 @@ function getChangedAttributes(
 	return changed;
 }
 
+// A frame that starts at a row it named and ends on the screen moves
+// down by cursor-down or to the cell outright, whichever is shorter than
+// a newline per row. A newline is what scrolls rows past the bottom into
+// view, so a frame that may reach below the screen moves by newlines.
+// `startRow` is the screen row the frame starts at, or -1 for one that
+// may reach below.
 function moveCursor(
 	writer: FrameWriter,
 	currentRow: number,
 	currentCol: number,
 	targetRow: number,
 	targetCol: number,
+	startRow: number,
 ): string {
 	const rowDiff = targetRow - currentRow;
 
@@ -1767,11 +1774,22 @@ function moveCursor(
 	}
 
 	if (rowDiff > 0) {
-		writer.newLine(rowDiff);
+		if (startRow < 0 || rowDiff <= 2) {
+			writer.newLine(rowDiff);
+		} else {
+			writer.carriageReturn().cursorDown(rowDiff);
+		}
 		if (targetCol > 0) {
 			writer.cursorForward(targetCol);
 		}
-		return writer.take();
+		const relative = writer.take();
+		if (startRow < 0) {
+			return relative;
+		}
+		const absolute = writer
+			.cursorTo(startRow + targetRow + 1, targetCol + 1)
+			.take();
+		return absolute.length < relative.length ? absolute : relative;
 	}
 	if (targetCol === currentCol) {
 		return "";
@@ -1833,6 +1851,7 @@ function generateANSI(
 	grid: CellGrid,
 	writer: FrameWriter,
 	renderedLines: Set<number>,
+	startRow: number,
 	measurer?: Exchange,
 ): string {
 	const {rows, cols, cluster, border} = grid;
@@ -1863,7 +1882,7 @@ function generateANSI(
 		if (deferred.size > 0) {
 			const cell = safeProbeCell(grid);
 			if (cell !== null) {
-				output += moveCursor(writer, 0, 0, cell.row, 0);
+				output += moveCursor(writer, 0, 0, cell.row, 0, startRow);
 				cursorRow = cell.row;
 				cursorCol = 0;
 				// probe() takes the cluster out of the set being iterated.
@@ -1923,16 +1942,27 @@ function generateANSI(
 			}
 
 			if (row !== cursorRow || col !== cursorCol) {
-				const moveSeq = moveCursor(writer, cursorRow, cursorCol, row, col);
+				const moveSeq = moveCursor(
+					writer,
+					cursorRow,
+					cursorCol,
+					row,
+					col,
+					startRow,
+				);
 				output += moveSeq;
 				cursorRow = row;
 				cursorCol = col;
-				// A carriage return puts the cursor in a column named
-				// absolutely, so whatever the glyphs before it really did stops
-				// mattering and a new run begins. A bare cursor-forward does
-				// not. It steps from wherever the cursor actually is, carrying
-				// any divergence with it, and the run continues.
-				if (measurer !== undefined && moveSeq.includes("\r")) {
+				// A carriage return or a move to a cell puts the cursor in a
+				// column named absolutely, so whatever the glyphs before it
+				// really did stops mattering and a new run begins. A bare
+				// cursor-forward does not. It steps from wherever the cursor
+				// actually is, carrying any divergence with it, and the run
+				// continues.
+				if (
+					measurer !== undefined &&
+					(moveSeq.includes("\r") || moveSeq.endsWith("H"))
+				) {
 					run++;
 				}
 			}
@@ -2754,6 +2784,10 @@ export function beginFrame(
 			diff,
 			writer,
 			framebuffer.renderedLines,
+			frameStartRow !== undefined &&
+				frameStartRow + diff.rows <= framebuffer.rowCount
+				? frameStartRow
+				: -1,
 			measurer,
 		);
 

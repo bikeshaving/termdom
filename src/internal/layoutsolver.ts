@@ -254,8 +254,14 @@ interface LayoutResult {
 	top: number;
 	width: number;
 	height: number;
-	margin: Edges<number>;
-	padding: Edges<number>;
+	marginLeft: number;
+	marginTop: number;
+	marginRight: number;
+	marginBottom: number;
+	paddingLeft: number;
+	paddingTop: number;
+	paddingRight: number;
+	paddingBottom: number;
 	computedFlexBasis: number;
 
 	// css-flexbox-1 §4.5, along the parent's main axis.
@@ -284,15 +290,150 @@ interface LayoutResult {
 	selfCollapsing: boolean;
 }
 
-interface CachedSize {
-	availableWidth: number;
-	availableHeight: number;
-	widthSpace: AvailableSpace;
-	heightSpace: AvailableSpace;
-	ownerWidth: number;
-	ownerHeight: number;
-	width: number;
-	height: number;
+// A node's cached results, a block of entries in its pool. The first is
+// the full layout's, and the sizing results follow, by slot and oldest
+// first within one.
+const ENTRY = 9;
+const AVAILABLE_WIDTH = 0;
+const AVAILABLE_HEIGHT = 1;
+const WIDTH_SPACE = 2;
+const HEIGHT_SPACE = 3;
+const OWNER_WIDTH = 4;
+const OWNER_HEIGHT = 5;
+const WIDTH = 6;
+const HEIGHT = 7;
+const SLOT = 8;
+
+const INDEFINITE = 0;
+const DEFINITE = 1;
+const SHRINK_TO_FIT = 2;
+
+// The cached results of every node of one document, in one array. Blocks
+// are taken from the end. When the array fills, it doubles, unless half of
+// it is known to be dead or it has grown well past what was live when it
+// was last compacted. Then the blocks of the nodes the document can still
+// reach are copied into a fresh one, which drops the blocks of nodes that
+// are gone or outgrew theirs. A node the walk misses loses its results,
+// which costs a measurement and never a wrong answer.
+export class CachePool {
+	data: Float64Array;
+	used: number;
+	dead: number;
+	live: number;
+	generation: number;
+	liveNodes: (() => Iterable<LayoutNode>) | null;
+
+	constructor(liveNodes: (() => Iterable<LayoutNode>) | null = null) {
+		this.data = new Float64Array(ENTRY * 256);
+		this.used = 0;
+		this.dead = 0;
+		this.live = 0;
+		this.generation = 0;
+		this.liveNodes = liveNodes;
+	}
+}
+
+const sharedPool = new CachePool();
+
+function hasCache(node: LayoutNode): boolean {
+	return (
+		node.cacheCapacity > 0 && node.cacheGeneration === node.pool.generation
+	);
+}
+
+function compactPool(pool: CachePool, needed: number): void {
+	const old = pool.data;
+	const previous = pool.generation;
+	const live: LayoutNode[] = [];
+	let entries = 0;
+	for (const node of pool.liveNodes?.() ?? []) {
+		if (
+			node.pool === pool &&
+			node.cacheCapacity > 0 &&
+			node.cacheGeneration === previous
+		) {
+			node.cacheGeneration = previous + 1;
+			live.push(node);
+			entries += node.cacheCapacity;
+		}
+	}
+	const capacity = Math.max(old.length / ENTRY, 2 * (entries + needed));
+	const data = new Float64Array(capacity * ENTRY);
+	let used = 0;
+	for (const node of live) {
+		data.set(
+			old.subarray(
+				node.cacheAt * ENTRY,
+				(node.cacheAt + node.cacheCapacity) * ENTRY,
+			),
+			used * ENTRY,
+		);
+		node.cacheAt = used;
+		used += node.cacheCapacity;
+	}
+	pool.data = data;
+	pool.used = used;
+	pool.dead = 0;
+	pool.live = used;
+	pool.generation = previous + 1;
+}
+
+function growPool(pool: CachePool, needed: number): void {
+	if (pool.dead * 2 >= pool.used || pool.used > 4 * pool.live + 1024) {
+		compactPool(pool, needed);
+		return;
+	}
+	const grown = new Float64Array(
+		Math.max(pool.data.length * 2, (pool.used + needed) * ENTRY),
+	);
+	grown.set(pool.data);
+	pool.data = grown;
+}
+
+/** Gives the node's block back to its pool. */
+export function releaseCache(node: LayoutNode): void {
+	if (hasCache(node)) {
+		node.pool.dead += node.cacheCapacity;
+	}
+	node.cacheCapacity = 0;
+}
+
+// Gives the node a block of at least `entries` entries, carrying over the
+// results it holds.
+function reserveCache(node: LayoutNode, entries: number): void {
+	if (hasCache(node) && node.cacheCapacity >= entries) {
+		return;
+	}
+	const pool = node.pool;
+	const capacity = Math.max(
+		entries,
+		Math.ceil((hasCache(node) ? node.cacheCapacity : 0) * 1.5),
+	);
+	if ((pool.used + capacity) * ENTRY > pool.data.length) {
+		growPool(pool, capacity);
+	}
+	const at = pool.used;
+	pool.used += capacity;
+	if (hasCache(node)) {
+		pool.data.copyWithin(
+			at * ENTRY,
+			node.cacheAt * ENTRY,
+			(node.cacheAt + node.cacheCapacity) * ENTRY,
+		);
+		pool.dead += node.cacheCapacity;
+	} else {
+		node.hasCachedLayout = false;
+		node.cachedSizeCount = 0;
+	}
+	node.cacheAt = at;
+	node.cacheCapacity = capacity;
+	node.cacheGeneration = pool.generation;
+}
+
+function getSpaceCode(space: AvailableSpace): number {
+	return space === "indefinite"
+		? INDEFINITE
+		: space === "definite" ? DEFINITE : SHRINK_TO_FIT;
 }
 
 // Undefined constraints are NaN, and NaN !== NaN.
@@ -301,23 +442,24 @@ function isSameConstraint(a: number, b: number): boolean {
 }
 
 function isMatchingConstraints(
-	cache: CachedSize,
+	cache: Float64Array,
+	at: number,
 	availableWidth: number,
 	availableHeight: number,
-	widthSpace: AvailableSpace,
-	heightSpace: AvailableSpace,
+	widthSpace: number,
+	heightSpace: number,
 	ownerWidth: number,
 	ownerHeight: number,
 	ownerFree: boolean,
 ): boolean {
 	return (
-		cache.widthSpace === widthSpace &&
-		cache.heightSpace === heightSpace &&
-		isSameConstraint(cache.availableWidth, availableWidth) &&
-		isSameConstraint(cache.availableHeight, availableHeight) &&
+		cache[at + WIDTH_SPACE] === widthSpace &&
+		cache[at + HEIGHT_SPACE] === heightSpace &&
+		isSameConstraint(cache[at + AVAILABLE_WIDTH], availableWidth) &&
+		isSameConstraint(cache[at + AVAILABLE_HEIGHT], availableHeight) &&
 		(ownerFree ||
-			(isSameConstraint(cache.ownerWidth, ownerWidth) &&
-				isSameConstraint(cache.ownerHeight, ownerHeight)))
+			(isSameConstraint(cache[at + OWNER_WIDTH], ownerWidth) &&
+				isSameConstraint(cache[at + OWNER_HEIGHT], ownerHeight)))
 	);
 }
 
@@ -398,10 +540,10 @@ function isOwnerFree(node: LayoutNode): boolean {
 // `shrink-to-fit` bound the result still fits. Sizing only. A full layout
 // placed children against its request.
 function isCachedSizeValid(
-	cachedSpace: AvailableSpace,
+	cachedSpace: number,
 	cachedAvailable: number,
 	cachedComputed: number,
-	mode: AvailableSpace,
+	mode: number,
 	available: number,
 ): boolean {
 	if (cachedSpace === mode && isSameConstraint(cachedAvailable, available)) {
@@ -410,33 +552,59 @@ function isCachedSizeValid(
 	// A size measured under a narrower request than it came out at broke its
 	// lines for that request, and at its own width they would break fewer.
 	if (
-		mode === "definite" &&
+		mode === DEFINITE &&
 		available === cachedComputed &&
-		(cachedSpace === "indefinite" || !(cachedAvailable < cachedComputed))
+		(cachedSpace === INDEFINITE || !(cachedAvailable < cachedComputed))
 	) {
 		return true;
 	}
-	if (mode === "shrink-to-fit") {
-		if (cachedSpace === "indefinite") {
+	if (mode === SHRINK_TO_FIT) {
+		if (cachedSpace === INDEFINITE) {
 			return cachedComputed <= available;
 		}
-		if (cachedSpace === "shrink-to-fit") {
+		if (cachedSpace === SHRINK_TO_FIT) {
 			return cachedAvailable > available && cachedComputed <= available;
 		}
 	}
 	return false;
 }
 
+// Text breaks into the same lines at any width between the widest line
+// it broke into and the bound it broke against, since each line ended at
+// a word that did not fit the bound. So a measured box's size under such
+// a bound, or with none, gives its height at a definite width in that
+// range, and the definite width is its own.
+// A box whose cached width is the width its text broke to. A replaced box
+// scales with the width it is given, and a max-width can cut the cached
+// width below the width the text broke at.
+function isTextBrokenAtItsWidth(node: LayoutNode): boolean {
+	return node.measure !== null &&
+		node.measuresText &&
+		node.style.maxWidth.unit === "undefined";
+}
+
+function isSameBreakWidth(
+	cachedSpace: number,
+	cachedAvailable: number,
+	cachedComputed: number,
+	mode: number,
+	available: number,
+): boolean {
+	if (mode !== DEFINITE || available < cachedComputed) {
+		return false;
+	}
+	return cachedSpace === INDEFINITE ||
+		(cachedSpace === SHRINK_TO_FIT && available <= cachedAvailable);
+}
+
 function isMinContent(mode: AvailableSpace, available: number): boolean {
 	return mode === "shrink-to-fit" && available === 0;
 }
 
-const CACHE_SLOT_COUNT = 9;
 // Answers kept per query shape. A table measures what it holds at every
 // width its parent tries, and a nested table at every width each of those
 // gives it.
 const CACHE_SLOT_DEPTH = 4;
-const NO_CACHED_SIZES: ReadonlyArray<CachedSize | null> = Object.freeze([]);
 
 // One cache slot per query shape, after Taffy, so the probes one pass makes
 // of a child (min-content, max-content, fixed) never evict each other. A
@@ -465,6 +633,8 @@ function getCacheSlot(
 	);
 }
 
+const NO_CHILDREN: LayoutNode[] = Object.freeze([]) as unknown as LayoutNode[];
+
 export class LayoutNode {
 	measureFn: Measure | null;
 	staticPositionFn: StaticPosition | null;
@@ -478,12 +648,21 @@ export class LayoutNode {
 	children: LayoutNode[];
 	parent: LayoutNode | null;
 	stale: boolean;
+	// Whether the node itself changed, rather than only something under it,
+	// which leaves its stale ancestors' own requests and children as they
+	// were.
+	selfStale: boolean;
 
 	// One sizing result per query shape (getCacheSlot), so a placing pass's
 	// several probes of one child keep their own. `stale` invalidates both.
-	// Null until a sizing query is first cached, which many nodes never see.
-	cachedSizes: Array<CachedSize | null> | null;
-	cachedLayout: CachedSize | null;
+	// A block in the pool, none until a result is first cached. Clearing
+	// keeps the block for the next results.
+	pool: CachePool;
+	cacheAt: number;
+	cacheCapacity: number;
+	cacheGeneration: number;
+	hasCachedLayout: boolean;
+	cachedSizeCount: number;
 
 	// Whether the subtree's size depends on the width it is offered other
 	// than through where its lines break: a percentage that resolves
@@ -516,6 +695,10 @@ export class LayoutNode {
 	gridTop: number;
 	// Whether the last roundToGrid left the children as they were.
 	settled: boolean;
+	// Whether a roundToGrid since the last paint extents moved the box. A
+	// solve rounds more than once, and a later pass finds settled what an
+	// earlier one moved, so the extents read this, which only they clear.
+	movedSinceExtents: boolean;
 	// The box's place in its parent and its size in whole cells, which
 	// roundToGrid writes from result and nothing else does. Layout reads
 	// only result, which only layout writes, so no value it reads was ever
@@ -524,6 +707,10 @@ export class LayoutNode {
 	// across.
 	grid: {left: number; top: number; width: number; height: number};
 	rawAbsoluteLeft: number;
+	rawAbsoluteTop: number;
+	// Whether the last layout of a block laid out only its stale children
+	// and left the rest where they were, so rounding visits those alone.
+	keptChildren: boolean;
 	// What the last measure broke the box's text to: the width it was
 	// given, and the Size fields that say whether another edge would break
 	// it differently.
@@ -532,20 +719,28 @@ export class LayoutNode {
 	// Whether a child left since the last paint extents, whose rows then
 	// show nothing it painted.
 	lostChild: boolean;
+	// The rows the box paints and where its overflow reaches, as the last
+	// paint extents found them. Layout's to read and write.
+	extent: object | undefined;
 	// Called when the tree this node roots goes stale. The root of a box's
 	// own formatting context tells the box, whose measure lays it out.
 	onStale: (() => void) | null;
 
-	constructor() {
-		this.children = [];
+	constructor(pool: CachePool = sharedPool) {
+		this.children = NO_CHILDREN;
 		this.parent = null;
 		this.ownerFree = false;
 		this.measureFn = null;
 		this.staticPositionFn = null;
 		this.stale = true;
-		this.cachedSizes = null;
+		this.selfStale = true;
+		this.pool = pool;
+		this.cacheAt = 0;
+		this.cacheCapacity = 0;
+		this.cacheGeneration = 0;
+		this.hasCachedLayout = false;
+		this.cachedSizeCount = 0;
 		this.widthDependent = false;
-		this.cachedLayout = null;
 		this.cellBaselineShift = 0;
 		this.owner = null;
 		this.measuresText = true;
@@ -553,13 +748,17 @@ export class LayoutNode {
 		this.gridLeft = NaN;
 		this.gridTop = NaN;
 		this.settled = false;
+		this.movedSinceExtents = true;
 		this.grid = {left: 0, top: 0, width: 0, height: 0};
 		this.rawAbsoluteLeft = NaN;
+		this.rawAbsoluteTop = NaN;
+		this.keptChildren = false;
 		this.measuredWidth = NaN;
 		this.measured = null;
 		this.lostChild = false;
+		this.extent = undefined;
 		this.onStale = null;
-		this.currentStyle = createStyle();
+		this.currentStyle = getDefaultStyle();
 		this.result = createResult();
 	}
 
@@ -584,6 +783,7 @@ export class LayoutNode {
 		if (relaid) {
 			for (const child of this.children) {
 				child.stale = true;
+				child.selfStale = true;
 			}
 			this.invalidate();
 		}
@@ -617,6 +817,7 @@ export class LayoutNode {
 			this.children.splice(index, 1);
 			child.parent = null;
 			this.lostChild = true;
+			this.selfStale = true;
 			if (child.outOfFlowCount !== 0) {
 				countOutOfFlow(this, -child.outOfFlowCount);
 			}
@@ -626,6 +827,7 @@ export class LayoutNode {
 
 	invalidate(): void {
 		this.stale = true;
+		this.selfStale = true;
 		invalidateAncestors(this);
 	}
 
@@ -687,6 +889,7 @@ export class LayoutNode {
 			);
 		}
 		this.stale = false;
+		this.selfStale = false;
 	}
 }
 
@@ -697,12 +900,17 @@ export class LayoutNode {
  */
 export function forgetLayout(node: LayoutNode): void {
 	node.stale = true;
-	node.cachedLayout = null;
-	node.cachedSizes = null;
+	node.selfStale = true;
+	releaseCache(node);
+	node.hasCachedLayout = false;
+	node.cachedSizeCount = 0;
 	node.gridLeft = NaN;
 	node.gridTop = NaN;
 	node.settled = false;
+	node.movedSinceExtents = true;
 	node.rawAbsoluteLeft = NaN;
+	node.rawAbsoluteTop = NaN;
+	node.keptChildren = false;
 	node.measuredWidth = NaN;
 	node.measured = null;
 }
@@ -715,7 +923,13 @@ export function insertChild(
 ): void {
 	child.parent = layoutNode;
 	child.stale = true;
-	layoutNode.children.splice(index, 0, child);
+	child.selfStale = true;
+	layoutNode.selfStale = true;
+	if (layoutNode.children === NO_CHILDREN) {
+		layoutNode.children = [child];
+	} else {
+		layoutNode.children.splice(index, 0, child);
+	}
 	if (child.outOfFlowCount !== 0) {
 		countOutOfFlow(layoutNode, child.outOfFlowCount);
 	}
@@ -769,6 +983,9 @@ export function getComputedHeight(layoutNode: LayoutNode): number {
 const sharedIds = new WeakMap<object, number>();
 let nextSharedId = 0;
 const sharedRecords = new Map<string, object>();
+// A page that animates a length makes a set of edges per frame. The table
+// starts over past this, and the records nodes hold stay theirs.
+const SHARED_RECORDS = 4096;
 sharedIds.set(UNDEFINED_VALUE, ++nextSharedId);
 sharedIds.set(AUTO_VALUE, ++nextSharedId);
 
@@ -806,7 +1023,53 @@ function getSharedKey(value: unknown): string | null {
 	return id === undefined ? null : `#${id}`;
 }
 
+// Siblings and cousins mostly style alike, a list's items or a table's
+// cells, so a finished record is first checked against the last few
+// shared of its kind, field by field, before it is keyed.
+const RECENT_RECORDS = 16;
+const recentRecords = new Map<string, {records: object[]; next: number}>();
+
+function isSameRecord(a: object, b: object): boolean {
+	for (const name in b) {
+		if (
+			!Object.is(
+				(a as Record<string, unknown>)[name],
+				(b as Record<string, unknown>)[name],
+			)
+		) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function findRecentRecord<T extends object>(kind: string, record: T): T | null {
+	const recent = recentRecords.get(kind);
+	if (recent !== undefined) {
+		for (const candidate of recent.records) {
+			if (isSameRecord(candidate, record)) {
+				return candidate as T;
+			}
+		}
+	}
+	return null;
+}
+
+function rememberRecentRecord(kind: string, record: object): void {
+	let recent = recentRecords.get(kind);
+	if (recent === undefined) {
+		recent = {records: [], next: 0};
+		recentRecords.set(kind, recent);
+	}
+	recent.records[recent.next] = record;
+	recent.next = (recent.next + 1) % RECENT_RECORDS;
+}
+
 function shareRecord<T extends object>(kind: string, record: T): T {
+	const recent = findRecentRecord(kind, record);
+	if (recent !== null) {
+		return recent;
+	}
 	let key = kind;
 	for (const value of Object.values(record)) {
 		const part = getSharedKey(value);
@@ -817,14 +1080,18 @@ function shareRecord<T extends object>(kind: string, record: T): T {
 	}
 	let shared = sharedRecords.get(key);
 	if (shared === undefined) {
+		if (sharedRecords.size >= SHARED_RECORDS) {
+			sharedRecords.clear();
+		}
 		shared = Object.freeze(record);
 		sharedRecords.set(key, shared);
 	}
+	rememberRecentRecord(kind, shared);
 	return shared as T;
 }
 
 /** Shares a finished style's edge records with every style that has the same. */
-export function shareStyleEdges(style: Style): void {
+function shareStyleEdges(style: Style): void {
 	style.margin = shareRecord("margin", style.margin);
 	style.padding = shareRecord("padding", style.padding);
 	style.position = shareRecord("position", style.position);
@@ -847,19 +1114,25 @@ export function toValue(input: Length): CSSValues.Value {
 	return AUTO_VALUE;
 }
 
-const AUTO_PLACEMENT: CSSValues.GridPlacement = {
+const AUTO_PLACEMENT: CSSValues.GridPlacement = Object.freeze({
 	span: false,
 	index: null,
 	name: null,
-};
+});
 
 /** The `auto` track size: the initial value of grid-auto-rows/columns. */
-const AUTO_TRACK: CSSValues.TrackSize = {
-	min: {kind: "auto"},
-	max: {kind: "auto"},
-};
+const AUTO_TRACK: CSSValues.TrackSize = Object.freeze({
+	min: Object.freeze({kind: "auto"}),
+	max: Object.freeze({kind: "auto"}),
+});
 
-const EMPTY_TRACK_LIST: CSSValues.TrackList = {parts: [], endNames: []};
+const EMPTY_TRACK_LIST: CSSValues.TrackList = Object.freeze({
+	parts: Object.freeze([]) as unknown as CSSValues.TrackList["parts"],
+	endNames: Object.freeze([]) as unknown as CSSValues.TrackList["endNames"],
+});
+
+const AUTO_TRACKS: CSSValues.TrackSize[] =
+	Object.freeze([AUTO_TRACK]) as unknown as CSSValues.TrackSize[];
 
 // Browser defaults, not Yoga's: row direction, align-content stretch,
 // flex-shrink 1.
@@ -885,8 +1158,8 @@ export function createStyle(): Style {
 		gridTemplateColumns: EMPTY_TRACK_LIST,
 		gridTemplateRows: EMPTY_TRACK_LIST,
 		gridTemplateAreas: null,
-		gridAutoColumns: [AUTO_TRACK],
-		gridAutoRows: [AUTO_TRACK],
+		gridAutoColumns: AUTO_TRACKS,
+		gridAutoRows: AUTO_TRACKS,
 		gridAutoFlowColumn: false,
 		gridAutoFlowDense: false,
 
@@ -937,14 +1210,99 @@ export function createStyle(): Style {
 	};
 }
 
+const DEFAULT_STYLE: Style = createStyle();
+shareStyleEdges(DEFAULT_STYLE);
+Object.freeze(DEFAULT_STYLE);
+
+function isSameNumber(a: number, b: number): boolean {
+	return a === b || (Number.isNaN(a) && Number.isNaN(b));
+}
+
+function isSameStyle(a: Style, b: Style): boolean {
+	return (
+		a.displayType === b.displayType &&
+		a.width === b.width &&
+		a.height === b.height &&
+		a.positionType === b.positionType &&
+		a.margin === b.margin &&
+		a.padding === b.padding &&
+		a.border === b.border &&
+		a.position === b.position &&
+		a.gap === b.gap &&
+		a.flexDirection === b.flexDirection &&
+		a.justifyContent === b.justifyContent &&
+		a.alignContent === b.alignContent &&
+		a.alignItems === b.alignItems &&
+		a.alignSelf === b.alignSelf &&
+		a.flexWrap === b.flexWrap &&
+		a.clipsOverflow === b.clipsOverflow &&
+		a.scrollContainer === b.scrollContainer &&
+		a.containsPositioned === b.containsPositioned &&
+		a.justifyItems === b.justifyItems &&
+		a.justifySelf === b.justifySelf &&
+		a.gridTemplateColumns === b.gridTemplateColumns &&
+		a.gridTemplateRows === b.gridTemplateRows &&
+		a.gridTemplateAreas === b.gridTemplateAreas &&
+		a.gridAutoColumns === b.gridAutoColumns &&
+		a.gridAutoRows === b.gridAutoRows &&
+		a.gridAutoFlowColumn === b.gridAutoFlowColumn &&
+		a.gridAutoFlowDense === b.gridAutoFlowDense &&
+		a.gridRowStart === b.gridRowStart &&
+		a.gridRowEnd === b.gridRowEnd &&
+		a.gridColumnStart === b.gridColumnStart &&
+		a.gridColumnEnd === b.gridColumnEnd &&
+		a.colSpan === b.colSpan &&
+		a.rowSpan === b.rowSpan &&
+		a.borderCollapse === b.borderCollapse &&
+		a.tableLayoutFixed === b.tableLayoutFixed &&
+		a.blockFormattingContext === b.blockFormattingContext &&
+		a.order === b.order &&
+		a.flexBasis === b.flexBasis &&
+		a.widthSizing === b.widthSizing &&
+		a.minWidth === b.minWidth &&
+		a.minHeight === b.minHeight &&
+		a.maxWidth === b.maxWidth &&
+		a.maxHeight === b.maxHeight &&
+		isSameNumber(a.flexGrow, b.flexGrow) &&
+		isSameNumber(a.flexShrink, b.flexShrink) &&
+		isSameNumber(a.aspectRatio, b.aspectRatio)
+	);
+}
+
+/** A frozen style equal to the finished style, shared when one was recent. */
+export function shareStyle(style: Style): Style {
+	shareStyleEdges(style);
+	const recent = recentRecords.get("style");
+	if (recent !== undefined) {
+		for (const candidate of recent.records as Style[]) {
+			if (isSameStyle(candidate, style)) {
+				return candidate;
+			}
+		}
+	}
+	Object.freeze(style);
+	rememberRecentRecord("style", style);
+	return style;
+}
+
+function getDefaultStyle(): Style {
+	return DEFAULT_STYLE;
+}
+
 function createResult(): LayoutResult {
 	return {
 		left: 0,
 		top: 0,
 		width: NaN,
 		height: NaN,
-		margin: {left: 0, top: 0, right: 0, bottom: 0},
-		padding: {left: 0, top: 0, right: 0, bottom: 0},
+		marginLeft: 0,
+		marginTop: 0,
+		marginRight: 0,
+		marginBottom: 0,
+		paddingLeft: 0,
+		paddingTop: 0,
+		paddingRight: 0,
+		paddingBottom: 0,
 		computedFlexBasis: NaN,
 		automaticMinimumSize: NaN,
 		gridColumns: null,
@@ -1186,10 +1544,10 @@ function constrainMaxSizeForMode(
 }
 
 function resolveNodeMargins(node: LayoutNode, ownerWidth: number): void {
-	node.result.margin.left = resolveMargin(node.style.margin.left, ownerWidth);
-	node.result.margin.top = resolveMargin(node.style.margin.top, ownerWidth);
-	node.result.margin.right = resolveMargin(node.style.margin.right, ownerWidth);
-	node.result.margin.bottom = resolveMargin(
+	node.result.marginLeft = resolveMargin(node.style.margin.left, ownerWidth);
+	node.result.marginTop = resolveMargin(node.style.margin.top, ownerWidth);
+	node.result.marginRight = resolveMargin(node.style.margin.right, ownerWidth);
+	node.result.marginBottom = resolveMargin(
 		node.style.margin.bottom,
 		ownerWidth,
 	);
@@ -1254,14 +1612,35 @@ function layoutMeasuredContent(
 		return;
 	}
 
+	// A max-width caps where the text breaks, whatever the request, as
+	// constrainMaxSizeForMode caps it for the callers that call it. The
+	// probes of grid tracks and table columns ask with no width at all, and
+	// text broken wider than the box is drawn would come out a line short.
+	let breakWidth = innerWidth;
+	let breakSpace = widthSpace;
+	const maxWidth = resolveValue(node.style.maxWidth, ownerWidth);
+	if (!Number.isNaN(maxWidth) && maxWidth >= 0) {
+		const maxInner = Math.max(0, maxWidth - paddingBorderRow);
+		if (Number.isNaN(breakWidth)) {
+			breakWidth = maxInner;
+			breakSpace = "shrink-to-fit";
+		} else if (breakWidth > maxInner) {
+			breakWidth = maxInner;
+		}
+	}
+
 	const measured = node.measure!(
-		innerWidth,
-		widthSpace,
+		breakWidth,
+		breakSpace,
 		placing,
 		getContentLeft(node),
 	);
-	node.measuredWidth = innerWidth;
-	node.measured = measured;
+	// What the placed lines were measured at, which a probe leaves while
+	// that layout stands.
+	if (placing || !node.hasCachedLayout) {
+		node.measuredWidth = breakWidth;
+		node.measured = measured;
+	}
 
 	const width = widthSpace === "definite"
 		? availableWidth - marginRow
@@ -2810,16 +3189,16 @@ function placeAnonymousCellContent(
 ): void {
 	resolveNodeMargins(node, cellWidth);
 	layoutBlockChild(node, cellWidth, true, cellWidth, NaN, true);
-	const leading = node.result.margin.left;
+	const leading = node.result.marginLeft;
 	const free =
-		cellWidth - node.result.width - leading - node.result.margin.right;
+		cellWidth - node.result.width - leading - node.result.marginRight;
 	const leadingAuto = node.style.margin.left.unit === "auto";
 	const trailingAuto = node.style.margin.right.unit === "auto";
 	const offset = leadingAuto && trailingAuto
 		? Math.max(free, 0) / 2
 		: leadingAuto ? Math.max(free, 0) : 0;
 	node.result.left = cellLeft + leading + offset;
-	node.result.top = node.result.margin.top;
+	node.result.top = node.result.marginTop;
 }
 
 // The blocks an anonymous cell wraps, one below another, with the
@@ -2842,11 +3221,11 @@ function stackAnonymousCell(
 			resolveNodeMargins(node, cellWidth);
 			layoutBlockChild(node, cellWidth, true, cellWidth, NaN, false);
 		}
-		const {top, bottom} = node.result.margin;
+		const top = node.result.marginTop;
 		const gap = index === 0 ? top : Math.max(below, top);
 		node.result.top = cellTop + height + gap;
 		height += gap + node.result.height;
-		below = bottom;
+		below = node.result.marginBottom;
 	});
 	return height + below;
 }
@@ -3429,7 +3808,7 @@ function layoutTable(
 		if (cell.node.cellBaselineShift !== shift) {
 			// Its content moves, which a layout cached for its size would not.
 			cell.node.cellBaselineShift = shift;
-			cell.node.cachedLayout = null;
+			cell.node.hasCachedLayout = false;
 		}
 	}
 
@@ -5649,14 +6028,14 @@ function getCollapsedMargin(set: MarginSet): number {
 // The child's own margin, plus what escapes its edge.
 function readCollapseTop(child: LayoutNode, into: MarginSet): void {
 	resetMarginSet(into);
-	addMargin(into, child.result.margin.top);
+	addMargin(into, child.result.marginTop);
 	into.positive = Math.max(into.positive, child.result.collapseTopPositive);
 	into.negative = Math.min(into.negative, child.result.collapseTopNegative);
 }
 
 function readCollapseBottom(child: LayoutNode, into: MarginSet): void {
 	resetMarginSet(into);
-	addMargin(into, child.result.margin.bottom);
+	addMargin(into, child.result.marginBottom);
 	into.positive = Math.max(into.positive, child.result.collapseBottomPositive);
 	into.negative = Math.min(into.negative, child.result.collapseBottomNegative);
 }
@@ -5929,8 +6308,8 @@ function layoutBlock(
 
 	for (let i = 0; i < inFlow.length; i++) {
 		const child = inFlow[i];
-		const leading = child.result.margin.left;
-		const trailing = child.result.margin.right;
+		const leading = child.result.marginLeft;
+		const trailing = child.result.marginRight;
 		const leadingAuto = child.style.margin.left.unit === "auto";
 		const trailingAuto = child.style.margin.right.unit === "auto";
 		const free = contentWidth - child.result.width - leading - trailing;
@@ -6015,69 +6394,116 @@ function layoutNode(
 	// size and skips its whole subtree. A full layout satisfies a sizing
 	// query. A sizing result never satisfies a layout query, since it
 	// placed no children.
+	const widthCode = getSpaceCode(widthSpace);
+	const heightCode = getSpaceCode(heightSpace);
 	if (!node.stale) {
-		let hit: CachedSize | null = null;
+		const cache = node.pool.data;
+		const base = node.cacheAt * ENTRY;
+		const count = hasCache(node) ? node.cachedSizeCount : 0;
+		let hit = -1;
 		if (
-			node.cachedLayout &&
+			node.hasCachedLayout &&
+			hasCache(node) &&
 			isMatchingConstraints(
-				node.cachedLayout,
+				cache,
+				base,
 				availableWidth,
 				availableHeight,
-				widthSpace,
-				heightSpace,
+				widthCode,
+				heightCode,
 				ownerWidth,
 				ownerHeight,
 				node.ownerFree,
 			)
 		) {
-			hit = node.cachedLayout;
+			hit = base;
 		} else if (!placing) {
 			// Margins are outside the size a measurement returns, so both
 			// requests are reduced to their content side before being compared.
 			const marginRow = getAxisMargin(node, "row", ownerWidth);
 			const marginColumn = getAxisMargin(node, "column", ownerWidth);
-			for (const cached of node.cachedSizes ?? NO_CACHED_SIZES) {
+			for (
+				let at = base + ENTRY; at <= base + count * ENTRY; at += ENTRY
+			) {
 				if (
-					cached !== null &&
 					(node.ownerFree ||
-						(isSameConstraint(cached.ownerWidth, ownerWidth) &&
-							isSameConstraint(cached.ownerHeight, ownerHeight))) &&
-					cached.width >= 0 &&
-					cached.height >= 0 &&
+						(isSameConstraint(cache[at + OWNER_WIDTH], ownerWidth) &&
+							isSameConstraint(cache[at + OWNER_HEIGHT], ownerHeight))) &&
+					cache[at + WIDTH] >= 0 &&
+					cache[at + HEIGHT] >= 0 &&
 					(node.widthDependent
-						? cached.widthSpace === widthSpace &&
-							isSameConstraint(cached.availableWidth, availableWidth)
+						? cache[at + WIDTH_SPACE] === widthCode &&
+							isSameConstraint(cache[at + AVAILABLE_WIDTH], availableWidth)
 						: isCachedSizeValid(
-							cached.widthSpace,
-							cached.availableWidth - marginRow,
-							cached.width,
-							widthSpace,
+							cache[at + WIDTH_SPACE],
+							cache[at + AVAILABLE_WIDTH] - marginRow,
+							cache[at + WIDTH],
+							widthCode,
 							availableWidth - marginRow,
+						) || (
+							isTextBrokenAtItsWidth(node) &&
+							isSameBreakWidth(
+								cache[at + WIDTH_SPACE],
+								cache[at + AVAILABLE_WIDTH] - marginRow,
+								cache[at + WIDTH],
+								widthCode,
+								availableWidth - marginRow,
+							)
 						)) &&
 					isCachedSizeValid(
-						cached.heightSpace,
-						cached.availableHeight - marginColumn,
-						cached.height,
-						heightSpace,
+						cache[at + HEIGHT_SPACE],
+						cache[at + AVAILABLE_HEIGHT] - marginColumn,
+						cache[at + HEIGHT],
+						heightCode,
 						availableHeight - marginColumn,
 					)
 				) {
-					hit = cached;
+					hit = at;
 					break;
 				}
 			}
 		}
-		if (hit) {
-			node.result.width = hit.width;
-			node.result.height = hit.height;
+		if (hit !== -1) {
+			if (widthCode === DEFINITE && cache[hit + WIDTH_SPACE] !== DEFINITE) {
+				setMeasuredSize(
+					node,
+					availableWidth - getAxisMargin(node, "row", ownerWidth),
+					cache[hit + HEIGHT],
+					ownerWidth,
+					ownerHeight,
+				);
+			} else {
+				node.result.width = cache[hit + WIDTH];
+				node.result.height = cache[hit + HEIGHT];
+			}
 			return;
 		}
 	}
 
+	if (
+		placing &&
+		node.stale &&
+		!node.selfStale &&
+		relayOutStaleChildren(
+			node,
+			availableWidth,
+			availableHeight,
+			widthCode,
+			heightCode,
+			ownerWidth,
+			ownerHeight,
+		)
+	) {
+		node.stale = false;
+		node.keptChildren = true;
+		return;
+	}
+	node.keptChildren = false;
+
 	// Whatever dirtied the node invalidated every cached result.
 	if (node.stale) {
-		node.cachedLayout = null;
-		node.cachedSizes = null;
+		node.hasCachedLayout = false;
+		node.cachedSizeCount = 0;
 	}
 
 	layoutNodeImpl(
@@ -6091,6 +6517,15 @@ function layoutNode(
 		placing,
 	);
 
+	// Nothing lays out a child that generates no box, so its flags are
+	// cleared here, or it would hold its ancestors stale for good. A child
+	// that starts to generate one is invalidated by the change.
+	for (const child of node.children) {
+		if (child.style.displayType === "none") {
+			child.stale = false;
+			child.selfStale = false;
+		}
+	}
 	node.ownerFree = isOwnerFree(node);
 	node.widthDependent = node.measure !== null
 		? node.measured?.widthDependent === true
@@ -6099,52 +6534,61 @@ function layoutNode(
 		);
 	// An entry already in the slot is written over rather than replaced. A
 	// node laid out every frame would otherwise leave one behind each time.
-	const write = (entry: CachedSize | null): CachedSize => {
-		if (entry === null) {
-			return {
-				availableWidth,
-				availableHeight,
-				widthSpace,
-				heightSpace,
-				ownerWidth,
-				ownerHeight,
-				width: node.result.width,
-				height: node.result.height,
-			};
-		}
-		entry.availableWidth = availableWidth;
-		entry.availableHeight = availableHeight;
-		entry.widthSpace = widthSpace;
-		entry.heightSpace = heightSpace;
-		entry.ownerWidth = ownerWidth;
-		entry.ownerHeight = ownerHeight;
-		entry.width = node.result.width;
-		entry.height = node.result.height;
-		return entry;
+	const write = (cache: Float64Array, at: number, slot: number): void => {
+		cache[at + AVAILABLE_WIDTH] = availableWidth;
+		cache[at + AVAILABLE_HEIGHT] = availableHeight;
+		cache[at + WIDTH_SPACE] = widthCode;
+		cache[at + HEIGHT_SPACE] = heightCode;
+		cache[at + OWNER_WIDTH] = ownerWidth;
+		cache[at + OWNER_HEIGHT] = ownerHeight;
+		cache[at + WIDTH] = node.result.width;
+		cache[at + HEIGHT] = node.result.height;
+		cache[at + SLOT] = slot;
 	};
 	if (placing) {
-		node.cachedLayout = write(node.cachedLayout);
+		reserveCache(node, 1);
+		write(node.pool.data, node.cacheAt * ENTRY, -1);
+		node.hasCachedLayout = true;
 	} else {
 		// A sizing pass that ran wrote its own results over the subtree the
-		// last full layout placed, so that layout no longer stands.
-		node.cachedLayout = null;
-		const sizes = (node.cachedSizes ??= new Array<CachedSize | null>(
-			CACHE_SLOT_COUNT * CACHE_SLOT_DEPTH,
-		).fill(null));
-		const start =
-			CACHE_SLOT_DEPTH *
-			getCacheSlot(availableWidth, availableHeight, widthSpace, heightSpace);
-		const end = start + CACHE_SLOT_DEPTH;
+		// last full layout placed, so that layout no longer stands. A
+		// measured box has no subtree, and a probe leaves the lines it
+		// placed, so its layout stands while nothing in it resolves against
+		// the owner, which the probe may have offered another size.
+		if (node.measure === null || !node.ownerFree) {
+			node.hasCachedLayout = false;
+		}
+		reserveCache(
+			node,
+			Math.max((hasCache(node) ? node.cachedSizeCount : 0) + 2, 3),
+		);
+		const cache = node.pool.data;
+		const base = node.cacheAt * ENTRY;
+		const count = node.cachedSizeCount;
+		const slot = getCacheSlot(
+			availableWidth,
+			availableHeight,
+			widthSpace,
+			heightSpace,
+		);
+		let start = 1;
+		while (start <= count && cache[base + start * ENTRY + SLOT] < slot) {
+			start++;
+		}
+		let end = start;
+		while (end <= count && cache[base + end * ENTRY + SLOT] === slot) {
+			end++;
+		}
 		let index = start;
 		while (
 			index < end &&
-			sizes[index] !== null &&
 			!isMatchingConstraints(
-				sizes[index]!,
+				cache,
+				base + index * ENTRY,
 				availableWidth,
 				availableHeight,
-				widthSpace,
-				heightSpace,
+				widthCode,
+				heightCode,
 				ownerWidth,
 				ownerHeight,
 				false,
@@ -6152,15 +6596,137 @@ function layoutNode(
 		) {
 			index++;
 		}
-		if (index === end) {
-			const oldest = sizes[start];
-			sizes.copyWithin(start, start + 1, end);
-			index = end - 1;
-			sizes[index] = oldest;
+		if (index < end) {
+			write(cache, base + index * ENTRY, slot);
+		} else if (end - start < CACHE_SLOT_DEPTH) {
+			cache.copyWithin(
+				base + (end + 1) * ENTRY,
+				base + end * ENTRY,
+				base + (count + 1) * ENTRY,
+			);
+			write(cache, base + end * ENTRY, slot);
+			node.cachedSizeCount = count + 1;
+		} else {
+			cache.copyWithin(
+				base + start * ENTRY,
+				base + (start + 1) * ENTRY,
+				base + end * ENTRY,
+			);
+			write(cache, base + (end - 1) * ENTRY, slot);
 		}
-		sizes[index] = write(sizes[index]);
 	}
 	node.stale = false;
+	node.selfStale = false;
+}
+
+// What of a child its siblings and its block depend on: its size, its
+// margins and how they collapse, and as bits, whether it collapses through
+// and the two flags the block's own cache reuse is derived from.
+const SIBLING_STATE = 11;
+const SELF_COLLAPSING = 1;
+const WIDTH_DEPENDENT = 2;
+const OWNER_FREE = 4;
+
+function readSiblingState(child: LayoutNode, into: Float64Array): void {
+	const {result} = child;
+	into[0] = result.width;
+	into[1] = result.height;
+	into[2] = result.marginLeft;
+	into[3] = result.marginTop;
+	into[4] = result.marginRight;
+	into[5] = result.marginBottom;
+	into[6] = result.collapseTopPositive;
+	into[7] = result.collapseTopNegative;
+	into[8] = result.collapseBottomPositive;
+	into[9] = result.collapseBottomNegative;
+	into[10] =
+		(result.selfCollapsing ? SELF_COLLAPSING : 0) |
+		(child.widthDependent ? WIDTH_DEPENDENT : 0) |
+		(child.ownerFree ? OWNER_FREE : 0);
+}
+
+function getAvailableSpace(code: number): AvailableSpace {
+	return code === INDEFINITE
+		? "indefinite"
+		: code === DEFINITE ? "definite" : "shrink-to-fit";
+}
+
+// A block whose own request, style and children are as its placed layout
+// had them, stale only for something under it, lays out its stale
+// children again under the requests they were placed under. When every
+// one comes back the same size, with the same margins, nothing in the
+// block moves and its layout stands. Otherwise the block lays out whole,
+// and the children answer from what was just found. A request follows
+// the child's own style too, so a child that changed itself sends the
+// block the whole way. So does a block sized to its content, whose width
+// follows what its children hold rather than where they land, and one
+// holding a positioned box, which its containing block's own pass
+// places.
+function relayOutStaleChildren(
+	node: LayoutNode,
+	availableWidth: number,
+	availableHeight: number,
+	widthCode: number,
+	heightCode: number,
+	ownerWidth: number,
+	ownerHeight: number,
+): boolean {
+	if (
+		widthCode !== DEFINITE ||
+		node.measure !== null ||
+		node.style.displayType !== "block" ||
+		node.outOfFlowCount !== 0 ||
+		!node.hasCachedLayout ||
+		!hasCache(node) ||
+		!isMatchingConstraints(
+			node.pool.data,
+			node.cacheAt * ENTRY,
+			availableWidth,
+			availableHeight,
+			widthCode,
+			heightCode,
+			ownerWidth,
+			ownerHeight,
+			node.ownerFree,
+		)
+	) {
+		return false;
+	}
+	const before = new Float64Array(SIBLING_STATE);
+	const after = new Float64Array(SIBLING_STATE);
+	for (const child of node.children) {
+		if (!child.stale) {
+			continue;
+		}
+		if (child.selfStale || !child.hasCachedLayout || !hasCache(child)) {
+			return false;
+		}
+		const cache = child.pool.data;
+		const at = child.cacheAt * ENTRY;
+		const {result} = child;
+		const left = result.left;
+		const top = result.top;
+		readSiblingState(child, before);
+		layoutNode(
+			child,
+			cache[at + AVAILABLE_WIDTH],
+			cache[at + AVAILABLE_HEIGHT],
+			getAvailableSpace(cache[at + WIDTH_SPACE]),
+			getAvailableSpace(cache[at + HEIGHT_SPACE]),
+			cache[at + OWNER_WIDTH],
+			cache[at + OWNER_HEIGHT],
+			true,
+		);
+		result.left = left;
+		result.top = top;
+		readSiblingState(child, after);
+		for (let i = 0; i < SIBLING_STATE; i++) {
+			if (!Object.is(before[i], after[i])) {
+				return false;
+			}
+		}
+	}
+	return true;
 }
 
 function layoutNodeImpl(
@@ -6174,10 +6740,10 @@ function layoutNodeImpl(
 	placing: boolean,
 ): void {
 	node.gridLeft = NaN;
-	node.result.padding.left = getPadding(node, "left", ownerWidth);
-	node.result.padding.top = getPadding(node, "top", ownerWidth);
-	node.result.padding.right = getPadding(node, "right", ownerWidth);
-	node.result.padding.bottom = getPadding(node, "bottom", ownerWidth);
+	node.result.paddingLeft = getPadding(node, "left", ownerWidth);
+	node.result.paddingTop = getPadding(node, "top", ownerWidth);
+	node.result.paddingRight = getPadding(node, "right", ownerWidth);
+	node.result.paddingBottom = getPadding(node, "bottom", ownerWidth);
 
 	resolveNodeMargins(node, ownerWidth);
 
@@ -6328,7 +6894,13 @@ function roundToGrid(
 ): void {
 	const absLeft = parentLeft + node.result.left;
 	const absTop = parentTop + node.result.top;
+	const kept =
+		node.keptChildren &&
+		absLeft === node.rawAbsoluteLeft &&
+		absTop === node.rawAbsoluteTop;
+	node.keptChildren = false;
 	node.rawAbsoluteLeft = absLeft;
+	node.rawAbsoluteTop = absTop;
 	if (node.measure !== null && breaksElsewhere(node)) {
 		misplaced.push(node);
 	}
@@ -6348,20 +6920,29 @@ function roundToGrid(
 		roundValue(absTop, isText, false);
 
 	node.settled = absLeft === node.gridLeft && absTop === node.gridTop;
+	if (!node.settled) {
+		node.movedSinceExtents = true;
+	}
 	if (node.settled) {
 		return;
 	}
 	node.gridLeft = absLeft;
 	node.gridTop = absTop;
+	// Only a child laid out again had its origin forgotten. The others are
+	// where they were and would round as they did, settled.
 	for (const child of node.children) {
-		roundToGrid(child, absLeft, absTop, misplaced);
+		if (!kept || Number.isNaN(child.gridLeft)) {
+			roundToGrid(child, absLeft, absTop, misplaced);
+		} else {
+			child.settled = true;
+		}
 	}
 }
 
 function getContentLeft(node: LayoutNode): number {
 	return node.rawAbsoluteLeft +
 		node.style.border.left +
-		node.result.padding.left;
+		node.result.paddingLeft;
 }
 
 // Whether text measured before its box landed where it did would break

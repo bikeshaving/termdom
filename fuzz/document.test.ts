@@ -20,7 +20,7 @@ import {test} from "@b9g/libuild/test";
 import fc from "fast-check";
 
 import {
-	frameOf,
+	getFrame,
 	play,
 	replay,
 	type Run,
@@ -61,8 +61,8 @@ test(
 				const live = await play(run);
 				const fresh =
 					await replay(live.dom, {cols: live.cols, rows: live.rows});
-				const incremental = frameOf(live.terminal);
-				const once = frameOf(fresh.terminal);
+				const incremental = getFrame(live.terminal);
+				const once = getFrame(fresh.terminal);
 				live.dom.dispose();
 				fresh.dom.dispose();
 				if (incremental !== once) {
@@ -138,7 +138,7 @@ test(
 );
 
 /** Every text node under the body, in document order. */
-function textNodesOf(document: any): any[] {
+function getBodyTextNodes(document: any): any[] {
 	const found: any[] = [];
 	const walk = (node: any): void => {
 		for (const child of Array.from(node.childNodes) as any[]) {
@@ -154,7 +154,7 @@ function textNodesOf(document: any): any[] {
 }
 
 /** Where a string starts on the screen, if it is there exactly once. */
-function cellOf(
+function findCell(
 	frame: string,
 	token: string,
 ): {row: number; col: number} | null {
@@ -182,8 +182,8 @@ test(
 			fc.asyncProperty(runArbitrary, async (run: Run) => {
 				const live = await play(run);
 				const document = live.dom.document;
-				const frame = frameOf(live.terminal);
-				const texts = textNodesOf(document);
+				const frame = getFrame(live.terminal);
+				const texts = getBodyTextNodes(document);
 				const problems: string[] = [];
 				for (const token of run.document.tokens) {
 					const holders = texts.filter((text) => text.data.includes(token));
@@ -195,7 +195,7 @@ test(
 					if (text.data.indexOf(token, offset + 1) !== -1) {
 						continue;
 					}
-					const cell = cellOf(frame, token);
+					const cell = findCell(frame, token);
 					if (!cell) {
 						continue;
 					}
@@ -255,7 +255,7 @@ async function resizeTo(
 	scene.terminal.resize(cols, rows);
 	scene.terminal.emit("SIGWINCH");
 	await settle(scene, 40);
-	return frameOf(scene.terminal);
+	return getFrame(scene.terminal);
 }
 
 const sizeArbitrary = fc.record({
@@ -309,7 +309,7 @@ test(
 					// from where it left the terminal and comes back to it.
 					const first = {cols: live.cols, rows: live.rows};
 					fc.pre(first.cols !== other.cols || first.rows !== other.rows);
-					const before = frameOf(live.terminal);
+					const before = getFrame(live.terminal);
 					// Content taller than the terminal scrolls into the scrollback,
 					// which a resize cannot bring back and this property has nothing
 					// to say about.

@@ -45,6 +45,7 @@ import {
 import {
 	type Align,
 	type AvailableSpace,
+	CachePool,
 	createStyle,
 	type Edge,
 	type FlexDirection,
@@ -61,8 +62,9 @@ import {
 	LayoutNode,
 	type Measure,
 	type PositionType,
+	releaseCache,
 	resolveValue,
-	shareStyleEdges,
+	shareStyle,
 	type Size,
 	type Sizing,
 	type Style,
@@ -93,7 +95,15 @@ import {
 	toVisualOrder,
 	writeClusterWidths,
 } from "./text.ts";
-import {attributeOf, localNameOf, nodeTypeOf} from "./tree.ts";
+import {
+	getAttributeValue,
+	getCharacterData,
+	getDefaultView,
+	getHTMLLocalName,
+	getLocalName,
+	getNodeType,
+	getOwnerDocument,
+} from "./tree.ts";
 import {getCellSize, pxFromCells, UNIT_CELL} from "./units.ts";
 
 type Position = "static" | "relative" | "absolute" | "fixed" | "sticky";
@@ -123,7 +133,7 @@ export function isPositioned(element: Element): boolean {
 // Unless an ancestor contains it, fixed is approximated as absolute
 // against the initial containing block.
 function isOutOfFlow(node: Node): boolean {
-	if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
+	if (getNodeType(node) !== node.ELEMENT_NODE) {
 		return false;
 	}
 	const position = getPosition(node as Element);
@@ -329,10 +339,10 @@ function getUsedDisplay(element: Element): Display {
 }
 
 function isInlineLevel(node: Node): boolean {
-	if (nodeTypeOf(node) === node.TEXT_NODE) {
+	if (getNodeType(node) === node.TEXT_NODE) {
 		return true;
 	}
-	if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
+	if (getNodeType(node) !== node.ELEMENT_NODE) {
 		return false;
 	}
 	return isInlineDisplay(getUsedDisplay(node as Element));
@@ -385,7 +395,7 @@ function isSplitAroundBlock(element: Element): boolean {
 
 function hasBlockLevelBox(element: Element): boolean {
 	for (const child of flowContent(element)) {
-		if (nodeTypeOf(child) !== child.ELEMENT_NODE) {
+		if (getNodeType(child) !== child.ELEMENT_NODE) {
 			continue;
 		}
 		const childElement = child as Element;
@@ -556,7 +566,8 @@ export function renderTextFragment(
 // White space renders nothing where the run it would open has no
 // content to sit beside (css2 §9.4.2 with css-text-3 §4.1.1).
 function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
-	if (!textNode.textContent || !COLLAPSIBLE_ONLY.test(textNode.textContent)) {
+	const data = getCharacterData(textNode);
+	if (!data || !COLLAPSIBLE_ONLY.test(data)) {
 		return false;
 	}
 
@@ -599,7 +610,7 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 		step: (from: Node) => Node | null,
 	): Node | null => {
 		let current = node;
-		while (current && nodeTypeOf(current) === current.COMMENT_NODE) {
+		while (current && getNodeType(current) === current.COMMENT_NODE) {
 			current = step(current);
 		}
 		return current;
@@ -617,7 +628,7 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 	// white space beside one has nothing to sit next to, as if it were not
 	// written.
 	const isBlockLevel = (node: Node | null): boolean => {
-		if (!node || nodeTypeOf(node) !== node.ELEMENT_NODE) {
+		if (!node || getNodeType(node) !== node.ELEMENT_NODE) {
 			return false;
 		}
 		return !isInlineDisplay(getUsedDisplay(node as Element));
@@ -653,13 +664,13 @@ function isSuppressedWhitespace(text: Text): boolean {
 		return false;
 	}
 	for (let node: Node | null = text; node; node = node.nextSibling) {
-		if (nodeTypeOf(node) === node.TEXT_NODE) {
+		if (getNodeType(node) === node.TEXT_NODE) {
 			if (!COLLAPSIBLE_ONLY.test((node as Text).data)) {
 				return false;
 			}
 			continue;
 		}
-		if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
+		if (getNodeType(node) !== node.ELEMENT_NODE) {
 			continue;
 		}
 		// USED display. A blockified item opens a box of its own
@@ -1090,7 +1101,9 @@ interface Extent {
 // Written after every solve, and read by the painter's row culling for
 // every child, so the records are kept and rewritten rather than remade.
 // A subtree roundToGrid left alone keeps its record while its top holds.
-const extents = new WeakMap<LayoutNode, Extent>();
+function getStoredExtent(node: LayoutNode): Extent | undefined {
+	return node.extent as Extent | undefined;
+}
 
 // The lines a measured box painted at the last paint extents, to tell a
 // box laid out again into the same lines from one whose text changed.
@@ -1107,12 +1120,23 @@ function computePaintExtents(
 ): Extent {
 	const top = originTop + node.grid.top;
 	const left = originLeft + node.grid.left;
-	let extent = extents.get(node);
+	let extent = getStoredExtent(node);
+	// A box rounding left alone, with nothing under it laid out again, keeps
+	// its record while it holds its place and size, though its parent was
+	// laid out again around it. A box that measured its lines again was laid
+	// out again, so it moved since the last extents. A child that left takes
+	// rows with it, so a box that lost one does not keep its record.
 	if (
-		settled &&
 		extent !== undefined &&
 		extent.origin === top &&
-		extent.frame === frame
+		extent.frame === frame &&
+		(settled ||
+			(node.settled &&
+				!node.movedSinceExtents &&
+				!node.lostChild &&
+				extent.left === left &&
+				extent.width === getComputedWidth(node) &&
+				extent.height === getComputedHeight(node)))
 	) {
 		return extent;
 	}
@@ -1136,7 +1160,7 @@ function computePaintExtents(
 			(node.measure !== null &&
 				(shifted ||
 					(!settled &&
-						!node.settled &&
+						(!node.settled || node.movedSinceExtents) &&
 						!isSameLines(node, lineRecords.get(node), lines))));
 		if (lines !== undefined) {
 			lineRecords.set(node, lines);
@@ -1162,7 +1186,7 @@ function computePaintExtents(
 			scrollRight: null,
 			scrollBottom: null,
 		};
-		extents.set(node, extent);
+		node.extent = extent;
 	}
 	let highest = top;
 	let lowest = top + getComputedHeight(node);
@@ -1175,11 +1199,11 @@ function computePaintExtents(
 	if (lines !== undefined) {
 		right = Math.max(
 			right,
-			node.style.border.left + node.result.padding.left + lines.maxLineWidth,
+			node.style.border.left + node.result.paddingLeft + lines.maxLineWidth,
 		);
 		// An inline-block on a line paints its content, which can reach past
 		// its own box and the line.
-		const contentTop = top + node.style.border.top + node.result.padding.top;
+		const contentTop = top + node.style.border.top + node.result.paddingTop;
 		for (const [reach, overflow] of getInlineBlockReaches(layout, lines)) {
 			highest = Math.min(highest, contentTop + reach);
 			lowest = Math.max(lowest, contentTop + overflow);
@@ -1195,9 +1219,9 @@ function computePaintExtents(
 			scrollRight = scrollBottom = null;
 		} else {
 			scrollRight =
-				node.style.border.left + node.result.padding.left + own.maxLineWidth;
+				node.style.border.left + node.result.paddingLeft + own.maxLineWidth;
 			scrollBottom =
-				node.style.border.top + node.result.padding.top + own.totalHeight;
+				node.style.border.top + node.result.paddingTop + own.totalHeight;
 		}
 	}
 	let rowOrdered = true;
@@ -1209,7 +1233,7 @@ function computePaintExtents(
 			child,
 			left,
 			top,
-			settled || node.settled,
+			settled || (node.settled && !node.movedSinceExtents),
 			fixed,
 			frame,
 		);
@@ -1255,6 +1279,7 @@ function computePaintExtents(
 			bottom = Math.max(bottom, child.grid.top + childExtent.overflowBottom);
 		}
 	}
+	node.movedSinceExtents = false;
 	extent.frame = frame;
 	extent.origin = top;
 	extent.left = left;
@@ -1294,7 +1319,7 @@ function *getInlineBlockReaches(
 				leaf.boxModel.borderTopWidth +
 				leaf.boxModel.paddingTop;
 			const context = layout.boxes.get(leaf.node)?.independentFormattingContext;
-			const extent = context ? extents.get(context) : undefined;
+			const extent = context ? getStoredExtent(context) : undefined;
 			if (extent !== undefined) {
 				yield [top + extent.top, top + extent.bottom];
 			} else if (leaf.breakResult !== undefined) {
@@ -1313,8 +1338,7 @@ function styleLayoutNode(
 ): void {
 	const style = createStyle();
 	styleLayoutNodeProperties(element, style, positionedElements);
-	shareStyleEdges(style);
-	layoutNode.style = style;
+	layoutNode.style = shareStyle(style);
 	stylings.set(layoutNode, {
 		pass,
 		measureKey: getMeasureKey(element),
@@ -1406,7 +1430,8 @@ function styleLayoutNodeProperties(
 	style: Style,
 	positionedElements?: Set<Element>,
 ): void {
-	const window = element.ownerDocument?.defaultView;
+	const document = getOwnerDocument(element);
+	const window = document && getDefaultView(document);
 	if (!window) {
 		throw new Error("Element must have an ownerDocument with defaultView");
 	}
@@ -1653,7 +1678,7 @@ function styleLayoutNodeProperties(
 	// (css-contain-2 §3.2).
 	style.blockFormattingContext =
 		isDocumentElement(element) ||
-		element.tagName === "BODY" ||
+		getHTMLLocalName(element) === "body" ||
 		(display !== "block" && display !== "list-item") ||
 		getComputedValue(element, "overflow") !== "visible" ||
 		isOutOfFlow(element) ||
@@ -1746,7 +1771,7 @@ export class Box {
 
 	// Null until a derivation has run, which is not the same as none.
 	children: Box[] | null;
-	heads: Map<Node, Box> | null;
+	heads: Heads | null;
 	// The anonymous table each of a container's children falls in, for
 	// those that fall in one. The children stay in the container's list,
 	// in order, and their layout nodes hang from the table's.
@@ -1821,7 +1846,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 		return box;
 	}
 
-	const heads = new Map<Node, Box>();
+	const heads: Array<Node | Box> = [];
 	const children: Box[] = [];
 	// Matched by ordinal. Only a change to the NUMBER of runs creates or
 	// drops a box.
@@ -1834,13 +1859,13 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	let run: Box | null = null;
 	box.holdsFragments = false;
 	for (const child of flowChildren(layout, container)) {
-		if (nodeTypeOf(child) === child.ELEMENT_NODE) {
+		if (getNodeType(child) === child.ELEMENT_NODE) {
 			const element = child as Element;
 			if (getLayoutDisplay(element) === "none" || isOutOfFlow(element)) {
 				// Named here so the one path that builds a box reaches them.
 				// Neither joins the run around it.
 				const own = getPrincipalBox(layout, child, box);
-				heads.set(child, run ?? own);
+				heads.push(child, run ?? own);
 				children.push(own);
 				continue;
 			}
@@ -1849,12 +1874,12 @@ function getContainerBox(layout: Layout, container: Element): Box {
 			// box.
 			if (!isInlineLevel(element)) {
 				const own = getPrincipalBox(layout, child, box);
-				heads.set(child, own);
+				heads.push(child, own);
 				children.push(own);
 				run = null;
 				continue;
 			}
-		} else if (nodeTypeOf(child) !== child.TEXT_NODE) {
+		} else if (getNodeType(child) !== child.TEXT_NODE) {
 			continue;
 		} else if (isSuppressedWhitespace(child as Text)) {
 			continue;
@@ -1867,7 +1892,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 			children.push(run);
 		}
 		run.members.push(child);
-		heads.set(child, run);
+		heads.push(child, run);
 	}
 
 	// A box whose membership changed measures differently at the same
@@ -1893,10 +1918,53 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	// contents flip left the old box in place, holding rows nothing removed.
 	dropSteppedOver(layout, container);
 
-	box.children = children;
-	box.heads = heads;
+	for (const child of children) {
+		if (child.kind === "anonymous") {
+			child.members = fitToLength(child.members);
+		}
+	}
+	box.children = fitToLength(children);
+	box.heads = packHeads(heads);
 	layout.derivedContainers.add(container);
 	return box;
+}
+
+// Which box each flow child of a container falls under. Most containers
+// hold a few children, kept as node and box in turn, which costs a
+// fraction of a map. A container with more keeps a map, so a lookup
+// stays one step.
+type Heads = Array<Node | Box> | Map<Node, Box>;
+
+const LISTED_HEADS = 8;
+
+function packHeads(pairs: Array<Node | Box>): Heads {
+	if (pairs.length <= LISTED_HEADS * 2) {
+		return fitToLength(pairs);
+	}
+	const heads = new Map<Node, Box>();
+	for (let i = 0; i < pairs.length; i += 2) {
+		heads.set(pairs[i] as Node, pairs[i + 1] as Box);
+	}
+	return heads;
+}
+
+function getHead(heads: Heads, node: Node): Box | undefined {
+	if (!Array.isArray(heads)) {
+		return heads.get(node);
+	}
+	for (let i = 0; i < heads.length; i += 2) {
+		if (heads[i] === node) {
+			return heads[i + 1] as Box;
+		}
+	}
+	return undefined;
+}
+
+// A list grown by push keeps room for many more entries than most of
+// what layout keeps ever holds, so a list that is kept is copied to its
+// length.
+function fitToLength<T>(list: T[]): T[] {
+	return list.slice();
 }
 
 const TABLE_PARTS = new Set<Display>([
@@ -1953,7 +2021,7 @@ function wrapStrayTableParts(
 }
 
 function isTablePart(node: Node): boolean {
-	return nodeTypeOf(node) === node.ELEMENT_NODE &&
+	return getNodeType(node) === node.ELEMENT_NODE &&
 		!isOutOfFlow(node) &&
 		TABLE_PARTS.has(getUsedDisplay(node as Element));
 }
@@ -1973,13 +2041,13 @@ function isPassedOver(container: Element, child: Box): boolean {
 	if (child.kind === "anonymous") {
 		return !isSpacePreserving(getElementWhiteSpace(container)) &&
 			child.members.every((member) =>
-				nodeTypeOf(member) === member.TEXT_NODE &&
+				getNodeType(member) === member.TEXT_NODE &&
 				COLLAPSIBLE_ONLY.test((member as Text).data),
 			);
 	}
 	const node = child.node;
 	return node !== null &&
-		nodeTypeOf(node) === node.ELEMENT_NODE &&
+		getNodeType(node) === node.ELEMENT_NODE &&
 		(getLayoutDisplay(node as Element) === "none" || isOutOfFlow(node));
 }
 
@@ -2064,6 +2132,7 @@ function dropAnonymousBox(layout: Layout, box: Box): void {
 	forgetReads(layoutNode);
 	layout.anonymousBoxes.delete(layoutNode);
 	layoutNode.owner = null;
+	releaseCache(layoutNode);
 }
 
 function getBox(layout: Layout, node: Node): Box | null {
@@ -2076,7 +2145,7 @@ function getBoxEntry(layout: Layout, node: Node): Box | null {
 		return null;
 	}
 
-	if (nodeTypeOf(node) === node.ELEMENT_NODE) {
+	if (getNodeType(node) === node.ELEMENT_NODE) {
 		const element = node as Element;
 		// USED display. An out-of-flow element heads no run and joins none.
 		// When run invalidation gave it a bare layout node, later rebuilds
@@ -2085,7 +2154,7 @@ function getBoxEntry(layout: Layout, node: Node): Box | null {
 		if (!isInlineLevel(element)) {
 			return null;
 		}
-	} else if (nodeTypeOf(node) !== node.TEXT_NODE) {
+	} else if (getNodeType(node) !== node.TEXT_NODE) {
 		return null;
 	}
 
@@ -2097,7 +2166,7 @@ function getBoxEntry(layout: Layout, node: Node): Box | null {
 	// Up to whichever ancestor the container counts among its flow
 	// children.
 	for (let current: Node = node; current !== container;) {
-		const entry = heads.get(current);
+		const entry = getHead(heads, current);
 		if (entry) {
 			return entry;
 		}
@@ -2138,7 +2207,10 @@ function runBreakResult(layout: Layout, node: Node): BreakResult | undefined {
 // box of the container that reached the layout tree.
 function syncContainerRuns(layout: Layout, container: Element): void {
 	layout.dirtyRunContainers.delete(container);
-	if (getLayoutDisplay(container) === "none" || isHiddenByAncestor(container)) {
+	if (
+		getLayoutDisplay(container) === "none" ||
+		isHiddenByAncestor(layout, container)
+	) {
 		// The only pass that ever visits a hidden container.
 		dropHiddenContent(layout, container);
 		return;
@@ -2206,7 +2278,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 			// block, a run is an anonymous box, which takes nothing from the
 			// element it starts with.
 			const styledFrom =
-				nodeTypeOf(entry.head) === entry.head.ELEMENT_NODE &&
+				getNodeType(entry.head) === entry.head.ELEMENT_NODE &&
 				hasItemChildren(getLayoutDisplay(container))
 					? (entry.head as Element)
 					: null;
@@ -2217,7 +2289,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 				layoutNode = null;
 			}
 			if (!layoutNode) {
-				layoutNode = new LayoutNode();
+				layoutNode = new LayoutNode(layout.cachePool);
 				entry.layoutNode = layoutNode;
 				entry.styledFrom = styledFrom;
 				if (styledFrom) {
@@ -2293,7 +2365,7 @@ function placeTableBox(
 ): void {
 	let wrapper = table.layoutNode;
 	if (!wrapper) {
-		wrapper = new LayoutNode();
+		wrapper = new LayoutNode(containerFlex.pool);
 		const style = createStyle();
 		style.displayType = "table";
 		wrapper.style = style;
@@ -2321,7 +2393,7 @@ function dropUnplacedParts(wrapper: LayoutNode, count: number): void {
 // written among them.
 function syncRunMembers(layout: Layout, run: Box): void {
 	for (const member of run.members) {
-		if (nodeTypeOf(member) !== member.ELEMENT_NODE) {
+		if (getNodeType(member) !== member.ELEMENT_NODE) {
 			continue;
 		}
 		const element = member as Element;
@@ -2361,7 +2433,7 @@ function getRunContainer(layout: Layout, node: Node): Element | null {
 		return null;
 	}
 	const startsOwnRun =
-		nodeTypeOf(node) === node.ELEMENT_NODE && !isInlineBox(node as Element);
+		getNodeType(node) === node.ELEMENT_NODE && !isInlineBox(node as Element);
 	return getRunContainerFromParent(layout, parent, startsOwnRun);
 }
 
@@ -2414,17 +2486,20 @@ function isReachableFrom(from: LayoutNode | null, target: LayoutNode): boolean {
 // `known` is the anonymous run box holding the node, or null when the
 // node has a box of its own, from a caller that has the container's box
 // list in hand. Undefined asks for it, which climbs to the container.
+// `shownAncestors` is set by a parent adding its own children, having
+// been shown itself.
 function addNode(
 	layout: Layout,
 	node: Node,
 	parentLayoutNode: LayoutNode | null = null,
 	known?: Box | null,
+	shownAncestors = false,
 ): void {
 	// Fresh builds never descend past a display:none boundary, and rebuild
 	// sweeps must not bring descendants back in under it.
-	if (isHiddenByAncestor(node)) {
+	if (!shownAncestors && isHiddenByAncestor(layout, node)) {
 		dropLayoutNode(layout, node);
-		if (nodeTypeOf(node) === node.ELEMENT_NODE) {
+		if (getNodeType(node) === node.ELEMENT_NODE) {
 			dropHiddenContent(layout, node as Element);
 		}
 		return;
@@ -2433,7 +2508,7 @@ function addNode(
 	// A rebuild must not resurrect a stale box from an earlier display
 	// value. A display:contents element's children re-add as the box
 	// parent's own.
-	if (nodeTypeOf(node) === node.ELEMENT_NODE && isDisplayContents(node)) {
+	if (getNodeType(node) === node.ELEMENT_NODE && isDisplayContents(node)) {
 		dropLayoutNode(layout, node);
 		// The container learns of the dissolved children only by enumerating.
 		const container = getRunContainer(layout, node);
@@ -2482,7 +2557,7 @@ function addNode(
 			(known !== undefined ? known : getBox(layout, node))
 		) {
 			dropLayoutNode(layout, node);
-			if (nodeTypeOf(node) === node.ELEMENT_NODE) {
+			if (getNodeType(node) === node.ELEMENT_NODE) {
 				addElementNode(layout, node as Element, parentLayoutNode, known);
 			} else {
 				addTextNode(layout, node as Text, parentLayoutNode, known);
@@ -2492,7 +2567,7 @@ function addNode(
 		// Reuse is only sound while the node is the same KIND of box. A run
 		// member flipped out of flow keeps a run measure that skips out-of-flow
 		// boxes, measures 0x0, and silently vanishes.
-		if (existingLayoutNode && nodeTypeOf(node) === node.ELEMENT_NODE) {
+		if (existingLayoutNode && getNodeType(node) === node.ELEMENT_NODE) {
 			const element = node as Element;
 			if (!isBoxKindMatch(layout, element, existingLayoutNode)) {
 				dropLayoutNode(layout, node);
@@ -2531,9 +2606,9 @@ function addNode(
 		return;
 	}
 
-	if (nodeTypeOf(node) === node.ELEMENT_NODE) {
+	if (getNodeType(node) === node.ELEMENT_NODE) {
 		addElementNode(layout, node as Element, parentLayoutNode, known);
-	} else if (nodeTypeOf(node) === node.TEXT_NODE) {
+	} else if (getNodeType(node) === node.TEXT_NODE) {
 		addTextNode(layout, node as Text, parentLayoutNode, known);
 	}
 }
@@ -2565,7 +2640,7 @@ function addElementNode(
 
 	let layoutNode = layout.nodeMap.get(element);
 	if (!layoutNode) {
-		layoutNode = new LayoutNode();
+		layoutNode = new LayoutNode(layout.cachePool);
 		trackNode(layout, element, layoutNode);
 	}
 
@@ -2628,15 +2703,15 @@ function addElementNode(
 		: null;
 	for (const child of flowContent(element)) {
 		if (
-			nodeTypeOf(child) === child.ELEMENT_NODE ||
-			nodeTypeOf(child) === child.TEXT_NODE
+			getNodeType(child) === child.ELEMENT_NODE ||
+			getNodeType(child) === child.TEXT_NODE
 		) {
 			let known: Box | null | undefined;
-			const entry = heads?.get(child);
+			const entry = heads === null ? undefined : getHead(heads, child);
 			if (entry !== undefined && !isOutOfFlow(child)) {
 				known = entry.kind === "anonymous" ? entry : null;
 			}
-			addNode(layout, child, layoutNode, known);
+			addNode(layout, child, layoutNode, known, true);
 		}
 	}
 
@@ -2681,7 +2756,7 @@ function addTextNode(
 
 	let layoutNode = layout.nodeMap.get(text);
 	if (!layoutNode) {
-		layoutNode = new LayoutNode();
+		layoutNode = new LayoutNode(layout.cachePool);
 		trackNode(layout, text, layoutNode);
 	}
 
@@ -2710,7 +2785,7 @@ function flowChildren(
 ): Node[] {
 	for (const child of flowContent(container)) {
 		into.push(child);
-		if (nodeTypeOf(child) !== child.ELEMENT_NODE) {
+		if (getNodeType(child) !== child.ELEMENT_NODE) {
 			continue;
 		}
 		// Written on the way past. Paint culling asks per element per frame,
@@ -2766,7 +2841,7 @@ function syncIndependentFormattingContext(
 
 	let root = box.independentFormattingContext;
 	if (!root) {
-		root = new LayoutNode();
+		root = new LayoutNode(layout.cachePool);
 		box.independentFormattingContext = root;
 		contextHosts.set(root, element);
 		// What it holds moves under another root, so an out-of-flow box among
@@ -2782,8 +2857,8 @@ function syncIndependentFormattingContext(
 
 	for (const child of flowContent(element)) {
 		if (
-			nodeTypeOf(child) === child.ELEMENT_NODE ||
-			nodeTypeOf(child) === child.TEXT_NODE
+			getNodeType(child) === child.ELEMENT_NODE ||
+			getNodeType(child) === child.TEXT_NODE
 		) {
 			addNode(layout, child, root);
 		}
@@ -2849,7 +2924,7 @@ function dropHiddenContent(layout: Layout, element: Element): void {
 	}
 	for (const child of flatChildren(element)) {
 		dropLayoutNode(layout, child);
-		if (nodeTypeOf(child) === child.ELEMENT_NODE) {
+		if (getNodeType(child) === child.ELEMENT_NODE) {
 			dropHiddenContent(layout, child as Element);
 		}
 	}
@@ -2885,7 +2960,7 @@ function dropRunContent(layout: Layout, element: Element): void {
 	}
 	dropContainerBoxes(layout, element);
 	for (let node = flowNext(element, element, false); node !== null;) {
-		if (nodeTypeOf(node) === node.ELEMENT_NODE) {
+		if (getNodeType(node) === node.ELEMENT_NODE) {
 			const child = node as Element;
 			if (isOutOfFlow(child)) {
 				addNode(layout, child, null);
@@ -2911,7 +2986,7 @@ function dropRunContent(layout: Layout, element: Element): void {
 // derivation may hold none now.
 function dropSteppedOver(layout: Layout, parent: Element): void {
 	for (const child of flatChildren(parent)) {
-		if (nodeTypeOf(child) !== child.ELEMENT_NODE) {
+		if (getNodeType(child) !== child.ELEMENT_NODE) {
 			continue;
 		}
 		const element = child as Element;
@@ -2957,17 +3032,32 @@ function getContainingBlockLayoutNode(
 	return layout.nodeMap.get(layout.rootElement) ?? null;
 }
 
-function isHiddenByAncestor(node: Node): boolean {
+function isHiddenByAncestor(layout: Layout, node: Node): boolean {
+	const memo = layout.hiddenElements;
+	const unknown: Element[] = [];
+	let hidden = false;
 	for (
 		let ancestor = flatParentElement(node);
 		ancestor;
 		ancestor = flatParentElement(ancestor)
 	) {
+		const known = memo?.get(ancestor);
+		if (known !== undefined) {
+			hidden = known;
+			break;
+		}
+		unknown.push(ancestor);
 		if (getLayoutDisplay(ancestor) === "none") {
-			return true;
+			hidden = true;
+			break;
 		}
 	}
-	return false;
+	if (memo !== null) {
+		for (const element of unknown) {
+			memo.set(element, hidden);
+		}
+	}
+	return hidden;
 }
 
 function getLayoutRoot(node: LayoutNode): LayoutNode {
@@ -3048,6 +3138,7 @@ function untrackNode(layout: Layout, domNode: Node): void {
 	if (layoutNode) {
 		layoutNode.owner = null;
 		forgetReads(layoutNode);
+		releaseCache(layoutNode);
 	}
 	// The lines are the product of the layout node that is being removed,
 	// and would describe a box that no longer exists.
@@ -3056,7 +3147,7 @@ function untrackNode(layout: Layout, domNode: Node): void {
 		box.fragments = null;
 	}
 	layout.nodeMap.delete(domNode);
-	if (nodeTypeOf(domNode) === domNode.ELEMENT_NODE) {
+	if (getNodeType(domNode) === domNode.ELEMENT_NODE) {
 		layout.positionedElements.delete(domNode as Element);
 	}
 }
@@ -3066,7 +3157,7 @@ function untrackNode(layout: Layout, domNode: Node): void {
 function flatFirstRenderableChild(element: Element): Node | null {
 	for (const child of flowContent(element)) {
 		if (
-			nodeTypeOf(child) === child.ELEMENT_NODE &&
+			getNodeType(child) === child.ELEMENT_NODE &&
 			(getLayoutDisplay(child as Element) === "none" || isOutOfFlow(child))
 		) {
 			continue;
@@ -3133,7 +3224,7 @@ function invalidateChildDerivation(layout: Layout, parent: Element): void {
 
 function invalidateSubtreeDerivation(layout: Layout, node: Node): void {
 	invalidateBoxDerivation(layout, node);
-	if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
+	if (getNodeType(node) !== node.ELEMENT_NODE) {
 		return;
 	}
 	invalidateChildDerivation(layout, node as Element);
@@ -3146,7 +3237,7 @@ function invalidateSubtreeDerivation(layout: Layout, node: Node): void {
 	// question, and marking one that generates no box costs nothing.
 	for (const child of flatDescendants(node)) {
 		touch(layout, child);
-		if (nodeTypeOf(child) === child.ELEMENT_NODE) {
+		if (getNodeType(child) === child.ELEMENT_NODE) {
 			invalidateContainerDerivation(layout, child as Element);
 		}
 	}
@@ -3198,7 +3289,7 @@ function invalidateNode(layout: Layout, node: Node): void {
 
 	if (isInlineLevel(node)) {
 		invalidateInlineRun(layout, node);
-	} else if (nodeTypeOf(node) === node.ELEMENT_NODE) {
+	} else if (getNodeType(node) === node.ELEMENT_NODE) {
 		const layoutNode = layout.nodeMap.get(node);
 		if (layoutNode) {
 			// The re-add sweep puts a node back under its parent element, and
@@ -3471,7 +3562,7 @@ function pushExitedEdges(
 		node = node === root ? null : flatParentElement(node)
 	) {
 		if (
-			nodeTypeOf(node) === node.ELEMENT_NODE && hasInlineEdges(node as Element)
+			getNodeType(node) === node.ELEMENT_NODE && hasInlineEdges(node as Element)
 		) {
 			pushEdge(leafNodes, node as Element, "end");
 		}
@@ -3661,7 +3752,7 @@ function measureInlineRun(
 	// box measured as a run of its own, the box's element.
 	const block = box.parent !== null
 		? box.container
-		: box.node !== null && nodeTypeOf(box.node) === box.node.ELEMENT_NODE
+		: box.node !== null && getNodeType(box.node) === box.node.ELEMENT_NODE
 		? (box.node as Element)
 		: box.node === null ? null : flatParentElement(box.node);
 	readsLineWidth = block !== null && hasPercentage(block, ["text-indent"]);
@@ -3700,7 +3791,7 @@ function getEnclosingMath(layout: Layout, node: Node): Element | null {
 		return null;
 	}
 	for (
-		let element: Element | null = nodeTypeOf(node) === node.ELEMENT_NODE
+		let element: Element | null = getNodeType(node) === node.ELEMENT_NODE
 			? (node as Element)
 			: node.parentElement; element !== null; element = element.parentElement
 	) {
@@ -3735,7 +3826,7 @@ function collectLeafNodes(
 			// content is among the members on its own. Walking into it too
 			// would lay that content out twice.
 			if (
-				nodeTypeOf(member) === member.ELEMENT_NODE &&
+				getNodeType(member) === member.ELEMENT_NODE &&
 				layout.boxes.get(member as Element)?.broken
 			) {
 				continue;
@@ -3766,7 +3857,7 @@ function collectLeafNodes(
 	const parentDisplay = getLayoutDisplay(parentElement);
 	let traversalRoot: Node;
 	if (
-		hasItemChildren(parentDisplay) && nodeTypeOf(node) === node.ELEMENT_NODE
+		hasItemChildren(parentDisplay) && getNodeType(node) === node.ELEMENT_NODE
 	) {
 		traversalRoot = node;
 	} else {
@@ -3784,7 +3875,7 @@ function collectLeafNodes(
 	// Text directly inside a flex container is an anonymous item that ends
 	// at the first element, every element child being an item of its own.
 	const stopsAtFlexItems =
-		hasItemChildren(parentDisplay) && nodeTypeOf(node) === node.TEXT_NODE;
+		hasItemChildren(parentDisplay) && getNodeType(node) === node.TEXT_NODE;
 
 	collectLeaves(
 		layout,
@@ -3817,6 +3908,11 @@ function hasPercentage(
 	);
 }
 
+// How many times a measure has laid out an atomic inline's own content.
+// A probe that did leaves that content at the probe's width, so the box
+// it measured cannot keep the layout it was placed with.
+let contextLayouts = 0;
+
 function collectLeaves(
 	layout: Layout,
 	root: Node,
@@ -3829,15 +3925,16 @@ function collectLeaves(
 	let cursor: Node | null = start;
 	while (cursor !== null) {
 		const node: Node = cursor;
-		if (stopsAtFlexItems && nodeTypeOf(node) === node.ELEMENT_NODE) {
+		if (stopsAtFlexItems && getNodeType(node) === node.ELEMENT_NODE) {
 			break;
 		}
 
-		if (nodeTypeOf(node) === node.TEXT_NODE) {
+		if (getNodeType(node) === node.TEXT_NODE) {
 			const textNode = node as Text;
 
-			if (textNode.textContent) {
-				const isWhitespaceOnly = COLLAPSIBLE_ONLY.test(textNode.textContent);
+			const content = getCharacterData(textNode);
+			if (content) {
+				const isWhitespaceOnly = COLLAPSIBLE_ONLY.test(content);
 
 				if (isWhitespaceOnly && shouldCollapseWhitespaceTextNode(textNode)) {
 					cursor = flowNext(node, root, false);
@@ -3848,18 +3945,14 @@ function collectLeaves(
 					continue;
 				}
 
-				leafNodes.push({
-					type: "text",
-					node: textNode,
-					content: textNode.textContent,
-				});
+				leafNodes.push({type: "text", node: textNode, content});
 			}
 			cursor = flowNext(node, root, false);
 			pushExitedEdges(leafNodes, node, cursor, root);
 			if (cursor === null) {
 				break;
 			}
-		} else if (nodeTypeOf(node) === node.ELEMENT_NODE) {
+		} else if (getNodeType(node) === node.ELEMENT_NODE) {
 			const element = node as Element;
 			const display = getLayoutDisplay(element);
 			// A box sized whole on the line takes a percentage of the line's
@@ -3880,7 +3973,7 @@ function collectLeaves(
 				if (cursor === null) {
 					break;
 				}
-			} else if (element.tagName === "BR") {
+			} else if (getHTMLLocalName(element) === "br") {
 				leafNodes.push({type: "br", node: element as HTMLBRElement});
 				cursor = flowNext(node, root, false);
 				pushExitedEdges(leafNodes, node, cursor, root);
@@ -3973,7 +4066,7 @@ function collectLeaves(
 				const widthSizing =
 					declaredSizing === "none" &&
 						boxModel.width === undefined &&
-						element.tagName !== "TEXTAREA" &&
+						getHTMLLocalName(element) !== "textarea" &&
 						Number.isFinite(availableWidth) &&
 						availableWidth < Number.MAX_SAFE_INTEGER
 						? "fit-content"
@@ -3999,12 +4092,12 @@ function collectLeaves(
 						boxModel.marginRight,
 					);
 					contentWidthMode = "shrink-to-fit";
-				} else if (element.tagName === "TEXTAREA") {
+				} else if (getHTMLLocalName(element) === "textarea") {
 					// cols sizes the CONTENT box (spec default 20). The UA
 					// sheet carries no width for it. A constant that pre-baked
 					// the UA chrome could not be undone by an author's `border:
 					// none`.
-					const cols = parseInt(attributeOf(element, "cols") ?? "", 10);
+					const cols = parseInt(getAttributeValue(element, "cols") ?? "", 10);
 					contentWidth = Number.isFinite(cols) && cols > 0 ? cols : 20;
 					contentWidthMode = "definite";
 				}
@@ -4094,6 +4187,7 @@ function collectLeaves(
 						contentHeightMode === "definite" ? contentHeight : Number.NaN,
 					);
 					computePaintExtents(layout, independentFormattingContext, 0, 0);
+					contextLayouts++;
 					finalContentWidth = getComputedWidth(independentFormattingContext);
 					finalContentHeight = getComputedHeight(independentFormattingContext);
 				} else {
@@ -4153,9 +4247,9 @@ function collectLeaves(
 				// browser would scroll inside a fixed box. cols fix the
 				// reported width. The box is attribute-sized however short the
 				// value is.
-				if (element.tagName === "TEXTAREA") {
+				if (getHTMLLocalName(element) === "textarea") {
 					if (boxModel.height === undefined) {
-						const rows = parseInt(attributeOf(element, "rows") ?? "", 10);
+						const rows = parseInt(getAttributeValue(element, "rows") ?? "", 10);
 						finalContentHeight = Math.max(
 							finalContentHeight,
 							Number.isFinite(rows) && rows > 0 ? rows : 2,
@@ -4286,7 +4380,7 @@ function breakNodes(
 	// Text properties come from what opens the box. A text node styles
 	// from its flat-tree parent.
 	const opener = source.head;
-	const styleElement = nodeTypeOf(opener) === opener.TEXT_NODE
+	const styleElement = getNodeType(opener) === opener.TEXT_NODE
 		? flatParentElement(opener)!
 		: (opener as Element);
 
@@ -4439,12 +4533,13 @@ function renderLeaf(
 	textNode: Text,
 	whiteSpace: string,
 ): {text: string; offsets: Int32Array | null} {
-	const key = `${whiteSpace}\u0000${textNode.data}`;
+	const data = getCharacterData(textNode);
+	const key = `${whiteSpace}\u0000${data}`;
 	const cached = layout.renderedLeaves.get(textNode);
 	if (cached?.key === key) {
 		return cached;
 	}
-	const rendered = renderWhiteSpaceOffsets(textNode.data, whiteSpace);
+	const rendered = renderWhiteSpaceOffsets(data, whiteSpace);
 	layout.renderedLeaves.set(textNode, {
 		key,
 		text: rendered.text,
@@ -4852,7 +4947,7 @@ function buildLines(
 			toVisualLine(layout, lineNodes, bestBreakWidth, base);
 
 			lines.push({
-				segments: lineNodes,
+				segments: fitToLength(lineNodes),
 				y: currentY + Math.floor(leading / 2),
 				height: lineHeight,
 				width: bestBreakWidth,
@@ -4870,7 +4965,7 @@ function buildLines(
 		lineStart = bestBreak;
 	}
 
-	return {lines, wrapped, height: currentY};
+	return {lines: fitToLength(lines), wrapped, height: currentY};
 }
 
 // css2 §10.8: each box on a line is placed by its vertical-align, text on
@@ -4984,7 +5079,7 @@ function getLineInTree(
 		const line = lines !== undefined && lines.lines.length > 0
 			? (first ? lines.lines[0] : lines.lines.at(-1)!).y +
 				child.style.border.top +
-				child.result.padding.top
+				child.result.paddingTop
 			: getLineInTree(layout, child, first);
 		if (line !== null) {
 			return child.grid.top + line;
@@ -5196,7 +5291,7 @@ function getLineStart(
 // and body, whose scroll is the document's and is applied once at paint.
 function getScrollOwner(layout: Layout, node: LayoutNode): Element | null {
 	const owner = node.owner as Node | undefined;
-	if (!owner || nodeTypeOf(owner) !== owner.ELEMENT_NODE) {
+	if (!owner || getNodeType(owner) !== owner.ELEMENT_NODE) {
 		return null;
 	}
 	const element = owner as Element;
@@ -5312,7 +5407,7 @@ function getStickyShift(
 	const parentX = x - node.grid.left;
 	const parentY = y - node.grid.top;
 	const owner = parent.owner as Node | undefined;
-	const edges = owner && nodeTypeOf(owner) === owner.ELEMENT_NODE
+	const edges = owner && getNodeType(owner) === owner.ELEMENT_NODE
 		? getBoxModel(owner as Element)
 		: null;
 	let left = parentX + (edges?.borderLeftWidth || 0);
@@ -5422,7 +5517,7 @@ function getScrollShift(
 			break;
 		}
 		const owner = next.owner as Node | undefined;
-		if (owner && nodeTypeOf(owner) === owner.ELEMENT_NODE) {
+		if (owner && getNodeType(owner) === owner.ELEMENT_NODE) {
 			const left = getScrollOffset(owner as Element, "left");
 			const top = getScrollOffset(owner as Element, "top");
 			if ((left !== 0 || top !== 0) && !isRootBox(layout, owner as Element)) {
@@ -5535,7 +5630,7 @@ function hitTestInFlow(
 	x: number,
 	y: number,
 ): Element | null {
-	if (nodeTypeOf(element) !== 1) {
+	if (getNodeType(element) !== 1) {
 		return null;
 	}
 	if (getComputedValue(element, "display") === "none") {
@@ -5582,7 +5677,7 @@ function hitTestInFlow(
 			: null;
 	const children: Element[] = [];
 	for (const child of candidates ?? flowContent(element)) {
-		if (nodeTypeOf(child) !== 1) {
+		if (getNodeType(child) !== 1) {
 			continue;
 		}
 		if (isPositioned(child as Element)) {
@@ -5633,15 +5728,15 @@ function getStaticPosition(
 	const offsetLeft = origin.x - containingOrigin.x;
 	const offsetTop = origin.y - containingOrigin.y;
 	const contentLeft =
-		containerNode.style.border.left + containerNode.result.padding.left;
+		containerNode.style.border.left + containerNode.result.paddingLeft;
 	const contentTop =
-		containerNode.style.border.top + containerNode.result.padding.top;
+		containerNode.style.border.top + containerNode.result.paddingTop;
 
 	const box = getContainerBox(layout, container);
 	const children = box.children!;
 	let entry: Box | null = null;
 	for (let current: Node = element; current !== container;) {
-		const found = box.heads!.get(current);
+		const found = getHead(box.heads!, current);
 		if (found) {
 			entry = found;
 			break;
@@ -5690,7 +5785,7 @@ function getStaticPosition(
 				(!Number.isNaN(previousNode.result.height)
 					? previousNode.result.height
 					: 0) +
-				previousNode.result.margin.bottom,
+				previousNode.result.marginBottom,
 		};
 	}
 	return {left: offsetLeft + contentLeft, top: offsetTop + contentTop};
@@ -5870,6 +5965,32 @@ function layoutRect(engine: Layout, element: Element): DOMRect | null {
 	return element.isConnected ? engine.getRect(element) : null;
 }
 
+// Every layout node the document can reach: its trees, the detached
+// nodes it keeps for the re-add sweep, and the trees of its independent
+// formatting contexts.
+function *getLiveLayoutNodes(layout: Layout): Generator<LayoutNode> {
+	const pending: LayoutNode[] = [layout.initialBlock];
+	for (const [node, layoutNode] of layout.nodeMap) {
+		pending.push(layoutNode);
+		const root = layout.boxes.get(node)?.independentFormattingContext;
+		if (root) {
+			pending.push(root);
+		}
+	}
+	for (const layoutNode of layout.anonymousBoxes.keys()) {
+		pending.push(layoutNode);
+	}
+	const seen = new Set<LayoutNode>();
+	while (pending.length > 0) {
+		const node = pending.pop()!;
+		if (!seen.has(node)) {
+			seen.add(node);
+			yield node;
+			pending.push(...node.children);
+		}
+	}
+}
+
 export class Layout {
 	domRect: typeof DOMRect;
 	rootElement: Element;
@@ -5877,6 +5998,9 @@ export class Layout {
 
 	// The terminal-sized root every box hangs from. It has no DOM node.
 	initialBlock: LayoutNode;
+
+	// The cached results of every layout node of the document.
+	cachePool: CachePool;
 
 	// Not every node has one. A run member is measured by the run around
 	// it and owns none, which is what getOwnLayoutNode checks.
@@ -5956,6 +6080,10 @@ export class Layout {
 	// Counts layout passes, so a node styled in this pass is not styled
 	// again when a container re-adds it.
 	pass: number;
+	// Whether each element looked up during a pass is hidden, by its own
+	// display or an ancestor's, which no pass can change. Null between
+	// passes.
+	hiddenElements: Map<Element, boolean> | null;
 	// Counts the passes that solved the tree, so a reader can tell whether
 	// geometry changed since it last looked.
 	solves: number;
@@ -5987,6 +6115,7 @@ export class Layout {
 	constructor(window: Window, width: number, height: number) {
 		this.geometryMoved = false;
 		this.pass = 0;
+		this.hiddenElements = null;
 		this.solves = 0;
 		this.damage = [];
 		this.wholeDamage = true;
@@ -6023,7 +6152,9 @@ export class Layout {
 		// The initial containing block is a formatting context of its own, so
 		// the root element's margins stay inside it rather than escaping to
 		// nothing.
-		const root = new LayoutNode();
+		this.cachePool = new CachePool(() => getLiveLayoutNodes(this));
+		const root = new LayoutNode(this.cachePool);
+		root.style = createStyle();
 		root.style.displayType = "block";
 		root.style.blockFormattingContext = true;
 		root.style.width = toValue(width);
@@ -6060,6 +6191,15 @@ export class Layout {
 	}
 
 	performLayout(): void {
+		this.hiddenElements = new Map();
+		try {
+			this.runLayoutPass();
+		} finally {
+			this.hiddenElements = null;
+		}
+	}
+
+	runLayoutPass(): void {
 		this.pass++;
 		// Built on the first pass, not at construction. The engine is
 		// constructed before the cascade that provides display exists.
@@ -6087,7 +6227,7 @@ export class Layout {
 		pruneDisconnectedNodes(this);
 
 		for (const node of this.invalidatedNodes) {
-			if (node.isConnected) {
+			if (isConnectedNode(node)) {
 				// The flat-tree BOX parent. A shadow root's direct child has no
 				// parentElement, and attaching under a display:contents element
 				// strands the child in an orphan subtree.
@@ -6248,11 +6388,11 @@ export class Layout {
 		let bottom: number;
 		if (node !== undefined) {
 			const {border} = node.style;
-			const {padding} = node.result;
-			left = border.left + padding.left;
-			top = border.top + padding.top;
-			right = border.right + padding.right;
-			bottom = border.bottom + padding.bottom;
+			const {result} = node;
+			left = border.left + result.paddingLeft;
+			top = border.top + result.paddingTop;
+			right = border.right + result.paddingRight;
+			bottom = border.bottom + result.paddingBottom;
 			// Edges its measure counts in its size are not on its node.
 			const masked = getMaskedEdges(element);
 			if (masked.length > 0) {
@@ -6345,7 +6485,7 @@ export class Layout {
 				}
 				continue;
 			}
-			const name = localNameOf(ancestor);
+			const name = getLocalName(ancestor);
 			if (
 				(position !== "" && position !== "static") ||
 				establishesFixedContainingBlock(ancestor) ||
@@ -6431,7 +6571,7 @@ export class Layout {
 
 	/** Scrolls every port around a caret so the caret shows, nearest first. */
 	revealCaret(node: Node, offset: number): void {
-		const box = nodeTypeOf(node) === node.ELEMENT_NODE
+		const box = getNodeType(node) === node.ELEMENT_NODE
 			? (node as Element)
 			: flatParentElement(node);
 		if (box === null) {
@@ -6544,7 +6684,7 @@ export class Layout {
 		// Everything but true inline content is an atomic box with one rect,
 		// inline-block included. An <input> has no text runs at all, and
 		// returning none made it invisible to elementFromPoint.
-		if (nodeTypeOf(node) === node.ELEMENT_NODE) {
+		if (getNodeType(node) === node.ELEMENT_NODE) {
 			const element = node as Element;
 			if (getUsedDisplay(element) !== "inline") {
 				const rect = this.getRect(element);
@@ -6574,7 +6714,7 @@ export class Layout {
 	 * inline box before it, or else at the start of the one after it.
 	 */
 	getCaretRect(node: Node, offset: number): DOMRect | null {
-		if (nodeTypeOf(node) === node.TEXT_NODE) {
+		if (getNodeType(node) === node.TEXT_NODE) {
 			const shown = this.getRects(node).length > 0;
 			return (shown
 				? getCaretRectInFragment(this, node as Text, offset)
@@ -7152,7 +7292,7 @@ function isStartAligned(node: LayoutNode): boolean {
 	const owner = node.owner as Node | null;
 	const element = owner === null
 		? null
-		: nodeTypeOf(owner) === owner.ELEMENT_NODE
+		: getNodeType(owner) === owner.ELEMENT_NODE
 		? (owner as Element)
 		: flatParentElement(owner);
 	if (element === null || getComputedValue(element, "direction") === "rtl") {
@@ -7176,7 +7316,7 @@ function paintsOwnBox(layout: Layout, node: LayoutNode): boolean {
 	if (owner === null || getRun(layout, node) !== null) {
 		return false;
 	}
-	if (nodeTypeOf(owner) !== owner.ELEMENT_NODE) {
+	if (getNodeType(owner) !== owner.ELEMENT_NODE) {
 		return false;
 	}
 	const element = owner as Element;
@@ -7225,7 +7365,7 @@ function forEachLayoutNode(
 			walk(child);
 		}
 		const owner = node.owner as Node | null;
-		if (owner !== null && nodeTypeOf(owner) === owner.ELEMENT_NODE) {
+		if (owner !== null && getNodeType(owner) === owner.ELEMENT_NODE) {
 			const context = layout.boxes.get(owner as Element)
 				?.independentFormattingContext;
 			if (context) {
@@ -7247,7 +7387,7 @@ function checkTreeShape(layout: Layout): string[] {
 		const owner = node.owner as Node | null;
 		return owner === null
 			? "anonymous"
-			: nodeTypeOf(owner) === owner.ELEMENT_NODE
+			: getNodeType(owner) === owner.ELEMENT_NODE
 			? (owner as Element).localName +
 				((owner as Element).id ? `#${(owner as Element).id}` : "")
 			: "#text";
@@ -7269,7 +7409,7 @@ function checkTreeShape(layout: Layout): string[] {
 	visit(layout.initialBlock);
 	const document = layout.rootElement.ownerDocument!;
 	for (const each of flatDescendants(document.documentElement!)) {
-		if (nodeTypeOf(each) !== each.ELEMENT_NODE) {
+		if (getNodeType(each) !== each.ELEMENT_NODE) {
 			continue;
 		}
 		const context = layout.boxes.get(each as Element)
@@ -7287,7 +7427,7 @@ function checkTreeShape(layout: Layout): string[] {
 		}
 		if (
 			seen.has(node) &&
-			nodeTypeOf(domNode) === domNode.ELEMENT_NODE &&
+			getNodeType(domNode) === domNode.ELEMENT_NODE &&
 			isOutOfFlow(domNode) &&
 			getPosition(domNode as Element) !== "fixed"
 		) {
@@ -7306,7 +7446,7 @@ function checkTreeShape(layout: Layout): string[] {
 		}
 		if (
 			seen.has(node) &&
-			nodeTypeOf(domNode) === domNode.ELEMENT_NODE &&
+			getNodeType(domNode) === domNode.ELEMENT_NODE &&
 			isDisplayContents(domNode as Element)
 		) {
 			problems.push(`${name(node)} has a box and generates none`);
@@ -7559,7 +7699,7 @@ function getVisibleChildren(
 	let hi = children.length;
 	while (lo < hi) {
 		const mid = (lo + hi) >>> 1;
-		if (extents.get(children[mid])!.bottom <= top) {
+		if (getStoredExtent(children[mid])!.bottom <= top) {
 			lo = mid + 1;
 		} else {
 			hi = mid;
@@ -7569,7 +7709,7 @@ function getVisibleChildren(
 	const result: Node[] = [];
 	for (let i = lo; i < children.length; i++) {
 		const child = children[i];
-		if (extents.get(child)!.top >= bottom) {
+		if (getStoredExtent(child)!.top >= bottom) {
 			break;
 		}
 		const domNode = child.owner as Node | undefined;
@@ -7825,13 +7965,13 @@ export function paintExtent(
 	node: LayoutNode,
 	frame: LayoutNode,
 ): Extent | undefined {
-	const extent = extents.get(node);
+	const extent = getStoredExtent(node);
 	return extent?.frame === frame ? extent : undefined;
 }
 
 // The root a node's extent counts from, once it has one.
 export function getExtentFrame(node: LayoutNode): LayoutNode | undefined {
-	return extents.get(node)?.frame;
+	return getStoredExtent(node)?.frame;
 }
 
 /**
@@ -7922,12 +8062,33 @@ function pruneDisconnectedNodes(layout: Layout): void {
 // now generates is derived where every box is derived.
 // Measures are dropped after every restyle has dropped its enumerations,
 // as handleMutations does with records.
-// The style values each box's measure last read, by the element read,
-// and the boxes that read each element. A measure's result is a function
-// of what it read, so it stands until one of those reads differently.
-const measureReads =
-	new WeakMap<LayoutNode, Map<Element, Map<string, string>>>();
-const measureReaders = new WeakMap<Element, Set<LayoutNode>>();
+// The style values each box's measure last read, as element, read and
+// value in turn, and the boxes that read each element. A measure's result
+// is a function of what it read, so it stands until one of those reads
+// differently.
+const measureReads = new WeakMap<LayoutNode, Array<Element | string>>();
+// Most elements are read by one box, kept alone until a second reads it.
+const measureReaders = new WeakMap<Element, LayoutNode | Set<LayoutNode>>();
+
+function addMeasureReader(element: Element, node: LayoutNode): void {
+	const readers = measureReaders.get(element);
+	if (readers === undefined) {
+		measureReaders.set(element, node);
+	} else if (readers instanceof Set) {
+		readers.add(node);
+	} else if (readers !== node) {
+		measureReaders.set(element, new Set([readers, node]));
+	}
+}
+
+function removeMeasureReader(element: Element, node: LayoutNode): void {
+	const readers = measureReaders.get(element);
+	if (readers === node) {
+		measureReaders.delete(element);
+	} else if (readers instanceof Set) {
+		readers.delete(node);
+	}
+}
 
 // The readers are registered once the measure has returned, and only
 // while the layout still measures the box: a measure can drop its own box
@@ -7938,32 +8099,34 @@ function recordReads(
 	measure: Measure,
 ): Measure {
 	return (width, widthSpace, placing, left) => {
-		const reads = new Map<Element, Map<string, string>>();
-		// Reads come in runs on one element.
-		let lastElement: Element | null = null;
-		let lastReads: Map<string, string> | undefined;
+		const contextLayoutsBefore = contextLayouts;
+		const reads: Array<Element | string> = [];
+		// Reads come in runs on one element, and a run reads few
+		// properties, so a read is looked for only in its own run.
+		let runStart = 0;
 		const size = recordStyleReads((element, read, value) => {
-			if (element !== lastElement) {
-				lastElement = element;
-				lastReads = reads.get(element);
-				if (lastReads === undefined) {
-					lastReads = new Map();
-					reads.set(element, lastReads);
+			if (reads[runStart] !== element) {
+				runStart = reads.length;
+			}
+			for (let i = runStart; i < reads.length; i += 3) {
+				if (reads[i + 1] === read) {
+					reads[i + 2] = value;
+					return;
 				}
 			}
-			lastReads!.set(read, value);
+			reads.push(element, read, value);
 		}, () => measure(width, widthSpace, placing, left));
+		if (!placing && contextLayouts !== contextLayoutsBefore) {
+			node.hasCachedLayout = false;
+		}
 		forgetReads(node);
 		if (layout.measureNodes.has(node)) {
-			for (const element of reads.keys()) {
-				let readers = measureReaders.get(element);
-				if (readers === undefined) {
-					readers = new Set();
-					measureReaders.set(element, readers);
+			for (let i = 0; i < reads.length; i += 3) {
+				if (reads[i] !== reads[i - 3]) {
+					addMeasureReader(reads[i] as Element, node);
 				}
-				readers.add(node);
 			}
-			measureReads.set(node, reads);
+			measureReads.set(node, fitToLength(reads));
 		}
 		return size;
 	};
@@ -7972,10 +8135,15 @@ function recordReads(
 // A box that leaves takes its reads with it, so no element it read keeps
 // it.
 function forgetReads(node: LayoutNode): void {
-	for (const element of measureReads.get(node)?.keys() ?? []) {
-		measureReaders.get(element)?.delete(node);
+	const reads = measureReads.get(node);
+	if (reads !== undefined) {
+		for (let i = 0; i < reads.length; i += 3) {
+			if (reads[i] !== reads[i - 3]) {
+				removeMeasureReader(reads[i] as Element, node);
+			}
+		}
+		measureReads.delete(node);
 	}
-	measureReads.delete(node);
 }
 
 // Every measure that read the element and would read it differently now
@@ -7985,14 +8153,17 @@ function invalidateMeasureReaders(element: Element): void {
 	if (readers === undefined) {
 		return;
 	}
-	for (const node of readers) {
-		const reads = measureReads.get(node)?.get(element);
-		if (reads === undefined) {
-			readers.delete(node);
+	for (const node of readers instanceof Set ? readers : [readers]) {
+		const reads = measureReads.get(node);
+		if (reads === undefined || !reads.includes(element)) {
+			removeMeasureReader(element, node);
 			continue;
 		}
-		for (const [read, value] of reads) {
-			if (readStyleAgain(element, read) !== value) {
+		for (let i = 0; i < reads.length; i += 3) {
+			if (
+				reads[i] === element &&
+				readStyleAgain(element, reads[i + 1] as string) !== reads[i + 2]
+			) {
 				node.invalidate();
 				break;
 			}
@@ -8110,7 +8281,7 @@ function invalidateOutOfFlowDescendants(
 	element: Element,
 ): void {
 	for (const child of flatChildren(element)) {
-		if (nodeTypeOf(child) !== child.ELEMENT_NODE) {
+		if (getNodeType(child) !== child.ELEMENT_NODE) {
 			continue;
 		}
 		if (isOutOfFlow(child)) {
@@ -8172,7 +8343,7 @@ function invalidateForRecord(
 ): void {
 	// A record on a shadow root describes the HOST's flat-tree children.
 	const target =
-		nodeTypeOf(record.target) ===
+		getNodeType(record.target) ===
 		record.target.DOCUMENT_FRAGMENT_NODE
 			? (record.target as ShadowRoot).host
 			: record.target;
@@ -8209,7 +8380,7 @@ function invalidateForRecord(
 	}
 	// The removed nodes are already detached, so the container is reached
 	// through the target rather than through them.
-	if (nodeTypeOf(target) === target.ELEMENT_NODE) {
+	if (getNodeType(target) === target.ELEMENT_NODE) {
 		invalidateChildDerivation(layout, target as Element);
 	}
 	// A member gaining or losing a descendant changes no box list (the
@@ -8221,7 +8392,7 @@ function invalidateForRecord(
 }
 
 function *getTextNodes(root: Node): Generator<Text> {
-	if (nodeTypeOf(root) === root.TEXT_NODE) {
+	if (getNodeType(root) === root.TEXT_NODE) {
 		yield root as Text;
 		return;
 	}
@@ -8243,7 +8414,7 @@ function getRunOrigin(
 	headLayoutNode: LayoutNode,
 ): {x: number; y: number} {
 	const position = getDocumentPosition(layout, runHead, headLayoutNode);
-	if (nodeTypeOf(runHead) !== runHead.ELEMENT_NODE) {
+	if (getNodeType(runHead) !== runHead.ELEMENT_NODE) {
 		return position;
 	}
 	const head = runHead as Element;
@@ -8387,7 +8558,7 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 
 function rangeTextNodes(layout: Layout, range: Range): Text[] {
 	const root = range.commonAncestorContainer;
-	if (nodeTypeOf(root) === root.TEXT_NODE) {
+	if (getNodeType(root) === root.TEXT_NODE) {
 		return [root as Text];
 	}
 	const nodes: Text[] = [];
@@ -8418,12 +8589,12 @@ function textPointAt(node: Node, offset: number): [Text, number] | null {
 }
 
 function isLineBreak(node: Node): boolean {
-	return nodeTypeOf(node) === node.ELEMENT_NODE &&
-		(node as Element).tagName === "BR";
+	return getNodeType(node) === node.ELEMENT_NODE &&
+		getHTMLLocalName(node as Element) === "br";
 }
 
 function firstTextIn(node: Node): Text | null {
-	if (nodeTypeOf(node) === node.TEXT_NODE) {
+	if (getNodeType(node) === node.TEXT_NODE) {
 		return node as Text;
 	}
 	for (let child = node.firstChild; child !== null; child = child.nextSibling) {
@@ -8436,7 +8607,7 @@ function firstTextIn(node: Node): Text | null {
 }
 
 function lastTextIn(node: Node): Text | null {
-	if (nodeTypeOf(node) === node.TEXT_NODE) {
+	if (getNodeType(node) === node.TEXT_NODE) {
 		return node as Text;
 	}
 	for (let child = node.lastChild;
@@ -8459,7 +8630,7 @@ function getCaretRectBetween(
 	after: Node | null,
 ): DOMRect | null {
 	for (let node = before; node !== null; node = node.previousSibling) {
-		if (nodeTypeOf(node) === node.TEXT_NODE) {
+		if (getNodeType(node) === node.TEXT_NODE) {
 			const text = node as Text;
 			const rect = getCaretRectInFragment(layout, text, text.data.length);
 			if (rect !== null) {
@@ -8478,7 +8649,7 @@ function getCaretRectBetween(
 		}
 	}
 	for (let node = after; node !== null; node = node.nextSibling) {
-		if (nodeTypeOf(node) === node.TEXT_NODE) {
+		if (getNodeType(node) === node.TEXT_NODE) {
 			const rect = getCaretRectInFragment(layout, node as Text, 0);
 			if (rect !== null) {
 				return rect;
@@ -8832,7 +9003,7 @@ function hitTestContext(
 // consumers read getRects, getRangeRects or lineFragments, whose
 // fragments carry data offsets a consumer can render for itself.
 function getRectTexts(layout: Layout, node: Node): RectText[] {
-	if (nodeTypeOf(node) === node.ELEMENT_NODE) {
+	if (getNodeType(node) === node.ELEMENT_NODE) {
 		const element = node as Element;
 		const display = getLayoutDisplay(element);
 
@@ -8847,10 +9018,10 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 			const fragments: RectText[] = [];
 			const walk = (parent: Element): void => {
 				for (const child of Array.from(parent.childNodes) as Node[]) {
-					if (nodeTypeOf(child) === child.TEXT_NODE) {
+					if (getNodeType(child) === child.TEXT_NODE) {
 						fragments.push(...getRectTexts(layout, child));
 					} else if (
-						nodeTypeOf(child) === child.ELEMENT_NODE &&
+						getNodeType(child) === child.ELEMENT_NODE &&
 						// USED display. An out-of-flow child's box is no part
 						// of the fragments this inline was broken into.
 						isInlineDisplay(getUsedDisplay(child as Element))
@@ -9000,7 +9171,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	// insets it. A normal inline's box model is cleared, an inline-block's
 	// offset is getDocumentPosition's, and a block's run head is a text node
 	// with no box.
-	if (nodeTypeOf(runHead) === runHead.ELEMENT_NODE) {
+	if (getNodeType(runHead) === runHead.ELEMENT_NODE) {
 		const runHeadElement = runHead as Element;
 		if (
 			getLayoutDisplay(runHeadElement) === "inline" &&
@@ -9072,7 +9243,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	// position:relative on a run member shifts its painted fragments. The
 	// box-less ancestors up to the run head accumulate offsets.
 	for (
-		let ancestor = nodeTypeOf(node) === node.ELEMENT_NODE
+		let ancestor = getNodeType(node) === node.ELEMENT_NODE
 			? (node as Element)
 			: flatParentElement(node);
 		ancestor && ancestor !== runHead && !layout.nodeMap.has(ancestor);
@@ -9100,7 +9271,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 
 	let targetTextNodes: Set<Node>;
 
-	if (nodeTypeOf(node) === node.TEXT_NODE || isLineBreak(node)) {
+	if (getNodeType(node) === node.TEXT_NODE || isLineBreak(node)) {
 		targetTextNodes = new Set([node]);
 	} else {
 		targetTextNodes = new Set<Node>();
@@ -9112,8 +9283,8 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 			found = flowNext(found, node, false)
 		) {
 			if (
-				nodeTypeOf(found) === found.TEXT_NODE ||
-				nodeTypeOf(found) === found.ELEMENT_NODE
+				getNodeType(found) === found.TEXT_NODE ||
+				getNodeType(found) === found.ELEMENT_NODE
 			) {
 				targetTextNodes.add(found);
 			}
@@ -9211,7 +9382,7 @@ function getDocumentContentHeight(engine: Layout): number {
 // than itself, and a fixed box moves with the viewport, not in it.
 function getDocumentOverflowBottom(engine: Layout): number {
 	const root = engine.nodeMap.get(engine.rootElement);
-	const extent = root ? extents.get(root) : undefined;
+	const extent = root ? getStoredExtent(root) : undefined;
 	return extent ? Math.ceil(root!.grid.top + extent.overflowBottom) : 0;
 }
 
@@ -9224,11 +9395,11 @@ function measureScrollExtent(
 		return null;
 	}
 	const border = layoutNode.style.border;
-	const padding = layoutNode.result.padding;
+	const result = layoutNode.result;
 	let right: number | null = 0;
 	let bottom = 0;
 	const extent = layoutNode.style.clipsOverflow
-		? extents.get(layoutNode)
+		? getStoredExtent(layoutNode)
 		: undefined;
 	if (extent !== undefined) {
 		// The layout pass found it.
@@ -9244,15 +9415,15 @@ function measureScrollExtent(
 			if (lines === undefined) {
 				return null;
 			}
-			right = border.left + padding.left + lines.maxLineWidth;
-			bottom = border.top + padding.top + lines.totalHeight;
+			right = border.left + result.paddingLeft + lines.maxLineWidth;
+			bottom = border.top + result.paddingTop + lines.totalHeight;
 		}
 		for (const child of layoutNode.children) {
 			// A display:none placeholder holds a stale layout.
 			if (child.style.displayType === "none") {
 				continue;
 			}
-			const reach = extents.get(child)!;
+			const reach = getStoredExtent(child)!;
 			if (right !== null) {
 				right =
 					child.measure !== null &&
@@ -9269,9 +9440,11 @@ function measureScrollExtent(
 	return {
 		width: right === null
 			? null
-			: Math.round(Math.max(clientWidth, right - border.left + padding.right)),
+			: Math.round(
+				Math.max(clientWidth, right - border.left + result.paddingRight),
+			),
 		height: Math.round(
-			Math.max(clientHeight, bottom - border.top + padding.bottom),
+			Math.max(clientHeight, bottom - border.top + result.paddingBottom),
 		),
 	};
 }

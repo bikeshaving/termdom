@@ -14,10 +14,10 @@
 import {DOM_INTERFACES} from "../generated/domidl.ts";
 import {
 	declareInterfaceObject,
+	getParentClass,
+	getSlotClass,
 	isSealedClass,
 	onSeal,
-	parentOf,
-	typeOf,
 } from "./slots.ts";
 
 export interface IdlInterface {
@@ -132,7 +132,7 @@ function implementsInterface(type: Constructor, owner: Constructor): boolean {
 		for (
 			let current: unknown = type;
 			typeof current === "function" && current !== Function.prototype;
-			current = parentOf(current as Constructor)
+			current = getParentClass(current as Constructor)
 		) {
 			lineage.add(current as Constructor);
 		}
@@ -145,7 +145,7 @@ function implementsInterface(type: Constructor, owner: Constructor): boolean {
 // that only looks like ours, as a Proxy around ours does, is not; the
 // runtime's own objects are.
 function isInstance(value: unknown, check: Check): boolean {
-	const type = typeOf(value);
+	const type = getSlotClass(value);
 	if (type !== null) {
 		if (type === check.accepted || type === check.acceptedBefore) {
 			return true;
@@ -277,7 +277,7 @@ function wrapOperation(
 	let accepted: Constructor | null = null;
 	let acceptedBefore: Constructor | null = null;
 	const brand = (object: unknown): Constructor => {
-		const type = typeOf(object);
+		const type = getSlotClass(object);
 		if (type === null) {
 			throw new TypeError("Illegal invocation");
 		}
@@ -383,7 +383,7 @@ function wrapAttribute(
 	let accepted: Constructor | null = null;
 	let acceptedBefore: Constructor | null = null;
 	const brand = (object: unknown): Constructor | null => {
-		const type = typeOf(object);
+		const type = getSlotClass(object);
 		if (type === null) {
 			return null;
 		}
@@ -486,9 +486,9 @@ function wrapAttribute(
 // The classes a class takes its slots from, nearest first.
 function *ancestors(type: Constructor): Generator<Constructor> {
 	for (
-		let current: unknown = parentOf(type);
+		let current: unknown = getParentClass(type);
 		typeof current === "function" && current !== Function.prototype;
-		current = parentOf(current as Constructor)
+		current = getParentClass(current as Constructor)
 	) {
 		yield current as Constructor;
 	}
@@ -510,8 +510,8 @@ let installed = false;
  * The name of the interface `value` was made as, the nearest one the
  * window exposes, or null for an object that is not the platform's.
  */
-export function interfaceNameOf(value: unknown): string | null {
-	const type = typeOf(value);
+export function getInterfaceName(value: unknown): string | null {
+	const type = getSlotClass(value);
 	if (type === null) {
 		return null;
 	}

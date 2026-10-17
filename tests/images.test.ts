@@ -29,7 +29,7 @@ import {
 } from "../src/internal/images.ts";
 import {IMAGES} from "./fixtures/images.ts";
 
-function bytesOf(name: string): Uint8Array {
+function getImageBytes(name: string): Uint8Array {
 	const binary = atob(IMAGES[name]);
 	return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
@@ -70,7 +70,7 @@ for (const name of [
 	"bmp-rle8.bmp",
 ]) {
 	test(`decodes ${name} pixel for pixel`, async () => {
-		expectQuadrants(await decodeImage(bytesOf(name)), 0);
+		expectQuadrants(await decodeImage(getImageBytes(name)), 0);
 	});
 }
 
@@ -83,13 +83,13 @@ for (const name of [
 	"jpeg-cmyk.jpg",
 ]) {
 	test(`decodes ${name} within JPEG's error`, async () => {
-		expectQuadrants(await decodeImage(bytesOf(name)), 12);
+		expectQuadrants(await decodeImage(getImageBytes(name)), 12);
 	});
 }
 
 test("grayscale images decode to equal channels", async () => {
 	for (const name of ["png-gray.png", "jpeg-gray.jpg"]) {
-		const bitmap = await decodeImage(bytesOf(name));
+		const bitmap = await decodeImage(getImageBytes(name));
 		for (const [x, y] of QUADRANTS) {
 			const [r, g, b, a] = pixel(bitmap, x, y);
 			expect(r).toBe(g);
@@ -104,7 +104,7 @@ test("grayscale images decode to equal channels", async () => {
 
 test("one-bit images decode to black and white", async () => {
 	for (const name of ["png-mono.png", "bmp-1.bmp"]) {
-		const bitmap = await decodeImage(bytesOf(name));
+		const bitmap = await decodeImage(getImageBytes(name));
 		expect(pixel(bitmap, 3, 3)).toEqual([0, 0, 0, 255]);
 		expect(pixel(bitmap, 12, 3)).toEqual([255, 255, 255, 255]);
 		expect(pixel(bitmap, 3, 12)).toEqual([255, 255, 255, 255]);
@@ -113,7 +113,7 @@ test("one-bit images decode to black and white", async () => {
 });
 
 test("alpha comes through: an alpha channel, tRNS, and GIF and BMP transparency", async () => {
-	const rgba = await decodeImage(bytesOf("png-rgba.png"));
+	const rgba = await decodeImage(getImageBytes("png-rgba.png"));
 	const [r, g, b, a] = pixel(rgba, 3, 3);
 	expect([r, g, b]).toEqual([255, 0, 0]);
 	expect(Math.abs(a - 128)).toBeLessThanOrEqual(1);
@@ -124,17 +124,17 @@ test("alpha comes through: an alpha channel, tRNS, and GIF and BMP transparency"
 		"gif-transparent.gif",
 		"bmp-32.bmp",
 	]) {
-		const bitmap = await decodeImage(bytesOf(name));
+		const bitmap = await decodeImage(getImageBytes(name));
 		expect(pixel(bitmap, 3, 3)[3]).toBe(0);
 		expect(pixel(bitmap, 12, 3)).toEqual([0, 255, 0, 255]);
 	}
 });
 
 test("the format is sniffed from the bytes, not named", () => {
-	expect(sniffImageType(bytesOf("png-rgb.png"))).toBe("image/png");
-	expect(sniffImageType(bytesOf("jpeg-444.jpg"))).toBe("image/jpeg");
-	expect(sniffImageType(bytesOf("gif.gif"))).toBe("image/gif");
-	expect(sniffImageType(bytesOf("bmp-24.bmp"))).toBe("image/bmp");
+	expect(sniffImageType(getImageBytes("png-rgb.png"))).toBe("image/png");
+	expect(sniffImageType(getImageBytes("jpeg-444.jpg"))).toBe("image/jpeg");
+	expect(sniffImageType(getImageBytes("gif.gif"))).toBe("image/gif");
+	expect(sniffImageType(getImageBytes("bmp-24.bmp"))).toBe("image/bmp");
 	expect(sniffImageType(new TextEncoder().encode("<svg></svg>"))).toBeNull();
 });
 
@@ -147,7 +147,7 @@ test("an unknown format or damaged data rejects", async () => {
 	}
 	expect(error).toBeInstanceOf(Error);
 
-	const truncated = bytesOf("png-rgb.png").subarray(0, 40);
+	const truncated = getImageBytes("png-rgb.png").subarray(0, 40);
 	error = null;
 	try {
 		await decodeImage(truncated);
@@ -193,7 +193,7 @@ function withOrientation(jpeg: Uint8Array, orientation: number): Uint8Array {
 }
 
 test("a JPEG's Exif orientation turns the image, as browsers do by default", async () => {
-	const source = bytesOf("jpeg-444.jpg");
+	const source = getImageBytes("jpeg-444.jpg");
 	// 6: rotate 90 degrees clockwise. Red moves from top left to top right.
 	const turned = await decodeImage(withOrientation(source, 6));
 	expect(pixel(turned, 12, 3)[0]).toBeGreaterThan(240);
@@ -319,7 +319,7 @@ test("a relative src resolves against the document's URL, and at about:blank to 
 // has, or more bytes than an image file may have.
 
 function patched(name: string, at: number, ...values: number[]): Uint8Array {
-	const bytes = bytesOf(name).slice();
+	const bytes = getImageBytes(name).slice();
 	bytes.set(values, at);
 	return bytes;
 }
@@ -339,7 +339,7 @@ test("a size no image may have rejects before it is allocated", async () => {
 		.rejects.toThrow("more than an image may be");
 	await expect(decodeImage(patched("png-rgb.png", 16, 0, 0, 0x9c, 0x40)))
 		.rejects.toThrow("more than an image may be");
-	const sof = findMarker(bytesOf("jpeg-444.jpg"), 0xc0);
+	const sof = findMarker(getImageBytes("jpeg-444.jpg"), 0xc0);
 	await expect(
 		decodeImage(patched("jpeg-444.jpg", sof + 5, 0xff, 0xff, 0xff, 0xff)),
 	).rejects.toThrow("more than an image may be");
@@ -353,13 +353,13 @@ test("a size no image may have rejects before it is allocated", async () => {
 });
 
 test("a JPEG with more components, sampling or scans than an image has rejects", async () => {
-	const sof = findMarker(bytesOf("jpeg-444.jpg"), 0xc0);
+	const sof = findMarker(getImageBytes("jpeg-444.jpg"), 0xc0);
 	await expect(decodeImage(patched("jpeg-444.jpg", sof + 9, 5)))
 		.rejects.toThrow("more than four components");
 	await expect(decodeImage(patched("jpeg-444.jpg", sof + 11, 0x55)))
 		.rejects.toThrow("past four");
 	// The last scan again and again, ahead of the end marker.
-	const bytes = bytesOf("jpeg-progressive.jpg");
+	const bytes = getImageBytes("jpeg-progressive.jpg");
 	let last = -1;
 	for (let at = findMarker(bytes, 0xda); at !== -1;) {
 		last = at;
@@ -384,7 +384,7 @@ test("a JPEG with more components, sampling or scans than an image has rejects",
 });
 
 test("a GIF frame's code size past 8 bits rejects", async () => {
-	const bytes = bytesOf("gif.gif");
+	const bytes = getImageBytes("gif.gif");
 	const descriptor = bytes.indexOf(0x2c, 13);
 	const flags = bytes[descriptor + 9];
 	const table = flags & 0x80 ? 3 * (1 << ((flags & 7) + 1)) : 0;
@@ -501,8 +501,8 @@ withWorker(
 			expect(
 				await outcomes([
 					decodeImageOffThread(STAND_IN),
-					decodeImageOffThread(bytesOf("png-rgb.png")),
-					decodeImageOffThread(bytesOf("png-rgb.png")),
+					decodeImageOffThread(getImageBytes("png-rgb.png")),
+					decodeImageOffThread(getImageBytes("png-rgb.png")),
 				]),
 			).toEqual([
 				"The image took more than 10000 ms to decode",
@@ -527,14 +527,17 @@ withWorker(
 			let droppedAfter = -1;
 			// The stand-in, ahead of it, holds the worker until its time is up.
 			const stalled = decodeImageOffThread(STAND_IN);
-			const dropped = decodeImageOffThread(bytesOf("png-rgb.png"), abort.signal)
+			const dropped = decodeImageOffThread(
+				getImageBytes("png-rgb.png"),
+				abort.signal,
+			)
 				.finally(() => {
 					droppedAfter = Date.now() - started;
 				});
 			const decodes = [
 				stalled,
 				dropped,
-				decodeImageOffThread(bytesOf("png-rgb.png")),
+				decodeImageOffThread(getImageBytes("png-rgb.png")),
 			];
 			abort.abort(new Error("The source changed"));
 			expect(await outcomes(decodes)).toEqual([
@@ -544,7 +547,7 @@ withWorker(
 			]);
 			expect(droppedAfter).toBeLessThan(500);
 			await expect(
-				decodeImageOffThread(bytesOf("png-rgb.png"), abort.signal),
+				decodeImageOffThread(getImageBytes("png-rgb.png"), abort.signal),
 			).rejects.toThrow("The source changed");
 		} finally {
 			setDecodeWorkerURL(null);
@@ -562,9 +565,9 @@ withWorker(
 				),
 			);
 			const [before, broken, after] = await outcomes([
-				decodeImageOffThread(bytesOf("png-rgb.png")),
+				decodeImageOffThread(getImageBytes("png-rgb.png")),
 				decodeImageOffThread(STAND_IN),
-				decodeImageOffThread(bytesOf("png-rgb.png")),
+				decodeImageOffThread(getImageBytes("png-rgb.png")),
 			]);
 			expect([before, after]).toEqual(["1 wide", "1 wide"]);
 			expect(broken).toContain("broke");
@@ -573,7 +576,7 @@ withWorker(
 					"port.postMessage({id: data.id, error: \"from the worker\"})",
 				),
 			);
-			await expect(decodeImageOffThread(bytesOf("png-rgb.png")))
+			await expect(decodeImageOffThread(getImageBytes("png-rgb.png")))
 				.rejects.toThrow("from the worker");
 		} finally {
 			setDecodeWorkerURL(null);
@@ -587,7 +590,7 @@ withWorker(
 		try {
 			setDecodeWorkerURL(fakeWorker(""));
 			retainDecoder();
-			const decode = decodeImageOffThread(bytesOf("png-rgb.png"));
+			const decode = decodeImageOffThread(getImageBytes("png-rgb.png"));
 			await new Promise((resolve) => setTimeout(resolve, 50));
 			releaseDecoder();
 			const outcome = await decode.then(() => "decoded", (error: Error) =>
@@ -607,7 +610,7 @@ test("where no worker starts, every image decodes on this thread", async () => {
 			),
 		);
 		const bitmaps = await Promise.all(
-			[0, 1, 2].map(() => decodeImageOffThread(bytesOf("png-rgb.png"))),
+			[0, 1, 2].map(() => decodeImageOffThread(getImageBytes("png-rgb.png"))),
 		);
 		expect(bitmaps.map((bitmap) => [bitmap.width, bitmap.height]))
 			.toEqual([[16, 16], [16, 16], [16, 16]]);

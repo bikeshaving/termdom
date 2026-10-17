@@ -29,21 +29,21 @@ export interface Bitmap {
 	full?: Uint8ClampedArray;
 }
 
-export function naturalWidthOf(bitmap: Bitmap): number {
+export function getNaturalWidth(bitmap: Bitmap): number {
 	return bitmap.naturalWidth ?? bitmap.width;
 }
 
-export function naturalHeightOf(bitmap: Bitmap): number {
+export function getNaturalHeight(bitmap: Bitmap): number {
 	return bitmap.naturalHeight ?? bitmap.height;
 }
 
 /** The image at its natural size, pixel for pixel. */
-export function fullBitmapOf(bitmap: Bitmap): Bitmap {
+export function getFullBitmap(bitmap: Bitmap): Bitmap {
 	return bitmap.full === undefined
 		? bitmap
 		: {
-			width: naturalWidthOf(bitmap),
-			height: naturalHeightOf(bitmap),
+			width: getNaturalWidth(bitmap),
+			height: getNaturalHeight(bitmap),
 			data: bitmap.full,
 		};
 }
@@ -1925,8 +1925,8 @@ export function sampleBitmap(
 	natural: {x: number; y: number; width: number; height: number} = {
 		x: 0,
 		y: 0,
-		width: naturalWidthOf(bitmap),
-		height: naturalHeightOf(bitmap),
+		width: getNaturalWidth(bitmap),
+		height: getNaturalHeight(bitmap),
 	},
 	smooth = true,
 ): Uint8ClampedArray {
@@ -1939,8 +1939,8 @@ export function sampleBitmap(
 	const {width, height, data} = bitmap;
 	// The rectangle is in the image's natural pixels, and the pixels kept
 	// may be fewer.
-	const keptX = width / naturalWidthOf(bitmap);
-	const keptY = height / naturalHeightOf(bitmap);
+	const keptX = width / getNaturalWidth(bitmap);
+	const keptY = height / getNaturalHeight(bitmap);
 	const source = {
 		x: natural.x * keptX,
 		y: natural.y * keptY,

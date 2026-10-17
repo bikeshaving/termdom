@@ -29,6 +29,7 @@ import {
 	getTopLayer,
 	hasPaintedHighlights,
 	HTMLElement,
+	isDocumentElement,
 	renderedTopLayer,
 	takesTextCursor,
 	type Window,
@@ -93,7 +94,7 @@ import {
 } from "./mathml.ts";
 import {isReplacedBox, renderReplaced} from "./replaced.ts";
 import {getStringWidth} from "./text.ts";
-import {containsOf, nodeTypeOf} from "./tree.ts";
+import {getLocalName, getNodeType, nodeContains} from "./tree.ts";
 import {getCellSize} from "./units.ts";
 
 function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
@@ -680,10 +681,107 @@ function getPaintStyle(painter: Painter, element: Element): PaintStyle {
 	if (known !== undefined) {
 		return known;
 	}
-	const style = readPaintStyle(element);
+	const style = sharePaintStyle(readPaintStyle(element));
 	if (key !== null) {
 		paintStyles.set(key, style);
 	}
+	return style;
+}
+
+// Most elements paint as many others do, a list's items or a table's
+// cells, so a finished paint style is checked against the last few
+// shared, field by field, and held once. What is shared is frozen, the
+// records it holds included.
+const RECENT_PAINT_STYLES = 16;
+const recentPaintStyles: PaintStyle[] = [];
+let nextRecentPaintStyle = 0;
+
+function isSameRecord(a: object | null, b: object | null): boolean {
+	if (a === b) {
+		return true;
+	}
+	if (a === null || b === null) {
+		return false;
+	}
+	const aFields = a as Record<string, unknown>;
+	const bFields = b as Record<string, unknown>;
+	for (const name in aFields) {
+		if (!Object.is(aFields[name], bFields[name])) {
+			return false;
+		}
+	}
+	for (const name in bFields) {
+		if (!(name in aFields)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function isSameBorder(a: BorderPaint | null, b: BorderPaint | null): boolean {
+	if (a === null || b === null) {
+		return a === b;
+	}
+	return (
+		isSameRecord(a.top ?? null, b.top ?? null) &&
+		isSameRecord(a.right ?? null, b.right ?? null) &&
+		isSameRecord(a.bottom ?? null, b.bottom ?? null) &&
+		isSameRecord(a.left ?? null, b.left ?? null) &&
+		a.topLeft === b.topLeft &&
+		a.topRight === b.topRight &&
+		a.bottomRight === b.bottomRight &&
+		a.bottomLeft === b.bottomLeft
+	);
+}
+
+function isSamePaintStyle(a: PaintStyle, b: PaintStyle): boolean {
+	return (
+		a.display === b.display &&
+		a.visible === b.visible &&
+		Object.is(a.fg, b.fg) &&
+		Object.is(a.bg, b.bg) &&
+		Object.is(a.fill, b.fill) &&
+		a.gradient === b.gradient &&
+		Object.is(a.outlineColor, b.outlineColor) &&
+		a.overflowX === b.overflowX &&
+		a.overflowY === b.overflowY &&
+		a.textTransform === b.textTransform &&
+		a.whiteSpace === b.whiteSpace &&
+		Object.is(a.tabSize, b.tabSize) &&
+		Object.is(a.shiftX, b.shiftX) &&
+		Object.is(a.shiftY, b.shiftY) &&
+		Object.is(a.contentInsetX, b.contentInsetX) &&
+		Object.is(a.contentInsetY, b.contentInsetY) &&
+		a.others === b.others &&
+		a.counters === b.counters &&
+		isSameRecord(a.cell, b.cell) &&
+		isSameBorder(a.border, b.border)
+	);
+}
+
+function sharePaintStyle(style: PaintStyle): PaintStyle {
+	for (const recent of recentPaintStyles) {
+		if (isSamePaintStyle(recent, style)) {
+			return recent;
+		}
+	}
+	Object.freeze(style.cell);
+	if (style.border !== null) {
+		for (const side of [
+			style.border.top,
+			style.border.right,
+			style.border.bottom,
+			style.border.left,
+		]) {
+			if (side !== undefined) {
+				Object.freeze(side);
+			}
+		}
+		Object.freeze(style.border);
+	}
+	Object.freeze(style);
+	recentPaintStyles[nextRecentPaintStyle] = style;
+	nextRecentPaintStyle = (nextRecentPaintStyle + 1) % RECENT_PAINT_STYLES;
 	return style;
 }
 
@@ -896,8 +994,8 @@ function paintContent(
 ): void {
 	const layout = painter.layout;
 	const isRoot =
-		element === painter.document.body ||
-		element === painter.document.documentElement;
+		isDocumentElement(element) ||
+		(getLocalName(element) === "body" && element === painter.document.body);
 	const scrolledRows = isRoot ? 0 : getScrollOffset(element, "top");
 	const scrolledCols = isRoot ? 0 : getScrollOffset(element, "left");
 	const origin: Origin = {
@@ -974,10 +1072,10 @@ function paintContent(
 // nested block or inline-block lays out in lines of its own.
 function *getOwnLineText(element: Element): Generator<Text> {
 	for (const child of flowContent(element)) {
-		if (nodeTypeOf(child) === child.TEXT_NODE) {
+		if (getNodeType(child) === child.TEXT_NODE) {
 			yield child as Text;
 		} else if (
-			nodeTypeOf(child) === child.ELEMENT_NODE &&
+			getNodeType(child) === child.ELEMENT_NODE &&
 			getComputedValue(child as Element, "display") === "inline"
 		) {
 			yield *getOwnLineText(child as Element);
@@ -1094,7 +1192,7 @@ function paintNodes(
 		if (run !== null) {
 			paintRun(painter, run, childOrigin, ctx);
 		} else if (
-			nodeTypeOf(owner) === owner.ELEMENT_NODE &&
+			getNodeType(owner) === owner.ELEMENT_NODE &&
 			(owner instanceof HTMLElement || isMathRoot(owner)) &&
 			!hoistedToLayer(layout, owner as Element)
 		) {
@@ -1120,7 +1218,7 @@ function visibleChildren(
 		!extent.rowOrdered ||
 		node.measure !== null ||
 		(owner !== null &&
-			nodeTypeOf(owner) === owner.ELEMENT_NODE &&
+			getNodeType(owner) === owner.ELEMENT_NODE &&
 			layout.getBox(owner as Element)?.holdsFragments === true)
 	) {
 		return children;
@@ -1366,11 +1464,11 @@ function paintMember(
 	run: PainterRun,
 	ctx: CellContext,
 ): void {
-	if (nodeTypeOf(node) === node.TEXT_NODE) {
+	if (getNodeType(node) === node.TEXT_NODE) {
 		paintText(painter, node as Text, run, ctx);
 		return;
 	}
-	if (nodeTypeOf(node) !== node.ELEMENT_NODE) {
+	if (getNodeType(node) !== node.ELEMENT_NODE) {
 		return;
 	}
 	const element = node as Element;
@@ -1533,7 +1631,7 @@ function resolveRun(
 		if (shift === undefined) {
 			shift = {x: 0, y: 0};
 			for (
-				let ancestor = nodeTypeOf(node) === node.ELEMENT_NODE
+				let ancestor = getNodeType(node) === node.ELEMENT_NODE
 					? (node as Element)
 					: flatParentElement(node);
 				ancestor !== null && ancestor !== container;
@@ -1834,7 +1932,7 @@ function renderEditingCaret(
 	const point = getEditingCaretPoint(painter.document);
 	if (
 		point === null ||
-		!containsOf(element, point.node) ||
+		!nodeContains(element, point.node) ||
 		painter.document.getSelection()?.isCollapsed === false
 	) {
 		return;
@@ -1844,7 +1942,7 @@ function renderEditingCaret(
 		setCaretAt(painter, element, ctx, Math.round(rect.x), Math.round(rect.y));
 		return;
 	}
-	const box = nodeTypeOf(point.node) === point.node.ELEMENT_NODE
+	const box = getNodeType(point.node) === point.node.ELEMENT_NODE
 		? (point.node as Element)
 		: (flatParentElement(point.node) ?? element);
 	const content = painter.layout.contentRect(box);

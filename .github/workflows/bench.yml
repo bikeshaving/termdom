@@ -2,12 +2,30 @@ name: Benchmarks
 
 on:
   pull_request:
+  # An experiment on a perf/ branch is compared with the commit before it,
+  # or with main when the push starts the branch.
+  push:
+    branches: ["perf/**"]
+  workflow_dispatch:
+    inputs:
+      against:
+        description: The ref to compare this one with
+        default: origin/main
+      runs:
+        description: Runs per job
+        default: "5"
 
 # Shared runners are too noisy to fail a pull request on a number, so the
-# comparison is a report in the job summary, not a check.
+# comparison is a report in the job summary, not a check. Three jobs run
+# at once, each on a runner of its own, so one slow machine shows as one
+# disagreeing table rather than skewing every number.
 jobs:
   compare:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [1, 2, 3]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -23,10 +41,37 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - name: Compare with the base branch
+      - name: Choose what to compare with
+        id: base
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          AGAINST: ${{ inputs.against }}
+          RUNS: ${{ inputs.runs }}
+        run: |
+          case "$EVENT" in
+            pull_request) ref="origin/$BASE_REF"; runs=3 ;;
+            workflow_dispatch) ref="$AGAINST"; runs="$RUNS" ;;
+            *)
+              if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+                ref="origin/main"
+              else
+                ref="$BEFORE"
+              fi
+              runs=5
+              ;;
+          esac
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "runs=$runs" >> "$GITHUB_OUTPUT"
+
+      - name: Compare
+        env:
+          REF: ${{ steps.base.outputs.ref }}
+          RUNS: ${{ steps.base.outputs.runs }}
         run: |
           {
-            echo "## Benchmarks: median CPU time, base against this pull request"
+            echo "## Benchmarks, job ${{ matrix.job }}: median CPU time, $REF against ${GITHUB_SHA::8}"
             echo
-            node bench/run.ts --runs 3 --against "origin/${{ github.base_ref }}" --markdown
-          } >> "$GITHUB_STEP_SUMMARY"
+            node bench/run.ts --runs "$RUNS" --against "$REF" --markdown
+          } | tee -a "$GITHUB_STEP_SUMMARY"

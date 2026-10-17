@@ -118,7 +118,7 @@ describe("banded element scroll", () => {
 		expect(terminal.taken()).toBe(
 			"\x1b[?2026h\x1b[?6l\x1b[2;10r\x1b[2;1H\x1b[3M\x1b[r" +
 			"\x1b[1;1H\x1b7" +
-			"\r\n\r\n\r\n\r\n\r\n\r\n\r\n" +
+			"\r\x1b[7B" +
 			"\r\x1b[Krow 9                                   " +
 			"\r\n\r\x1b[Krow 10                                  " +
 			"\r\n\r\x1b[Krow 11                                  " +
@@ -143,7 +143,7 @@ describe("banded element scroll", () => {
 		expect(terminal.taken()).toBe(
 			"\x1b[?2026h\x1b[?6l\x1b[2;10r\x1b[2;1H\x1b[2M\x1b[r" +
 			"\x1b[1;1H\x1b7" +
-			"\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n" +
+			"\r\x1b[8B" +
 			"\r\x1b[Krow 9\r\n\r\x1b[Krow 10" +
 			"\x1b[11;1H\x1b[?2026l",
 		);
@@ -250,7 +250,7 @@ describe("banded element scroll", () => {
 		expect(terminal.taken()).toBe(
 			"\x1b[?2026h\x1b[?6l\x1b[2;10r\x1b[2;1H\x1b[3M\x1b[r" +
 			"\x1b[1;1H\x1b7CH\x1b[1CNGED" +
-			"\r\n".repeat(7) +
+			"\r\x1b[7B" +
 			"\r\x1b[Krow 9\r\n\r\x1b[Krow 10\r\n\r\x1b[Krow 11" +
 			"\x1b[10;1H\x1b[?2026l",
 		);

@@ -52,11 +52,12 @@ import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import {type Framebuffer, repaintAll, requestFrame} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";
 import {
-	attributeOf,
-	containsOf,
-	hasAttributeOf,
-	localNameOf,
-	nodeTypeOf,
+	getAttributeValue,
+	getHTMLLocalName,
+	getLocalName,
+	getNodeType,
+	hasAttributeByName,
+	nodeContains,
 } from "./tree.ts";
 import {pxFromCells} from "./units.ts";
 
@@ -195,7 +196,7 @@ interface SequentialEntry {
 }
 
 function getTabIndex(element: Element): number {
-	const parsed = parseInt(attributeOf(element, "tabindex") || "0", 10);
+	const parsed = parseInt(getAttributeValue(element, "tabindex") || "0", 10);
 	return Number.isNaN(parsed) ? 0 : parsed;
 }
 
@@ -227,7 +228,7 @@ function getSequentialFocusEntries(
 			ancestor;
 			ancestor = flatParentElement(ancestor)
 		) {
-			if (hasAttributeOf(ancestor, "inert")) {
+			if (hasAttributeByName(ancestor, "inert")) {
 				return true;
 			}
 		}
@@ -257,7 +258,7 @@ function getSequentialFocusEntries(
 			}
 		};
 		const visit = (node: Node): void => {
-			if (nodeTypeOf(node) !== 1) {
+			if (getNodeType(node) !== 1) {
 				return;
 			}
 			const element = node as Element;
@@ -274,7 +275,7 @@ function getSequentialFocusEntries(
 				push(ownerTabindex, expansion);
 				return;
 			}
-			if (localNameOf(element) === "slot") {
+			if (getLocalName(element) === "slot") {
 				const innerBarrier = ownerTabindex < 0 ? (barrier ?? element) : barrier;
 				const assigned = (element as HTMLSlotElement).assignedNodes();
 				const slotContents = assigned.length > 0
@@ -308,7 +309,7 @@ function getSequentialFocusEntries(
 		return entries.flatMap((entry) => entry.elements);
 	};
 
-	const roots = nodeTypeOf(root) === 9
+	const roots = getNodeType(root) === 9
 		? ((root as Document).documentElement
 			? [(root as Document).documentElement as Element]
 			: [])
@@ -846,8 +847,8 @@ function deliverPaste(input: Input, text: string): void {
 			}),
 		),
 	);
-	const tag = target.tagName;
-	if (proceed && (tag === "INPUT" || tag === "TEXTAREA")) {
+	const tag = getHTMLLocalName(target);
+	if (proceed && (tag === "input" || tag === "textarea")) {
 		const event = constructInternal(() =>
 			new input.window.InputEvent("beforeinput", {
 				inputType: "insertFromPaste",
@@ -1018,8 +1019,8 @@ const KEYLESS_INPUTS = new Set([
 // Elements whose own keys a scrolling key would take: controls that edit,
 // step or pick with them, and editable content.
 function takesKeys(element: Element, key: string): boolean {
-	const tag = element.tagName;
-	if (tag === "INPUT") {
+	const tag = getHTMLLocalName(element);
+	if (tag === "input") {
 		const type = (element as HTMLInputElement).type;
 		if (type === "radio") {
 			return key.startsWith("Arrow");
@@ -1027,7 +1028,7 @@ function takesKeys(element: Element, key: string): boolean {
 		return !KEYLESS_INPUTS.has(type);
 	}
 	return (
-		tag === "TEXTAREA" || tag === "SELECT" || getEditingHost(element) !== null
+		tag === "textarea" || tag === "select" || getEditingHost(element) !== null
 	);
 }
 
@@ -1218,7 +1219,7 @@ function dispatchPress(
 		focusable = flatParentElement(focusable);
 	}
 	const host = getEditingHost(target);
-	if (host !== null && (focusable === null || !containsOf(host, focusable))) {
+	if (host !== null && (focusable === null || !nodeContains(host, focusable))) {
 		focusable = host;
 	}
 	const active = getFocusedElement(input.document);
@@ -1531,8 +1532,8 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 }
 
 function insertText(input: Input, target: Element, text: string): void {
-	const tag = target.tagName;
-	if (tag !== "INPUT" && tag !== "TEXTAREA") {
+	const tag = getHTMLLocalName(target);
+	if (tag !== "input" && tag !== "textarea") {
 		requestEditingInsert(target, "insertText", text);
 		return;
 	}

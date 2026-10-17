@@ -601,3 +601,22 @@ test("a type selector matches its element through the rules filed by name", () =
 	expect(color("#f")).toBe("rgb(0, 0, 255)");
 	dom.dispose();
 });
+
+test("elements with the same style text keep their declarations apart", () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<p id=a style=\"color: red; margin: 1px\">a</p>" +
+		"<p id=b style=\"color: red; margin: 1px\">b</p>";
+	const a = document.getElementById("a")!;
+	const b = document.getElementById("b")!;
+	a.style.setProperty("color", "blue");
+	a.style.removeProperty("margin-top");
+	expect(a.style.color).toBe("blue");
+	expect(b.style.color).toBe("red");
+	expect(b.style.marginTop).toBe("1px");
+	expect(window.getComputedStyle(b).color).toBe("rgb(255, 0, 0)");
+	b.setAttribute("style", "color: red; margin: 1px");
+	expect(b.style.cssText).toBe("color: red; margin: 1px;");
+	dom.dispose();
+});

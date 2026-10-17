@@ -4,15 +4,22 @@
  * slots. Nothing here builds or changes a tree, so every module that walks
  * one can import it without importing the DOM.
  */
-import type {Attr, AttributeSlots, Document, Element, Node} from "./dom.ts";
+import type {
+	Attr,
+	AttributeSlots,
+	CharacterData,
+	Document,
+	Element,
+	Node,
+} from "./dom.ts";
 import type {Exchange} from "./exchange.ts";
 import {
 	_,
 	_maybe,
-	objectOf,
+	getObject,
+	getSlots,
 	rememberObject,
 	type Slots,
-	slotsOf,
 } from "./slots.ts";
 import {toASCIILowercase} from "./text.ts";
 import type {CellSizeSetting} from "./units.ts";
@@ -47,21 +54,21 @@ export function isInclusiveAncestor(ancestor: Node, node: Node): boolean {
 		if (current === ancestor) {
 			return true;
 		}
-		current = objectOf(_(current).parent);
+		current = getObject(_(current).parent);
 	}
 	return false;
 }
 
 /** The next node in tree order, or null once the walk leaves the root. */
 export function nextInTree(node: Node, root: Node): Node | null {
-	const nodeSlots = slotsOf(node);
+	const nodeSlots = getSlots(node);
 	if (nodeSlots.firstChild !== null) {
 		return rememberObject(nodeSlots.firstChild);
 	}
 	// The root is compared, not looked up, so a walk that calls this for
 	// every node keeps the node it is on in the lookup cache.
 	let current: Slots<Node> | null = nodeSlots;
-	while (current !== null && objectOf(current) !== root) {
+	while (current !== null && getObject(current) !== root) {
 		if (current.next !== null) {
 			return rememberObject(current.next);
 		}
@@ -88,19 +95,19 @@ export function nextSlotsInTree(
 }
 
 export function getParentNode(node: Node): Node | null {
-	return objectOf(_(node).parent);
+	return getObject(_(node).parent);
 }
 
 export function getFirstChildNode(node: Node): Node | null {
-	return objectOf(_(node).firstChild);
+	return getObject(_(node).firstChild);
 }
 
 export function getNextSiblingNode(node: Node): Node | null {
-	return objectOf(_(node).next);
+	return getObject(_(node).next);
 }
 
 export function getPreviousSiblingNode(node: Node): Node | null {
-	return objectOf(_(node).previous);
+	return getObject(_(node).previous);
 }
 
 export function getElementChildren(parent: Node): Element[] {
@@ -108,8 +115,8 @@ export function getElementChildren(parent: Node): Element[] {
 	for (let nodeSlots = _(parent).firstChild;
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
-		const node = objectOf(nodeSlots);
-		if (nodeTypeOf(node) === ELEMENT_NODE) {
+		const node = getObject(nodeSlots);
+		if (getNodeType(node) === ELEMENT_NODE) {
 			elements.push(node as Element);
 		}
 	}
@@ -140,7 +147,7 @@ export function getAttributeByName(
 	}
 	for (const attribute of elementSlots.attributeList) {
 		if (attribute._qualifiedName === name) {
-			return objectOf(attribute);
+			return getObject(attribute);
 		}
 	}
 	return null;
@@ -155,23 +162,36 @@ export function isElement(node: Node): node is Element {
 }
 
 /** The node's nodeType, read without going through the page's binding. */
-export function nodeTypeOf(node: globalThis.Node): number {
+export function getNodeType(node: globalThis.Node): number {
 	return _(node as Node).nodeType;
 }
 
 /** The node's ownerDocument, read without going through its binding. */
-export function ownerDocumentOf(node: globalThis.Node): Document | null {
+export function getOwnerDocument(node: globalThis.Node): Document | null {
 	const document = _(node as Node).document;
 	return document === (node as unknown) ? null : document;
 }
 
+/** The document's window, read without going through its binding. */
+export function getDefaultView(
+	document: globalThis.Document,
+): (globalThis.Window & typeof globalThis) | null {
+	return _(document as unknown as Document).extra.defaultView as
+		(globalThis.Window & typeof globalThis) | null;
+}
+
+/** A Text or comment node's data, read without going through its binding. */
+export function getCharacterData(node: globalThis.CharacterData): string {
+	return _(node as unknown as CharacterData).data;
+}
+
 /** The element's localName, read without going through its binding. */
-export function localNameOf(element: globalThis.Element): string {
+export function getLocalName(element: globalThis.Element): string {
 	return _(element as Element).localName;
 }
 
 /** Node's contains, for the engine's own calls. */
-export function containsOf(
+export function nodeContains(
 	node: globalThis.Node,
 	other: globalThis.Node | null | undefined,
 ): boolean {
@@ -180,7 +200,7 @@ export function containsOf(
 }
 
 /** The element's attribute's value, read without going through its binding. */
-export function attributeOf(
+export function getAttributeValue(
 	element: globalThis.Element,
 	qualifiedName: string,
 ): string | null {
@@ -189,20 +209,30 @@ export function attributeOf(
 }
 
 /** Whether the element has the attribute, without going through its binding. */
-export function hasAttributeOf(
+export function hasAttributeByName(
 	element: globalThis.Element,
 	qualifiedName: string,
 ): boolean {
 	return getAttributeByName(element as Element, qualifiedName) !== null;
 }
 
+/**
+ * The element's localName when it is an HTML element, or null. Engine
+ * checks of an element's kind read this rather than tagName, which is
+ * lowercase in an XML document and names a foreign element the same.
+ */
+export function getHTMLLocalName(element: globalThis.Element): string | null {
+	const slots = _(element as Element);
+	return slots.namespace === HTML_NAMESPACE ? slots.localName : null;
+}
+
 /** The element's namespaceURI, read without going through its binding. */
-export function namespaceOf(element: globalThis.Element): string | null {
+export function getNamespace(element: globalThis.Element): string | null {
 	return _(element as Element).namespace;
 }
 
 export function parentElement(node: Node): Element | null {
-	const parent = objectOf(_(node).parent);
+	const parent = getObject(_(node).parent);
 	return parent !== null && isElement(parent) ? parent : null;
 }
 

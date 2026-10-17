@@ -358,7 +358,7 @@ const actionArbitrary: fc.Arbitrary<Action> = fc.oneof(
  * that brackets other work is what shakes out a cache the first action filled
  * and the second failed to refill.
  */
-function inverseOf(action: Action): Action | null {
+function getInverse(action: Action): Action | null {
 	switch (action.kind) {
 		case "class":
 			return action;
@@ -404,7 +404,7 @@ const scriptArbitrary = fc
 				}
 			}
 			script.push(step.action);
-			const inverse = step.reversed ? inverseOf(step.action) : null;
+			const inverse = step.reversed ? getInverse(step.action) : null;
 			if (inverse) {
 				pending.push({action: inverse, at: script.length + step.gap});
 			}
@@ -480,7 +480,7 @@ export function makeDOM(options: SceneOptions = {}): Scene {
 	return {dom, terminal, cols, rows};
 }
 
-export function frameOf(terminal: any): string {
+export function getFrame(terminal: any): string {
 	return terminal
 		.getPlainText()
 		.split("\n")
@@ -508,7 +508,7 @@ export async function settle(scene: Scene, ticks = 30): Promise<void> {
 	for (let tick = 0; tick < ticks; tick++) {
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		await nextFrame(scene.dom);
-		const frame = frameOf(scene.terminal);
+		const frame = getFrame(scene.terminal);
 		if (frame === last) {
 			if (++stable >= 2) {
 				return;

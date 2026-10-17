@@ -36,10 +36,10 @@ import {
 	averageBitmap,
 	type Bitmap,
 	createBitmap,
-	fullBitmapOf,
+	getFullBitmap,
+	getNaturalHeight,
+	getNaturalWidth,
 	MAX_IMAGE_PIXELS,
-	naturalHeightOf,
-	naturalWidthOf,
 	sampleBitmap,
 } from "./images.ts";
 import {
@@ -80,7 +80,7 @@ export function registerDrawable(
 // from, which is all the cell grid needs.
 function readDrawable(source: unknown): Bitmap | null {
 	const bitmap = readDrawableKept(source);
-	return bitmap === null ? null : fullBitmapOf(bitmap);
+	return bitmap === null ? null : getFullBitmap(bitmap);
 }
 
 function readDrawableKept(source: unknown): Bitmap | null {
@@ -179,12 +179,12 @@ export class ImageBitmap {
 
 	get width(): number {
 		const bitmap = _(this).bitmapData;
-		return bitmap ? naturalWidthOf(bitmap) : 0;
+		return bitmap ? getNaturalWidth(bitmap) : 0;
 	}
 
 	get height(): number {
 		const bitmap = _(this).bitmapData;
-		return bitmap ? naturalHeightOf(bitmap) : 0;
+		return bitmap ? getNaturalHeight(bitmap) : 0;
 	}
 
 	close(): void {
@@ -211,12 +211,12 @@ export function createImageBitmapFrom(
 	}
 	const x = Math.floor(sx ?? 0);
 	const y = Math.floor(sy ?? 0);
-	const width = Math.floor(sw ?? naturalWidthOf(bitmap));
-	const height = Math.floor(sh ?? naturalHeightOf(bitmap));
+	const width = Math.floor(sw ?? getNaturalWidth(bitmap));
+	const height = Math.floor(sh ?? getNaturalHeight(bitmap));
 	if (width <= 0 || height <= 0) {
 		throw new DOMException("The crop rectangle is empty", "IndexSizeError");
 	}
-	if (bitmap.width === naturalWidthOf(bitmap)) {
+	if (bitmap.width === getNaturalWidth(bitmap)) {
 		const copy = createBitmap(width, height);
 		copyRect(bitmap, x, y, copy, 0, 0, width, height);
 		return new ImageBitmap(copy);
@@ -224,16 +224,16 @@ export function createImageBitmapFrom(
 	// From an image kept smaller than it is, the copy is kept as small,
 	// and measures the crop. What the crop takes past the image's edge is
 	// transparent.
-	const keptX = bitmap.width / naturalWidthOf(bitmap);
-	const keptY = bitmap.height / naturalHeightOf(bitmap);
+	const keptX = bitmap.width / getNaturalWidth(bitmap);
+	const keptY = bitmap.height / getNaturalHeight(bitmap);
 	const copy = createBitmap(
 		Math.max(1, Math.round(width * keptX)),
 		Math.max(1, Math.round(height * keptY)),
 	);
 	const left = Math.max(x, 0);
 	const top = Math.max(y, 0);
-	const right = Math.min(x + width, naturalWidthOf(bitmap));
-	const bottom = Math.min(y + height, naturalHeightOf(bitmap));
+	const right = Math.min(x + width, getNaturalWidth(bitmap));
+	const bottom = Math.min(y + height, getNaturalHeight(bitmap));
 	const toLeft = Math.round((left - x) * keptX);
 	const toTop = Math.round((top - y) * keptY);
 	const toWidth = Math.round((right - x) * keptX) - toLeft;
@@ -1567,8 +1567,8 @@ function getPatternColor(
 	const bitmap = slots.patternBitmap;
 	const {width, height, data} = bitmap;
 	// The pattern tiles at the image's natural size.
-	let px = Math.floor((x * width) / naturalWidthOf(bitmap));
-	let py = Math.floor((y * height) / naturalHeightOf(bitmap));
+	let px = Math.floor((x * width) / getNaturalWidth(bitmap));
+	let py = Math.floor((y * height) / getNaturalHeight(bitmap));
 	if (slots.repeatX) {
 		px = ((px % width) + width) % width;
 	}
@@ -2243,8 +2243,8 @@ export class CanvasRenderingContext2D {
 		}
 		const copy = createBitmap(bitmap.width, bitmap.height);
 		copy.data.set(bitmap.data);
-		copy.naturalWidth = naturalWidthOf(bitmap);
-		copy.naturalHeight = naturalHeightOf(bitmap);
+		copy.naturalWidth = getNaturalWidth(bitmap);
+		copy.naturalHeight = getNaturalHeight(bitmap);
 		return new CanvasPattern(copy, mode);
 	}
 
@@ -2512,8 +2512,8 @@ export class CanvasRenderingContext2D {
 		}
 		let sx = 0;
 		let sy = 0;
-		let sw = naturalWidthOf(bitmap);
-		let sh = naturalHeightOf(bitmap);
+		let sw = getNaturalWidth(bitmap);
+		let sh = getNaturalHeight(bitmap);
 		let dx: number;
 		let dy: number;
 		let dw: number;
@@ -2551,8 +2551,8 @@ export class CanvasRenderingContext2D {
 		const scaleY = dh / sh;
 		const clippedX = Math.max(0, sx);
 		const clippedY = Math.max(0, sy);
-		const clippedRight = Math.min(naturalWidthOf(bitmap), sx + sw);
-		const clippedBottom = Math.min(naturalHeightOf(bitmap), sy + sh);
+		const clippedRight = Math.min(getNaturalWidth(bitmap), sx + sw);
+		const clippedBottom = Math.min(getNaturalHeight(bitmap), sy + sh);
 		if (clippedRight <= clippedX || clippedBottom <= clippedY) {
 			return;
 		}
@@ -2590,8 +2590,8 @@ export class CanvasRenderingContext2D {
 		const smooth = slots.state.imageSmoothingEnabled;
 		const {width, height, data} = target;
 		// The source rectangle is in natural pixels. An image may keep fewer.
-		const keptX = source.width / naturalWidthOf(source);
-		const keptY = source.height / naturalHeightOf(source);
+		const keptX = source.width / getNaturalWidth(source);
+		const keptY = source.height / getNaturalHeight(source);
 		const sample = (u: number, v: number): RGBA => {
 			const px = (sx + ((u - dx) / dw) * sw) * keptX;
 			const py = (sy + ((v - dy) / dh) * sh) * keptY;
@@ -3572,8 +3572,8 @@ export class CanvasCellGridContext {
 		}
 		let sx = 0;
 		let sy = 0;
-		let sw = naturalWidthOf(bitmap);
-		let sh = naturalHeightOf(bitmap);
+		let sw = getNaturalWidth(bitmap);
+		let sh = getNaturalHeight(bitmap);
 		let dx: number;
 		let dy: number;
 		let dw: number;

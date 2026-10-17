@@ -28,11 +28,11 @@ import {
 } from "./framebuffer.ts";
 import {
 	type Bitmap,
+	getNaturalHeight,
+	getNaturalWidth,
 	getReplacedContent,
 	isReplacedElement,
 	MAX_IMAGE_PIXELS,
-	naturalHeightOf,
-	naturalWidthOf,
 	type ReplacedContent,
 	sampleBitmap,
 } from "./images.ts";
@@ -77,8 +77,8 @@ export function getNaturalSize(
 	const {width, height} = content.kind === "blank" || content.kind === "grid"
 		? content
 		: {
-			width: naturalWidthOf(content.bitmap),
-			height: naturalHeightOf(content.bitmap),
+			width: getNaturalWidth(content.bitmap),
+			height: getNaturalHeight(content.bitmap),
 		};
 	if (width === 0 || height === 0) {
 		return {width: 0, height: 0};
@@ -101,8 +101,8 @@ export function getNaturalRatio(
 	const {width, height} = content.kind === "blank" || content.kind === "grid"
 		? content
 		: {
-			width: naturalWidthOf(content.bitmap),
-			height: naturalHeightOf(content.bitmap),
+			width: getNaturalWidth(content.bitmap),
+			height: getNaturalHeight(content.bitmap),
 		};
 	if (width === 0 || height === 0) {
 		return NaN;
@@ -394,8 +394,8 @@ function getBitmapCells(
 ): CellGrid {
 	const {bitmap} = content;
 	const cell = getImageCellSize(element as unknown as Node);
-	const naturalWidth = naturalWidthOf(bitmap) / cell.width;
-	const naturalHeight = naturalHeightOf(bitmap) / cell.height;
+	const naturalWidth = getNaturalWidth(bitmap) / cell.width;
+	const naturalHeight = getNaturalHeight(bitmap) / cell.height;
 	const place = placeImage(element, cols, rows, naturalWidth, naturalHeight);
 	const rendering = getComputedValue(element, "image-rendering")
 		.trim()
@@ -425,8 +425,8 @@ function getBitmapCells(
 	const bottom = Math.min(rows * 2, Math.round(place.y + place.height));
 	const pixels = new Uint8ClampedArray(cols * rows * 2 * 4);
 	if (right > left && bottom > top && place.width > 0 && place.height > 0) {
-		const scaleX = naturalWidthOf(bitmap) / place.width;
-		const scaleY = naturalHeightOf(bitmap) / place.height;
+		const scaleX = getNaturalWidth(bitmap) / place.width;
+		const scaleY = getNaturalHeight(bitmap) / place.height;
 		const sampled = sampleBitmap(
 			bitmap,
 			right - left,

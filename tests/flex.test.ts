@@ -1,6 +1,7 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 
 import {
+	createStyle,
 	getComputedHeight,
 	getComputedWidth,
 	insertChild,
@@ -26,7 +27,9 @@ import {
 // termdom drives the engine with web defaults, which are also the CSS initial
 // values: flex-direction row, flex-shrink 1, align-content stretch.
 function node(): LayoutNode {
-	return new LayoutNode();
+	const created = new LayoutNode();
+	created.style = createStyle();
+	return created;
 }
 
 function box(parent: LayoutNode, index = parent.children.length): LayoutNode {
@@ -782,4 +785,154 @@ describe("what a measurement produced, not only how big it was", () => {
 		expect(rect(shrinking).width).toBe(4);
 		expect(placed.lines).toEqual(breakWords(4));
 	});
+
+	test("a block lays out only the line that changed, and moves the rest when it grows", () => {
+		// A 20-cell block of three one-line texts. The middle one changes to
+		// text of the same length, which leaves every line where it was, so
+		// the others are not measured. Then it wraps to two lines, and the
+		// last line moves down a row.
+		const root = node();
+		root.style.displayType = "block";
+		root.style.width = toValue(20);
+		const texts = [{value: "aaaa"}, {value: "bbbb"}, {value: "cccc"}];
+		const calls = [0, 0, 0];
+		const lines = texts.map((text, i) => {
+			const line = box(root);
+			line.style.displayType = "block";
+			line.measure = (width, widthSpace) => {
+				calls[i]++;
+				const limit = widthSpace === "indefinite" ? Infinity : width;
+				return {
+					width: Math.min(text.value.length, limit),
+					height: Math.max(1, Math.ceil(text.value.length / limit)),
+				};
+			};
+			return line;
+		});
+		root.performLayout(NaN, NaN);
+
+		const before = [...calls];
+		texts[1].value = "BBBB";
+		lines[1].invalidate();
+		root.performLayout(NaN, NaN);
+		expect(calls[0]).toBe(before[0]);
+		expect(calls[2]).toBe(before[2]);
+		expect(rect(lines[2]).top).toBe(2);
+
+		texts[1].value = "b".repeat(30);
+		lines[1].invalidate();
+		root.performLayout(NaN, NaN);
+		expect(rect(lines[1]).height).toBe(2);
+		expect(rect(lines[2]).top).toBe(3);
+		expect(rect(root).height).toBe(4);
+	});
+
+	test("a line no wider than its bound is not measured again when the bound moves", () => {
+		// An editor's content: a block that grows to fill a 94-cell row, its
+		// basis the width of its longest line, holding a line per text. The
+		// long line grows by a cell, which moves the width the block is sized
+		// at, 75 then 76. The short line fits either and is placed at 94 both
+		// times, so neither pass measures it again.
+		const root = node();
+		root.style.flexDirection = "row";
+		root.style.width = toValue(94);
+		const content = box(root);
+		content.style.displayType = "block";
+		content.style.flexGrow = 1;
+
+		const textLine = (text: {value: string}, calls: {count: number}) => {
+			const line = box(content);
+			line.style.displayType = "block";
+			line.measure = (width, widthSpace) => {
+				calls.count++;
+				const limit = widthSpace === "indefinite" ? Infinity : width;
+				const length = text.value.length;
+				return {
+					width: Math.min(length, limit),
+					height: Math.max(1, Math.ceil(length / limit)),
+				};
+			};
+			return line;
+		};
+		const long = {value: "x".repeat(75)};
+		const longLine = textLine(long, {count: 0});
+		const shortCalls = {count: 0};
+		const shortLine = textLine({value: "y".repeat(30)}, shortCalls);
+
+		root.performLayout(NaN, NaN);
+		long.value += "x";
+		longLine.invalidate();
+		root.performLayout(NaN, NaN);
+		const before = shortCalls.count;
+		long.value += "x";
+		longLine.invalidate();
+		root.performLayout(NaN, NaN);
+
+		expect(shortCalls.count).toBe(before);
+		expect(rect(shortLine).width).toBe(94);
+		expect(rect(shortLine).height).toBe(1);
+	});
+});
+
+test("a replaced box given a definite width after an unbounded probe scales its height", () => {
+	// An image 10 by 5 at its natural size, half as tall as it is wide when
+	// given a width. Stretched across a 20-cell column, it is 10 tall. The
+	// unbounded measurement holds only for text, which breaks into the
+	// same lines at any width it fits in, and an image does not break.
+	const root = node();
+	root.style.flexDirection = "column";
+	const image = box(root);
+	image.measuresText = false;
+	image.measure = (width, widthSpace) =>
+		widthSpace === "definite"
+			? {width, height: width / 2}
+			: {width: 10, height: 5};
+	root.performLayout(NaN, NaN);
+	expect(rect(image).height).toBe(5);
+	root.style.width = toValue(20);
+	root.invalidate();
+	root.performLayout(NaN, NaN);
+	expect(rect(image).height).toBe(10);
+});
+
+test("text with a max-width breaks at the clamp after an unbounded probe", () => {
+	// 30 cells of text clamped to 20 is two lines, though the unbounded
+	// measurement that came first broke it into one 30 wide.
+	const root = node();
+	root.style.flexDirection = "column";
+	const text = box(root);
+	text.style.maxWidth = toValue(20);
+	text.measure = (width, widthSpace) => {
+		const limit = widthSpace === "indefinite" ? Infinity : width;
+		return {
+			width: Math.min(30, limit),
+			height: Math.ceil(30 / Math.min(limit, 30)),
+		};
+	};
+	root.performLayout(NaN, NaN);
+	root.style.width = toValue(20);
+	root.invalidate();
+	root.performLayout(NaN, NaN);
+	expect(rect(text).height).toBe(2);
+});
+
+test("text with a max-width breaks at it when a grid track asks with no width", () => {
+	// A grid sizes its auto column by asking the text for its max-content
+	// width, with no width given. 30 cells of text clamped to 20 is two
+	// lines there too, not one line 30 wide drawn 20 wide.
+	const root = node();
+	root.style.displayType = "grid";
+	root.style.width = toValue(25);
+	const text = box(root);
+	text.style.maxWidth = toValue(20);
+	text.measure = (width, widthSpace) => {
+		const limit = widthSpace === "indefinite" ? Infinity : width;
+		return {
+			width: Math.min(30, limit),
+			height: Math.ceil(30 / Math.min(limit, 30)),
+		};
+	};
+	root.performLayout(NaN, NaN);
+	expect(rect(text).width).toBe(20);
+	expect(rect(text).height).toBe(2);
 });
