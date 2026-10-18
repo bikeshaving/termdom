@@ -1767,10 +1767,10 @@ function styleLayoutNodeProperties(
 	const position = getPosition(element);
 	style.containsPositioned = establishesFixedContainingBlock(element);
 	style.translate = getTranslation(element);
-	// How the stacking-context painter finds positioned boxes without an
-	// O(document) sweep per frame.
+	// How the stacking-context painter finds positioned and isolated boxes
+	// without an O(document) sweep per frame.
 	if (positionedElements) {
-		if (position !== "static") {
+		if (position !== "static" || isIsolated(element)) {
 			positionedElements.add(element);
 		} else {
 			positionedElements.delete(element);
@@ -6120,7 +6120,8 @@ export class Layout {
 	// A SUPERSET hint. An element whose position went static without a
 	// restyle reaching its node is still listed, so every reader checks
 	// isPositioned too and uses the set only for the enumeration it saves.
-	// The paint side's grouping is O(positioned), never O(document).
+	// An isolated box is listed too, since it paints in a layer. The paint
+	// side's grouping is O(positioned), never O(document).
 	positionedElements: Set<Element>;
 
 	// Re-measured on resize. What they returned was for another width.
@@ -7763,7 +7764,7 @@ export function takeDamageBands(
 // Membership gates. A positioned inline run member owns no box of its
 // own, and no layer would ever paint it, so it stays with its run.
 export function hoistedToLayer(layout: Layout, element: Element): boolean {
-	return isPositioned(element) && layout.positionedElements.has(element);
+	return isLayerMember(element) && layout.positionedElements.has(element);
 }
 
 // The children whose paint extent could intersect rows [top, bottom),
@@ -7985,7 +7986,7 @@ export function collectStackingLayers(
 			continue;
 		}
 		// The registry is a superset. Re-check before trusting membership.
-		if (!isPositioned(element)) {
+		if (!isLayerMember(element)) {
 			continue;
 		}
 		let root: Element = body;
@@ -8004,7 +8005,7 @@ export function collectStackingLayers(
 			bucket = {neg: [], zero: [], pos: []};
 			layers.set(root, bucket);
 		}
-		const z = getZIndexValue(element);
+		const z = isPositioned(element) ? getZIndexValue(element) : "auto";
 		if (z === "auto" || z === 0) {
 			bucket.zero.push(element);
 		} else if (z < 0) {
@@ -8108,16 +8109,30 @@ function getZIndexValue(element: Element): number | "auto" {
 	return CSSValues.parseCSSInteger(zIndex) ?? "auto";
 }
 
-// Positioned with a non-auto z-index. opacity/transform/filter have no
-// terminal meaning. The root context belongs to <body>, the paint root.
+// Positioned with a non-auto z-index, or isolated. opacity/transform/filter
+// have no terminal meaning. The root context belongs to <body>, the paint
+// root.
 export function isStackingContext(element: Element): boolean {
 	if (element === element.ownerDocument.body) {
 		return true;
 	}
-	if (getComputedValue(element, "isolation") === "isolate") {
+	if (isIsolated(element)) {
 		return true;
 	}
 	return isPositioned(element) && getZIndexValue(element) !== "auto";
+}
+
+function isIsolated(element: Element): boolean {
+	return getComputedValue(element, "isolation") === "isolate";
+}
+
+// What paints in its stacking context's layers rather than in flow: a
+// positioned box, and an isolated one, which paints as a positioned box
+// with z-index 0 would (CSS 2 Appendix E), so its own layers paint with
+// it. Its z-index applies only if it is positioned.
+function isLayerMember(element: Element): boolean {
+	return isPositioned(element) ||
+		(element !== element.ownerDocument.body && isIsolated(element));
 }
 
 // The one place that legitimately holds the computed and used display
