@@ -4050,6 +4050,20 @@ export function recordStyleReads<T>(
 	}
 }
 
+/** Reads recorded earlier, as element, read and value in turn, read again. */
+export function replayStyleReads(reads: ReadonlyArray<Element | string>): void {
+	if (readRecorder === null) {
+		return;
+	}
+	for (let i = 0; i < reads.length; i += 3) {
+		readRecorder(
+			reads[i] as Element,
+			reads[i + 1] as string,
+			reads[i + 2] as string,
+		);
+	}
+}
+
 /** What a recorded read reads now. */
 export function readStyleAgain(element: Element, read: string): string {
 	if (read.startsWith(GROUP_READ)) {

@@ -96,6 +96,21 @@ async function replay(
 	dom.dispose();
 }
 
+test("text a table measures at several widths in a pass follows a restyle", async () => {
+	await replay(
+		"<table id=t><tr><td><span id=a>one two three four</span></td>" +
+			"<td id=b>five six seven</td></tr></table>",
+		[
+			(document) => document.getElementById("a").style.whiteSpace = "nowrap",
+			(
+				document,
+			) => document.getElementById("b").style.textTransform = "uppercase",
+			(document) => document.getElementById("a").style.wordBreak = "break-all",
+			(document) => document.getElementById("a").style.whiteSpace = "normal",
+		],
+	);
+});
+
 test("a cell taken out of flow leaves its table", async () => {
 	await replay(
 		"<table id=t><tr><td id=a class=box>x</td><td>y y</td></tr></table>",

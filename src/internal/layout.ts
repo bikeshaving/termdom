@@ -17,6 +17,7 @@ import {
 	hasLayoutOrPaintContainment,
 	readStyleAgain,
 	recordStyleReads,
+	replayStyleReads,
 	resolveLength,
 	type StyleGroup,
 	toCellBorder,
@@ -4466,13 +4467,56 @@ function collectLeaves(
 	}
 }
 
-function breakNodes(
+// A run's leaves, its text with white space processed, and where its
+// lines may break: the same at every width unless an atomic inline in it
+// sizes against the width. A pass that measures a run more than once,
+// as a table's min- and max-content probes do, splits it once, and each
+// measure replays the style reads the split made, so it is invalidated
+// as though it had read them itself.
+interface SplitRun {
+	leafNodes: Leaf[];
+	styleElement: Element;
+	processedContent: ProcessedContent;
+	breaks: ReturnType<typeof findBreakPoints>;
+	nowrap: boolean;
+	nowrapLeaf: boolean;
+	wordBreak: string;
+	overflowWrap: string;
+	reads: Array<Element | string>;
+}
+
+function splitRun(
 	layout: Layout,
 	source: Box,
 	width: number,
 	widthSpace: AvailableSpace,
-	left = NaN,
-): BreakResult {
+): SplitRun | null {
+	const known = layout.splitRuns?.get(source);
+	if (known !== undefined) {
+		replayStyleReads(known.reads);
+		return known;
+	}
+	const reads: Array<Element | string> = [];
+	const split = recordStyleReads((element, read, value) => {
+		reads.push(element, read, value);
+	}, () => readSplitRun(layout, source, width, widthSpace));
+	replayStyleReads(reads);
+	if (split === null) {
+		return null;
+	}
+	const run = {...split, reads};
+	if (run.leafNodes.every((leaf) => leaf.type !== "inline-block")) {
+		layout.splitRuns?.set(source, run);
+	}
+	return run;
+}
+
+function readSplitRun(
+	layout: Layout,
+	source: Box,
+	width: number,
+	widthSpace: AvailableSpace,
+): Omit<SplitRun, "reads"> | null {
 	// An `indefinite` request is indefinite (NaN), so percentages in
 	// the content cannot resolve. Any definite request, an `shrink-to-fit` 0
 	// included, resolves them.
@@ -4482,19 +4526,56 @@ function breakNodes(
 		widthSpace === "indefinite" ? NaN : width,
 		widthSpace,
 	);
-
 	if (leafNodes.length === 0) {
-		return {lines: [], totalHeight: 0, maxLineWidth: 0};
+		return null;
 	}
-
 	// Text properties come from what opens the box. A text node styles
 	// from its flat-tree parent.
 	const opener = source.head;
 	const styleElement = getNodeType(opener) === opener.TEXT_NODE
 		? flatParentElement(opener)!
 		: (opener as Element);
-
 	const {whiteSpace, wordBreak, overflowWrap} = getTextStyle(styleElement);
+	const processedContent = processWhitespace(layout, leafNodes);
+	// `pre` suppresses wrapping as `nowrap` does. Treating it as wrappable
+	// folds text a browser lets overflow.
+	const preservesLines = whiteSpace === "pre";
+	const nowrap = preservesLines || (whiteSpace || "normal") === "nowrap";
+	const breaks = withoutBreaksInsideNowrap(
+		processedContent,
+		findBreakPoints(processedContent, whiteSpace || "normal", nowrap),
+	);
+	return {
+		leafNodes,
+		styleElement,
+		processedContent,
+		breaks,
+		nowrap,
+		nowrapLeaf: hasNowrapLeaf(processedContent),
+		wordBreak,
+		overflowWrap,
+	};
+}
+
+function breakNodes(
+	layout: Layout,
+	source: Box,
+	width: number,
+	widthSpace: AvailableSpace,
+	left = NaN,
+): BreakResult {
+	const split = splitRun(layout, source, width, widthSpace);
+	if (split === null) {
+		return {lines: [], totalHeight: 0, maxLineWidth: 0};
+	}
+	const {
+		styleElement,
+		processedContent,
+		breaks,
+		nowrap,
+		wordBreak,
+		overflowWrap,
+	} = split;
 
 	// A width of 0 is a real constraint, the min-content probe. Treated as
 	// unlimited it returned max-content, making min-content zero
@@ -4506,20 +4587,11 @@ function breakNodes(
 		? Number.MAX_SAFE_INTEGER
 		: width > 0 ? getDrawnColumns(left, width) + 0.4999 : width;
 
-	const processedContent = processWhitespace(layout, leafNodes);
-	// `pre` suppresses wrapping as `nowrap` does. Treating it as wrappable
-	// folds text a browser lets overflow.
-	const preservesLines = whiteSpace === "pre";
-	const nowrap = preservesLines || (whiteSpace || "normal") === "nowrap";
-	const breaks = withoutBreaksInsideNowrap(
-		processedContent,
-		findBreakPoints(processedContent, whiteSpace || "normal", nowrap),
-	);
 	// break-word does NOT shrink min-content (the word still measures whole
 	// at the `shrink-to-fit` 0 probe), while anywhere and break-all do.
 	const breakAnywhere =
 		!nowrap &&
-		!hasNowrapLeaf(processedContent) &&
+		!split.nowrapLeaf &&
 		(wordBreak === "break-all" ||
 			overflowWrap === "anywhere" ||
 			(overflowWrap === "break-word" && maxWidth > 0));
@@ -4530,7 +4602,7 @@ function breakNodes(
 	// That is how such a string usually arrives.
 	const block =
 		source.styledFrom ??
-		(source.parent ? source.container : flatParentElement(opener)) ??
+		(source.parent ? source.container : flatParentElement(source.head)) ??
 		styleElement;
 	const declared = getTextStyle(block).direction;
 	const base: "ltr" | "rtl" = declared === "rtl"
@@ -6212,6 +6284,8 @@ export class Layout {
 	// display or an ancestor's, which no pass can change. Null between
 	// passes.
 	hiddenElements: Map<Element, boolean> | null;
+	// The runs split in the pass under way, by the box they lay out.
+	splitRuns: WeakMap<Box, SplitRun> | null;
 	// Counts the passes that solved the tree, so a reader can tell whether
 	// geometry changed since it last looked.
 	solves: number;
@@ -6244,6 +6318,7 @@ export class Layout {
 		this.geometryMoved = false;
 		this.pass = 0;
 		this.hiddenElements = null;
+		this.splitRuns = null;
 		this.solves = 0;
 		this.damage = [];
 		this.wholeDamage = true;
@@ -6320,10 +6395,12 @@ export class Layout {
 
 	performLayout(): void {
 		this.hiddenElements = new Map();
+		this.splitRuns = new WeakMap();
 		try {
 			this.runLayoutPass();
 		} finally {
 			this.hiddenElements = null;
+			this.splitRuns = null;
 		}
 	}
 
