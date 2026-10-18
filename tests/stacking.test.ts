@@ -321,3 +321,18 @@ test("a box clipped out of view takes no clicks", async () => {
 	expect(document.elementFromPoint(0, 0)?.id).toBe("header");
 	dom.dispose();
 });
+
+test("clip cuts an absolutely positioned box to its rectangle, and an empty one hides it", async () => {
+	const {terminal, dom} = await render(
+		`<a id="skip" style="position:absolute; clip:rect(1px, 1px, 1px, 1px)">Skip to content</a>` +
+			`<div style="position:absolute; top:2px; left:0; width:20ch; clip:rect(0 3ch 1em 0)">ABCDEFG</div>` +
+			`<span style="position:relative; clip:rect(0 0 0 0)">REL</span>`,
+	);
+	const text = terminal.getPlainText();
+	expect(text).not.toContain("Skip");
+	expect(text).toContain("ABC");
+	expect(text).not.toContain("ABCD");
+	expect(text).toContain("REL");
+	expect(dom.document.elementFromPoint(0, 0)?.id).not.toBe("skip");
+	dom.dispose();
+});

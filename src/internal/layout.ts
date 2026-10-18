@@ -9018,6 +9018,50 @@ export function getOverflowClipRect(
 	};
 }
 
+// css-masking-1 §6.1: `clip` cuts an absolutely positioned box to a
+// rectangle measured from its border box's top left corner, `auto`
+// standing for that edge of the box. A rectangle that encloses nothing,
+// as the visually hidden pattern's rect(1px, 1px, 1px, 1px) does, paints
+// nothing and takes no clicks.
+function getClipPropertyRect(
+	layout: Layout,
+	element: Element,
+): ClipRect | null {
+	const value = getComputedValue(element, "clip");
+	if (!value.startsWith("rect(") || !value.endsWith(")")) {
+		return null;
+	}
+	const position = getComputedValue(element, "position");
+	if (position !== "absolute" && position !== "fixed") {
+		return null;
+	}
+	const rect = layout.getRect(element);
+	const parts = value.slice(5, -1).trim().split(/\s*,\s*|\s+/);
+	if (rect === null || parts.length !== 4) {
+		return null;
+	}
+	const edge = (part: string, vertical: boolean, auto: number): number => {
+		const match = /^(-?\d*\.?\d+)([a-z]*)$/i.exec(part);
+		if (part === "auto" || match === null) {
+			return auto;
+		}
+		const px = resolveLength(
+			element,
+			parseFloat(match[1]),
+			match[2] || "px",
+			vertical,
+		);
+		const cells = px === null ? null : toCellLength(px, vertical, element);
+		return typeof cells === "number" ? cells : auto;
+	};
+	return {
+		top: rect.top + edge(parts[0], true, 0),
+		right: rect.left + edge(parts[1], false, rect.width),
+		bottom: rect.top + edge(parts[2], true, rect.height),
+		left: rect.left + edge(parts[3], false, 0),
+	};
+}
+
 // The context root's clip intersected with the overflow of the ancestors
 // in the box's containing block chain (css-overflow-3 §3). A relative or
 // sticky box is contained by its parent, so every scroller around it
@@ -9031,6 +9075,17 @@ export function getPositionedClip(
 	contextClip: ClipRect | null,
 ): ClipRect | null {
 	let clip = contextClip;
+	const own = getClipPropertyRect(layout, element);
+	if (own !== null) {
+		clip = clip === null
+			? own
+			: {
+				left: Math.max(clip.left, own.left),
+				top: Math.max(clip.top, own.top),
+				right: Math.min(clip.right, own.right),
+				bottom: Math.min(clip.bottom, own.bottom),
+			};
+	}
 	let position = getComputedValue(element, "position");
 	for (
 		let ancestor = flatParentElement(element);
