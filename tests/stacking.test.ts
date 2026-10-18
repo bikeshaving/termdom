@@ -190,6 +190,32 @@ test("isolation: isolate forms a stacking context without positioning", async ()
 	dom.dispose();
 });
 
+test("an isolated box paints its positioned descendants without being positioned", async () => {
+	const {terminal, dom} = await render(
+		`<div style="isolation:isolate"><div id="rel" style="position:relative; z-index:1">REL</div></div>` +
+			`<div style="isolation:isolate; z-index:5"><div style="position:relative">AUTO</div></div>` +
+			"<p>after</p>",
+	);
+	const text = terminal.getPlainText();
+	expect(text).toContain("REL");
+	expect(text).toContain("AUTO");
+	expect(text).toContain("after");
+	expect(dom.document.elementFromPoint(0, 0)?.id).toBe("rel");
+	dom.dispose();
+});
+
+test("an isolated box paints at z-index 0, under a positioned sibling above it", async () => {
+	const {terminal, dom} = await render(
+		`<div style="isolation:isolate"><div style="position:absolute; top:0; left:0; z-index:99; width:10ch">UNDERNEATH</div></div>` +
+			`<div style="position:absolute; top:0; left:0; z-index:1; width:5ch">OVER</div>`,
+	);
+	const row = terminal.getPlainText().split("\n")[0];
+	expect(row).toContain("OVER");
+	expect(row).toContain("NEATH");
+	expect(row).not.toContain("UNDER");
+	dom.dispose();
+});
+
 test("relative offsets shift an inline run member's fragments", async () => {
 	const {terminal, dom} = await render(
 		"<div>ab<span style=\"position:relative; left:3ch\">MID</span></div>",
