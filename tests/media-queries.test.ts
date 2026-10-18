@@ -165,3 +165,34 @@ test("colorScheme takes auto, light or dark, and throws on anything else", () =>
 		}),
 	).toThrow(TypeError);
 });
+
+test("scripting and prefers-reduced-motion follow the options the page was made with", () => {
+	const html =
+		"<style>p { color: rgb(1, 2, 3) }" +
+		" @media (scripting: none) { p { color: rgb(255, 0, 0) } }" +
+		" @media (scripting: enabled) { p { color: rgb(0, 0, 255) } }" +
+		" @media (prefers-reduced-motion: reduce) { p { font-weight: bold } }</style><p>x</p>";
+	const color = (dom: TermDOM) => {
+		const p = dom.document.querySelector("p")!;
+		return [
+			dom.window.getComputedStyle(p).color,
+			dom.window.getComputedStyle(p).fontWeight,
+			dom.window.matchMedia("(scripting: none)").matches,
+		];
+	};
+	const plain = new TermDOM({html});
+	expect(color(plain)).toEqual(["rgb(255, 0, 0)", "400", true]);
+	const scripted = new TermDOM({html, scripting: true});
+	expect(color(scripted)).toEqual(["rgb(0, 0, 255)", "400", false]);
+	const forbidden = new TermDOM({
+		html,
+		scripting: true,
+		csp: "script-src 'none'",
+	});
+	expect(color(forbidden)[0]).toBe("rgb(255, 0, 0)");
+	const reduced = new TermDOM({html, reducedMotion: true});
+	expect(color(reduced)[1]).toBe("700");
+	for (const dom of [plain, scripted, forbidden, reduced]) {
+		dom.dispose();
+	}
+});
