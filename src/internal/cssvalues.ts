@@ -304,8 +304,26 @@ function endOfString(input: string, start: number): number {
 	return input.length;
 }
 
+// css-syntax-3 §4.3.7: a backslash and up to six hex digits are that code
+// point, one white space after them ends the escape and is dropped, and
+// zero, a surrogate or past the last code point is U+FFFD. A backslash
+// before a newline continues the line, and before anything else stands
+// for it.
 function unescapeCSSString(text: string): string {
-	return text.replace(/\\(.)/g, "$1");
+	return text.replace(
+		/\\(?:([0-9a-fA-F]{1,6})(?:\r\n|[ \t\n\r\f])?|(\r\n|[\n\r\f])|([\s\S])|$)/g,
+		(_whole, hex: string | undefined, _newline, other: string | undefined) => {
+			if (hex !== undefined) {
+				const code = parseInt(hex, 16);
+				return code === 0 ||
+					(code >= 0xd800 && code <= 0xdfff) ||
+						code > 0x10ffff
+					? "\ufffd"
+					: String.fromCodePoint(code);
+			}
+			return other ?? "";
+		},
+	);
 }
 
 function startsNumber(input: string, index: number): boolean {
