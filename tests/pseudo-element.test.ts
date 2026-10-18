@@ -492,3 +492,38 @@ test("escapes in a content string decode as css-syntax says", async () => {
 	expect(terminal.getScreenContents()).toContain("“x \\ \" q ABcontinued!");
 	termdom.dispose();
 });
+
+test("::before rules filed by their host's class and id reach the hosts they name, and follow a class change", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+	document.head.innerHTML =
+		"<style>.tag::before { content: '['; } #only::after { content: ']'; }" +
+		" .other::before { content: 'x'; }</style>";
+	document.body.innerHTML =
+		"<p><span id=\"a\" class=\"tag\">a</span> <span id=\"only\">b</span>" +
+		" <span id=\"c\">c</span></p>";
+	await nextFrame(termdom);
+	expect(terminal.getScreenContents()).toContain("[a b] c");
+
+	document.getElementById("c")!.classList.add("tag");
+	document.getElementById("a")!.classList.remove("tag");
+	await nextFrame(termdom);
+	expect(terminal.getScreenContents()).toContain("a b] [c");
+	termdom.dispose();
+});
+
+test("a quirks-mode page's ::before rules match classes whatever their case", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const termdom = new TermDOM({
+		transport: terminal.transport,
+		html:
+			"<html><head><style>.Mark::before { content: '>'; }</style></head>" +
+			"<body><p class=\"mark\">x</p></body></html>",
+	});
+	termdom.attach();
+	await nextFrame(termdom);
+	expect(termdom.document.compatMode).toBe("BackCompat");
+	expect(terminal.getScreenContents()).toContain(">x");
+	termdom.dispose();
+});

@@ -10769,6 +10769,7 @@ function parseSelector(
 				ofPart,
 			),
 			subjectTag: ofPart ? undefined : reading.subjectTag,
+			subjectKey: ofPart ? undefined : subjectKey,
 			ofPart,
 			declarations,
 			important,
@@ -10832,6 +10833,12 @@ interface RuleIndex {
 	// tries the rules for inputs and table cells.
 	tagged: Map<string, number[]>;
 	unkeyedPositions: number[];
+	// A pseudo-element's rules apart, filed by what their subject requires
+	// of the host, since they match through the host and style no element
+	// outside a shadow tree. A rule through ::part() or :host stays unkeyed.
+	pseudoKeyed: Map<string, number[]>;
+	pseudoTagged: Map<string, number[]>;
+	pseudoUnkeyedPositions: number[];
 	// Candidates by the name, id and classes that chose them, since elements
 	// alike in those, like an editor's lines, try the same rules.
 	candidates: Map<string, ParsedCSSRule[]>;
@@ -10857,23 +10864,31 @@ function getRuleIndex(cascade: Cascade, quirks: boolean): RuleIndex {
 		keyed: new Map(),
 		tagged: new Map(),
 		unkeyedPositions: [],
+		pseudoKeyed: new Map(),
+		pseudoTagged: new Map(),
+		pseudoUnkeyedPositions: [],
 		candidates: new Map(),
 	};
 	for (const [position, rule] of rules.entries()) {
-		// A pseudo-element's rule matches through its host, and a :host rule
-		// through the tree's host, so neither is filed under the element.
-		if (rule.pseudoElement || rule.reachesHost) {
-			index.unkeyedPositions.push(position);
+		const pseudo = Boolean(rule.pseudoElement);
+		// A :host rule matches through the tree's host, so it is not filed
+		// under the element.
+		if (rule.reachesHost || rule.ofPart) {
+			(pseudo ? index.pseudoUnkeyedPositions : index.unkeyedPositions)
+				.push(position);
 			continue;
 		}
 		const key = rule.subjectKey === undefined
 			? rule.subjectTag
 			: quirks ? toASCIILowercase(rule.subjectKey) : rule.subjectKey;
 		if (key === undefined) {
-			index.unkeyedPositions.push(position);
+			(pseudo ? index.pseudoUnkeyedPositions : index.unkeyedPositions)
+				.push(position);
 			continue;
 		}
-		const buckets = rule.subjectKey === undefined ? index.tagged : index.keyed;
+		const buckets = rule.subjectKey === undefined
+			? pseudo ? index.pseudoTagged : index.tagged
+			: pseudo ? index.pseudoKeyed : index.keyed;
 		const bucket = buckets.get(key);
 		if (bucket === undefined) {
 			buckets.set(key, [position]);
@@ -10898,44 +10913,45 @@ function getIdValue(element: Element): string | null {
 
 // The rules an element could match, in the order they were parsed, which
 // the cascade's order of appearance relies on.
+// The rules that could match the element, in cascade order: its own,
+// and with a host given, the pseudo-element rules that could match
+// through that host.
 function getCandidateRules(
 	cascade: Cascade,
-	element: Element,
+	element: Element | null,
+	host: Element | null = null,
 ): ParsedCSSRule[] {
-	const quirks = element.ownerDocument?.compatMode === "BackCompat";
+	const subject = (element ?? host)!;
+	const quirks = subject.ownerDocument?.compatMode === "BackCompat";
 	const index = getRuleIndex(cascade, quirks);
-	const ownId = getIdValue(element);
-	const id = quirks && ownId !== null ? toASCIILowercase(ownId) : ownId;
-	const classes = quirks
-		? Array.from(getClassTokens(element), toASCIILowercase)
-		: getClassTokens(element);
-	const tag = getLocalName(element);
-	let key = id === null ? tag : `${tag} #${id}`;
-	for (const name of classes) {
-		key += ` .${name}`;
+	let key = element === null ? "" : getCandidateKey(element, quirks);
+	if (host !== null) {
+		key += ` ::${getCandidateKey(host, quirks)}`;
 	}
 	let candidates = index.candidates.get(key);
 	if (candidates !== undefined) {
 		return candidates;
 	}
-	const positions = new Set(index.unkeyedPositions);
-	// A foreign element's name keeps its case, and a type selector may
-	// still match it lowercased, as isRuleMatch allows.
-	const lower = tag.toLowerCase();
-	for (const name of lower === tag ? [tag] : [tag, lower]) {
-		for (const position of index.tagged.get(name) ?? []) {
-			positions.add(position);
-		}
+	const positions = new Set<number>();
+	if (element !== null) {
+		addCandidatePositions(
+			positions,
+			element,
+			quirks,
+			index.unkeyedPositions,
+			index.tagged,
+			index.keyed,
+		);
 	}
-	if (id !== null) {
-		for (const position of index.keyed.get(`#${id}`) ?? []) {
-			positions.add(position);
-		}
-	}
-	for (const name of classes) {
-		for (const position of index.keyed.get(`.${name}`) ?? []) {
-			positions.add(position);
-		}
+	if (host !== null) {
+		addCandidatePositions(
+			positions,
+			host,
+			quirks,
+			index.pseudoUnkeyedPositions,
+			index.pseudoTagged,
+			index.pseudoKeyed,
+		);
 	}
 	candidates = Array.from(
 		Int32Array.from(positions).sort(),
@@ -10945,6 +10961,52 @@ function getCandidateRules(
 		index.candidates.set(key, candidates);
 	}
 	return candidates;
+}
+
+function getCandidateKey(element: Element, quirks: boolean): string {
+	const ownId = getIdValue(element);
+	const id = quirks && ownId !== null ? toASCIILowercase(ownId) : ownId;
+	const tag = getLocalName(element);
+	let key = id === null ? tag : `${tag} #${id}`;
+	for (const name of getClassTokens(element)) {
+		key += ` .${quirks ? toASCIILowercase(name) : name}`;
+	}
+	return key;
+}
+
+function addCandidatePositions(
+	positions: Set<number>,
+	element: Element,
+	quirks: boolean,
+	unkeyed: readonly number[],
+	tagged: Map<string, number[]>,
+	keyed: Map<string, number[]>,
+): void {
+	for (const position of unkeyed) {
+		positions.add(position);
+	}
+	// A foreign element's name keeps its case, and a type selector may
+	// still match it lowercased, as isRuleMatch allows.
+	const tag = getLocalName(element);
+	const lower = tag.toLowerCase();
+	for (const name of lower === tag ? [tag] : [tag, lower]) {
+		for (const position of tagged.get(name) ?? []) {
+			positions.add(position);
+		}
+	}
+	const ownId = getIdValue(element);
+	if (ownId !== null) {
+		const id = quirks ? toASCIILowercase(ownId) : ownId;
+		for (const position of keyed.get(`#${id}`) ?? []) {
+			positions.add(position);
+		}
+	}
+	for (const name of getClassTokens(element)) {
+		const token = quirks ? toASCIILowercase(name) : name;
+		for (const position of keyed.get(`.${token}`) ?? []) {
+			positions.add(position);
+		}
+	}
 }
 
 function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
@@ -10957,37 +11019,39 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	const partNames = (getAttributeValue(element, "part") ?? "")
 		.split(/\s+/)
 		.filter(Boolean);
-	const matched = getCandidateRules(cascade, element).filter((rule) => {
-		if (rule.pseudoElement) {
-			if (shadowHost === null) {
-				return false;
-			}
-			// ::part(name) matches the shadow's HOST, and its declarations
-			// cascade onto the part element. This is the standard CSS Shadow
-			// Parts crossing. A built-in control's parts are the UA's, as in
-			// every browser, and a page reaches them only through the
-			// pseudo-elements above.
-			const partArg = rule.pseudoElement.startsWith("::part(")
-				? rule.pseudoElement.match(/^::part\((.+)\)$/)
-				: null;
-			if (partArg) {
+	const matched = getCandidateRules(cascade, element, shadowHost).filter(
+		(rule) => {
+			if (rule.pseudoElement) {
+				if (shadowHost === null) {
+					return false;
+				}
+				// ::part(name) matches the shadow's HOST, and its declarations
+				// cascade onto the part element. This is the standard CSS Shadow
+				// Parts crossing. A built-in control's parts are the UA's, as in
+				// every browser, and a page reaches them only through the
+				// pseudo-elements above.
+				const partArg = rule.pseudoElement.startsWith("::part(")
+					? rule.pseudoElement.match(/^::part\((.+)\)$/)
+					: null;
+				if (partArg) {
+					return (
+						(rule.uaOrigin || !isUAShadowTree(root)) &&
+						splitOnASCIIWhitespace(partArg[1])
+							.every((name) => partNames.includes(name)) &&
+						isRuleMatch(shadowHost, rule) &&
+						(rule.partMatcher === undefined ||
+							(rule.partMatcher !== null &&
+								isSelectedBy(element, rule.partMatcher, element)))
+					);
+				}
 				return (
-					(rule.uaOrigin || !isUAShadowTree(root)) &&
-					splitOnASCIIWhitespace(partArg[1])
-						.every((name) => partNames.includes(name)) &&
-					isRuleMatch(shadowHost, rule) &&
-					(rule.partMatcher === undefined ||
-						(rule.partMatcher !== null &&
-							isSelectedBy(element, rule.partMatcher, element)))
+					partPseudos.includes(rule.pseudoElement) &&
+					isRuleMatch(shadowHost, rule)
 				);
 			}
-			return (
-				partPseudos.includes(rule.pseudoElement) &&
-				isRuleMatch(shadowHost, rule)
-			);
-		}
-		return isRuleMatch(element, rule, rootNode);
-	});
+			return isRuleMatch(element, rule, rootNode);
+		},
+	);
 	// Scope proximity sorts between specificity and order of appearance
 	// (css-cascade-6 §3.1.3), and unlike either it depends on THIS element.
 	// The sort is stable, so a comparison that only compares proximity
@@ -11180,8 +11244,13 @@ function computePseudoElementStyle(
 	pseudoElement: string,
 ): Record<string, string> {
 	const pseudoRoot = element.getRootNode() as unknown as Node;
-	const matchingRules = (cascade.pseudoRulesByType.get(pseudoElement) ?? [])
-		.filter((rule) => isRuleMatch(element, rule, pseudoRoot));
+	const matchingRules = cascade.pseudoRulesByType.has(pseudoElement)
+		? getCandidateRules(cascade, null, element).filter(
+			(rule) =>
+				rule.pseudoElement === pseudoElement &&
+			isRuleMatch(element, rule, pseudoRoot),
+		)
+		: [];
 
 	// A pseudo-element's declarations are a flat record, not a per-property
 	// cascade, so a flow-relative declaration fills BOTH names of its slot
@@ -11306,12 +11375,12 @@ function pseudoRuleCouldMatch(
 			(getAttributeValue(element, "style") ?? "").includes("list-item")
 		);
 	}
-	const rules = cascade.pseudoRulesByType.get(pseudoType);
-	if (!rules) {
+	if (!cascade.pseudoRulesByType.has(pseudoType)) {
 		return false;
 	}
-	for (const rule of rules) {
+	for (const rule of getCandidateRules(cascade, null, element)) {
 		if (
+			rule.pseudoElement === pseudoType &&
 			mayGiveContent(rule) &&
 			subjectCouldMatch(element, rule) &&
 			ruleSelectorMatches(element, rule)
