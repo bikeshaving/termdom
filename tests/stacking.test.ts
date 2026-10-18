@@ -336,3 +336,22 @@ test("clip cuts an absolutely positioned box to its rectangle, and an empty one 
 	expect(dom.document.elementFromPoint(0, 0)?.id).not.toBe("skip");
 	dom.dispose();
 });
+
+test("opacity: 0 draws nothing of a box or what it holds, and the box still takes clicks", async () => {
+	const {terminal, dom} = await render(
+		`<div style="position:relative"><input id="box" type="checkbox" style="position:absolute; top:0; left:0; opacity:0; width:100%; height:100%; margin:0"><label>Log in</label></div>` +
+			`<p style="opacity:0">hidden text</p><button style="opacity:0">btn</button>` +
+			`<p style="opacity:0.5">half</p>` +
+			`<span style="opacity:0">in<b style="position:relative">POS</b></span>tail`,
+	);
+	const text = terminal.getPlainText();
+	expect(text).toContain("Log in");
+	expect(text).not.toContain("[");
+	expect(text).not.toContain("hidden");
+	expect(text).not.toContain("btn");
+	expect(text).toContain("half");
+	expect(text).not.toContain("POS");
+	expect(text).toContain("tail");
+	expect(dom.document.elementFromPoint(0, 0)?.id).toBe("box");
+	dom.dispose();
+});
