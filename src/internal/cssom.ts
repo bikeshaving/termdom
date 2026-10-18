@@ -5665,6 +5665,41 @@ function resolveCascadedValue(
 	return value;
 }
 
+// Where each property is declared last without !important in a list of
+// matched rules, and which rules declare anything !important, so a
+// property's cascaded value is looked up rather than scanned for across
+// every rule. Lists are shared, so elements matching the same rules
+// share one index.
+interface RuleListIndex {
+	lastNormal: Map<string, number>;
+	withImportant: number[];
+}
+
+const ruleListIndexes = new WeakMap<readonly ParsedCSSRule[], RuleListIndex>();
+
+function getRuleListIndex(rules: readonly ParsedCSSRule[]): RuleListIndex {
+	let index = ruleListIndexes.get(rules);
+	if (index === undefined) {
+		index = {lastNormal: new Map(), withImportant: []};
+		for (let at = 0; at < rules.length; at++) {
+			const rule = rules[at];
+			let important = false;
+			for (const name in rule.declarations) {
+				if (rule.important[name]) {
+					important = true;
+				} else {
+					index.lastNormal.set(name, at);
+				}
+			}
+			if (important) {
+				index.withImportant.push(at);
+			}
+		}
+		ruleListIndexes.set(rules, index);
+	}
+	return index;
+}
+
 function resolvePropertyValueRaw(
 	declaration: ComputedStyleDeclaration,
 	property: string,
@@ -5712,11 +5747,23 @@ function resolvePropertyValueRaw(
 	// later rules only tie it within that same origin and layer.
 	let importantOrigin = false;
 	let importantLayer = 0;
-	for (const rule of declarationSlots.cssRules) {
-		const name = CSSValues.getDeclaredName(rule, names, false, mapsHere);
-		if (name !== null) {
-			ruleValue = rule.declarations[name];
+	const rules = declarationSlots.cssRules;
+	const index = getRuleListIndex(rules);
+	let winner = -1;
+	for (const name of names) {
+		const at = index.lastNormal.get(name);
+		if (at !== undefined && at > winner && mapsHere(name)) {
+			winner = at;
 		}
+	}
+	if (winner !== -1) {
+		const rule = rules[winner];
+		ruleValue = rule.declarations[
+			CSSValues.getDeclaredName(rule, names, false, mapsHere)!
+		];
+	}
+	for (const at of index.withImportant) {
+		const rule = rules[at];
 		const importantName = CSSValues.getDeclaredName(
 			rule,
 			names,
