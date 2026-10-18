@@ -11,12 +11,14 @@ import {
 	getDeclaredDisplay,
 	getWhiteSpace as getElementWhiteSpace,
 	getFixedContainingBlock,
+	getStyleGroup,
 	getTabSize,
 	getUsedOverflow,
 	hasLayoutOrPaintContainment,
 	readStyleAgain,
 	recordStyleReads,
 	resolveLength,
+	type StyleGroup,
 	toCellBorder,
 	toCellLength,
 	toWholeCells,
@@ -583,7 +585,7 @@ function shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 	// Under the preserving values a space is content. A card's blank
 	// middle row is three spaces, and this is what makes it a row. Under
 	// pre-line a newline is a forced break and keeps its line.
-	const whiteSpace = getElementWhiteSpace(parent);
+	const {whiteSpace} = getTextStyle(parent);
 	if (isSpacePreserving(whiteSpace)) {
 		return false;
 	}
@@ -664,7 +666,7 @@ function isSuppressedWhitespace(text: Text): boolean {
 	if (!hasItemChildren(display) && !isTableInternal(display)) {
 		return false;
 	}
-	if (isSpacePreserving(getElementWhiteSpace(parent))) {
+	if (isSpacePreserving(getTextStyle(parent).whiteSpace)) {
 		return false;
 	}
 	for (let node: Node | null = text; node; node = node.nextSibling) {
@@ -736,7 +738,7 @@ function applyLegacyAlignment(
 	const parent = boxParentElement(element);
 	const legacy = parent === null
 		? null
-		: CSSValues.getLegacyAlignment(getComputedValue(parent, "text-align"));
+		: CSSValues.getLegacyAlignment(getTextStyle(parent).textAlign);
 	if (
 		legacy === null ||
 		getComputedValue(element, "margin-left") === "auto" ||
@@ -1143,10 +1145,9 @@ interface Styling {
 	// The layout pass that last styled the node. A node re-added within
 	// the pass that styled it is not styled again.
 	pass: number;
-	// The computed values that shape text measurement without being part
-	// of the style record, joined, so a restyle can tell whether the
-	// measurement is still good.
-	measureKey: string;
+	// The text style the node measured with. A restyle that keeps it keeps
+	// the measurement.
+	measureKey: TextStyle;
 	// The display layout read, which the style record does not tell apart:
 	// a block and an inline-block, or a box and display: contents, style
 	// alike and lay out differently.
@@ -1433,7 +1434,7 @@ function styleLayoutNode(
 	layoutNode.style = shareStyle(style);
 	stylings.set(layoutNode, {
 		pass,
-		measureKey: getMeasureKey(element),
+		measureKey: getTextStyle(element),
 		display: getLayoutDisplay(element),
 	});
 	layoutNode.invalidate();
@@ -1490,29 +1491,48 @@ function sizeReplacedBox(
 	}
 }
 
-// What the run measurer reads beyond the style record: the properties
-// that decide where text breaks and how wide it is.
-const MEASURE_PROPERTIES = [
-	"white-space",
-	"direction",
-	"word-break",
-	"overflow-wrap",
-	"text-indent",
-	"text-align",
-	"text-transform",
-	"letter-spacing",
-	"tab-size",
-	"list-style-type",
-	"list-style-position",
-];
+// What lays text out beyond the style record: where it breaks, how wide
+// it is, and where a line sits in its box.
+interface TextStyle {
+	whiteSpace: string;
+	direction: string;
+	wordBreak: string;
+	overflowWrap: string;
+	textIndent: string;
+	textAlign: string;
+	textTransform: string;
+	letterSpacing: string;
+	tabSize: string;
+	listStyleType: string;
+	listStylePosition: string;
+	verticalAlign: string;
+	lineHeightRows: number;
+}
 
-// The computed values that shape text measurement without being part of
-// the style record, joined, so a restyle can tell whether the measurement
-// is still good.
-function getMeasureKey(element: Element): string {
-	return MEASURE_PROPERTIES.map((property) =>
-		getComputedValue(element, property),
-	).join("|");
+const TEXT_STYLE: StyleGroup<TextStyle> = {
+	name: "text",
+	read: (element) => ({
+		whiteSpace: getElementWhiteSpace(element),
+		direction: getComputedValue(element, "direction"),
+		wordBreak: getComputedValue(element, "word-break"),
+		overflowWrap: getComputedValue(element, "overflow-wrap"),
+		textIndent: getComputedValue(element, "text-indent"),
+		textAlign: getComputedValue(element, "text-align"),
+		textTransform: getComputedValue(element, "text-transform"),
+		letterSpacing: getComputedValue(element, "letter-spacing"),
+		tabSize: getComputedValue(element, "tab-size"),
+		listStyleType: getComputedValue(element, "list-style-type"),
+		listStylePosition: getComputedValue(element, "list-style-position"),
+		verticalAlign: getComputedValue(element, "vertical-align"),
+		lineHeightRows: getLineHeightRows(
+			getComputedValue(element, "line-height"),
+			getComputedValue(element, "font-size"),
+		),
+	}),
+};
+
+function getTextStyle(element: Element): TextStyle {
+	return getStyleGroup(element, TEXT_STYLE);
 }
 
 // Fills a fresh record, so a property the element no longer declares
@@ -1726,9 +1746,7 @@ function styleLayoutNodeProperties(
 		style.displayType = "table-row";
 	} else if (display === "table-cell") {
 		style.displayType = "table-cell";
-		style.alignContent = getCellAlignment(
-			getComputedValue(element, "vertical-align"),
-		);
+		style.alignContent = getCellAlignment(getTextStyle(element).verticalAlign);
 		// The reflected properties carry HTML's ranges. rowspan 0 ("to the end
 		// of the row group") is not implemented. Such a cell covers one row.
 		const cell = element as {colSpan?: number; rowSpan?: number};
@@ -2119,7 +2137,7 @@ function isTableInternal(display: Display): boolean {
 // space, which renders nothing there, and elements that take no place.
 function isPassedOver(container: Element, child: Box): boolean {
 	if (child.kind === "anonymous") {
-		return !isSpacePreserving(getElementWhiteSpace(container)) &&
+		return !isSpacePreserving(getTextStyle(container).whiteSpace) &&
 			child.members.every((member) =>
 				getNodeType(member) === member.TEXT_NODE &&
 				COLLAPSIBLE_ONLY.test((member as Text).data),
@@ -3613,7 +3631,7 @@ function pushEdge(
 ): void {
 	const box = getBoxModel(element);
 	const left =
-		(side === "start") === (getComputedValue(element, "direction") !== "rtl");
+		(side === "start") === (getTextStyle(element).direction !== "rtl");
 	const leaf: EdgeLeaf = {
 		type: "edge",
 		node: element,
@@ -3781,7 +3799,7 @@ interface RectText {
 
 function getWhiteSpace(textNode: Text): string {
 	const parent = flatParentElement(textNode);
-	return parent ? getElementWhiteSpace(parent) : "normal";
+	return parent ? getTextStyle(parent).whiteSpace : "normal";
 }
 
 function getInlineBlockWidth(leaf: InlineBlockLeaf): number {
@@ -3846,7 +3864,8 @@ function measureInlineRun(
 		: box.node !== null && getNodeType(box.node) === box.node.ELEMENT_NODE
 		? (box.node as Element)
 		: box.node === null ? null : flatParentElement(box.node);
-	readsLineWidth = block !== null && hasPercentage(block, ["text-indent"]);
+	readsLineWidth =
+		block !== null && getTextStyle(block).textIndent.includes("%");
 	const breakResult = breakNodes(layout, box, width, widthSpace, left);
 	const widthDependent = readsLineWidth;
 	readsLineWidth = outer || widthDependent;
@@ -4475,9 +4494,7 @@ function breakNodes(
 		? flatParentElement(opener)!
 		: (opener as Element);
 
-	const whiteSpace = getElementWhiteSpace(styleElement);
-	const wordBreak = getComputedValue(styleElement, "word-break");
-	const overflowWrap = getComputedValue(styleElement, "overflow-wrap");
+	const {whiteSpace, wordBreak, overflowWrap} = getTextStyle(styleElement);
 
 	// A width of 0 is a real constraint, the min-content probe. Treated as
 	// unlimited it returned max-content, making min-content zero
@@ -4515,7 +4532,7 @@ function breakNodes(
 		source.styledFrom ??
 		(source.parent ? source.container : flatParentElement(opener)) ??
 		styleElement;
-	const declared = getComputedValue(block, "direction");
+	const declared = getTextStyle(block).direction;
 	const base: "ltr" | "rtl" = declared === "rtl"
 		? "rtl"
 		: declared === "ltr" ? "ltr" : getParagraphDirection(processedContent.text);
@@ -4941,7 +4958,7 @@ function buildLines(
 ): {lines: LineResult[]; wrapped: boolean; height: number} {
 	const lines: LineResult[] = [];
 	let wrapped = false;
-	const blockRows = getLineHeightRows(block);
+	const blockRows = getTextStyle(block).lineHeightRows;
 	const rowsByElement = new Map<Element, number>([[block, blockRows]]);
 	let currentY = 0;
 	let lineStart = 0;
@@ -5047,7 +5064,7 @@ function buildLines(
 				}
 				let own = rowsByElement.get(element);
 				if (own === undefined) {
-					own = getLineHeightRows(element);
+					own = getTextStyle(element).lineHeightRows;
 					rowsByElement.set(element, own);
 				}
 				rows = Math.max(rows, own);
@@ -5108,7 +5125,7 @@ function placeOnLine(
 				leaf.boxModel.borderTopWidth +
 				leaf.boxModel.borderBottomWidth,
 		);
-		const align = getComputedValue(leaf.node, "vertical-align");
+		const align = getTextStyle(leaf.node).verticalAlign;
 		const baseline = getAtomicBaseline(layout, leaf, height);
 		atomics.push({segment, height, baseline, align});
 		if (align !== "top" && align !== "bottom" && align !== "middle") {
@@ -5206,9 +5223,8 @@ function getLineInTree(
 // author set: 1.5 is one row and 2 is two, at any font size and any cell.
 // One that resolves to no length (normal, or a font size the engine cannot
 // measure) is one row.
-function getLineHeightRows(element: Element): number {
-	const value = getComputedValue(element, "line-height");
-	const fontSize = parseFloat(getComputedValue(element, "font-size"));
+function getLineHeightRows(value: string, fontSizeValue: string): number {
+	const fontSize = parseFloat(fontSizeValue);
 	const ratio = value.endsWith("px")
 		? parseFloat(value) / fontSize
 		: /^\d*\.?\d+$/.test(value) ? parseFloat(value) : NaN;
@@ -5309,7 +5325,8 @@ export function getLineAlignOffset(
 	if (!container || containerWidth === undefined) {
 		return 0;
 	}
-	const rtl = getComputedValue(container, "direction") === "rtl";
+	const {direction, textAlign} = getTextStyle(container);
+	const rtl = direction === "rtl";
 	// A line too long for its box is start-aligned, whatever text-align
 	// says, and overflows at its end edge (css-text-3 §7.1). In a
 	// right-to-left paragraph that edge is the left.
@@ -5318,9 +5335,7 @@ export function getLineAlignOffset(
 	if (lineWidth > containerWidth) {
 		return rtl ? Math.round(containerWidth - lineWidth) : 0;
 	}
-	const align = CSSValues.getLineAlignment(
-		getComputedValue(container, "text-align"),
-	);
+	const align = CSSValues.getLineAlignment(textAlign);
 	if (align === "center") {
 		return Math.max(0, Math.round((containerWidth - lineWidth) / 2));
 	}
@@ -5348,7 +5363,7 @@ export function getLineIndent(
 		return 0;
 	}
 	const parsed = toCellLength(
-		CSSValues.parseUnitValue(getComputedValue(container, "text-indent")),
+		CSSValues.parseUnitValue(getTextStyle(container).textIndent),
 		false,
 		container,
 	);
@@ -7416,16 +7431,14 @@ function isStartAligned(node: LayoutNode): boolean {
 		: getNodeType(owner) === owner.ELEMENT_NODE
 		? (owner as Element)
 		: flatParentElement(owner);
-	if (element === null || getComputedValue(element, "direction") === "rtl") {
+	if (element === null || getTextStyle(element).direction === "rtl") {
 		return false;
 	}
-	const align = CSSValues.getLineAlignment(
-		getComputedValue(element, "text-align"),
-	);
+	const align = CSSValues.getLineAlignment(getTextStyle(element).textAlign);
 	return align !== "center" &&
 		align !== "right" &&
 		align !== "end" &&
-		!getComputedValue(element, "text-indent").includes("%");
+		!getTextStyle(element).textIndent.includes("%");
 }
 
 // Whether a box draws anything of its own that its size or place decides:
@@ -8431,11 +8444,11 @@ function invalidateOutOfFlowDescendants(
 // with what the element's node holds.
 function probeLayoutStyle(element: Element): {
 	style: Style;
-	measureKey: string;
+	measureKey: TextStyle;
 } {
 	const style = createStyle();
 	styleLayoutNodeProperties(element, style, new Set());
-	return {style, measureKey: getMeasureKey(element)};
+	return {style, measureKey: getTextStyle(element)};
 }
 
 function isSameValue(a: unknown, b: unknown): boolean {

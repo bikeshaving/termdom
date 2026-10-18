@@ -345,14 +345,6 @@ export function getCellBorderWidths(
 // hand.
 const documentCascades = new WeakMap<object, Cascade>();
 
-// Each resolved style's box model, by the object the style keeps until
-// it changes.
-const boxModels = new WeakMap<object, CSSValues.BoxModel>();
-
-/**
- * An element's margins, borders and padding, in cells. The same object
- * until the element's style changes, so a caller copies it to change it.
- */
 /**
  * Called with every style value read while set: the element, what was
  * read, and the value. A computation that caches its result records what
@@ -366,17 +358,112 @@ type StyleReadRecorder = (
 
 let readRecorder: StyleReadRecorder | null = null;
 
-// A box model is recorded as one read, not the values it is made of, and
-// by the record it is: the same until the element's style changes.
-const BOX_MODEL_READ = "box-model";
-const boxModelIds = new WeakMap<CSSValues.BoxModel, string>();
-let nextBoxModelId = 0;
+/**
+ * Computed values a reader takes together, typed as it uses them. A group
+ * is read once for all the elements that share resolved values and held
+ * once for all that come out alike, so two alike are one object, frozen.
+ * `read` reads the element's shared values and what is the same across
+ * its document, such as the cell size: never a value the element keeps
+ * its own, and never another element.
+ */
+export interface StyleGroup<T extends object> {
+	readonly name: string;
+	read(element: Element): T;
+}
 
-function getBoxModelId(model: CSSValues.BoxModel): string {
-	let id = boxModelIds.get(model);
+// A group read is recorded as one read, by the group it is.
+const GROUP_READ = "group:";
+const styleGroups = new Map<string, StyleGroup<object>>();
+const groupCaches = new WeakMap<
+	Map<string, string>,
+	Map<StyleGroup<object>, object>
+>();
+const internedGroups = new Map<StyleGroup<object>, Map<string, object>>();
+const groupIds = new WeakMap<object, string>();
+let nextGroupId = 0;
+
+export function getStyleGroup<T extends object>(
+	element: Element,
+	group: StyleGroup<T>,
+): T {
+	const value = readStyleGroup(element, group);
+	readRecorder?.(element, GROUP_READ + group.name, getGroupId(value));
+	return value;
+}
+
+function readStyleGroup<T extends object>(
+	element: Element,
+	group: StyleGroup<T>,
+): T {
+	styleGroups.set(group.name, group as StyleGroup<object>);
+	const document = getOwnerDocument(element);
+	const cascade = document ? documentCascades.get(document) : undefined;
+	if (cascade === undefined || cascade.getStyleKey(element) === null) {
+		return internGroup(
+			group,
+			recordStyleReads(() => {}, () => group.read(element)),
+		);
+	}
+	const values = computedSlotsFor(cascade, element).resolved;
+	let cache = groupCaches.get(values);
+	if (cache === undefined) {
+		cache = new Map();
+		groupCaches.set(values, cache);
+	}
+	let value = cache.get(group as StyleGroup<object>) as T | undefined;
+	if (value === undefined) {
+		value = internGroup(
+			group,
+			// What resolving the element's values reads of its parent is
+			// theirs to read. The group's own reads are the element's.
+			recordStyleReads((reader, read) => {
+				if (
+					reader === element &&
+					!read.startsWith(GROUP_READ) &&
+					(read.includes("|") || isOwnProperty(read))
+				) {
+					throw new Error(`The ${group.name} group read ${read}, not shared`);
+				}
+			}, () => group.read(element)),
+		);
+		cache.set(group as StyleGroup<object>, value);
+	}
+	return value;
+}
+
+// Fields alike when they serialize alike, with NaN, the infinities and
+// undefined spelled as no string can be.
+function getGroupKey(group: object): string {
+	return JSON.stringify(group, (_key, value: unknown) =>
+		value === undefined ||
+			(typeof value === "number" && !Number.isFinite(value))
+			? {"": String(value)}
+			: value);
+}
+
+function internGroup<T extends object>(group: StyleGroup<T>, value: T): T {
+	let interned = internedGroups.get(group as StyleGroup<object>);
+	if (interned === undefined) {
+		interned = new Map();
+		internedGroups.set(group as StyleGroup<object>, interned);
+	}
+	const key = getGroupKey(value);
+	const held = interned.get(key) as T | undefined;
+	if (held !== undefined) {
+		return held;
+	}
+	if (interned.size > 4096) {
+		interned.clear();
+	}
+	interned.set(key, Object.freeze(value));
+	return value;
+}
+
+function getGroupId(group: object): string {
+	let id = groupIds.get(group);
 	if (id === undefined) {
-		id = String(nextBoxModelId++);
-		boxModelIds.set(model, id);
+		id = String(nextGroupId++);
+		groupIds.set(group, id);
 	}
 	return id;
 }
@@ -388,59 +475,17 @@ export function getStyleKey(element: Element): object | null {
 	return cascade?.getStyleKey(element) ?? null;
 }
 
+const BOX_MODEL: StyleGroup<CSSValues.BoxModel> = {
+	name: "box-model",
+	read: readBoxModel,
+};
+
+/**
+ * An element's margins, borders and padding, in cells. Shared and frozen,
+ * so a caller copies it to change it.
+ */
 export function getBoxModel(element: Element): CSSValues.BoxModel {
-	const key = getStyleKey(element);
-	let model = key === null ? undefined : boxModels.get(key);
-	if (model === undefined) {
-		// Recorded as one read, cached or not, rather than as the values
-		// that make it up.
-		model = shareBoxModel(
-			recordStyleReads(() => {}, () => readBoxModel(element)),
-		);
-		if (key !== null) {
-			boxModels.set(key, model);
-		}
-	}
-	readRecorder?.(element, BOX_MODEL_READ, getBoxModelId(model));
-	return model;
-}
-
-// Most elements have one of a few box models, so a finished model is
-// checked against the last few shared, field by field, and held once.
-// What is shared is frozen.
-const RECENT_BOX_MODELS = 16;
-const recentBoxModels: CSSValues.BoxModel[] = [];
-let nextRecentBoxModel = 0;
-
-function isSameBoxModel(a: CSSValues.BoxModel, b: CSSValues.BoxModel): boolean {
-	return (
-		Object.is(a.width, b.width) &&
-		Object.is(a.height, b.height) &&
-		a.paddingTop === b.paddingTop &&
-		a.paddingRight === b.paddingRight &&
-		a.paddingBottom === b.paddingBottom &&
-		a.paddingLeft === b.paddingLeft &&
-		a.marginTop === b.marginTop &&
-		a.marginRight === b.marginRight &&
-		a.marginBottom === b.marginBottom &&
-		a.marginLeft === b.marginLeft &&
-		a.borderTopWidth === b.borderTopWidth &&
-		a.borderRightWidth === b.borderRightWidth &&
-		a.borderBottomWidth === b.borderBottomWidth &&
-		a.borderLeftWidth === b.borderLeftWidth
-	);
-}
-
-function shareBoxModel(model: CSSValues.BoxModel): CSSValues.BoxModel {
-	for (const recent of recentBoxModels) {
-		if (isSameBoxModel(recent, model)) {
-			return recent;
-		}
-	}
-	Object.freeze(model);
-	recentBoxModels[nextRecentBoxModel] = model;
-	nextRecentBoxModel = (nextRecentBoxModel + 1) % RECENT_BOX_MODELS;
-	return model;
+	return getStyleGroup(element, BOX_MODEL);
 }
 
 function readBoxModel(element: Element): CSSValues.BoxModel {
@@ -3997,8 +4042,9 @@ export function recordStyleReads<T>(
 
 /** What a recorded read reads now. */
 export function readStyleAgain(element: Element, read: string): string {
-	if (read === BOX_MODEL_READ) {
-		return getBoxModelId(getBoxModel(element));
+	if (read.startsWith(GROUP_READ)) {
+		const group = styleGroups.get(read.slice(GROUP_READ.length));
+		return group ? getGroupId(readStyleGroup(element, group)) : "";
 	}
 	const bar = read.indexOf("|");
 	return bar === -1
