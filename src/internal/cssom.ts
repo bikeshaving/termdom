@@ -8165,19 +8165,68 @@ function generatesPseudoElement(
 	);
 }
 
-// Driven from the rules rather than the tree, so the walk costs what
-// the sheets ask for rather than what the document holds.
+// Only a rule that sets content makes a pseudo-element. With a few, the
+// walk is driven from those rules, so it costs what the sheets ask for
+// rather than what the document holds. With more, each element is tried
+// once against the rules its host could match.
+const RULE_DRIVEN_PSEUDO_RULES = 16;
+
 function attachPseudoElementsToDocument(cascade: Cascade): void {
 	const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
-
+	let count = 0;
 	for (const rule of cascade.parsedRules) {
-		if (generatesPseudoElement(rule.pseudoElement)) {
-			const rules = pseudoRulesByType.get(rule.pseudoElement) || [];
+		if (generatesPseudoElement(rule.pseudoElement) && mayGiveContent(rule)) {
+			const rules = pseudoRulesByType.get(rule.pseudoElement!) || [];
 			rules.push(rule);
-			pseudoRulesByType.set(rule.pseudoElement, rules);
+			pseudoRulesByType.set(rule.pseudoElement!, rules);
+			count++;
 		}
 	}
 
+	if (count > RULE_DRIVEN_PSEUDO_RULES) {
+		const elements: Element[] = [...cascade.document.querySelectorAll("*")];
+		for (const root of cascade.shadowRoots) {
+			elements.push(...root.querySelectorAll("*"));
+		}
+		for (const element of elements) {
+			for (const pseudoType of pseudoRulesByType.keys()) {
+				attachPseudoElementToElementForType(cascade, element, pseudoType);
+			}
+		}
+	} else {
+		attachPseudoElementsFromRules(cascade, pseudoRulesByType);
+	}
+
+	// A ::marker needs no rule to exist, since list-style-type gives it
+	// content on its own, so the items are found by tag, by inline style,
+	// and by every rule that declares the display.
+	const listItems = new Set<Element>(
+		cascade.document.querySelectorAll('[style*="list-item"], li, summary'),
+	);
+	for (const rule of cascade.parsedRules) {
+		if (rule.declarations["display"] === "list-item" && !rule.uaOrigin) {
+			const scope = (rule.scope ?? cascade.document) as Node;
+			for (const element of selectForRule(scope, rule)) {
+				listItems.add(element);
+			}
+		}
+	}
+	for (const element of listItems) {
+		const computedStyle = cascade.declarationFor(element);
+		const display = _(computedStyle)._computedValue("display");
+		const listStylePosition =
+			_(computedStyle)._computedValue("list-style-position") || "outside";
+
+		if (display === "list-item" && listStylePosition !== "outside") {
+			attachPseudoElementToElementForType(cascade, element, "::marker");
+		}
+	}
+}
+
+function attachPseudoElementsFromRules(
+	cascade: Cascade,
+	pseudoRulesByType: Map<string, ParsedCSSRule[]>,
+): void {
 	for (const [pseudoType, rules] of pseudoRulesByType) {
 		const matchingElements = new Set<Element>();
 
@@ -8205,31 +8254,6 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 
 		for (const element of matchingElements) {
 			attachPseudoElementToElementForType(cascade, element, pseudoType);
-		}
-	}
-
-	// A ::marker needs no rule to exist, since list-style-type gives it
-	// content on its own, so the items are found by tag, by inline style,
-	// and by every rule that declares the display.
-	const listItems = new Set<Element>(
-		cascade.document.querySelectorAll('[style*="list-item"], li, summary'),
-	);
-	for (const rule of cascade.parsedRules) {
-		if (rule.declarations["display"] === "list-item" && !rule.uaOrigin) {
-			const scope = (rule.scope ?? cascade.document) as Node;
-			for (const element of selectForRule(scope, rule)) {
-				listItems.add(element);
-			}
-		}
-	}
-	for (const element of listItems) {
-		const computedStyle = cascade.declarationFor(element);
-		const display = _(computedStyle)._computedValue("display");
-		const listStylePosition =
-			_(computedStyle)._computedValue("list-style-position") || "outside";
-
-		if (display === "list-item" && listStylePosition !== "outside") {
-			attachPseudoElementToElementForType(cascade, element, "::marker");
 		}
 	}
 }
