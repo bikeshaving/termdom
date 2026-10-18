@@ -75,10 +75,13 @@ in the same frame. For example, when a keystroke edits a line and an
 editor updates that line in a microtask, both show up together.</p><p>The engine paints at most one frame every 16 ms. Changes that come
 faster than that share one frame. For each frame, the engine:</p><ul><li>recomputes style and layout for what changed,</li><li>paints the document into a buffer of cells,</li><li>compares the buffer with the previous frame, and</li><li>writes only the difference.</li></ul><p>The engine wraps each frame in synchronized output markers, so a
 terminal that supports them shows the whole frame at once.</p><p>The engine hides the terminal cursor between frames. When a text field
-or an editing host has focus, the engine shows the cursor at its caret.
-The terminal&#039;s own cursor shape and blink then apply, and an input
-method can compose text at that spot. Any other focused element shows
-an outline instead.</p><p>When the document or a box scrolls, the engine asks the terminal to
+or an editing host has focus, the engine shows the cursor at its caret,
+and an input method can compose text at that spot. Any other focused
+element shows an outline instead.</p><p>The caret&#039;s CSS styles the terminal&#039;s cursor:</p><table><thead><tr><th>Property</th><th>Effect</th></tr></thead><tbody><tr><td><code>caret-shape</code></td><td><code>block</code>, <code>underscore</code> or <code>bar</code> sets the cursor&#039;s shape. <code>auto</code> keeps the terminal&#039;s own</td></tr><tr><td><code>caret-animation</code></td><td>With a shape set, <code>manual</code> holds the cursor steady and <code>auto</code> lets it blink</td></tr><tr><td><code>caret-color</code></td><td>Sets the cursor&#039;s color. <code>auto</code> and system colors keep the terminal&#039;s own</td></tr></tbody></table><p>An editor can show a block cursor in one mode and a bar in another by
+switching a class on the field. The engine writes the cursor&#039;s style
+only when it changes, and puts back the terminal&#039;s own when the session
+ends or is suspended, and only if a page set one. Terminals that do not
+support styling the cursor ignore these.</p><p>When the document or a box scrolls, the engine asks the terminal to
 shift the rows itself. The diff then repaints any cells the shift got
 wrong. Terminals can only shift full rows, so when a scrolling box is
 narrower than the terminal, the engine repaints it instead.</p><h2 id="what-the-engine-asks-the-terminal">What the engine asks the terminal <a class="heading-anchor" href="#what-the-engine-asks-the-terminal">#</a></h2><p>The engine never reads the terminal&#039;s name or its environment to decide
