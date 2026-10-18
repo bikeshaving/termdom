@@ -121,10 +121,32 @@ async function mountAndRemove(dom: TermDOM, html: string): Promise<void> {
 const WARM_UP = 10;
 
 // Each leak these tests were written for held at least 17 MB over 80
-// rounds on every runtime, twice what it held over 40. Without them the
-// heap wanders by up to 7 MB, more rounds or fewer.
+// rounds on every runtime, twice what it held over 40.
 const ROUNDS = 80;
 const MB = 12;
+
+// Without a leak the heap still swings by several megabytes: the tables
+// behind the engine's per-element WeakMaps shrink only some collections
+// after their elements go, and compiled code comes and goes. One reading
+// caught at the top of a swing read as 15 MB held on Deno and Node 20. A
+// leak only grows, so what is held after the churn is the lowest of
+// readings a few rounds apart.
+const SETTLE_ROUNDS = 5;
+const READINGS = 3;
+
+async function heldAfter(
+	read: () => Promise<number>,
+	churn: () => Promise<void>,
+): Promise<number> {
+	let lowest = await read();
+	for (let reading = 1; reading < READINGS; reading++) {
+		for (let round = 0; round < SETTLE_ROUNDS; round++) {
+			await churn();
+		}
+		lowest = Math.min(lowest, await read());
+	}
+	return lowest;
+}
 
 // The heap held before and after a churn.
 async function growth(html: (round: number) => string): Promise<number> {
@@ -136,7 +158,10 @@ async function growth(html: (round: number) => string): Promise<number> {
 	for (let round = WARM_UP; round < WARM_UP + ROUNDS; round++) {
 		await mountAndRemove(dom, html(round));
 	}
-	const after = await heldHeap();
+	let round = WARM_UP + ROUNDS;
+	const after = await heldAfter(heldHeap, () =>
+		mountAndRemove(dom, html(round++)),
+	);
 	dom.dispose();
 	return (after - before) / 1e6;
 }
@@ -192,7 +217,7 @@ async function growth(html: (round: number) => string): Promise<number> {
 		for (let i = 0; i < ROUNDS; i++) {
 			await open();
 		}
-		const grown = (await heldHeap() - before) / 1e6;
+		const grown = (await heldAfter(heldHeap, open) - before) / 1e6;
 		dom.dispose();
 		expect(grown).toBeLessThan(MB);
 	},
@@ -261,7 +286,10 @@ async function showImages(dom: TermDOM, round: number): Promise<void> {
 		for (let round = WARM_UP; round < WARM_UP + ROUNDS; round++) {
 			await showImages(dom, round);
 		}
-		const grown = (await heldMemory() - before) / 1e6;
+		let round = WARM_UP + ROUNDS;
+		const grown =
+			(await heldAfter(heldMemory, () => showImages(dom, round++)) - before) /
+			1e6;
 		dom.dispose();
 		expect(grown).toBeLessThan(MB);
 	},
