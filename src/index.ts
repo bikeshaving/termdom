@@ -6,6 +6,7 @@ import {
 	checkStylesFromScratch,
 	dispose,
 	hoverRulesExist,
+	setReducedMotion,
 	styleCheck,
 } from "./internal/cssom.ts";
 import {
@@ -223,6 +224,13 @@ export interface TermDOMOptions {
 	 * it off.
 	 */
 	scripting?: boolean;
+
+	/**
+	 * Whether the page is told its reader prefers reduced motion, through
+	 * `@media (prefers-reduced-motion: reduce)`. Left out, it is told there
+	 * is no preference, and its transitions run as written.
+	 */
+	reducedMotion?: boolean;
 
 	/**
 	 * How an <img> draws.
@@ -543,6 +551,7 @@ export class TermDOM extends EventTarget {
 		this.window = window as unknown as globalThis.Window & typeof globalThis;
 
 		const document = this.document = this.window.document;
+		setReducedMotion(document, options.reducedMotion === true);
 		const requestPolicy: RequestPolicy = {
 			policies: parseContentSecurityPolicies(options.csp ?? ""),
 			signal: slots.loads.signal,

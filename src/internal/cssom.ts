@@ -57,6 +57,7 @@ import {
 	getPresentationalHints,
 	isHintAttribute,
 	isLayoutHintAttribute,
+	isScriptedDocument,
 } from "./hints.ts";
 import type {Layout} from "./layout.ts";
 import {
@@ -9766,6 +9767,20 @@ function mediaOperandMatches(
 type MediaRangeKind = "length" | "height" | "ratio" | "resolution" | "integer";
 
 // The terminal's, for a document a TermDOM draws.
+// The documents whose embedder asked for reduced motion.
+const reducedMotionDocuments = new WeakSet<globalThis.Document>();
+
+export function setReducedMotion(
+	document: globalThis.Document,
+	reduce: boolean,
+): void {
+	if (reduce) {
+		reducedMotionDocuments.add(document);
+	} else {
+		reducedMotionDocuments.delete(document);
+	}
+}
+
 function getColorScheme(
 	document: globalThis.Document | null,
 ): "light" | "dark" {
@@ -9863,10 +9878,15 @@ const MEDIA_DISCRETE_FEATURES: Record<
 		],
 		value: () => "browser",
 	},
+	// Whether the embedder runs the page's scripts, as the scripting option
+	// and the policy say.
 	scripting: {
 		values: ["none", "initial-only", "enabled"],
 		falsy: "none",
-		value: () => "enabled",
+		value: (window) =>
+			isScriptedDocument(window.document as unknown as Document)
+				? "enabled"
+				: "none",
 	},
 	"forced-colors": {
 		values: ["none", "active"],
@@ -9892,7 +9912,8 @@ const MEDIA_DISCRETE_FEATURES: Record<
 	"prefers-reduced-motion": {
 		values: ["no-preference", "reduce"],
 		falsy: "no-preference",
-		value: () => "no-preference",
+		value: (window) =>
+			reducedMotionDocuments.has(window.document) ? "reduce" : "no-preference",
 	},
 	"prefers-reduced-transparency": {
 		values: ["no-preference", "reduce"],
