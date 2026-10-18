@@ -11023,9 +11023,11 @@ function getCandidateRules(
 	const subject = (element ?? host)!;
 	const quirks = subject.ownerDocument?.compatMode === "BackCompat";
 	const index = getRuleIndex(cascade, quirks);
-	let key = element === null ? "" : getCandidateKey(element, quirks);
+	let key = element === null
+		? ""
+		: getCandidateKey(element, quirks, index.keyed);
 	if (host !== null) {
-		key += ` ::${getCandidateKey(host, quirks)}`;
+		key += ` ::${getCandidateKey(host, quirks, index.pseudoKeyed)}`;
 	}
 	let candidates = index.candidates.get(key);
 	if (candidates !== undefined) {
@@ -11062,13 +11064,24 @@ function getCandidateRules(
 	return candidates;
 }
 
-function getCandidateKey(element: Element, quirks: boolean): string {
+// The name, and only the id and classes some rule is filed under, so a
+// table of rows with ids of their own still shares one candidate list.
+function getCandidateKey(
+	element: Element,
+	quirks: boolean,
+	keyed: Map<string, number[]>,
+): string {
 	const ownId = getIdValue(element);
 	const id = quirks && ownId !== null ? toASCIILowercase(ownId) : ownId;
-	const tag = getLocalName(element);
-	let key = id === null ? tag : `${tag} #${id}`;
+	let key = getLocalName(element);
+	if (id !== null && keyed.has(`#${id}`)) {
+		key += ` #${id}`;
+	}
 	for (const name of getClassTokens(element)) {
-		key += ` .${quirks ? toASCIILowercase(name) : name}`;
+		const token = `.${quirks ? toASCIILowercase(name) : name}`;
+		if (keyed.has(token)) {
+			key += ` ${token}`;
+		}
 	}
 	return key;
 }
