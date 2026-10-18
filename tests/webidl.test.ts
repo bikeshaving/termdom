@@ -242,3 +242,18 @@ test("no member the specs name starts with an underscore, which internal steps u
 		.filter((member) => member.split(".")[1].startsWith("_"));
 	expect(named).toEqual([]);
 });
+
+test("an attribute that forwards assignment takes a string, whatever its own type", () => {
+	const {document} = setup();
+	const frame = document.createElement("iframe") as HTMLIFrameElement;
+	(frame as {sandbox: unknown}).sandbox = "allow-scripts allow-forms";
+	expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-forms");
+	expect(frame.sandbox.contains("allow-scripts")).toBe(true);
+	const link = document.createElement("a") as HTMLAnchorElement;
+	(link as {relList: unknown}).relList = "noopener noreferrer";
+	expect(link.rel).toBe("noopener noreferrer");
+	(link as {classList: unknown}).classList = "one two";
+	expect(link.className).toBe("one two");
+	(link as {style: unknown}).style = "color: red";
+	expect(link.style.color).toBe("red");
+});

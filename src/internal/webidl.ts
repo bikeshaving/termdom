@@ -398,7 +398,9 @@ function wrapAttribute(
 	};
 	const fixedGet = resolve.fixed?.get;
 	const fixedSet = resolve.fixed?.set;
-	const check = member.checks[0] ?? null;
+	// A read-only attribute with a setter forwards what it is given, as
+	// [PutForwards] and [Replaceable] do, so its type is no check on it.
+	const check = member.kind === "a" ? member.checks[0] ?? null : null;
 	const get = {
 		[name](this: unknown): unknown {
 			const type = brand(this);
