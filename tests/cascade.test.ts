@@ -1053,6 +1053,37 @@ test("elements alike in rules, attributes and parent share resolved values, and 
 	dom.dispose();
 });
 
+test("elements that differ only in attributes no rule reads resolve alike, and apart once one does", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.head.innerHTML =
+		"<style>a { color: rgb(255, 0, 0) } [title=\"hot\"] span { color: rgb(0, 0, 255) }" +
+		" #c span { font-weight: bold }</style>";
+	document.body.innerHTML =
+		"<a id=\"a\" href=\"/1\"><span id=\"sa\">a</span></a>" +
+		"<a id=\"b\" href=\"/2\" title=\"hot\"><span id=\"sb\">b</span></a>" +
+		"<a id=\"c\" href=\"/3\"><span id=\"sc\">c</span></a>" +
+		"<input id=\"narrow\" size=\"4\"><input id=\"wide\" size=\"9\">";
+	await nextFrame(dom);
+	const style = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!);
+	expect(style("sa").color).toBe("rgb(255, 0, 0)");
+	expect(style("sb").color).toBe("rgb(0, 0, 255)");
+	expect(style("sc").color).toBe("rgb(255, 0, 0)");
+	expect(style("sa").fontWeight).toBe("400");
+	expect(style("sc").fontWeight).toBe("700");
+	expect(style("narrow").width).not.toBe(style("wide").width);
+
+	document.getElementById("a")!.title = "hot";
+	document.getElementById("c")!.id = "d";
+	expect(style("sa").color).toBe("rgb(0, 0, 255)");
+	expect(style("sc").fontWeight).toBe("400");
+	document.getElementById("narrow")!.setAttribute("size", "9");
+	expect(style("narrow").width).toBe(style("wide").width);
+	dom.dispose();
+});
+
 test("rules filed by id and class still cascade in order of appearance", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});

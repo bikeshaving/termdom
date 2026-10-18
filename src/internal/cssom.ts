@@ -4260,13 +4260,18 @@ const USED_VALUE_PROPERTIES = new Set([
 ]);
 
 // Style sharing. An element's computed values follow from its matched
-// rules, its attributes (inline style and the presentational hints the UA
-// reads, like an input's size), its tag, and its flat-tree parent's
-// values. Elements alike in all of those resolve every property alike, so
-// they share one table of resolved values, filled as any of them reads.
+// rules, the few attributes resolution reads itself, its tag, and its
+// flat-tree parent's values. Elements alike in all of those resolve every
+// property alike, so they share one table of resolved values, filled as
+// any of them reads. Every other attribute reaches style only through a
+// selector or a presentational hint, and both are among the rules, so
+// two comments that differ only in their ids and links still share.
 // Each parent's values hold the tables of their children, and go with
 // them. The page-facing declaration stays per element: its used values
 // read the element's own boxes.
+// The inline style, a text input's type and size, a list item's value,
+// and the direction and language the element states.
+const KEYED_ATTRIBUTES = ["style", "type", "size", "value", "dir", "lang"];
 const ruleIds = new WeakMap<ParsedCSSRule, number>();
 let nextRuleId = 0;
 const ruleIndexes = new WeakMap<Cascade, RuleIndex>();
@@ -4375,10 +4380,11 @@ function getSharedResolved(
 		}
 		key += `,${id}`;
 	}
-	for (const attribute of getAttributeList(element)) {
-		key += `\0${attribute.extra.namespace ?? ""}:${
-			attribute.extra.localName
-		}=${attribute.extra.value}`;
+	for (const name of KEYED_ATTRIBUTES) {
+		const value = getAttributeValue(element, name);
+		if (value !== null) {
+			key += `\0${name}=${value}`;
+		}
 	}
 	const parent = flatParentElement(element);
 	let table: Map<string, Map<string, string>>;
