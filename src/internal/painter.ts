@@ -6,11 +6,13 @@ import {
 	getComputedValue,
 	getDeclaredDisplay,
 	getMarkerContent,
+	getStyleGroup,
 	getTabSize,
 	getUsedOverflow,
 	getWhiteSpace,
 	resolveBorderSides,
 	resolveLength,
+	type StyleGroup,
 	toCellLength,
 } from "./cssom.ts";
 import * as CSSValues from "./cssvalues.ts";
@@ -163,6 +165,8 @@ interface PaintStyle {
 	counters: string;
 }
 
+type SharedPaintStyle = Omit<PaintStyle, "overflowX" | "overflowY">;
+
 interface BorderPaint {
 	top?: LineStyle;
 	right?: LineStyle;
@@ -209,10 +213,10 @@ export function paintsAsBefore(
 	if (before.counters !== after.counters) {
 		return "whole";
 	}
-	return JSON.stringify(before) === JSON.stringify(after);
+	return before === after;
 }
 
-function readPaintStyle(element: Element): PaintStyle {
+function readPaintStyle(element: Element): SharedPaintStyle {
 	const color = getComputedValue(element, "color");
 	const backgroundColor = getComputedValue(element, "background-color");
 	const fg = color && color !== "initial" && !CSSValues.isHighlightColor(color)
@@ -341,8 +345,6 @@ function readPaintStyle(element: Element): PaintStyle {
 			? border
 			: null,
 		outlineColor,
-		overflowX: getUsedOverflow(element, "x"),
-		overflowY: getUsedOverflow(element, "y"),
 		textTransform: getComputedValue(element, "text-transform"),
 		whiteSpace: getWhiteSpace(element),
 		tabSize: getTabSize(element),
@@ -688,114 +690,40 @@ function paintBand(
 	}
 }
 
+// The paint style of every element that shares its values, and the
+// whole paint style, with the used overflow, which reads the element's
+// own display. Held once for each pair, so two alike are one object.
+const PAINT_STYLE: StyleGroup<SharedPaintStyle> = {
+	name: "paint",
+	read: readPaintStyle,
+};
+const overflowedPaintStyles = new WeakMap<
+	SharedPaintStyle,
+	Map<string, PaintStyle>
+>();
+
 function getPaintStyle(painter: Painter, element: Element): PaintStyle {
 	const key = painter.cascade.getStyleKey(element);
 	const known = key === null ? undefined : paintStyles.get(key);
 	if (known !== undefined) {
 		return known;
 	}
-	const style = sharePaintStyle(readPaintStyle(element));
+	const shared = getStyleGroup(element, PAINT_STYLE);
+	const overflowX = getUsedOverflow(element, "x");
+	const overflowY = getUsedOverflow(element, "y");
+	let styles = overflowedPaintStyles.get(shared);
+	if (styles === undefined) {
+		styles = new Map();
+		overflowedPaintStyles.set(shared, styles);
+	}
+	let style = styles.get(`${overflowX} ${overflowY}`);
+	if (style === undefined) {
+		style = Object.freeze({...shared, overflowX, overflowY});
+		styles.set(`${overflowX} ${overflowY}`, style);
+	}
 	if (key !== null) {
 		paintStyles.set(key, style);
 	}
-	return style;
-}
-
-// Most elements paint as many others do, a list's items or a table's
-// cells, so a finished paint style is checked against the last few
-// shared, field by field, and held once. What is shared is frozen, the
-// records it holds included.
-const RECENT_PAINT_STYLES = 16;
-const recentPaintStyles: PaintStyle[] = [];
-let nextRecentPaintStyle = 0;
-
-function isSameRecord(a: object | null, b: object | null): boolean {
-	if (a === b) {
-		return true;
-	}
-	if (a === null || b === null) {
-		return false;
-	}
-	const aFields = a as Record<string, unknown>;
-	const bFields = b as Record<string, unknown>;
-	for (const name in aFields) {
-		if (!Object.is(aFields[name], bFields[name])) {
-			return false;
-		}
-	}
-	for (const name in bFields) {
-		if (!(name in aFields)) {
-			return false;
-		}
-	}
-	return true;
-}
-
-function isSameBorder(a: BorderPaint | null, b: BorderPaint | null): boolean {
-	if (a === null || b === null) {
-		return a === b;
-	}
-	return (
-		isSameRecord(a.top ?? null, b.top ?? null) &&
-		isSameRecord(a.right ?? null, b.right ?? null) &&
-		isSameRecord(a.bottom ?? null, b.bottom ?? null) &&
-		isSameRecord(a.left ?? null, b.left ?? null) &&
-		a.topLeft === b.topLeft &&
-		a.topRight === b.topRight &&
-		a.bottomRight === b.bottomRight &&
-		a.bottomLeft === b.bottomLeft
-	);
-}
-
-function isSamePaintStyle(a: PaintStyle, b: PaintStyle): boolean {
-	return (
-		a.display === b.display &&
-		a.visible === b.visible &&
-		a.transparent === b.transparent &&
-		Object.is(a.fg, b.fg) &&
-		Object.is(a.bg, b.bg) &&
-		Object.is(a.fill, b.fill) &&
-		a.gradient === b.gradient &&
-		Object.is(a.outlineColor, b.outlineColor) &&
-		a.overflowX === b.overflowX &&
-		a.overflowY === b.overflowY &&
-		a.textTransform === b.textTransform &&
-		a.whiteSpace === b.whiteSpace &&
-		Object.is(a.tabSize, b.tabSize) &&
-		Object.is(a.shiftX, b.shiftX) &&
-		Object.is(a.shiftY, b.shiftY) &&
-		Object.is(a.contentInsetX, b.contentInsetX) &&
-		Object.is(a.contentInsetY, b.contentInsetY) &&
-		a.others === b.others &&
-		a.counters === b.counters &&
-		isSameRecord(a.cell, b.cell) &&
-		isSameBorder(a.border, b.border)
-	);
-}
-
-function sharePaintStyle(style: PaintStyle): PaintStyle {
-	for (const recent of recentPaintStyles) {
-		if (isSamePaintStyle(recent, style)) {
-			return recent;
-		}
-	}
-	Object.freeze(style.cell);
-	if (style.border !== null) {
-		for (const side of [
-			style.border.top,
-			style.border.right,
-			style.border.bottom,
-			style.border.left,
-		]) {
-			if (side !== undefined) {
-				Object.freeze(side);
-			}
-		}
-		Object.freeze(style.border);
-	}
-	Object.freeze(style);
-	recentPaintStyles[nextRecentPaintStyle] = style;
-	nextRecentPaintStyle = (nextRecentPaintStyle + 1) % RECENT_PAINT_STYLES;
 	return style;
 }
 

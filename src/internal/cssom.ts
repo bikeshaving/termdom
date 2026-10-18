@@ -455,7 +455,17 @@ function internGroup<T extends object>(group: StyleGroup<T>, value: T): T {
 	if (interned.size > 4096) {
 		interned.clear();
 	}
-	interned.set(key, Object.freeze(value));
+	interned.set(key, freezeDeep(value));
+	return value;
+}
+
+function freezeDeep<T>(value: T): T {
+	if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+		Object.freeze(value);
+		for (const field of Object.values(value)) {
+			freezeDeep(field);
+		}
+	}
 	return value;
 }
 
