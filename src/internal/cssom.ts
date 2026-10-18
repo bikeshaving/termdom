@@ -3331,27 +3331,38 @@ const nestingSyntax = (CSSTree.fork as (extension: object) => typeof CSSTree)({
 	},
 });
 
+// While the cascade parses every sheet, the trees of the texts it has
+// read, which building rules only reads, so a page that links a sheet
+// more than once parses its text once. Dropped when the parse ends.
+let sharedSheetTrees: Map<
+	string,
+	{children: {toArray(): CSSTree.StyleSheetNode[]}}
+> | null = null;
+
 function parseRules(
 	text: string,
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
 ): CSSRule[] {
-	let ast: {children: {toArray(): CSSTree.StyleSheetNode[]}};
-	try {
-		// Values parse to nodes in this one pass. A value outside its grammar
-		// falls back to a Raw node rather than an error, so the sheet keeps
-		// what a raw-text parse would keep. Positions are on because the value
-		// TEXT serializes from the authored source, not from the parsed
-		// spelling.
-		ast = nestingSyntax.parse(text, {
-			parseValue: true,
-			parseAtrulePrelude: false,
-			parseRulePrelude: false,
-			parseCustomProperty: false,
-			positions: true,
-		}) as never;
-	} catch (_err) {
-		return [];
+	let ast = sharedSheetTrees?.get(text);
+	if (ast === undefined) {
+		try {
+			// Values parse to nodes in this one pass. A value outside its
+			// grammar falls back to a Raw node rather than an error, so the
+			// sheet keeps what a raw-text parse would keep. Positions are on
+			// because the value TEXT serializes from the authored source, not
+			// from the parsed spelling.
+			ast = nestingSyntax.parse(text, {
+				parseValue: true,
+				parseAtrulePrelude: false,
+				parseRulePrelude: false,
+				parseCustomProperty: false,
+				positions: true,
+			}) as never;
+		} catch (_err) {
+			return [];
+		}
+		sharedSheetTrees?.set(text, ast!);
 	}
 	return buildRules(sheet, () =>
 		convertRules(ast.children.toArray(), text, sheet, parentRule),
@@ -9775,6 +9786,16 @@ function parseStylesheets(cascade: Cascade): void {
 }
 
 function parseStylesheetsNow(cascade: Cascade): void {
+	const outer = sharedSheetTrees;
+	sharedSheetTrees ??= new Map();
+	try {
+		parseAllStylesheets(cascade);
+	} finally {
+		sharedSheetTrees = outer;
+	}
+}
+
+function parseAllStylesheets(cascade: Cascade): void {
 	const document = cascade.document;
 	cascade.parsedRules = [];
 	cascade.sharedRoot = new Map();
