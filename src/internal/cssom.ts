@@ -10669,6 +10669,19 @@ function indexReachingKeys(
 
 // A selector this engine cannot read compiles to neither reading, and
 // the rule styles nothing.
+// A selector written alike under the same namespaces compiles alike, so
+// a sheet that repeats another's rules, or a page that loads one twice,
+// compiles each selector once, and its rules share the matcher.
+const compiledSelectors = new Map<string, CompiledSelector | null>();
+
+function getNamespacesKey(namespaces: SelectorNamespaces): string {
+	let key = namespaces.default ?? "";
+	for (const [prefix, uri] of namespaces.prefixes) {
+		key += ` ${prefix}=${uri}`;
+	}
+	return key;
+}
+
 function compileRuleSelector(
 	selector: string,
 	namespaces: SelectorNamespaces | undefined,
@@ -10676,13 +10689,28 @@ function compileRuleSelector(
 	pseudoElements = false,
 ): Pick<ParsedCSSRule, "matcher" | "relativeMatcher"> {
 	const read = (relative: boolean): CompiledSelector | null => {
-		try {
-			return compileSelector(selector, {namespaces, relative, pseudoElements});
-		} catch (_err) {
-			// Only the shape of a sheet's selector was checked when the rule
-			// was parsed. A prefix no `@namespace` declared is rejected here.
-			return null;
+		const key = `${relative ? "r" : ""}${pseudoElements ? "p" : ""} ${
+			namespaces === undefined ? "" : getNamespacesKey(namespaces)
+		}\0${selector}`;
+		let compiled = compiledSelectors.get(key);
+		if (compiled === undefined) {
+			try {
+				compiled = compileSelector(selector, {
+					namespaces,
+					relative,
+					pseudoElements,
+				});
+			} catch (_err) {
+				// Only the shape of a sheet's selector was checked when the rule
+				// was parsed. A prefix no `@namespace` declared is rejected here.
+				compiled = null;
+			}
+			if (compiledSelectors.size > 16384) {
+				compiledSelectors.clear();
+			}
+			compiledSelectors.set(key, compiled);
 		}
+		return compiled;
 	};
 	return {matcher: read(false), relativeMatcher: scopes ? read(true) : null};
 }
@@ -11402,14 +11430,23 @@ function pseudoRuleCouldMatch(
 	if (!cascade.pseudoRulesByType.has(pseudoType)) {
 		return false;
 	}
+	// Rules that repeat a selector share its matcher, and one that missed
+	// misses again.
+	const missed = new Set<CompiledSelector | null>();
 	for (const rule of getCandidateRules(cascade, null, element)) {
 		if (
-			rule.pseudoElement === pseudoType &&
-			mayGiveContent(rule) &&
-			subjectCouldMatch(element, rule) &&
-			ruleSelectorMatches(element, rule)
+			rule.pseudoElement !== pseudoType ||
+			!mayGiveContent(rule) ||
+			(!rule.reachesHost && missed.has(rule.matcher)) ||
+			!subjectCouldMatch(element, rule)
 		) {
+			continue;
+		}
+		if (ruleSelectorMatches(element, rule)) {
 			return true;
+		}
+		if (!rule.reachesHost) {
+			missed.add(rule.matcher);
 		}
 	}
 	return false;
