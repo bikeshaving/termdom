@@ -4627,6 +4627,8 @@ function harvestKeys(nodes: CSSTree.SelectorNode[], keys: CompoundKeys): void {
 }
 
 // Only the compound's own simple selectors, none inside an argument.
+const IS_PSEUDO_CLASSES = new Set(["is", "where", "matches", "-webkit-any"]);
+
 function harvestRequiredKeys(
 	parts: CSSTree.SelectorNode[],
 	required: CompoundKeys["required"],
@@ -4648,6 +4650,21 @@ function harvestRequiredKeys(
 			const local = name.slice(name.indexOf("|") + 1).toLowerCase();
 			if (local !== "*") {
 				required.tag = local;
+			}
+		} else if (
+			part.type === "PseudoClassSelector" &&
+			IS_PSEUDO_CLASSES.has(String(part.name ?? "").toLowerCase())
+		) {
+			// `:is(.a)` and `:where(.a)` require what their one compound does.
+			// With alternatives, or a combinator, nothing one of them names is
+			// required of the element.
+			const list = getChildren(part)[0];
+			const selectors = list?.type === "SelectorList" ? getChildren(list) : [];
+			const inner = selectors.length === 1 ? getChildren(selectors[0]) : [];
+			if (
+				inner.length > 0 && inner.every((node) => node.type !== "Combinator")
+			) {
+				harvestRequiredKeys(inner, required);
 			}
 		}
 	}

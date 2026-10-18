@@ -1292,3 +1292,27 @@ test("a rule whose subject requires only an attribute reaches the elements that 
 	expect(style("b").color).toBe("rgb(255, 0, 0)");
 	dom.dispose();
 });
+
+test("rules whose subject wraps its keys in :where() or :is() still reach their elements", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.head.innerHTML =
+		"<style>:where(.btn) { color: rgb(255, 0, 0) } :is(.a, .b) { font-weight: bold }" +
+		" .wrap :where([data-k]) { text-decoration-line: underline }</style>";
+	document.body.innerHTML =
+		"<span id=\"btn\" class=\"btn\">x</span><span id=\"a\" class=\"a\">a</span>" +
+		"<span id=\"b\" class=\"b\">b</span><div class=\"wrap\"><span id=\"k\" data-k>k</span></div>" +
+		"<span id=\"none\">n</span>";
+	await nextFrame(dom);
+	const style = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!);
+	expect(style("btn").color).toBe("rgb(255, 0, 0)");
+	expect(style("a").fontWeight).toBe("700");
+	expect(style("b").fontWeight).toBe("700");
+	expect(style("k").textDecorationLine).toBe("underline");
+	expect(style("none").color).not.toBe("rgb(255, 0, 0)");
+	document.getElementById("none")!.className = "btn";
+	expect(style("none").color).toBe("rgb(255, 0, 0)");
+	dom.dispose();
+});
