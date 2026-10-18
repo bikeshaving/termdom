@@ -135,6 +135,10 @@ const paintStyles = new WeakMap<object, PaintStyle>();
 interface PaintStyle {
 	display: string;
 	visible: boolean;
+	// opacity: 0, which draws nothing of the box or what it holds, though
+	// they keep their place and take pointer events. A terminal cell has no
+	// partial opacity, so any other value draws whole.
+	transparent: boolean;
 	fg: number | undefined;
 	bg: number | undefined;
 	fill: number | "default" | "inverse" | null;
@@ -328,6 +332,7 @@ function readPaintStyle(element: Element): PaintStyle {
 		contentInsetY: Math.round(model.paddingTop + model.borderTopWidth),
 		display: getDeclaredDisplay(element),
 		visible: getComputedValue(element, "visibility") !== "hidden",
+		transparent: parseFloat(getComputedValue(element, "opacity")) === 0,
 		fg,
 		bg,
 		fill,
@@ -460,6 +465,9 @@ export class Painter {
 	// Where this frame painted each text, for the overflow markers drawn
 	// after it, which would otherwise ask layout to place it again.
 	paintedText: Map<Text, TextFragment[]>;
+	// Whether each layer member looked up in this frame has an ancestor
+	// with opacity: 0.
+	inTransparent: Map<Element, boolean>;
 
 	constructor(
 		document: Document,
@@ -473,6 +481,7 @@ export class Painter {
 		this.highlightedText = new Map();
 		this.highlightStyles = new Map();
 		this.paintedText = new Map();
+		this.inTransparent = new Map();
 		this.window = document.defaultView as unknown as Window;
 		this.document = document;
 		this.layout = layout;
@@ -580,6 +589,7 @@ export function resolveDocumentScrollBand(
 export function paint(painter: Painter, ctx: CellContext): void {
 	painter.highlightedText = collectHighlightedText(painter.document);
 	painter.paintedText.clear();
+	painter.inTransparent = new Map();
 	painter.highlightStyles = new Map();
 	const layers = collectStackingLayers(painter.layout, painter.topLayer);
 	// From the body, the root stacking context's content. A body that
@@ -741,6 +751,7 @@ function isSamePaintStyle(a: PaintStyle, b: PaintStyle): boolean {
 	return (
 		a.display === b.display &&
 		a.visible === b.visible &&
+		a.transparent === b.transparent &&
 		Object.is(a.fg, b.fg) &&
 		Object.is(a.bg, b.bg) &&
 		Object.is(a.fill, b.fill) &&
@@ -817,6 +828,11 @@ function renderStackingContext(
 	}
 	const contextClip = ctx.clipRect;
 	const paintMember = (element: Element) => {
+		// A layer member paints from its stacking context, not through its
+		// ancestors, so one inside a transparent ancestor is skipped here.
+		if (isInTransparent(painter, element)) {
+			return;
+		}
 		const previousClip = ctx.clipRect;
 		const previousOffset = ctx.viewportOffset;
 		const previousScrolled = painter.scrolledRows;
@@ -856,6 +872,19 @@ function renderStackingContext(
 	for (const element of bucket.pos) {
 		paintMember(element);
 	}
+}
+
+function isInTransparent(painter: Painter, element: Element): boolean {
+	let known = painter.inTransparent.get(element);
+	if (known === undefined) {
+		const parent = flatParentElement(element);
+		known =
+			parent !== null &&
+			(getPaintStyle(painter, parent).transparent ||
+				isInTransparent(painter, parent));
+		painter.inTransparent.set(element, known);
+	}
+	return known;
 }
 
 function paintEntry(
@@ -947,7 +976,7 @@ function paintBlock(
 		return;
 	}
 	const style = getPaintStyle(painter, element);
-	if (style.display === "none") {
+	if (style.display === "none" || style.transparent) {
 		return;
 	}
 	const rect: Rect = {
@@ -1190,6 +1219,15 @@ function paintNodes(
 		if (owner === null) {
 			paintNodes(painter, child, childOrigin, ctx);
 			continue;
+		}
+		// A box laid out as one run paints as that run, so its opacity is
+		// asked of it here. A run an inline box heads is its container's,
+		// and the inline box answers for itself as it paints.
+		if (getNodeType(owner) === owner.ELEMENT_NODE) {
+			const style = getPaintStyle(painter, owner as Element);
+			if (style.transparent && style.display !== "inline") {
+				continue;
+			}
 		}
 		const run = getRun(layout, child);
 		if (run !== null) {
@@ -1527,7 +1565,7 @@ function paintInline(
 	ctx: CellContext,
 ): void {
 	const style = getPaintStyle(painter, element);
-	if (style.display === "none") {
+	if (style.display === "none" || style.transparent) {
 		return;
 	}
 	const fragments = run.boxes.get(element) ?? [];
@@ -1608,7 +1646,7 @@ function paintAtomic(
 	ctx: CellContext,
 ): void {
 	const style = getPaintStyle(painter, element);
-	if (style.display === "none") {
+	if (style.display === "none" || style.transparent) {
 		return;
 	}
 	paintBox(painter, style, [rect], rect, ctx);
