@@ -4504,13 +4504,15 @@ interface CompoundKeys {
 	// Whether an argument holds a combinator, and so describes elements
 	// other than the one the compound matches.
 	nestedCombinator: boolean;
-	// The keys outside every pseudo-class argument, which the element the
-	// compound matches has all of.
+	// The keys outside every pseudo-class argument but a lone compound in
+	// :is() or :where(), which the element the compound matches has all
+	// of, and whether it must be the root.
 	required: {
 		tag: string | null;
 		classes: string[];
 		ids: string[];
 		attributes: string[];
+		root: boolean;
 	};
 	// Whether matching this compound reads the element's siblings or
 	// children: it follows a sibling combinator, or tests a tree-structural
@@ -4653,6 +4655,11 @@ function harvestRequiredKeys(
 			}
 		} else if (
 			part.type === "PseudoClassSelector" &&
+			String(part.name ?? "").toLowerCase() === "root"
+		) {
+			required.root = true;
+		} else if (
+			part.type === "PseudoClassSelector" &&
 			IS_PSEUDO_CLASSES.has(String(part.name ?? "").toLowerCase())
 		) {
 			// `:is(.a)` and `:where(.a)` require what their one compound does.
@@ -4736,7 +4743,7 @@ function readSelectorText(selector: string): SelectorReading {
 			pseudoClasses: [],
 			precedesSibling: false,
 			nestedCombinator: false,
-			required: {tag: null, classes: [], ids: [], attributes: []},
+			required: {tag: null, classes: [], ids: [], attributes: [], root: false},
 			siblingTested: afterSiblingCombinator || testsSiblings(parts),
 			anyElement: false,
 		};

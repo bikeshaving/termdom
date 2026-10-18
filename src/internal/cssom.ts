@@ -6384,10 +6384,10 @@ interface ParsedCSSRule {
 	// worth of rules about summaries and legends. Absent when any element
 	// could match.
 	subjectTag?: string;
-	// The id or a class the rightmost compound requires, as "#id" or
-	// ".class", or with neither and no element name, an attribute, as
-	// "[name]", which files the rule where only elements with it look.
-	// Absent when the compound requires none of them.
+	// ":root" when the rightmost compound must be the root, or else the id
+	// or a class it requires, as "#id" or ".class", or with neither and no
+	// element name, an attribute, as "[name]", which files the rule where
+	// only elements with it look. Absent when it requires none of them.
 	subjectKey?: string;
 	declarations: Record<string, string>;
 	important: Record<string, boolean>;
@@ -10833,6 +10833,8 @@ function parseSelector(
 	const required = reading.compounds.at(-1)?.required;
 	const subjectKey = required === undefined
 		? undefined
+		: required.root
+		? ":root"
 		: required.ids.length > 0
 			? `#${required.ids[0]}`
 			: required.classes.length > 0
@@ -10984,7 +10986,7 @@ function getRuleIndex(cascade: Cascade, quirks: boolean): RuleIndex {
 		}
 		const key = rule.subjectKey === undefined
 			? rule.subjectTag
-			: quirks && rule.subjectKey[0] !== "["
+			: quirks && rule.subjectKey[0] !== "[" && rule.subjectKey !== ":root"
 				? toASCIILowercase(rule.subjectKey)
 				: rule.subjectKey;
 		if (key === undefined) {
@@ -11095,6 +11097,9 @@ function getCandidateKey(
 			key += ` ${token}`;
 		}
 	}
+	if (isDocumentElement(element)) {
+		key += " :root";
+	}
 	return key;
 }
 
@@ -11138,6 +11143,11 @@ function addCandidatePositions(
 	}
 	for (const token of getAttributeKeys(element)) {
 		for (const position of keyed.get(token) ?? []) {
+			positions.add(position);
+		}
+	}
+	if (isDocumentElement(element)) {
+		for (const position of keyed.get(":root") ?? []) {
 			positions.add(position);
 		}
 	}
@@ -11559,6 +11569,9 @@ function subjectCouldMatch(element: Element, rule: ParsedCSSRule): boolean {
 	}
 	if (key[0] === "[") {
 		return getAttributeKeys(element).includes(key);
+	}
+	if (key === ":root") {
+		return isDocumentElement(element);
 	}
 	if (element.ownerDocument?.compatMode === "BackCompat") {
 		return true;

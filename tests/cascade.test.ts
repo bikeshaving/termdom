@@ -1316,3 +1316,24 @@ test("rules whose subject wraps its keys in :where() or :is() still reach their 
 	expect(style("none").color).toBe("rgb(255, 0, 0)");
 	dom.dispose();
 });
+
+test(":root rules reach the root alone, and not through :not()", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.head.innerHTML =
+		"<style>:root { --accent: red } :root:where(.dark) { --accent: blue }" +
+		" :not(:root) { --inner: yes } p { color: var(--accent) }</style>";
+	document.body.innerHTML = "<p id=\"p\">x</p>";
+	await nextFrame(dom);
+	const root = window.getComputedStyle(document.documentElement);
+	const p = window.getComputedStyle(document.getElementById("p")!);
+	expect(root.getPropertyValue("--accent")).toBe("red");
+	expect(root.getPropertyValue("--inner")).toBe("");
+	expect(p.getPropertyValue("--inner")).toBe("yes");
+	expect(p.color).toBe("rgb(255, 0, 0)");
+	document.documentElement.classList.add("dark");
+	expect(window.getComputedStyle(document.getElementById("p")!).color)
+		.toBe("rgb(0, 0, 255)");
+	dom.dispose();
+});
