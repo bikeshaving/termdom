@@ -6422,6 +6422,13 @@ interface ParsedCSSRule {
 	hasStates?: readonly string[];
 	hasSiblings?: boolean;
 
+	// The bits, in an element's ancestor filter, of the names, ids and
+	// classes the rule's compounds left of a descendant or child
+	// combinator require, so an element whose ancestors have none of one
+	// is ruled out without running the selector. Absent when the rule
+	// requires nothing of its ancestors, or reads them some other way.
+	ancestorBits?: Uint32Array;
+
 	// Cascade ORIGIN, the tier above specificity. Every author rule beats
 	// every UA rule, which lets `input::placeholder { color }` beat the UA
 	// sheet's gray despite that selector's higher specificity.
@@ -6605,6 +6612,8 @@ export class Cascade {
 	// The tokens of the values parents pass down, by what those values are,
 	// emptied with the root so the tables under them go too.
 	passedTokens: Map<string, PassedToken>;
+	// Each element's ancestor filter, dropped with every mutation.
+	ancestorFilters: WeakMap<Element, Uint32Array>;
 	pseudoElementStyleCache: WeakMap<
 		Element,
 		Map<string, PseudoStyleDeclaration>
@@ -6769,6 +6778,7 @@ export class Cascade {
 		this.shadowRoots = new Set<ShadowRoot>();
 		this.sharedRoot = new Map();
 		this.passedTokens = new Map();
+		this.ancestorFilters = new WeakMap();
 		this.pseudoElementStyleCache = new WeakMap<
 			Element,
 			Map<string, PseudoStyleDeclaration>
@@ -6938,6 +6948,7 @@ export function handleMutations(
 	cascade: Cascade,
 	mutations: MutationRecord[],
 ): void {
+	cascade.ancestorFilters = new WeakMap();
 	const Node = cascade.window.Node;
 	let shouldSyncStylesheets = false;
 	let removedElements = false;
@@ -10903,6 +10914,9 @@ function parseSelector(
 	} else {
 		cascade.parsedRules.push({
 			...compileRuleSelector(selector, namespaces, scopes),
+			ancestorBits: scopes || reachesHost || selector.includes("&")
+				? undefined
+				: getAncestorBits(reading),
 			subjectTag,
 			subjectKey,
 			declarations,
@@ -11153,6 +11167,114 @@ function addCandidatePositions(
 	}
 }
 
+// An element's ancestor filter: two bits for the name, id and each class
+// of every ancestor, a shadow tree's host and its own ancestors included,
+// folded to lowercase. A key whose bits are missing is on no ancestor.
+// Folding and shared bits only let more rules through to their selectors.
+// Mutations drop every filter, as they drop what else the cascade holds.
+const FILTER_WORDS = 8;
+const EMPTY_FILTER = new Uint32Array(FILTER_WORDS);
+
+function getAncestorFilter(cascade: Cascade, element: Element): Uint32Array {
+	const filters = cascade.ancestorFilters;
+	const chain: Element[] = [];
+	let filter: Uint32Array | undefined;
+	for (let at: Element | null = element; at !== null;) {
+		filter = filters.get(at);
+		if (filter !== undefined) {
+			break;
+		}
+		chain.push(at);
+		const parent: Node | null = at.parentNode;
+		at = parent === null
+			? null
+			: isShadowRoot(parent)
+			? parent.host as Element
+			: getNodeType(parent) === ELEMENT_NODE ? parent as Element : null;
+	}
+	for (let i = chain.length - 1; i >= 0; i--) {
+		const at = chain[i];
+		const parent: Node | null = at.parentNode;
+		const above = parent === null
+			? null
+			: isShadowRoot(parent)
+			? parent.host as Element
+			: getNodeType(parent) === ELEMENT_NODE ? parent as Element : null;
+		const next = new Uint32Array(above === null ? EMPTY_FILTER : filter!);
+		if (above !== null) {
+			addFilterKey(next, `<${toASCIILowercase(getLocalName(above))}`);
+			const id = getIdValue(above);
+			if (id !== null) {
+				addFilterKey(next, `#${toASCIILowercase(id)}`);
+			}
+			for (const name of getClassTokens(above)) {
+				addFilterKey(next, `.${toASCIILowercase(name)}`);
+			}
+		}
+		filters.set(at, next);
+		filter = next;
+	}
+	return filter!;
+}
+
+function addFilterKey(filter: Uint32Array, key: string): void {
+	const hash = hashFilterKey(key);
+	filter[(hash & 255) >>> 5] |= 1 << (hash & 31);
+	filter[((hash >>> 8) & 255) >>> 5] |= 1 << ((hash >>> 8) & 31);
+}
+
+// FNV-1a.
+function hashFilterKey(key: string): number {
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < key.length; i++) {
+		hash ^= key.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return hash >>> 0;
+}
+
+function hasAncestorBits(filter: Uint32Array, bits: Uint32Array): boolean {
+	for (let i = 0; i < FILTER_WORDS; i++) {
+		if ((bits[i] & ~filter[i]) !== 0) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// The keys a reading's compounds require of the subject's ancestors: a
+// compound followed by a descendant or child combinator matches an
+// ancestor of the compound after it, and that compound is the subject,
+// one of its ancestors, or a sibling of one, so an ancestor of the
+// subject either way. One followed by a sibling combinator need not be.
+function getAncestorBits(
+	reading: CSSValues.SelectorReading,
+): Uint32Array | undefined {
+	const bits = new Uint32Array(FILTER_WORDS);
+	let any = false;
+	const compounds = reading.compounds;
+	for (let i = 0; i < compounds.length - 1; i++) {
+		const compound = compounds[i];
+		if (compound.precedesSibling) {
+			continue;
+		}
+		const {tag, ids, classes} = compound.required;
+		if (tag !== null) {
+			addFilterKey(bits, `<${toASCIILowercase(tag)}`);
+			any = true;
+		}
+		for (const id of ids) {
+			addFilterKey(bits, `#${toASCIILowercase(id)}`);
+			any = true;
+		}
+		for (const name of classes) {
+			addFilterKey(bits, `.${toASCIILowercase(name)}`);
+			any = true;
+		}
+	}
+	return any ? bits : undefined;
+}
+
 function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	// A UA shadow part IS the element its part pseudo styles. The host's
 	// ::placeholder rules cascade onto the [part="placeholder"] span.
@@ -11163,6 +11285,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	const partNames = (getAttributeValue(element, "part") ?? "")
 		.split(/\s+/)
 		.filter(Boolean);
+	const filter = getAncestorFilter(cascade, element);
 	const matched = getCandidateRules(cascade, element, shadowHost).filter(
 		(rule) => {
 			if (rule.pseudoElement) {
@@ -11193,7 +11316,9 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 					isRuleMatch(shadowHost, rule)
 				);
 			}
-			return isRuleMatch(element, rule, rootNode);
+			return (rule.ancestorBits === undefined ||
+				hasAncestorBits(filter, rule.ancestorBits)) &&
+				isRuleMatch(element, rule, rootNode);
 		},
 	);
 	// Scope proximity sorts between specificity and order of appearance

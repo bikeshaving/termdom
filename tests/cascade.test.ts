@@ -1337,3 +1337,36 @@ test(":root rules reach the root alone, and not through :not()", async () => {
 		.toBe("rgb(0, 0, 255)");
 	dom.dispose();
 });
+
+test("a rule that needs its ancestors follows an ancestor's class, a move, and a shadow host", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.head.innerHTML =
+		"<style>.panel .item { color: rgb(255, 0, 0) } section > .item { font-weight: bold }" +
+		" .HOT .item { text-decoration-line: underline }</style>";
+	document.body.innerHTML =
+		"<div id=\"outer\"><span id=\"x\" class=\"item\">x</span></div><section id=\"s\"></section>";
+	await nextFrame(dom);
+	const style = () => window.getComputedStyle(document.getElementById("x")!);
+	expect(style().color).not.toBe("rgb(255, 0, 0)");
+	document.getElementById("outer")!.classList.add("panel");
+	expect(style().color).toBe("rgb(255, 0, 0)");
+	expect(style().fontWeight).toBe("400");
+	document.getElementById("s")!.append(document.getElementById("x")!);
+	expect(style().fontWeight).toBe("700");
+	expect(style().color).not.toBe("rgb(255, 0, 0)");
+	document.getElementById("s")!.classList.add("hot");
+	expect(style().textDecorationLine).toBe("none");
+
+	const host = document.createElement("div");
+	document.body.append(host);
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML =
+		"<style>.panel .inner { color: rgb(0, 0, 255) }</style>" +
+		"<div class=\"panel\"><b id=\"inner\" class=\"inner\">i</b></div>";
+	await nextFrame(dom);
+	expect(window.getComputedStyle(root.getElementById("inner")!).color)
+		.toBe("rgb(0, 0, 255)");
+	dom.dispose();
+});
