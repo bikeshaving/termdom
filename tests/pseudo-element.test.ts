@@ -471,3 +471,24 @@ test("a slot's ::after follows its fallback content when nothing is assigned", a
 
 	expect(terminal.getPlainText()).toContain("FBEND");
 });
+
+test("escapes in a content string decode as css-syntax says", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document, window} = termdom;
+	document.head.innerHTML =
+		"<style>li { display: inline } li::after { content: \"\\a0 · \" }" +
+		" li:last-child::after { content: none }" +
+		" p::before { content: \"\\201C x \\\\ \\\" \\q \\41 B\\\ncontinued\" }</style>";
+	document.body.innerHTML =
+		"<ul><li>One</li><li>Two</li><li>Three</li></ul><p>!</p>";
+	await nextFrame(termdom);
+	const after = window.getComputedStyle(
+		document.querySelector("li")!,
+		"::after",
+	);
+	expect(after.content).toBe("\" · \"");
+	expect(terminal.getScreenContents()).toContain("One · Two · Three");
+	expect(terminal.getScreenContents()).toContain("“x \\ \" q ABcontinued!");
+	termdom.dispose();
+});
