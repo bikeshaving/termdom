@@ -1299,7 +1299,8 @@ test("rules whose subject wraps its keys in :where() or :is() still reach their 
 	const {document, window} = dom;
 	document.head.innerHTML =
 		"<style>:where(.btn) { color: rgb(255, 0, 0) } :is(.a, .b) { font-weight: bold }" +
-		" .wrap :where([data-k]) { text-decoration-line: underline }</style>";
+		" .wrap :where([data-k]) { text-decoration-line: underline }" +
+		" .wrap :where(i) { font-style: normal }</style>";
 	document.body.innerHTML =
 		"<span id=\"btn\" class=\"btn\">x</span><span id=\"a\" class=\"a\">a</span>" +
 		"<span id=\"b\" class=\"b\">b</span><div class=\"wrap\"><span id=\"k\" data-k>k</span></div>" +
@@ -1311,6 +1312,11 @@ test("rules whose subject wraps its keys in :where() or :is() still reach their 
 	expect(style("a").fontWeight).toBe("700");
 	expect(style("b").fontWeight).toBe("700");
 	expect(style("k").textDecorationLine).toBe("underline");
+	document.querySelector(".wrap")!.insertAdjacentHTML(
+		"beforeend",
+		"<i id=\"i\">i</i>",
+	);
+	expect(style("i").fontStyle).toBe("normal");
 	expect(style("none").color).not.toBe("rgb(255, 0, 0)");
 	document.getElementById("none")!.className = "btn";
 	expect(style("none").color).toBe("rgb(255, 0, 0)");

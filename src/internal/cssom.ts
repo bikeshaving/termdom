@@ -10840,8 +10840,9 @@ function parseSelector(
 		cascade.listItemRulesExist = true;
 	}
 
-	const subjectTag = reading.subjectTag;
 	const required = reading.compounds.at(-1)?.required;
+	// `:where(svg)` requires its name as `svg` does.
+	const subjectTag = reading.subjectTag ?? required?.tag ?? undefined;
 	const subjectKey = required === undefined
 		? undefined
 		: required.root
@@ -10885,7 +10886,7 @@ function parseSelector(
 				scopes,
 				ofPart,
 			),
-			subjectTag: ofPart ? undefined : reading.subjectTag,
+			subjectTag: ofPart ? undefined : subjectTag,
 			subjectKey: ofPart ? undefined : subjectKey,
 			ofPart,
 			declarations,
