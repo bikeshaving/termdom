@@ -1084,6 +1084,55 @@ test("elements that differ only in attributes no rule reads resolve alike, and a
 	dom.dispose();
 });
 
+test("children of parents that pass down the same values resolve alike, and apart where a parent's own values reach them", async () => {
+	const terminal = new MockProcess({cols: 60, rows: 10});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		cellSize: {width: 8, height: 16},
+	});
+	const {document, window} = dom;
+	document.head.innerHTML =
+		"<style>.box { color: rgb(255, 0, 0) } .wide { width: 20ch; background: blue }" +
+		" .narrow { width: 5ch } .row, .column { display: flex; font-size: 16px }" +
+		" .column { flex-direction: column } .item { flex: 0 0 2ch }" +
+		" .top { vertical-align: top } .bottom { vertical-align: bottom }" +
+		" .sized { font-size: 32px }</style>";
+	document.body.innerHTML =
+		"<div class=\"box wide\"><span id=\"a\">a</span></div>" +
+		"<div class=\"box narrow\"><span id=\"b\">b</span></div>" +
+		"<div class=\"box narrow sized\"><span id=\"c\">c</span></div>" +
+		"<div class=\"row\"><span id=\"row\" class=\"item\">r</span></div>" +
+		"<div class=\"column\"><span id=\"column\" class=\"item\">c</span></div>" +
+		"<div><span id=\"plain\" class=\"item\">p</span></div>" +
+		"<table><tr class=\"top\"><td id=\"top\">t</td></tr>" +
+		"<tr class=\"bottom\"><td id=\"bottom\">b</td></tr></table>" +
+		"<center><table style=\"display: inline-block\"><tbody id=\"centered\"><tr><td>x</td></tr></tbody></table>" +
+		"<table><tbody id=\"reset\"><tr><td>x</td></tr></tbody></table></center>";
+	await nextFrame(dom);
+	const style = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!);
+	expect(style("a").color).toBe("rgb(255, 0, 0)");
+	expect(style("b").color).toBe("rgb(255, 0, 0)");
+	expect(style("a").backgroundColor).toBe("rgba(0, 0, 0, 0)");
+	expect(style("b").fontSize).not.toBe(style("c").fontSize);
+
+	expect(style("row").display).toBe("block");
+	expect(style("column").display).toBe("block");
+	expect(style("plain").display).toBe("inline");
+	expect(style("row").flexBasis).not.toBe(style("column").flexBasis);
+
+	expect(style("top").verticalAlign).toBe("top");
+	expect(style("bottom").verticalAlign).toBe("bottom");
+	expect(style("centered").textAlign).not.toBe("start");
+	expect(style("reset").textAlign).toBe("start");
+
+	document.querySelector(".row")!.classList.replace("row", "column");
+	expect(style("row").flexBasis).toBe(style("column").flexBasis);
+	document.querySelector(".narrow")!.classList.add("sized");
+	expect(style("b").fontSize).toBe(style("c").fontSize);
+	dom.dispose();
+});
+
 test("an element inherits its parent's value, not a grandparent's the parent reset", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});

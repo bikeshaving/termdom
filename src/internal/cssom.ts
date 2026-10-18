@@ -4261,14 +4261,14 @@ const USED_VALUE_PROPERTIES = new Set([
 ]);
 
 // Style sharing. An element's computed values follow from its matched
-// rules, the few attributes resolution reads itself, its tag, and its
-// flat-tree parent's values. Elements alike in all of those resolve every
+// rules, the few attributes resolution reads itself, its tag, and the
+// values its flat-tree parent passes down. Elements alike in all of those resolve every
 // property alike, so they share one table of resolved values, filled as
 // any of them reads. Every other attribute reaches style only through a
 // selector or a presentational hint, and both are among the rules, so
 // two comments that differ only in their ids and links still share.
-// Each parent's values hold the tables of their children, and go with
-// them. The page-facing declaration stays per element: its used values
+// The values a parent passes down hold the tables of its children, and
+// go with them. The page-facing declaration stays per element: its used values
 // read the element's own boxes.
 // The inline style, a text input's type and size, a list item's value,
 // and the direction and language the element states.
@@ -4276,13 +4276,10 @@ const KEYED_ATTRIBUTES = ["style", "type", "size", "value", "dir", "lang"];
 const ruleIds = new WeakMap<ParsedCSSRule, number>();
 let nextRuleId = 0;
 const ruleIndexes = new WeakMap<Cascade, RuleIndex>();
-const childTables = new WeakMap<
-	Map<string, string>,
-	Map<string, Map<string, string>>
->();
+const childTables = new WeakMap<object, Map<string, Map<string, string>>>();
 const treeTables = new WeakMap<
 	ShadowRoot,
-	Map<Map<string, string>, Map<string, Map<string, string>>>
+	Map<object, Map<string, Map<string, string>>>
 >();
 
 // Counters count elements in document order, so a rule that sets or uses
@@ -4344,6 +4341,7 @@ function getRuleId(rule: ParsedCSSRule): number {
 const UNSHARED_ELEMENTS = new Set(["select", "ul", "ol"]);
 
 const OWN_LONGHANDS = new Set(["display", "flex-basis"]);
+const TABLE_DISPLAY = /^(?:inline-)?table$/;
 
 // A shorthand is its element's own when any longhand it covers is, as
 // `flex` and `all` are.
@@ -4356,6 +4354,104 @@ const OWN_PROPERTIES = new Set([
 
 function isOwnProperty(property: string): boolean {
 	return OWN_PROPERTIES.has(property);
+}
+
+// What an element passes down: its parent's values, with what its own
+// rules and inline style declare for inherited properties written over
+// them. Elements that pass down the same values get the same token, so
+// their children share whatever else about the elements differs, such as
+// a width or a background. Null for an element a transition is moving.
+const passedTokens = new WeakMap<Map<string, string>, PassedToken>();
+
+interface PassedToken {
+	readonly id: number;
+}
+
+let nextPassedId = 0;
+
+function getPassedValues(
+	cascade: Cascade,
+	element: Element,
+	values: Map<string, string>,
+): PassedToken | null {
+	let token = passedTokens.get(values);
+	if (token !== undefined) {
+		return token;
+	}
+	const parent = flatParentElement(element);
+	let base: PassedToken | null = null;
+	if (parent !== null) {
+		const parentValues = getResolvedValues(cascade, parent);
+		base = parentValues && getPassedValues(cascade, parent, parentValues);
+		if (base === null) {
+			return null;
+		}
+	}
+	const slots = computedSlotsFor(cascade, element);
+	if (!isShareable(element)) {
+		token = {id: ++nextPassedId};
+	} else {
+		const names = getDeclaredInheritedNames(slots);
+		if (names.length === 0 && base !== null) {
+			token = base;
+		} else {
+			let signature = base === null ? "" : `${base.id}`;
+			for (const name of names) {
+				signature += `\0${name}=${slots._baseValue(name)}`;
+			}
+			token = cascade.passedTokens.get(signature);
+			if (token === undefined) {
+				token = {id: ++nextPassedId};
+				if (cascade.passedTokens.size > 4096) {
+					cascade.passedTokens.clear();
+				}
+				cascade.passedTokens.set(signature, token);
+			}
+		}
+	}
+	passedTokens.set(values, token);
+	return token;
+}
+
+function getDeclaredInheritedNames(
+	slots: Slots<ComputedStyleDeclaration>,
+): string[] {
+	const names = new Set<string>();
+	const blocks = [...slots.cssRules, getInlineDeclarations(getOwner(slots))];
+	for (const block of blocks) {
+		for (const name of Object.keys(block.declarations)) {
+			if (CSSValues.isInheritedProperty(name)) {
+				names.add(name);
+			}
+		}
+	}
+	// A table resets a legacy alignment it would otherwise pass down.
+	if (TABLE_DISPLAY.test(getDeclaredDisplay(slots.element))) {
+		names.add("text-align");
+	}
+	return [...names].sort();
+}
+
+// Whether a rule or the inline style sets a property that does not
+// inherit to `inherit`, which reads the parent's value for it.
+const resetInheritors = new WeakMap<object, boolean>();
+
+function inheritsReset(
+	element: Element,
+	rules: readonly ParsedCSSRule[],
+): boolean {
+	for (const block of [...rules, readInlineBlock(element)]) {
+		let inherits = resetInheritors.get(block);
+		if (inherits === undefined) {
+			inherits = Object.entries(block.declarations).some(([name, value]) =>
+				value.trim() === "inherit" && !CSSValues.isInheritedProperty(name));
+			resetInheritors.set(block, inherits);
+		}
+		if (inherits) {
+			return true;
+		}
+	}
+	return false;
 }
 
 // Every value a declaration has resolved, its own over the shared.
@@ -4423,6 +4519,15 @@ function getSharedResolved(
 		if (parentValues === null) {
 			return new Map();
 		}
+		// An element that inherits a property no element inherits by itself
+		// reads more of its parent than the parent passes down, so it keeps
+		// to the tables under the parent's own values.
+		const passed = inheritsReset(element, rules)
+			? parentValues
+			: getPassedValues(cascade, parent, parentValues);
+		if (passed === null) {
+			return new Map();
+		}
 		// The top of a shadow tree keeps its tables on the tree, so they go
 		// with it. The host's values outlive the tree.
 		const scope = element.parentNode;
@@ -4432,11 +4537,11 @@ function getSharedResolved(
 				byParent = new Map();
 				treeTables.set(scope, byParent);
 			}
-			table = byParent.get(parentValues) ?? new Map();
-			byParent.set(parentValues, table);
+			table = byParent.get(passed) ?? new Map();
+			byParent.set(passed, table);
 		} else {
-			table = childTables.get(parentValues) ?? new Map();
-			childTables.set(parentValues, table);
+			table = childTables.get(passed) ?? new Map();
+			childTables.set(passed, table);
 		}
 		// Bounded as the root's is: each child with an inline style of its
 		// own adds a table.
@@ -5250,6 +5355,15 @@ function getContainingWidth(declaration: MeasuredDeclaration): number | null {
 	return rect ? rect.width : null;
 }
 
+function readInlineBlock(element: Element): CSSValues.DeclarationBlock {
+	let style = inlineStyles.get(element);
+	if (style === undefined && hasAttributeByName(element, "style")) {
+		getInlineStyle(element);
+		style = inlineStyles.get(element);
+	}
+	return style === undefined ? EMPTY_DECLARATIONS : getDeclarationBlock(style);
+}
+
 // The cascade gets the expanded block, so a shorthand's `!important`
 // covers every longhand it declares.
 function getInlineDeclarations(
@@ -5258,15 +5372,7 @@ function getInlineDeclarations(
 	const declarationSlots = _(declaration);
 	let block = declarationSlots.inlineBlock;
 	if (block === null) {
-		const element = declarationSlots.element;
-		let style = inlineStyles.get(element);
-		if (style === undefined && hasAttributeByName(element, "style")) {
-			getInlineStyle(element);
-			style = inlineStyles.get(element);
-		}
-		block = style === undefined
-			? EMPTY_DECLARATIONS
-			: getDeclarationBlock(style);
+		block = readInlineBlock(declarationSlots.element);
 		declarationSlots.inlineBlock = block;
 	}
 	return block;
@@ -5422,7 +5528,7 @@ function resolvePropertyValue(
 	if (
 		property === "text-align" &&
 		CSSValues.getLegacyAlignment(value) !== null &&
-		/^(?:inline-)?table$/.test(declarationSlots._computedValue("display"))
+		TABLE_DISPLAY.test(getDeclaredDisplay(declarationSlots.element))
 	) {
 		return "start";
 	}
@@ -6378,6 +6484,9 @@ export class Cascade {
 	// rule ids, which a parse renews, so nothing under the old root is reached
 	// again.
 	sharedRoot: Map<string, Map<string, string>>;
+	// The tokens of the values parents pass down, by what those values are,
+	// emptied with the root so the tables under them go too.
+	passedTokens: Map<string, PassedToken>;
 	pseudoElementStyleCache: WeakMap<
 		Element,
 		Map<string, PseudoStyleDeclaration>
@@ -6541,6 +6650,7 @@ export class Cascade {
 		this.nextRecentRuleList = 0;
 		this.shadowRoots = new Set<ShadowRoot>();
 		this.sharedRoot = new Map();
+		this.passedTokens = new Map();
 		this.pseudoElementStyleCache = new WeakMap<
 			Element,
 			Map<string, PseudoStyleDeclaration>
@@ -7677,9 +7787,11 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 		counterKeys: cascade.counterKeys,
 		countersCounted: cascade.countersCounted,
 		sharedRoot: cascade.sharedRoot,
+		passedTokens: cascade.passedTokens,
 	};
 	dropCache(cascade);
 	cascade.sharedRoot = new Map();
+	cascade.passedTokens = new Map();
 	const differences: string[] = [];
 	for (const [element, values] of before) {
 		for (const [property, value] of values) {
@@ -9513,6 +9625,7 @@ function parseStylesheetsNow(cascade: Cascade): void {
 	const document = cascade.document;
 	cascade.parsedRules = [];
 	cascade.sharedRoot = new Map();
+	cascade.passedTokens = new Map();
 	cascade.siblingIndexes = new Map();
 	cascade.uaSiblingIndex = undefined;
 	cascade.reachingClasses.clear();
