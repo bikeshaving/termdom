@@ -3362,7 +3362,27 @@ export function cssSupports(
 // Longhands the grammar leaves out reset to their initial value, as a
 // browser's shorthand write does. Null for a grammar this engine does
 // not decompose, which stays a declaration of its own.
+// A shorthand's longhands follow from its name and value alone, and
+// sheets write the same few shorthands over and over.
+const expandedShorthands = new Map<string, Record<string, string> | null>();
+
 export function expandShorthandValue(
+	property: string,
+	value: string,
+): Record<string, string> | null {
+	const key = `${property}\0${value}`;
+	let expanded = expandedShorthands.get(key);
+	if (expanded === undefined) {
+		expanded = readShorthandValue(property, value);
+		if (expandedShorthands.size > 16384) {
+			expandedShorthands.clear();
+		}
+		expandedShorthands.set(key, expanded);
+	}
+	return expanded === null ? null : {...expanded};
+}
+
+function readShorthandValue(
 	property: string,
 	value: string,
 ): Record<string, string> | null {

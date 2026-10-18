@@ -557,15 +557,31 @@ function parseSelectorAST(text: string): CSSTree.SelectorNode | null {
  */
 export function parseSelectorList(text: string): CSSTree.SelectorNode | null {
 	const list = parseSelectorAST(text);
-	if (list === null) {
-		return null;
-	}
-	try {
-		compileSelector(text, GRAMMAR_ONLY);
-	} catch (_err) {
+	if (list === null || !isInGrammar(text)) {
 		return null;
 	}
 	return list;
+}
+
+// Whether a selector compiles, by its text, since a sheet repeats its
+// selectors and a page may load a sheet twice.
+const grammarChecks = new Map<string, boolean>();
+
+function isInGrammar(text: string): boolean {
+	let valid = grammarChecks.get(text);
+	if (valid === undefined) {
+		try {
+			compileSelector(text, GRAMMAR_ONLY);
+			valid = true;
+		} catch (_err) {
+			valid = false;
+		}
+		if (grammarChecks.size > 16384) {
+			grammarChecks.clear();
+		}
+		grammarChecks.set(text, valid);
+	}
+	return valid;
 }
 
 function compileList(
