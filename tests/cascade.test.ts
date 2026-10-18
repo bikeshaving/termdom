@@ -1270,3 +1270,25 @@ test("the font shorthand sets and serializes its longhands", async () => {
 	expect(terminal.getStaticANSI()).toContain("\x1b[1;3mx");
 	dom.dispose();
 });
+
+test("a rule whose subject requires only an attribute reaches the elements that have it", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.head.innerHTML =
+		"<style>[data-size=small] { color: rgb(255, 0, 0) } [hidden-ish] { font-weight: bold }</style>";
+	document.body.innerHTML =
+		"<span id=\"a\" data-size=\"small\">a</span><span id=\"b\" data-size=\"large\">b</span>" +
+		"<span id=\"c\">c</span>";
+	await nextFrame(dom);
+	const style = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!);
+	expect(style("a").color).toBe("rgb(255, 0, 0)");
+	expect(style("b").color).not.toBe("rgb(255, 0, 0)");
+	expect(style("c").fontWeight).toBe("400");
+	document.getElementById("c")!.setAttribute("hidden-ish", "");
+	document.getElementById("b")!.dataset.size = "small";
+	expect(style("c").fontWeight).toBe("700");
+	expect(style("b").color).toBe("rgb(255, 0, 0)");
+	dom.dispose();
+});

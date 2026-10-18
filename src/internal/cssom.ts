@@ -6385,8 +6385,9 @@ interface ParsedCSSRule {
 	// could match.
 	subjectTag?: string;
 	// The id or a class the rightmost compound requires, as "#id" or
-	// ".class", which files the rule where only elements with it look.
-	// Absent when the compound requires neither.
+	// ".class", or with neither and no element name, an attribute, as
+	// "[name]", which files the rule where only elements with it look.
+	// Absent when the compound requires none of them.
 	subjectKey?: string;
 	declarations: Record<string, string>;
 	important: Record<string, boolean>;
@@ -10834,7 +10835,11 @@ function parseSelector(
 		? undefined
 		: required.ids.length > 0
 			? `#${required.ids[0]}`
-			: required.classes.length > 0 ? `.${required.classes[0]}` : undefined;
+			: required.classes.length > 0
+				? `.${required.classes[0]}`
+				: required.tag === null && required.attributes.length > 0
+					? `[${toASCIILowercase(required.attributes[0])}]`
+					: undefined;
 	// A :host rule is tried against the host as well as the tree's
 	// elements.
 	const reachesHost = scope !== undefined && selector.includes(":host");
@@ -10979,7 +10984,9 @@ function getRuleIndex(cascade: Cascade, quirks: boolean): RuleIndex {
 		}
 		const key = rule.subjectKey === undefined
 			? rule.subjectTag
-			: quirks ? toASCIILowercase(rule.subjectKey) : rule.subjectKey;
+			: quirks && rule.subjectKey[0] !== "["
+				? toASCIILowercase(rule.subjectKey)
+				: rule.subjectKey;
 		if (key === undefined) {
 			(pseudo ? index.pseudoUnkeyedPositions : index.unkeyedPositions)
 				.push(position);
@@ -11083,7 +11090,17 @@ function getCandidateKey(
 			key += ` ${token}`;
 		}
 	}
+	for (const token of getAttributeKeys(element)) {
+		if (keyed.has(token)) {
+			key += ` ${token}`;
+		}
+	}
 	return key;
+}
+
+function getAttributeKeys(element: Element): string[] {
+	return getAttributeList(element).map((attribute) =>
+		`[${toASCIILowercase(attribute.extra.localName)}]`);
 }
 
 function addCandidatePositions(
@@ -11116,6 +11133,11 @@ function addCandidatePositions(
 	for (const name of getClassTokens(element)) {
 		const token = quirks ? toASCIILowercase(name) : name;
 		for (const position of keyed.get(`.${token}`) ?? []) {
+			positions.add(position);
+		}
+	}
+	for (const token of getAttributeKeys(element)) {
+		for (const position of keyed.get(token) ?? []) {
 			positions.add(position);
 		}
 	}
@@ -11532,7 +11554,13 @@ function subjectCouldMatch(element: Element, rule: ParsedCSSRule): boolean {
 		}
 	}
 	const key = rule.subjectKey;
-	if (key === undefined || element.ownerDocument?.compatMode === "BackCompat") {
+	if (key === undefined) {
+		return true;
+	}
+	if (key[0] === "[") {
+		return getAttributeKeys(element).includes(key);
+	}
+	if (element.ownerDocument?.compatMode === "BackCompat") {
 		return true;
 	}
 	return key[0] === "#"
