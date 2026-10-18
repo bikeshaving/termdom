@@ -3,6 +3,7 @@ import {
 	CSS_INITIAL_VALUES,
 	CSS_LONGHANDS,
 	CSS_PROPERTIES,
+	CSS_SHORTHANDS,
 } from "../generated/cssproperties.ts";
 import {
 	type CompiledSelector,
@@ -4342,6 +4343,30 @@ function getRuleId(rule: ParsedCSSRule): number {
 // element directed by its text, and MathML, which reads its ancestors.
 const UNSHARED_ELEMENTS = new Set(["select", "ul", "ol"]);
 
+const OWN_LONGHANDS = new Set(["display", "flex-basis"]);
+
+// A shorthand is its element's own when any longhand it covers is, as
+// `flex` and `all` are.
+const OWN_PROPERTIES = new Set([
+	...OWN_LONGHANDS,
+	...Object.keys(CSS_SHORTHANDS).filter((shorthand) =>
+		CSSValues.getLonghands(shorthand)?.some((longhand) =>
+			OWN_LONGHANDS.has(longhand))),
+]);
+
+function isOwnProperty(property: string): boolean {
+	return OWN_PROPERTIES.has(property);
+}
+
+// Every value a declaration has resolved, its own over the shared.
+function getAllResolved(
+	slots: Slots<ComputedStyleDeclaration>,
+): Map<string, string> {
+	return slots.own.size === 0
+		? slots.resolved
+		: new Map([...slots.resolved, ...slots.own]);
+}
+
 function isShareable(element: Element): boolean {
 	return (
 		getNamespace(element) === HTML_NAMESPACE &&
@@ -4440,6 +4465,11 @@ interface ComputedStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	// keystroke. The declaration is discarded wholesale on invalidation, so
 	// the memo needs no invalidation of its own.
 	resolved: Map<string, string>;
+	// The values that read the parent for more than what it passes down,
+	// memoized for this element alone, so the shared ones follow from the
+	// parent's inherited values: display, blockified inside a flex or grid
+	// container, and flex-basis, whose lengths run along the container.
+	own: Map<string, string>;
 	// Replaced whenever ComputedStyleDeclaration declaration is resolved again. What the
 	// painter keys its styles by, since the resolved values themselves may
 	// be shared, and a restyle that finds the same shared values still asks
@@ -4466,6 +4496,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		const slots = _(this);
 		slots.cascade = null;
 		slots.resolved = new Map<string, string>();
+		slots.own = new Map<string, string>();
 		slots.styleVersion = {};
 		slots.custom = null;
 		slots.element = element;
@@ -4599,7 +4630,8 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	// must never enter the memo.
 	_baseValue(this: Slots<ComputedStyleDeclaration>, property: string): string {
 		const slots = this;
-		let value = slots.resolved.get(property);
+		const values = isOwnProperty(property) ? slots.own : slots.resolved;
+		let value = values.get(property);
 		if (value === undefined) {
 			const longhands = CSSValues.getLonghands(property);
 			value = longhands
@@ -4610,7 +4642,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 					getOwner(this),
 					toPhysicalProperty(getOwner(this), property),
 				);
-			slots.resolved.set(property, value);
+			values.set(property, value);
 		}
 		return value;
 	}
@@ -4628,12 +4660,18 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		slots.cssRules = getCascadeRules(slots.cascade, slots.element);
 		slots.inlineBlock = null;
 		slots.custom = null;
-		storeTransitionFallback(slots.cascade, slots.element, "", slots.resolved);
+		storeTransitionFallback(
+			slots.cascade,
+			slots.element,
+			"",
+			getAllResolved(slots),
+		);
 		slots.resolved = getSharedResolved(
 			slots.cascade,
 			slots.element,
 			slots.cssRules,
 		);
+		slots.own = new Map();
 		slots.styleVersion = {};
 		dropUsedValues(slots.cascade, getOwner(this));
 		if ((this as IndexedSlots).indexCount !== undefined) {
@@ -5569,27 +5607,19 @@ function resolvePropertyValueRaw(
 		return elementDefaults[property];
 	}
 
-	// 4. What the element inherits: the nearest ancestor with a value for
-	// an inherited property, resolved through the same steps so the
-	// ancestor's own rules apply. A custom property always inherits; there
-	// is no fixed list of names.
+	// 4. What the element inherits: its flat-tree parent's computed value,
+	// which already holds whatever the parent inherited in turn. A custom
+	// property always inherits; there is no fixed list of names.
+	// Inheritance crosses the shadow boundary (host to shadow child) and
+	// reaches slotted content through its slot, exactly as in a browser.
 	if (CSSValues.isInheritedProperty(property)) {
 		const document = getOwnerDocument(declarationSlots.element);
-		const window = document && getDefaultView(document);
-		if (window) {
-			// Flat-tree parents. Inheritance crosses the shadow boundary (host
-			// to shadow child) and reaches slotted content through its slot's
-			// chain, exactly as in a browser.
-			for (
-				let parent = flatParentElement(declarationSlots.element);
-				parent !== null;
-				parent = flatParentElement(parent)
-			) {
-				const parentValue = getComputedValue(parent, property);
-				if (parentValue) {
-					return parentValue;
-				}
-			}
+		const parent = document && getDefaultView(document)
+			? flatParentElement(declarationSlots.element)
+			: null;
+		const parentValue = parent ? getComputedValue(parent, property) : "";
+		if (parentValue) {
+			return parentValue;
 		}
 	}
 
@@ -7629,7 +7659,7 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 			continue;
 		}
 		const values = new Map<string, string>();
-		for (const property of [...slots.resolved.keys()]) {
+		for (const property of [...getAllResolved(slots).keys()]) {
 			values.set(property, getComputedValue(element, property));
 		}
 		before.set(element, values);
@@ -9077,7 +9107,7 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 	const dropped = cascade.computedStyleCache.get(element);
 	if (dropped) {
 		cascade.currentDeclarations.delete(dropped);
-		storeTransitionFallback(cascade, element, "", dropped.resolved);
+		storeTransitionFallback(cascade, element, "", getAllResolved(dropped));
 	}
 	cascade.computedStyleCache.delete(element);
 	forgetLastRead(element);
@@ -9299,7 +9329,7 @@ function invalidateElementCaches(
 	);
 	if (dropped) {
 		cascade.currentDeclarations.delete(dropped);
-		storeTransitionFallback(cascade, element, "", dropped.resolved);
+		storeTransitionFallback(cascade, element, "", getAllResolved(dropped));
 	}
 	cascade.computedStyleCache.delete(element);
 	forgetLastRead(element);

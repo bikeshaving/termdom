@@ -1084,6 +1084,20 @@ test("elements that differ only in attributes no rule reads resolve alike, and a
 	dom.dispose();
 });
 
+test("an element inherits its parent's value, not a grandparent's the parent reset", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<div style=\"--accent: red\"><div style=\"--accent: initial\">" +
+		"<span id=\"inner\" style=\"color: var(--accent, blue)\">x</span></div></div>";
+	await nextFrame(dom);
+	const inner = document.getElementById("inner")!;
+	expect(window.getComputedStyle(inner).getPropertyValue("--accent")).toBe("");
+	expect(window.getComputedStyle(inner).color).toBe("rgb(0, 0, 255)");
+	dom.dispose();
+});
+
 test("rules filed by id and class still cascade in order of appearance", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
