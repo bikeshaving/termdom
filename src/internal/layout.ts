@@ -4848,15 +4848,24 @@ function findBreakPoints(
 	// `pre`, a <br>). Dropping every break point collapsed a three-line pre
 	// block onto one line.
 	if (nowrap) {
-		const forced: BreakPoint[] = [];
+		const forced = new Set<number>();
 		if (whiteSpace === "pre" || whiteSpace === "pre-wrap") {
 			for (let i = content.text.indexOf("\n"); i !== -1;) {
-				forced.push({position: i + 1, required: true});
+				forced.add(i + 1);
 				i = content.text.indexOf("\n", i + 1);
 			}
 		}
-		forced.push({position: content.text.length, required: false});
-		return forced;
+		for (const item of content.items) {
+			if (item.leafNode.type === "br" && item.end < content.text.length) {
+				forced.add(item.end);
+			}
+		}
+		return [
+			...[...forced]
+				.sort((a, b) => a - b)
+				.map((position) => ({position, required: true})),
+			{position: content.text.length, required: false},
+		];
 	}
 
 	// The breaks are the text's, found without the edges. One falls after

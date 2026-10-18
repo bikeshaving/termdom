@@ -816,3 +816,24 @@ test("a paragraph holding only a non-breaking space is one line tall", async () 
 	}
 	dom.dispose();
 });
+
+test("a <br> breaks the line under white-space: nowrap, which stops only soft wraps", () => {
+	const render = (html: string) =>
+		new TermDOM({html}).renderANSI().replace(/\x1b\[[0-9;:]*m/g, "");
+	expect(
+		render("<div style=\"white-space:nowrap\">Commons<br>Free media</div>"),
+	)
+		.toBe("Commons\nFree media\n");
+	expect(
+		render(
+			"<li style=\"white-space:nowrap\"><div style=\"display:inline-block\">" +
+			"<span><a>Commons</a></span><br>Free media repository</div></li>",
+		),
+	).toContain("Commons\n");
+	expect(render("<div style=\"white-space:pre\">a\nb<br>c</div>")).toBe(
+		"a\nb\nc\n",
+	);
+	expect(render("<div style=\"white-space:nowrap\">end<br></div>")).toBe(
+		"end\n",
+	);
+});
