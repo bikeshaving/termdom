@@ -379,6 +379,8 @@ const groupCaches = new WeakMap<
 	Map<StyleGroup<object>, object>
 >();
 const internedGroups = new Map<StyleGroup<object>, Map<string, object>>();
+// How many values are being resolved, one inside another, at the moment.
+let valueDepth = 0;
 const groupIds = new WeakMap<object, string>();
 let nextGroupId = 0;
 
@@ -412,12 +414,15 @@ function readStyleGroup<T extends object>(
 	}
 	let value = cache.get(group as StyleGroup<object>) as T | undefined;
 	if (value === undefined) {
+		const depth = valueDepth;
 		value = internGroup(
 			group,
-			// What resolving the element's values reads of its parent is
-			// theirs to read. The group's own reads are the element's.
+			// What resolving the element's values reads, of its parent or of
+			// its children, is theirs to read. The group's own reads are the
+			// element's.
 			recordStyleReads((reader, read) => {
 				if (
+					valueDepth === depth &&
 					reader === element &&
 					!read.startsWith(GROUP_READ) &&
 					(read.includes("|") || isOwnProperty(read))
@@ -4820,14 +4825,19 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		let value = values.get(property);
 		if (value === undefined) {
 			const longhands = CSSValues.getLonghands(property);
-			value = longhands
-				? CSSValues.resolveShorthand(property, longhands, (longhand) =>
-					slots._baseValue(longhand),
-				)
-				: getAbsolutizedValue(
-					getOwner(this),
-					toPhysicalProperty(getOwner(this), property),
-				);
+			valueDepth++;
+			try {
+				value = longhands
+					? CSSValues.resolveShorthand(property, longhands, (longhand) =>
+						slots._baseValue(longhand),
+					)
+					: getAbsolutizedValue(
+						getOwner(this),
+						toPhysicalProperty(getOwner(this), property),
+					);
+			} finally {
+				valueDepth--;
+			}
 			values.set(property, value);
 		}
 		return value;

@@ -462,3 +462,17 @@ test("an empty list item keeps the line its marker sits on, through exit", async
 	await dom.dispose();
 	expect(lines()).toEqual(["a", "  •", "  • b"]);
 });
+
+test("a list restyled under a changed ancestor paints again", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		html: "<style>.k .m { color: red }</style><main><ul><li class=k><div class=m>item</div></li></ul></main>",
+	});
+	dom.attach();
+	await nextFrame(dom);
+	dom.document.querySelector("main")!.classList.toggle("open");
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("• item");
+	dom.dispose();
+});
