@@ -49,7 +49,7 @@ import {
 	reobserveShadowRoot,
 	setAttributeByName,
 	setStyleHooks,
-	styleElementCount,
+	takeStyleTrees,
 	TransitionEvent,
 	type Window,
 } from "./dom.ts";
@@ -6720,10 +6720,11 @@ export class Cascade {
 	// motion reporting has a per-cell cost.
 	hoverRulesDeclared: boolean;
 
-	// -1 means never parsed. A changed count re-parses on the next style
-	// computation, which lets a sheet appended right before the first paint
-	// apply with no MutationObserver attached.
-	parsedStyleSheetCount: number;
+	// The document's own sheets as the last parse read them, in order, or
+	// null before the first. A style element that joined since is read on
+	// the next style computation, which lets a sheet appended right before
+	// the first paint apply with no MutationObserver attached.
+	documentSheets: CSSStyleSheet[] | null;
 
 	// The transition gate is STICKY. It opens the first time anything
 	// declares a transition and never closes, so a document with none pays
@@ -6833,7 +6834,7 @@ export class Cascade {
 		this.hasSiblingRules = false;
 		this.hasStates = new Set();
 		this.hoverRulesDeclared = false;
-		this.parsedStyleSheetCount = -1;
+		this.documentSheets = null;
 		this.flushing = false;
 		this.usedValues = new WeakMap();
 		this.hasResults = null;
@@ -6971,7 +6972,10 @@ export function handleMutations(
 ): void {
 	cascade.ancestorFilters = new WeakMap();
 	const Node = cascade.window.Node;
-	let shouldSyncStylesheets = false;
+	// A <style> whose text changed holds other rules than the cascade
+	// read. One that joined or left a tree is caught up with alone.
+	let sheetTextChanged = false;
+	let sheetsMoved = false;
 	let removedElements = false;
 	const changedParents = new Set<Element>();
 
@@ -7020,7 +7024,7 @@ export function handleMutations(
 				if (isShadowRoot(styleRoot)) {
 					rootsToSync.add(styleRoot);
 				} else {
-					shouldSyncStylesheets = true;
+					sheetTextChanged = true;
 				}
 			}
 			// A list's gutter is derived from its items' markers, so a
@@ -7041,7 +7045,7 @@ export function handleMutations(
 						if (addedRoot !== null && isShadowRoot(addedRoot)) {
 							rootsToSync.add(addedRoot);
 						} else {
-							shouldSyncStylesheets = true;
+							sheetsMoved = true;
 						}
 					} else {
 						// A detached tree's pseudo-elements and shadow roots wait
@@ -7066,7 +7070,7 @@ export function handleMutations(
 								if (isShadowRoot(styleRoot)) {
 									rootsToSync.add(styleRoot);
 								} else {
-									shouldSyncStylesheets = true;
+									sheetsMoved = true;
 								}
 							}
 							invalidateElementCaches(cascade, each);
@@ -7083,7 +7087,7 @@ export function handleMutations(
 				if (getNodeType(node) === Node.ELEMENT_NODE) {
 					const element = node as Element;
 					if (isStyleElement(element)) {
-						shouldSyncStylesheets = true;
+						sheetsMoved = true;
 					}
 					removedElements = true;
 					if (cascade.countersCounted && !cascade.countersStale) {
@@ -7204,7 +7208,7 @@ export function handleMutations(
 				if (isShadowRoot(ownerRoot)) {
 					rootsToSync.add(ownerRoot);
 				} else {
-					shouldSyncStylesheets = true;
+					sheetTextChanged = true;
 				}
 			}
 		}
@@ -7234,8 +7238,10 @@ export function handleMutations(
 		releaseRemovedNodes(cascade.document);
 	}
 	refreshCounters(cascade);
-	if (shouldSyncStylesheets) {
+	if (sheetTextChanged) {
 		cascade.syncStylesheets();
+	} else if (sheetsMoved) {
+		parseStylesheetsIfStale(cascade);
 	}
 }
 
@@ -7602,11 +7608,6 @@ function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 			);
 		}
 	}
-	// A parse already due builds without the root. One that is not would
-	// see the sheet count drop and rebuild everything.
-	if (!cascade.stylesheetsDirty && cascade.parsedStyleSheetCount >= 0) {
-		cascade.parsedStyleSheetCount = getStyleSheetCount(cascade);
-	}
 }
 
 // A tree's rules, wherever the cascade files them: the pseudo-element rules
@@ -7628,7 +7629,7 @@ function dropScopedRules(cascade: Cascade, root: ShadowRoot): void {
 }
 
 function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
-	if (cascade.stylesheetsDirty || cascade.parsedStyleSheetCount < 0) {
+	if (cascade.stylesheetsDirty || cascade.documentSheets === null) {
 		cascade.stylesheetsDirty = true;
 		return;
 	}
@@ -7638,9 +7639,6 @@ function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	for (const sheet of getShadowStyleSheets(root)) {
 		parseStyleSheet(cascade, sheet, root);
 	}
-	// Without this sync the drift check orders the full rebuild this path
-	// exists to avoid, once per UA shadow tree.
-	cascade.parsedStyleSheetCount = getStyleSheetCount(cascade);
 	const fresh = cascade.parsedRules.slice(before);
 	if (fresh.length === 0) {
 		return;
@@ -9322,21 +9320,93 @@ function tickTransitions(cascade: Cascade): void {
 	scheduleTransitionTick(cascade);
 }
 
-// The document counts <style> elements as they join and leave, so this
-// is cheap enough to poll on every computed-style read. That catches a
-// sheet appended in the same tick, before the mutation observer
-// delivers.
-function getStyleSheetCount(cascade: Cascade): number {
-	return styleElementCount(cascade.document as unknown as DOMDocument);
+// The document notes each tree a <style> joins or leaves, so this is
+// cheap enough to poll on every computed-style read. That catches a sheet
+// appended in the same tick, before the mutation observer delivers.
+function parseStylesheetsIfStale(cascade: Cascade): void {
+	if (cascade.stylesheetsDirty || cascade.documentSheets === null) {
+		parseStylesheets(cascade);
+		return;
+	}
+	if (cascade.parsing) {
+		return;
+	}
+	const trees = takeStyleTrees(cascade.document as unknown as DOMDocument);
+	if (trees === null) {
+		return;
+	}
+	for (const tree of trees) {
+		if (tree === (cascade.document as unknown as Node)) {
+			if (!appendDocumentSheets(cascade)) {
+				parseStylesheets(cascade);
+				return;
+			}
+		} else if (cascade.shadowRoots.has(tree as unknown as ShadowRoot)) {
+			syncShadowRoot(cascade, tree as unknown as ShadowRoot);
+		}
+	}
 }
 
-function parseStylesheetsIfStale(cascade: Cascade): void {
+// Sheets added after the ones the last parse read come after them in the
+// cascade too, so their rules are read alone. A sheet that left or moved,
+// or one that declares a layer the others may have ranked, needs the
+// whole parse.
+function appendDocumentSheets(cascade: Cascade): boolean {
+	const parsed = cascade.documentSheets!;
+	const sheets = getDocumentStyleSheets(cascade.document);
 	if (
-		cascade.stylesheetsDirty ||
-		getStyleSheetCount(cascade) !== cascade.parsedStyleSheetCount
+		sheets.length < parsed.length ||
+		parsed.some((sheet, index) => sheets[index] !== sheet)
 	) {
-		parseStylesheets(cascade);
+		return false;
 	}
+	if (sheets.length === parsed.length) {
+		return true;
+	}
+	const layers = cascade.layerPaths.length;
+	const anonymousLayers = cascade.anonymousLayers;
+	const before = cascade.parsedRules.length;
+	for (const sheet of sheets.slice(parsed.length)) {
+		parseStyleSheet(cascade, sheet);
+	}
+	if (
+		cascade.layerPaths.length !== layers ||
+		cascade.anonymousLayers !== anonymousLayers
+	) {
+		return false;
+	}
+	cascade.documentSheets = sheets;
+	const fresh = cascade.parsedRules.slice(before);
+	if (fresh.length === 0) {
+		return true;
+	}
+	const layerRanks = rankLayers(cascade);
+	for (const rule of fresh) {
+		rule.layerRank = rule.layer === null
+			? cascade.unlayeredRank
+			: (layerRanks.get(rule.layer) ?? cascade.unlayeredRank);
+	}
+	sortRulesForCascade(cascade);
+	cascade.sharedRoot = new Map();
+	cascade.passedTokens = new Map();
+	cascade.pseudoSubjectTags = undefined;
+	dropCache(cascade);
+	cascade.layout.invalidate();
+	if (fresh.some(mayChangePseudoElements)) {
+		attachPseudoElements(cascade);
+	}
+	return true;
+}
+
+// A rule can give an element a pseudo-element node or take one away by
+// matching it as the pseudo-element, or by changing whether the element
+// is a list item with its marker inside.
+function mayChangePseudoElements(rule: ParsedCSSRule): boolean {
+	const declarations = rule.declarations;
+	return generatesPseudoElement(rule.pseudoElement) ||
+		declarations.display !== undefined ||
+		declarations["list-style-position"] !== undefined ||
+		declarations.all !== undefined;
 }
 
 // Descendants and the hosted shadow tree too, since inheritance crosses
@@ -9833,7 +9903,7 @@ function parseAllStylesheets(cascade: Cascade): void {
 	cascade.stylesheetsDirty = false;
 	cascade.layerPaths = [];
 	cascade.anonymousLayers = 0;
-	cascade.parsedStyleSheetCount = getStyleSheetCount(cascade);
+	takeStyleTrees(document as unknown as DOMDocument);
 
 	// Origin ordering, not source order, keeps the UA sheet beneath every
 	// author rule.
@@ -9847,7 +9917,8 @@ function parseAllStylesheets(cascade: Cascade): void {
 		};
 	}
 
-	for (const sheet of getDocumentStyleSheets(document)) {
+	cascade.documentSheets = getDocumentStyleSheets(document);
+	for (const sheet of cascade.documentSheets) {
 		parseStyleSheet(cascade, sheet);
 	}
 
@@ -9876,8 +9947,10 @@ function parseAllStylesheets(cascade: Cascade): void {
 }
 
 // Origin first (UA below every author rule, later wins), then layer,
-// then specificity, then the order the rules were read in. The
-// pseudo-element rules are filed again in that order.
+// then specificity, then the order the rules were read in, where every
+// document sheet comes before every shadow tree's, even one appended
+// after the trees' were read. The pseudo-element rules are filed again in
+// that order.
 function sortRulesForCascade(cascade: Cascade): void {
 	const sourceOrder = new Map(
 		cascade.parsedRules.map((rule, index) => [rule, index] as const),
@@ -9891,6 +9964,9 @@ function sortRulesForCascade(cascade: Cascade): void {
 		}
 		if (a.specificity !== b.specificity) {
 			return a.specificity < b.specificity ? -1 : 1;
+		}
+		if ((a.scope === undefined) !== (b.scope === undefined)) {
+			return a.scope === undefined ? -1 : 1;
 		}
 		return sourceOrder.get(a)! - sourceOrder.get(b)!;
 	});

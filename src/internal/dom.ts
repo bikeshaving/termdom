@@ -22009,29 +22009,40 @@ export class HTMLStyleElement extends HTMLElement {
 
 	override _insertionSteps(this: Slots<HTMLStyleElement>): void {
 		superStep(HTMLStyleElement, "_insertionSteps").call(this);
-		const slots = this;
-		_(slots.document).extra.styleElements =
-			_(slots.document).extra.styleElements + 1;
+		if (this.connected) {
+			_(this.document).extra.styleTrees.add(this.treeRoot);
+		}
 	}
 
+	// A style removed with its shadow host stays in that host's tree. One
+	// removed from a tree is no longer in it, and its old parent is.
 	override _removingSteps(
 		this: Slots<HTMLStyleElement>,
 		oldParent: Node,
 	): void {
 		superStep(HTMLStyleElement, "_removingSteps").call(this, oldParent);
-		const slots = this;
-		_(slots.document).extra.styleElements =
-			_(slots.document).extra.styleElements - 1;
+		if (_(oldParent).connected) {
+			_(this.document).extra.styleTrees.add(
+				isShadowRoot(this.treeRoot) ? this.treeRoot : getRoot(oldParent),
+			);
+		}
 	}
 }
 
 /**
- * A counter that changes whenever a style element joins or leaves a
- * document's trees. The cascade polls it to notice a sheet that appeared
- * since it last parsed, which is cheaper than walking the tree.
+ * The trees, the document or its shadow roots, that a style element has
+ * joined or left since the last call. The cascade polls this to notice a
+ * sheet that appeared before the mutation observer delivers, which is
+ * cheaper than walking the tree.
  */
-export function styleElementCount(document: Document): number {
-	return _(document).extra.styleElements;
+export function takeStyleTrees(document: Document): Set<Node> | null {
+	const extra = _(document).extra;
+	if (extra.styleTrees.size === 0) {
+		return null;
+	}
+	const trees = extra.styleTrees;
+	extra.styleTrees = new Set();
+	return trees;
 }
 
 class HTMLTableCaptionElement extends HTMLElement {
@@ -26825,7 +26836,7 @@ export interface DocumentExtra extends NodeExtra {
 	templateDocument: Document | null;
 	activeElement: Element | null;
 	defaultView: object | null;
-	styleElements: number;
+	styleTrees: Set<Node>;
 	topLayer: Set<Element>;
 	// The reentrancy guards the popover algorithms keep on the document:
 	// one popover opening at a time, and a count of the ones closing under
@@ -26989,7 +27000,7 @@ export class Document extends Node implements globalThis.Document {
 		slots.extra.templateDocument = null;
 		slots.extra.activeElement = null;
 		slots.extra.defaultView = null;
-		slots.extra.styleElements = 0;
+		slots.extra.styleTrees = new Set();
 		slots.children = null;
 		slots.extra.topLayer = new Set<Element>();
 		slots.extra.popoverShowing = false;
