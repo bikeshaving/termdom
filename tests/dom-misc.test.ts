@@ -220,3 +220,15 @@ test("document.fonts is an empty set that is already loaded", async () => {
 	expect(await fonts.load("12px serif")).toEqual([]);
 	expect(() => fonts.add({} as FontFace)).toThrow(TypeError);
 });
+
+test("editing commands answer as a browser does for ones it does not support", () => {
+	const document = createHTMLDocument();
+	expect(document.queryCommandSupported("copy")).toBe(false);
+	expect(document.queryCommandEnabled("bold")).toBe(false);
+	expect(document.queryCommandState("bold")).toBe(false);
+	expect(document.queryCommandIndeterm("bold")).toBe(false);
+	expect(document.queryCommandValue("fontName")).toBe("");
+	expect(document.execCommand("copy")).toBe(false);
+	const xml = new realm.DOMParser().parseFromString("<a/>", "application/xml");
+	expect(() => xml.queryCommandSupported("copy")).toThrow();
+});

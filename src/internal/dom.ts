@@ -26906,6 +26906,15 @@ export function isDocumentElement(node: globalThis.Node): boolean {
 		slots.nodeType === ELEMENT_NODE;
 }
 
+function checkEditingCommands(document: Document): void {
+	if (_(document).extra.type !== "html") {
+		throw domError(
+			"InvalidStateError",
+			"Editing commands are only for HTML documents",
+		);
+	}
+}
+
 export interface DocumentExtra extends NodeExtra {
 	// What an attached document renders through, set by attachDocument. A
 	// headless document has none and behaves as a document with no browsing
@@ -28312,30 +28321,39 @@ export class Document extends Node implements globalThis.Document {
 		throw domError("InvalidStateError", "This document is not a stream");
 	}
 
-	// Editing commands. This engine has no editing host for them.
+	// Editing commands. This engine supports none of them, and the editing
+	// draft answers a command a browser does not support with false, or ""
+	// for its value, so a page that checks for one goes on without it. Only
+	// an HTML document has them at all.
 
 	execCommand(_commandId: string, _showUI?: boolean, _value?: string): boolean {
-		throw domError("NotSupportedError", "execCommand is not implemented");
+		checkEditingCommands(this);
+		return false;
 	}
 
 	queryCommandEnabled(_commandId: string): boolean {
-		throw domError("NotSupportedError", "execCommand is not implemented");
+		checkEditingCommands(this);
+		return false;
 	}
 
 	queryCommandIndeterm(_commandId: string): boolean {
-		throw domError("NotSupportedError", "execCommand is not implemented");
+		checkEditingCommands(this);
+		return false;
 	}
 
 	queryCommandState(_commandId: string): boolean {
-		throw domError("NotSupportedError", "execCommand is not implemented");
+		checkEditingCommands(this);
+		return false;
 	}
 
 	queryCommandSupported(_commandId: string): boolean {
-		throw domError("NotSupportedError", "execCommand is not implemented");
+		checkEditingCommands(this);
+		return false;
 	}
 
 	queryCommandValue(_commandId: string): string {
-		throw domError("NotSupportedError", "execCommand is not implemented");
+		checkEditingCommands(this);
+		return "";
 	}
 
 	// APIs that need a window manager, a network, or a compositor.
