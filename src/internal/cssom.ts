@@ -811,7 +811,9 @@ class CSSStyleDeclaration {
 		const name = CSSValues.normalizePropertyName(property);
 		const declared = findDeclaration(this, name);
 		if (declared) {
-			return declared.value;
+			return CSSValues.readPendingValue(declared.value) === null
+				? declared.value
+				: "";
 		}
 		const longhands = CSSValues.getLonghands(name);
 		return longhands ? getShorthandValue(this, name, longhands) : "";
@@ -1028,8 +1030,47 @@ function serializeDeclarations(block: CSSStyleDeclaration): string {
 	// walk.
 	const unserializable = new Set<string>();
 	const blockSlots = _(block);
+	// A longhand pending its shorthand's substitution has no value of its
+	// own to write, so the shorthand is written where its first longhand
+	// is, and the longhands declared since, which override it, after it.
+	const pendingShorthands = new Map<string, string>();
+	for (const declaration of blockSlots.declarations) {
+		const pending = CSSValues.readPendingValue(declaration.value);
+		if (pending !== null) {
+			pendingShorthands.set(pending.shorthand, pending.value);
+		}
+	}
 	for (const declaration of blockSlots.declarations) {
 		if (serialized.has(declaration.name)) {
+			continue;
+		}
+		const pendingShorthand = pendingShorthands.size === 0
+			? undefined
+			: CSSValues.getShorthands(declaration.name)
+				.find((shorthand) => pendingShorthands.has(shorthand));
+		if (pendingShorthand !== undefined) {
+			const priority = declaration.important ? " !important" : "";
+			parts.push(
+				`${pendingShorthand}: ${
+					pendingShorthands.get(pendingShorthand)
+				}${priority};`,
+			);
+			const longhands = new Set(CSSValues.getLonghands(pendingShorthand));
+			for (const other of blockSlots.declarations) {
+				if (
+					longhands.has(other.name) &&
+					CSSValues.readPendingValue(other.value) === null
+				) {
+					parts.push(
+						`${CSSValues.serializePropertyName(other.name)}: ${other.value}${
+							other.important ? " !important" : ""
+						};`,
+					);
+				}
+			}
+			for (const longhand of longhands) {
+				serialized.add(longhand);
+			}
 			continue;
 		}
 		let text = "";
@@ -5659,6 +5700,10 @@ function resolveCascadedValue(
 	property: string,
 ): string {
 	const raw = resolvePropertyValueRaw(declaration, property);
+	const pending = raw ? CSSValues.readPendingValue(raw) : null;
+	if (pending !== null) {
+		return resolvePendingValue(declaration, property, pending);
+	}
 	// A custom property holds the tokens it was given. Substituting it into
 	// a property with its own grammar re-serializes them in that property's
 	// spelling.
@@ -5684,6 +5729,25 @@ function resolveCascadedValue(
 			: _(declaration)._computedValue("color");
 	}
 	return value;
+}
+
+// The shorthand is split once its variables are substituted, and the
+// longhand takes its part. One that does not split is invalid, as a
+// longhand whose substitution fails is.
+function resolvePendingValue(
+	declaration: ComputedStyleDeclaration,
+	property: string,
+	pending: {shorthand: string; value: string},
+): string {
+	const substituted = substituteVar(declaration, pending.value);
+	if (substituted.trim() === "" || substituted.includes("var(")) {
+		return "";
+	}
+	const value = CSSValues.expandShorthandValue(pending.shorthand, substituted)
+		?.[property];
+	return value === undefined
+		? ""
+		: CSSValues.serializeCSSValue(value, property);
 }
 
 // Where each property is declared last without !important in a list of

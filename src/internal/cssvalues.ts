@@ -3359,6 +3359,22 @@ export function cssSupports(
 	return text !== "" && isValidDeclaration(property, text);
 }
 
+// A shorthand whose value holds var() cannot be split until its variables
+// are known, so each longhand holds the whole value until then, the
+// pending-substitution value of css-variables-1. The marker starts with a
+// NUL, which no CSS value can.
+const PENDING_MARK = "\u0000";
+
+export function readPendingValue(
+	value: string,
+): {shorthand: string; value: string} | null {
+	if (value.charCodeAt(0) !== 0) {
+		return null;
+	}
+	const end = value.indexOf(PENDING_MARK, 1);
+	return {shorthand: value.slice(1, end), value: value.slice(end + 1)};
+}
+
 // Longhands the grammar leaves out reset to their initial value, as a
 // browser's shorthand write does. Null for a grammar this engine does
 // not decompose, which stays a declaration of its own.
@@ -3396,6 +3412,10 @@ function readShorthandValue(
 		return Object.fromEntries(
 			longhands.map((longhand) => [longhand, value.toLowerCase()]),
 		);
+	}
+	if (value.includes("var(")) {
+		const pending = `${PENDING_MARK}${property}${PENDING_MARK}${value}`;
+		return Object.fromEntries(longhands.map((longhand) => [longhand, pending]));
 	}
 	const expanded = expandShorthands({[property]: value});
 	const out: Record<string, string> = {};
@@ -3498,6 +3518,14 @@ export function serializeShorthandValue(
 	valueOf: (longhand: string) => string,
 ): string {
 	const all = longhands.map(valueOf);
+	// Longhands pending one shorthand's substitution serialize as its value.
+	if (all.some((value) => readPendingValue(value) !== null)) {
+		const pending = readPendingValue(all[0]);
+		return pending?.shorthand === shorthand &&
+				all.every((value) => value === all[0])
+			? pending.value
+			: "";
+	}
 	// A CSS-wide keyword serializes as itself only when every longhand
 	// holds the same one. If one longhand is overridden, the shorthand has
 	// no value.

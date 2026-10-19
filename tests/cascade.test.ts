@@ -1376,3 +1376,57 @@ test("a rule that needs its ancestors follows an ancestor's class, a move, and a
 		.toBe("rgb(0, 0, 255)");
 	dom.dispose();
 });
+
+describe("a shorthand that holds var()", () => {
+	test("splits once its variables are substituted", () => {
+		const dom = domFor(
+			"<style>:root { --rule: linear-gradient(red, red); --p: 1px 2px }" +
+				" .f { background: var(--rule) bottom 1px center / 100% 1px no-repeat #fff; padding: var(--p) }" +
+				"</style><div class=f>x</div>",
+		);
+		const styles = dom.window.getComputedStyle(
+			dom.document.querySelector("div")!,
+		);
+		expect(styles.backgroundImage).toBe("linear-gradient(red, red)");
+		expect(styles.backgroundColor).toBe("rgb(255, 255, 255)");
+		expect([
+			styles.paddingTop,
+			styles.paddingRight,
+			styles.paddingBottom,
+			styles.paddingLeft,
+		]).toEqual(["1px", "2px", "1px", "2px"]);
+		dom.dispose();
+	});
+
+	test("serializes as written, with its longhands pending", () => {
+		const dom = domFor(
+			"<style>.f { background: var(--rule) #fff }</style><div class=f>x</div>",
+		);
+		const rule = dom.document.styleSheets[0].cssRules[0] as CSSStyleRule;
+		expect(rule.style.cssText).toBe("background: var(--rule) #fff;");
+		expect(rule.style.getPropertyValue("background")).toBe("var(--rule) #fff");
+		expect(rule.style.getPropertyValue("background-color")).toBe("");
+		const div = dom.document.querySelector("div")!;
+		div.style.background = "var(--rule) #000";
+		div.style.backgroundColor = "blue";
+		expect(div.getAttribute("style")).toBe(
+			"background: var(--rule) #000; background-color: blue;",
+		);
+		expect(dom.window.getComputedStyle(div).backgroundColor).toBe(
+			"rgb(0, 0, 255)",
+		);
+		dom.dispose();
+	});
+
+	test("paints the image a variable gives it over the background behind it", () => {
+		const dom = new TermDOM({
+			html:
+				"<style>:root { --rule: linear-gradient(red, red) } body { background: #f7f9fb; margin: 0 }" +
+				" .f { background: var(--rule) }</style><div class=f>x</div>",
+			transport: new MockProcess().transport,
+			colorDepth: 24,
+		});
+		expect(dom.renderANSI().split("\n")[0]).toContain("48;2;255;0;0m");
+		dom.dispose();
+	});
+});
