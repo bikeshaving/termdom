@@ -234,6 +234,7 @@ function mountEngine(
 		colorDepth: "rgb",
 		html,
 		url,
+		scripting: true,
 		transport: {
 			cols: 800,
 			rows: 600,

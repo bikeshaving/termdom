@@ -25,7 +25,8 @@ const PNG = encodePNG({
 }) as Uint8Array<ArrayBuffer>;
 
 function create(
-	options: {html?: string; url?: string; csp?: string} = {},
+	options: {html?: string; url?: string; csp?: string; scripting?: boolean} =
+		{},
 ): TermDOM {
 	return new TermDOM({
 		transport: new MockProcess({cols: 40, rows: 12}).transport,
@@ -529,14 +530,17 @@ test("window.fetch is held to connect-src, and a listener's own fetch goes to th
 test("an inline handler runs only where the policy allows 'unsafe-inline', and a block is reported", () => {
 	const global = globalThis as Record<string, unknown>;
 	try {
-		for (const [csp, runs] of [
-			[undefined, true],
-			["default-src 'none'", false],
-			["script-src 'unsafe-inline'", true],
-			["script-src 'unsafe-inline' 'nonce-abc'", false],
-			["script-src 'none'; script-src-attr 'unsafe-inline'", true],
+		for (const [csp, runs, blocked] of [
+			[undefined, true, false],
+			["default-src 'none'", false, false],
+			["script-src 'self'", false, true],
+			["script-src 'unsafe-inline'", true, false],
+			["script-src 'unsafe-inline' 'nonce-abc'", false, true],
+			["script-src 'none'; script-src-attr 'unsafe-inline'", true, false],
 		] as const) {
-			const dom = create(csp === undefined ? {} : {csp});
+			const dom = create(
+				csp === undefined ? {scripting: true} : {csp, scripting: true},
+			);
 			let ran = 0;
 			global.__inlineHandlerRan = () => ran++;
 			const reported: string[] = [];
@@ -551,7 +555,7 @@ test("an inline handler runs only where the policy allows 'unsafe-inline', and a
 			button.click();
 			button.click();
 			expect(ran).toBe(runs ? 2 : 0);
-			expect(reported).toEqual(runs ? [] : ["script-src-attr"]);
+			expect(reported).toEqual(blocked ? ["script-src-attr"] : []);
 			dom.dispose();
 		}
 	} finally {

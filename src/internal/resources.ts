@@ -366,6 +366,7 @@ export function parseContentSecurityPolicies(
 export function forbidsScripts(policies: ContentSecurityPolicy[]): boolean {
 	return policies.some((policy) => {
 		const sources =
+			policy.directives.get("script-src-attr") ??
 			policy.directives.get("script-src") ??
 			policy.directives.get("default-src");
 		return sources !== undefined &&

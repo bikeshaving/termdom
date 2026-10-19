@@ -118,17 +118,19 @@ test("a title never carries its own escape sequences to the terminal", async () 
 
 test("a <script> in rendered HTML is inert, and a handler attribute is the app's", async () => {
 	const t = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({transport: t.transport, colorDepth: "rgb"});
+	const dom = new TermDOM({
+		transport: t.transport,
+		colorDepth: "rgb",
+		scripting: true,
+	});
 	const flags = globalThis as unknown as {
 		__termdomScript?: boolean;
 		__termdomHandler?: boolean;
 	};
 	flags.__termdomScript = false;
 	flags.__termdomHandler = false;
-	// A parsed script never runs: the engine loads nothing. A handler
-	// attribute runs when its event fires, as in a browser, because the
-	// markup is the app's own and untrusted markup is the app's to
-	// sanitize before it reaches innerHTML.
+	// A parsed script never runs: the engine loads nothing. With scripting
+	// on, a handler attribute runs when its event fires, as in a browser.
 	dom.document.body.innerHTML =
 		"<script>globalThis.__termdomScript = true;</script>" +
 		"<div onclick=\"globalThis.__termdomHandler = this.tagName === 'DIV' && event.type === 'click';\">text</div>";
@@ -257,6 +259,7 @@ test("a handler compiles once its node is adopted into the live document", async
 	const dom = new TermDOM({
 		transport: new MockProcess().transport,
 		colorDepth: "rgb",
+		scripting: true,
 	});
 	const flags = globalThis as unknown as InertFlags;
 	flags.__termdomInert = false;
@@ -276,5 +279,25 @@ test("a handler compiles once its node is adopted into the live document", async
 	div.dispatchEvent(new dom.window.MouseEvent("click", {bubbles: true}));
 	await nextFrame(dom);
 	expect(flags.__termdomInert).toBe(true);
+	dom.dispose();
+});
+
+test("without scripting, a handler attribute never runs, even in the live document", async () => {
+	const dom = new TermDOM({
+		transport: new MockProcess().transport,
+		colorDepth: "rgb",
+	});
+	const flags = globalThis as unknown as InertFlags;
+	flags.__termdomInert = false;
+
+	dom.document.body.innerHTML =
+		AUTO_FIRING +
+		"<div onclick=\"globalThis.__termdomInert = true\">text</div>";
+	const div = dom.document.querySelector("div")!;
+	expect(div.onclick).toBe(null);
+	div.dispatchEvent(new dom.window.MouseEvent("click", {bubbles: true}));
+	await settle();
+
+	expect(flags.__termdomInert).toBe(false);
 	dom.dispose();
 });

@@ -228,8 +228,11 @@ export interface TermDOMOptions {
 	 * Whether the page's scripts run, as far as its markup is concerned.
 	 * TermDOM runs no <script> itself, so it is the embedder who says so.
 	 * With `false`, the default, a <noscript>'s markup is parsed and shown,
-	 * as in a browser with scripting off. With `true` it shows nothing. A
-	 * `csp` whose script-src, or default-src without one, is 'none' turns
+	 * as in a browser with scripting off, and handler attributes such as
+	 * `onclick="..."` never run. With `true` a <noscript> shows nothing and
+	 * handler attributes run, with the same powers as the program itself,
+	 * so only set it for markup you trust. A `csp` whose script-src-attr,
+	 * or the script-src or default-src it falls back to, is 'none' turns
 	 * it off.
 	 */
 	scripting?: boolean;

@@ -172,14 +172,15 @@ request it was given. That call goes straight to the network and does
 not come back to the listener, as with a Service Worker.
 
 An inline event handler, such as `onerror="..."` in the markup, runs
-with full access to everything the program can reach, like the
-program's own code. Under a policy, a handler runs only if the policy
-allows `'unsafe-inline'` in the first of these directives that it
-names: `script-src-attr`, `script-src`, `default-src`. A nonce or hash
-in the same list cancels `'unsafe-inline'`. When a handler is blocked,
-the engine reports it with `securitypolicyviolation`. Without a policy
-every handler runs. Markup the program does not trust therefore needs a
-policy, even one that only says `default-src 'none'`.
+only when the page is made with `scripting: true`. It then runs with
+full access to everything the program can reach, like the program's
+own code. Under a policy, a handler runs only if the policy allows
+`'unsafe-inline'` in the first of these directives that it names:
+`script-src-attr`, `script-src`, `default-src`. A nonce or hash in the
+same list cancels `'unsafe-inline'`. When a handler is blocked, the
+engine reports it with `securitypolicyviolation`. With scripting on
+and no policy, every handler runs. Leave scripting off for markup the
+program does not trust.
 
 The engine decodes PNG, JPEG, GIF and BMP:
 

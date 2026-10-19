@@ -74,9 +74,12 @@ Options:
 - `scripting?: boolean`: whether the page's scripts run, as far as its
   markup is concerned. TermDOM runs no `<script>` itself, so you say.
   With `false` (default), a `<noscript>`'s markup is parsed and shown,
-  as in a browser with scripting off. With `true`, it shows nothing. A
-  `csp` whose `script-src`, or `default-src` without one, is `'none'`
-  turns it off.
+  as in a browser with scripting off, and handler attributes such as
+  `onclick="..."` never run. With `true`, a `<noscript>` shows nothing
+  and handler attributes run with the same access as your program, so
+  only turn it on for markup you trust. A `csp` whose
+  `script-src-attr`, or the `script-src` or `default-src` it falls back
+  to, is `'none'` turns it off.
 - `images?: "auto" | "cells" | "none"`: how an `<img>` draws.
   - `"auto"` (default) uses the best method the terminal supports.
   - `"cells"` draws two pixels per cell with half-block characters.

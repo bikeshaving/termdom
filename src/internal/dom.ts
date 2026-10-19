@@ -5098,7 +5098,9 @@ const FORWARDED_HANDLER_ATTRIBUTES: ReadonlySet<string> =
 	new Set(FORWARDED_BODY_EVENT_HANDLERS);
 
 // Scripting is enabled for a document only while it has a browsing
-// context, i.e. a window (its default view). The documents an author
+// context, i.e. a window (its default view), and the embedder asked for
+// scripting. Handler attributes run with the host's full powers, so a page
+// made without `scripting: true` never runs them. The documents an author
 // builds through the DOM -- a DOMParser result, createHTMLDocument, the
 // contents of a <template>, an iframe's content document -- have none, so
 // their markup is inert: `new Function` is never called for a handler
@@ -5111,7 +5113,11 @@ const FORWARDED_HANDLER_ATTRIBUTES: ReadonlySet<string> =
 // source during that inert pass, turning sanitization itself into
 // execution.
 function isScriptingEnabled(document: Document | null): boolean {
-	return document !== null && _(document).extra.defaultView !== null;
+	return (
+		document !== null &&
+		_(document).extra.defaultView !== null &&
+		isScriptedDocument(document as unknown as globalThis.Document)
+	);
 }
 
 function compileEventHandler(

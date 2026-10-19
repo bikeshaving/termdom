@@ -4,7 +4,10 @@ import {TermDOM} from "../src/index.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("an on* attribute reflects as a function and fires with the element as this", async () => {
-	const dom = new TermDOM({transport: new MockProcess().transport});
+	const dom = new TermDOM({
+		transport: new MockProcess().transport,
+		scripting: true,
+	});
 	const {document, window} = dom;
 	document.body.innerHTML = "<button id=\"b\" onclick=\"this.dataset.hit = event.type\">go</button>";
 	const button = document.getElementById("b") as HTMLButtonElement;

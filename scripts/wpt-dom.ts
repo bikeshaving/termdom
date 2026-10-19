@@ -992,7 +992,13 @@ async function runFile(file: string): Promise<Outcome> {
 	const transport = mockTransport();
 	let engine: InstanceType<EngineModule["TermDOM"]>;
 	try {
-		engine = new termdom.TermDOM({transport, html, url, colorDepth: "rgb"});
+		engine = new termdom.TermDOM({
+			transport,
+			html,
+			url,
+			colorDepth: "rgb",
+			scripting: true,
+		});
 	} catch (error) {
 		return {
 			file,
