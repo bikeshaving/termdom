@@ -96,3 +96,66 @@ test("an ancestor's style attribute puts the markers inside", async () => {
 	expect(terminal.getPlainText()).toContain("    • one");
 	dom.dispose();
 });
+
+test("the screen after sheets come and go is what a fresh render shows", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 20});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		html: "<style>.a { color: red } li { margin-left: 1px }</style><main><ul class=l><li class=a>one</li><li>two</li></ul></main>",
+	});
+	dom.attach();
+	await nextFrame(dom);
+	const {document} = dom;
+	const main = document.querySelector("main")!;
+	for (let i = 0; i < 8; i++) {
+		const host = document.createElement("div");
+		host.attachShadow({mode: "open"}).innerHTML =
+			`<style>.t { margin-left: ${i}px } .t::before { content: "${i}" }</style><div class=t>in</div>`;
+		main.append(host);
+		if (i % 4 === 1) {
+			const style = document.createElement("style");
+			style.textContent = ".l { list-style-position: inside }";
+			document.head.append(style);
+		}
+		if (i === 5) {
+			document.querySelector("style")!.remove();
+		}
+		expect(dom.window.getComputedStyle(host).display).toBe("block");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	}
+	await nextFrame(dom);
+	const lines = (text: string): string[] =>
+		text
+			.split("\n")
+			.map((line) => line.trimEnd())
+			.filter((line) => line !== "");
+	expect(lines(terminal.getPlainText())).toEqual(
+		lines(dom.renderANSI().replace(/\x1b\[[0-9;]*m/g, "")),
+	);
+	dom.dispose();
+});
+
+test("the screen after a sheet puts a list's markers inside is what a fresh render shows", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		html: "<main><ul class=l><li>one</li><li>two</li></ul><p>p</p></main>",
+	});
+	dom.attach();
+	await nextFrame(dom);
+	const style = dom.document.createElement("style");
+	style.textContent = ".l { list-style-position: inside }";
+	dom.document.head.append(style);
+	// Read before the observer delivers, which catches the sheet up first.
+	expect(color(dom, "p")).toBe("rgb(0, 0, 0)");
+	await nextFrame(dom);
+	const lines = (text: string): string[] =>
+		text
+			.split("\n")
+			.map((line) => line.trimEnd())
+			.filter((line) => line !== "");
+	expect(lines(terminal.getPlainText())).toEqual(
+		lines(dom.renderANSI().replace(/\x1b\[[0-9;]*m/g, "")),
+	);
+	dom.dispose();
+});

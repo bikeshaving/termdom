@@ -7246,6 +7246,12 @@ export function handleMutations(
 		cascade.syncStylesheets();
 	} else if (sheetsMoved) {
 		parseStylesheetsIfStale(cascade);
+		// As syncStylesheets() does, for the boxes built under the styles
+		// before, even when a read in the same tick caught the sheets up.
+		const body = cascade.document.body;
+		if (body) {
+			cascade.layout.invalidate(body);
+		}
 	}
 }
 
