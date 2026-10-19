@@ -32,6 +32,8 @@ import {
 	getProcessTimers,
 	type GraphicsSetting,
 	hasFrameCallbacks,
+	HistoryChangeEvent,
+	HistoryTraverseEvent,
 	hoverListenerCount,
 	relayoutReplacedElements,
 	revealPendingCaret,
@@ -44,6 +46,7 @@ import {
 	syncFormControls,
 	syncMediaQueries,
 	takeScrollShift,
+	traverseHistory,
 	type Window,
 } from "./internal/dom.ts";
 import {installEditing} from "./internal/editing.ts";
@@ -138,6 +141,12 @@ import {createWindow} from "./internal/window.ts";
 
 export type {CanvasCellGridContext} from "./internal/canvas.ts";
 export type {CellSize} from "./internal/units.ts";
+export {
+	HistoryChangeEvent,
+	type HistoryChangeEventInit,
+	HistoryTraverseEvent,
+	type HistoryTraverseEventInit,
+} from "./internal/dom.ts";
 export {transportFromProcess, transportFromSSH} from "./internal/exchange.ts";
 export {
 	CellChangeEvent,
@@ -398,6 +407,8 @@ const HELD_ERROR_LIMIT = 50;
 export interface TermDOMEventMap {
 	cellchange: CellChangeEvent;
 	fetch: FetchEvent;
+	historychange: HistoryChangeEvent;
+	historytraverse: HistoryTraverseEvent;
 }
 
 // A transport serves the one TermDOM that first attached to it, which
@@ -644,6 +655,22 @@ export class TermDOM extends EventTarget {
 			reportUncaught: (error) => {
 				slots.errored = true;
 				reportUncaught(this, error);
+			},
+			historyChanged: (url, state, replace) => {
+				this.dispatchEvent(
+					constructInternal(() =>
+						new HistoryChangeEvent("historychange", {url, state, replace}),
+					),
+				);
+			},
+			historyTraversed: (delta) => {
+				if (slots.lifecycle !== "disposed") {
+					this.dispatchEvent(
+						constructInternal(() =>
+							new HistoryTraverseEvent("historytraverse", {delta}),
+						),
+					);
+				}
 			},
 		});
 		installEditing(exchange);
@@ -935,6 +962,21 @@ export class TermDOM extends EventTarget {
 			void render(this);
 		}
 		return {width: answer.width, height: answer.height};
+	}
+
+	/**
+	 * Go back or forward to an entry of the document's own history, one a
+	 * "historychange" event announced or the one it started on: the
+	 * document takes its URL and state, and the page hears popstate, then
+	 * hashchange when only the fragment differs. A URL the document could
+	 * not have pushed throws a SecurityError, and so does a call after
+	 * dispose() an InvalidStateError.
+	 */
+	traverse(url: string, state: unknown = null): void {
+		if (_(this).lifecycle === "disposed") {
+			throw disposedError();
+		}
+		traverseHistory(this.document, String(url), state);
 	}
 
 	/**

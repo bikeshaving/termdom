@@ -1990,6 +1990,82 @@ export class CellChangeEvent extends Event {
 	}
 }
 
+export interface HistoryChangeEventInit extends EventInit {
+	url: string;
+	state: unknown;
+	replace: boolean;
+}
+
+export interface HistoryChangeEventSlots extends EventSlots {
+	url: string;
+	historyState: unknown;
+	replace: boolean;
+}
+
+export interface HistoryChangeEvent {
+	readonly [internals]: HistoryChangeEventSlots;
+}
+
+/**
+ * The page moved to another entry of its own document's history,
+ * dispatched at the TermDOM: by pushState() or replaceState(), or by
+ * following a link to a fragment or setting location.hash. A replace
+ * changes the current entry; otherwise the page added one after it, and
+ * the entries that were ahead of the current one are gone. The state is
+ * what history.state now holds, which traverse() takes back.
+ */
+export class HistoryChangeEvent extends Event {
+	constructor(type: string, init: HistoryChangeEventInit) {
+		super(type, init);
+		const slots = _(this);
+		slots.url = init.url;
+		slots.historyState = init.state;
+		slots.replace = init.replace;
+	}
+
+	get url(): string {
+		return _(this).url;
+	}
+
+	get state(): unknown {
+		return _(this).historyState;
+	}
+
+	get replace(): boolean {
+		return _(this).replace;
+	}
+}
+
+export interface HistoryTraverseEventInit extends EventInit {
+	delta: number;
+}
+
+export interface HistoryTraverseEventSlots extends EventSlots {
+	delta: number;
+}
+
+export interface HistoryTraverseEvent {
+	readonly [internals]: HistoryTraverseEventSlots;
+}
+
+/**
+ * The page called history.back(), forward() or go(), dispatched at the
+ * TermDOM in a task after the call. The delta counts entries from the
+ * current one, and 0 asks for a reload. The TermDOM keeps no list of
+ * entries, so going anywhere is the embedder's to do: traverse() for an
+ * entry of this document, a new page for any other.
+ */
+export class HistoryTraverseEvent extends Event {
+	constructor(type: string, init: HistoryTraverseEventInit) {
+		super(type, init);
+		_(this).delta = init.delta;
+	}
+
+	get delta(): number {
+		return _(this).delta;
+	}
+}
+
 export interface FetchEventInit extends EventInit {
 	request: Request;
 	preloadResponse?: Promise<unknown>;
@@ -2427,6 +2503,47 @@ class HashChangeEvent extends Event {
 
 Object.defineProperty(HashChangeEvent.prototype, Symbol.toStringTag, {
 	value: "HashChangeEvent",
+	configurable: true,
+});
+
+interface PopStateEventInit extends EventInit {
+	state?: any;
+	hasUAVisualTransition?: boolean;
+}
+
+interface PopStateEventSlots extends EventSlots {
+	historyState: any;
+	hasUAVisualTransition: boolean;
+}
+
+interface PopStateEvent {
+	readonly [internals]: PopStateEventSlots;
+}
+
+/** Fired when the window goes back or forward to an entry of its document. */
+class PopStateEvent extends Event {
+	constructor(type: string, eventInitDict: PopStateEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<PopStateEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		const slots = _(this);
+		slots.historyState = init.state ?? null;
+		slots.hasUAVisualTransition = Boolean(init.hasUAVisualTransition);
+	}
+
+	get state(): any {
+		return _(this).historyState;
+	}
+
+	get hasUAVisualTransition(): boolean {
+		return _(this).hasUAVisualTransition;
+	}
+}
+
+Object.defineProperty(PopStateEvent.prototype, Symbol.toStringTag, {
+	value: "PopStateEvent",
 	configurable: true,
 });
 
@@ -26812,6 +26929,8 @@ export interface DocumentExtra extends NodeExtra {
 	// Where an exception the page let escape goes once the window's error
 	// event has not handled it. The engine owns the terminal, so it decides.
 	reportUncaught: (error: unknown) => void;
+	historyChanged: (url: string, state: unknown, replace: boolean) => void;
+	historyTraversed: (delta: number) => void;
 	// The text control whose caret the next frame reveals. The last edit
 	// before the frame wins.
 	pendingCaretReveal: TextControlOrSelect | null;
@@ -33818,13 +33937,42 @@ export function getPartNames(element: Element): string[] {
 	return value === null ? [] : splitOnASCIIWhitespace(value);
 }
 
+interface SessionHistory {
+	state: unknown;
+	// The entries before the current one and the current one, counting the
+	// ones this document added. The embedder keeps the list itself.
+	length: number;
+	scrollRestoration: globalThis.ScrollRestoration;
+	// pushState() and replaceState() leave the target where it was, so
+	// this is the URL whose fragment still names it, or null when the
+	// document's own URL does.
+	targetURL: string | null;
+}
+
+const sessionHistories = new WeakMap<Document, SessionHistory>();
+
+function getSessionHistory(document: Document): SessionHistory {
+	let session = sessionHistories.get(document);
+	if (session === undefined) {
+		session = {
+			state: null,
+			length: 1,
+			scrollRestoration: "auto",
+			targetURL: null,
+		};
+		sessionHistories.set(document, session);
+	}
+	return session;
+}
+
 /** Whether `:target` matches. */
 export function isTargetElement(element: Element): boolean {
 	const document = _(element).document;
 	if (getRoot(element as unknown as Node) !== (document as unknown as Node)) {
 		return false;
 	}
-	const url = _(document).extra.documentURL;
+	const url =
+		sessionHistories.get(document)?.targetURL ?? _(document).extra.documentURL;
 	const hash = url.indexOf("#");
 	if (hash === -1) {
 		return false;
@@ -33878,29 +34026,53 @@ function isFragmentNavigation(document: Document, url: string): boolean {
 		withoutFragment(url) === withoutFragment(_(document).extra.documentURL);
 }
 
-function navigateToFragment(document: Document, url: string): void {
-	const documentSlots = _(document);
-	const oldURL = documentSlots.extra.documentURL;
+// Following a link to a fragment of the document, or setting
+// location.hash, is a new entry in its history with no state. Going to the
+// URL the document already has replaces the current one.
+function navigateToFragment(
+	document: Document,
+	url: string,
+	replace = false,
+): void {
+	const oldURL = _(document).extra.documentURL;
+	const next = moveToURL(document, url);
+	changeHistory(document, null, replace || oldURL === url);
+	(next as HTMLElement | null)?.scrollIntoView();
+	if (oldURL !== url) {
+		queueHashChange(document, oldURL, url);
+	}
+}
+
+// Gives the document its new URL and makes the element the fragment names
+// the target, restyling the one :target matched and the one it matches.
+function moveToURL(document: Document, url: string): Element | null {
 	const previous = getTargetElement(document);
-	documentSlots.extra.documentURL = url;
+	_(document).extra.documentURL = url;
+	const session = sessionHistories.get(document);
+	if (session !== undefined) {
+		session.targetURL = null;
+	}
 	const next = getTargetElement(document);
 	for (const element of [previous, next]) {
 		if (element !== null) {
 			stateChanged(element, ["target", "target-within"]);
 		}
 	}
-	(next as HTMLElement | null)?.scrollIntoView();
-	if (oldURL === url) {
-		return;
-	}
-	const window = documentSlots.extra.defaultView as unknown as EventTarget |
-		null;
+	return next;
+}
+
+function queueHashChange(
+	document: Document,
+	oldURL: string,
+	newURL: string,
+): void {
+	const window = _(document).extra.defaultView as unknown as EventTarget | null;
 	if (window !== null) {
 		setTimeout(() => {
 			dispatchAsUserAgent(
 				window,
 				constructInternal(() =>
-					new HashChangeEvent("hashchange", {oldURL, newURL: url}),
+					new HashChangeEvent("hashchange", {oldURL, newURL}),
 				),
 			);
 		}, 0);
@@ -35925,6 +36097,10 @@ export interface DocumentEngine {
 	loadSignal: globalThis.AbortSignal;
 	render(): Promise<void>;
 	reportUncaught(error: unknown): void;
+	// The page added or changed an entry of its document's history.
+	historyChanged(url: string, state: unknown, replace: boolean): void;
+	// The page asked to go back or forward by this many entries.
+	historyTraversed(delta: number): void;
 }
 
 /**
@@ -35945,6 +36121,10 @@ export function attachDocument(
 	const render = () => engine.render();
 	attachedSlots.extra.render = render;
 	attachedSlots.extra.reportUncaught = (error) => engine.reportUncaught(error);
+	attachedSlots.extra.historyChanged = (url, state, replace) =>
+		engine.historyChanged(url, state, replace);
+	attachedSlots.extra.historyTraversed = (delta) =>
+		engine.historyTraversed(delta);
 	attachedSlots.extra.load = engine.load;
 	attachedSlots.extra.allowsInlineHandler = (element) =>
 		engine.allowsInlineHandler(element);
@@ -36948,7 +37128,7 @@ class Location {
 	}
 
 	set href(value: string) {
-		navigateLocation(this, String(value));
+		navigateLocation(this, String(value), false);
 	}
 
 	get origin(): string {
@@ -37028,11 +37208,11 @@ class Location {
 	}
 
 	assign(url: string | URL): void {
-		navigateLocation(this, String(url));
+		navigateLocation(this, String(url), false);
 	}
 
 	replace(url: string | URL): void {
-		navigateLocation(this, String(url));
+		navigateLocation(this, String(url), true);
 	}
 
 	reload(): void {
@@ -37059,7 +37239,11 @@ function getLocationURL(location: Location): URL | null {
 }
 
 // Only a fragment of the document itself is somewhere to go.
-function navigateLocation(location: Location, value: string): void {
+function navigateLocation(
+	location: Location,
+	value: string,
+	replace: boolean,
+): void {
 	const document = _(location).locationWindow.document;
 	let url: string;
 	try {
@@ -37070,7 +37254,7 @@ function navigateLocation(location: Location, value: string): void {
 	if (!isFragmentNavigation(document, url)) {
 		throw noNavigation();
 	}
-	navigateToFragment(document, url);
+	navigateToFragment(document, url, replace);
 }
 
 function noNavigation(): DOMException {
@@ -37198,26 +37382,197 @@ const EXTERNAL: globalThis.External = Object.freeze({
 	IsSearchProviderInstalled(): void {},
 });
 
-function createHistory(): globalThis.History {
-	let state: any = null;
-	return {
-		get length(): number {
-			return 1;
-		},
-		scrollRestoration: "auto",
-		get state(): any {
-			return state;
-		},
-		back(): void {},
-		forward(): void {},
-		go(_delta?: number): void {},
-		pushState(data: any, _unused: string, _url?: string | URL | null): void {
-			state = cloneStructured(data, "execute 'pushState' on 'History'");
-		},
-		replaceState(data: any, _unused: string, _url?: string | URL | null): void {
-			state = cloneStructured(data, "execute 'replaceState' on 'History'");
-		},
-	};
+// The engine drawing the document hears of each entry the page adds or
+// changes, so its own back and forward list can follow.
+function changeHistory(
+	document: Document,
+	state: unknown,
+	replace: boolean,
+): void {
+	const session = getSessionHistory(document);
+	session.state = state;
+	if (!replace) {
+		session.length++;
+	}
+	_maybe(getAttachedDocument(document))?.extra.historyChanged(
+		_(document).extra.documentURL,
+		state,
+		replace,
+	);
+}
+
+// HTML's "can have its URL rewritten": the same origin, and for a URL
+// that is neither http nor https, nothing but the fragment changed.
+function canRewriteURL(documentURL: string, targetURL: string): boolean {
+	if (!URL.canParse(documentURL)) {
+		return false;
+	}
+	const from = new URL(documentURL);
+	const to = new URL(targetURL);
+	if (
+		from.protocol !== to.protocol ||
+		from.username !== to.username ||
+		from.password !== to.password ||
+		from.host !== to.host
+	) {
+		return false;
+	}
+	if (to.protocol === "http:" || to.protocol === "https:") {
+		return true;
+	}
+	return from.pathname === to.pathname && from.search === to.search;
+}
+
+/**
+ * Goes to an entry of the document's own history: the embedder's answer
+ * to a back or forward. The document takes the entry's URL and state, the
+ * fragment's element becomes the target and is scrolled to, and the
+ * window hears popstate, then hashchange when only the fragment moved.
+ */
+export function traverseHistory(
+	document: globalThis.Document,
+	url: string,
+	state: unknown,
+): void {
+	const traversed = document as unknown as Document;
+	const oldURL = _(traversed).extra.documentURL;
+	const parsed = parseURL(url, oldURL);
+	if (parsed === null || !canRewriteURL(oldURL, parsed)) {
+		throw domError(
+			"SecurityError",
+			`${url} is not an entry of the document at ${oldURL}`,
+		);
+	}
+	const session = getSessionHistory(traversed);
+	session.state = cloneStructured(state, "execute 'traverse' on 'TermDOM'");
+	const next = moveToURL(traversed, parsed);
+	(next as HTMLElement | null)?.scrollIntoView();
+	const window = _(traversed).extra.defaultView as unknown as EventTarget |
+		null;
+	if (window !== null) {
+		dispatchAsUserAgent(
+			window,
+			constructInternal(() =>
+				new PopStateEvent("popstate", {state: session.state}),
+			),
+		);
+	}
+	if (
+		oldURL !== parsed && withoutFragment(oldURL) === withoutFragment(parsed)
+	) {
+		queueHashChange(traversed, oldURL, parsed);
+	}
+}
+
+interface HistorySlots {
+	historyWindow: Window;
+}
+
+interface History {
+	readonly [internals]: HistorySlots;
+}
+
+// HTML's History for the one document the window shows. Where the page
+// goes back or forward to is the embedder's to decide, so a traversal is
+// an event at the engine, which answers with traverseHistory().
+class History {
+	constructor(window: Window) {
+		seal(this, new.target, History);
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		_(this).historyWindow = window;
+	}
+
+	get length(): number {
+		return getSessionHistory(getHistoryDocument(this)).length;
+	}
+
+	get scrollRestoration(): globalThis.ScrollRestoration {
+		return getSessionHistory(getHistoryDocument(this)).scrollRestoration;
+	}
+
+	set scrollRestoration(value: globalThis.ScrollRestoration) {
+		const mode = String(value);
+		if (mode === "auto" || mode === "manual") {
+			getSessionHistory(getHistoryDocument(this)).scrollRestoration = mode;
+		}
+	}
+
+	get state(): any {
+		return getSessionHistory(getHistoryDocument(this)).state;
+	}
+
+	back(): void {
+		requestTraversal(getHistoryDocument(this), -1);
+	}
+
+	forward(): void {
+		requestTraversal(getHistoryDocument(this), 1);
+	}
+
+	go(delta = 0): void {
+		requestTraversal(getHistoryDocument(this), toLong(delta));
+	}
+
+	pushState(data: any, _unused: string, url?: string | URL | null): void {
+		updateHistory(this, "pushState", data, url);
+	}
+
+	replaceState(data: any, _unused: string, url?: string | URL | null): void {
+		updateHistory(this, "replaceState", data, url);
+	}
+}
+
+declareSealedRoot(History);
+
+Object.defineProperty(History.prototype, Symbol.toStringTag, {
+	value: "History",
+	configurable: true,
+});
+
+function getHistoryDocument(history: History): Document {
+	return _(history).historyWindow.document as unknown as Document;
+}
+
+function requestTraversal(document: Document, delta: number): void {
+	const attached = getAttachedDocument(document);
+	if (attached !== undefined) {
+		setTimeout(() => _(attached).extra.historyTraversed(delta), 0);
+	}
+}
+
+// HTML's shared history push/replace state steps. The URL resolves
+// against the document's base URL and may differ only where the document
+// could have reached it without leaving.
+function updateHistory(
+	history: History,
+	method: "pushState" | "replaceState",
+	data: unknown,
+	url: string | URL | null | undefined,
+): void {
+	const document = getHistoryDocument(history);
+	const state = cloneStructured(data, `execute '${method}' on 'History'`);
+	const documentURL = _(document).extra.documentURL;
+	let newURL = documentURL;
+	if (url != null && String(url) !== "") {
+		const parsed = parseURL(String(url), getDocumentBaseURL(document));
+		if (parsed === null || !canRewriteURL(documentURL, parsed)) {
+			throw domError(
+				"SecurityError",
+				`Failed to execute '${method}' on 'History': A history state ` +
+					`object with URL '${url}' cannot be created in a document ` +
+					`with URL '${documentURL}'.`,
+			);
+		}
+		newURL = parsed;
+	}
+	const session = getSessionHistory(document);
+	if (session.targetURL === null && newURL !== documentURL) {
+		session.targetURL = documentURL;
+	}
+	_(document).extra.documentURL = newURL;
+	changeHistory(document, state, method === "replaceState");
 }
 
 // The runtime's own navigator's count, kept from when the module loaded,
@@ -38238,7 +38593,8 @@ export class Window extends EventTarget {
 		const slots = _(this);
 		let history = slots.history;
 		if (history === undefined) {
-			history = createHistory();
+			history = constructInternal(() => new History(this)) as unknown as
+				globalThis.History;
 			slots.history = history;
 		}
 		return history;
@@ -38824,6 +39180,7 @@ export const platform = {
 	HashChangeEvent,
 	Highlight,
 	HighlightRegistry,
+	History,
 	InputEvent,
 	IntersectionObserver,
 	KeyboardEvent,
@@ -38847,6 +39204,7 @@ export const platform = {
 	Permissions,
 	PermissionStatus,
 	PointerEvent,
+	PopStateEvent,
 	ProcessingInstruction,
 	RadioNodeList,
 	Range,
@@ -39170,6 +39528,8 @@ export type {
 	BeforeUnloadEvent,
 	MessageEvent,
 	HashChangeEvent,
+	PopStateEvent,
+	History,
 	ErrorEvent,
 	PromiseRejectionEvent,
 	StorageEvent,
