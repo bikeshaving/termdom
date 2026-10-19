@@ -213,6 +213,15 @@ export function paintsAsBefore(
 	if (before.counters !== after.counters) {
 		return "whole";
 	}
+	if (
+		before !== after &&
+		(isDocumentElement(element) || element === painter.document.body) &&
+		(before.fill !== after.fill ||
+			before.gradient !== after.gradient ||
+			before.display !== after.display)
+	) {
+		return "whole";
+	}
 	return before === after;
 }
 
@@ -470,6 +479,9 @@ export class Painter {
 	// Whether each layer member looked up in this frame has an ancestor
 	// with opacity: 0.
 	inTransparent: Map<Element, boolean>;
+	// The root, or the body standing in for it, whose background color
+	// fills the whole screen, as a browser paints it across the canvas.
+	canvasElement: Element | null;
 
 	constructor(
 		document: Document,
@@ -484,6 +496,7 @@ export class Painter {
 		this.highlightStyles = new Map();
 		this.paintedText = new Map();
 		this.inTransparent = new Map();
+		this.canvasElement = null;
 		this.window = document.defaultView as unknown as Window;
 		this.document = document;
 		this.layout = layout;
@@ -605,11 +618,54 @@ export function paint(painter: Painter, ctx: CellContext): void {
 		(bodyDisplay === "contents" || bodyDisplay.startsWith("inline"));
 	const root = (fromRoot ? document.documentElement : document.body) as Element;
 	const rendered = renderedTopLayer(painter.document) as unknown as Element[];
+	const canvas = painter.canvasElement = findCanvasElement(painter);
+	const canvasFill = canvas === null
+		? null
+		: getPaintStyle(painter, canvas).fill;
 	for (const [top, bottom] of ctx.bands) {
 		ctx.bandTop = top;
 		ctx.bandBottom = bottom;
+		if (canvasFill !== null) {
+			const clip = ctx.clipRect;
+			ctx.clipRect = null;
+			drawRect(
+				ctx,
+				0,
+				top - ctx.viewportOffset,
+				ctx.cols,
+				bottom - top,
+				canvasFill,
+			);
+			ctx.clipRect = clip;
+		}
 		paintBand(painter, ctx, root, rendered, layers);
 	}
+}
+
+// The root's background is the canvas's. A root <html> with none takes
+// its body's, as CSS Backgrounds says.
+function findCanvasElement(painter: Painter): Element | null {
+	const document = painter.document;
+	const html = document.documentElement as Element | null;
+	if (html === null) {
+		return null;
+	}
+	const htmlStyle = getPaintStyle(painter, html);
+	if (htmlStyle.display === "none") {
+		return null;
+	}
+	if (htmlStyle.fill !== null || htmlStyle.gradient !== null) {
+		return html;
+	}
+	const body = document.body as Element | null;
+	if (body === null || getLocalName(html) !== "html") {
+		return null;
+	}
+	const bodyStyle = getPaintStyle(painter, body);
+	return bodyStyle.display !== "none" &&
+			(bodyStyle.fill !== null || bodyStyle.gradient !== null)
+		? body
+		: null;
 }
 
 /**
@@ -913,7 +969,7 @@ function paintBlock(
 		width: getComputedWidth(node),
 		height: getComputedHeight(node),
 	};
-	paintBox(painter, style, [rect], rect, ctx);
+	paintBox(painter, element, style, [rect], rect, ctx);
 	if (style.visible) {
 		renderOutsideMarker(painter, element, style, rect, ctx);
 	}
@@ -1216,6 +1272,7 @@ function visibleChildren(
 
 function paintBox(
 	painter: Painter,
+	element: Element,
 	style: PaintStyle,
 	fragments: Rect[],
 	rect: Rect,
@@ -1224,7 +1281,7 @@ function paintBox(
 	if (!style.visible) {
 		return;
 	}
-	if (style.fill !== null) {
+	if (style.fill !== null && element !== painter.canvasElement) {
 		for (const fragment of fragments) {
 			drawRect(
 				ctx,
@@ -1499,7 +1556,7 @@ function paintInline(
 	const fragments = run.boxes.get(element) ?? [];
 	const rect = fragments.length > 0 ? unionRect(fragments) : null;
 	if (rect !== null) {
-		paintBox(painter, {...style, border: null}, fragments, rect, ctx);
+		paintBox(painter, element, {...style, border: null}, fragments, rect, ctx);
 		paintInlineBorder(style, fragments, ctx);
 		paintCaret(painter, element, style, ctx);
 	}
@@ -1577,7 +1634,7 @@ function paintAtomic(
 	if (style.display === "none" || style.transparent) {
 		return;
 	}
-	paintBox(painter, style, [rect], rect, ctx);
+	paintBox(painter, element, style, [rect], rect, ctx);
 	if (style.visible) {
 		renderOutsideMarker(painter, element, style, rect, ctx);
 	}

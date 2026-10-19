@@ -518,3 +518,72 @@ test("a translucent background blends over what is under it", async () => {
 	expect([cell.isBgRGB(), cell.getBgColor()]).toEqual([true, 0xe5e5e5]);
 	live.dispose();
 });
+
+function backgroundAt(terminal: MockProcess, row: number, col: number): number {
+	const cell = (terminal as any)
+		.terminal.buffer.active.getLine(row)
+		.getCell(col);
+	return cell.isBgRGB() ? cell.getBgColor() : -1;
+}
+
+async function mountPage(
+	css: string,
+	body = "<p>hi</p>",
+): Promise<{dom: TermDOM; terminal: MockProcess}> {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		colorDepth: "rgb",
+		html:
+			`<!DOCTYPE html><html><head><style>${css}</style></head>` +
+			`<body>${body}</body></html>`,
+	});
+	dom.attach();
+	await nextFrame(dom);
+	return {dom, terminal};
+}
+
+test("the root's background fills the whole screen, past its content", async () => {
+	const {dom, terminal} = await mountPage("html{background:#ff0000}");
+	expect(backgroundAt(terminal, 0, 19)).toBe(0xff0000);
+	expect(backgroundAt(terminal, 5, 0)).toBe(0xff0000);
+	dom.dispose();
+});
+
+test("a body's background fills the screen when the root has none", async () => {
+	const {dom, terminal} =
+		await mountPage("body{background:#0000ff;margin:2ch;height:2px}");
+	expect(backgroundAt(terminal, 0, 0)).toBe(0x0000ff);
+	expect(backgroundAt(terminal, 5, 19)).toBe(0x0000ff);
+	dom.dispose();
+});
+
+test("with both set, the root fills the screen and the body its own box", async () => {
+	const {dom, terminal} = await mountPage(
+		"html{background:#ff0000} body{background:#0000ff;margin:0}",
+	);
+	expect(backgroundAt(terminal, 0, 0)).toBe(0x0000ff);
+	expect(backgroundAt(terminal, 5, 0)).toBe(0xff0000);
+	dom.dispose();
+});
+
+test("a body that changes its background repaints the whole screen", async () => {
+	const {dom, terminal} = await mountPage("body{background:#0000ff}");
+	expect(backgroundAt(terminal, 5, 10)).toBe(0x0000ff);
+	dom.document.body.style.background = "#00ff00";
+	await nextFrame(dom);
+	expect(backgroundAt(terminal, 0, 0)).toBe(0x00ff00);
+	expect(backgroundAt(terminal, 5, 10)).toBe(0x00ff00);
+	dom.document.body.style.background = "transparent";
+	await nextFrame(dom);
+	expect(backgroundAt(terminal, 5, 10)).toBe(-1);
+	dom.dispose();
+});
+
+test("a translucent body background is blended once, not twice", async () => {
+	const {dom, terminal} = await mountPage(
+		"html{background:transparent} body{background:rgb(0 0 255 / 50%)}",
+	);
+	expect(backgroundAt(terminal, 0, 0)).toBe(backgroundAt(terminal, 5, 0));
+	dom.dispose();
+});
