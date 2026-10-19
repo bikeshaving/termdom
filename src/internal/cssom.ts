@@ -7653,13 +7653,11 @@ function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	if (fresh.length === 0) {
 		return;
 	}
-	const layerRanks = rankLayers(cascade);
-	for (const rule of cascade.parsedRules) {
-		rule.layerRank = rule.layer === null
-			? cascade.unlayeredRank
-			: (layerRanks.get(rule.layer) ?? cascade.unlayeredRank);
+	if (rankRules(cascade, before)) {
+		sortRulesForCascade(cascade);
+	} else {
+		fileFreshRules(cascade, before);
 	}
-	sortRulesForCascade(cascade);
 	const host = root.host as Element | null;
 	if (host) {
 		invalidateSubtree(cascade, host);
@@ -9393,13 +9391,11 @@ function appendDocumentSheets(cascade: Cascade): boolean {
 	if (fresh.length === 0) {
 		return true;
 	}
-	const layerRanks = rankLayers(cascade);
-	for (const rule of fresh) {
-		rule.layerRank = rule.layer === null
-			? cascade.unlayeredRank
-			: (layerRanks.get(rule.layer) ?? cascade.unlayeredRank);
+	if (rankRules(cascade, before)) {
+		sortRulesForCascade(cascade);
+	} else {
+		fileFreshRules(cascade, before);
 	}
-	sortRulesForCascade(cascade);
 	cascade.sharedRoot = new Map();
 	cascade.passedTokens = new Map();
 	cascade.pseudoSubjectTags = undefined;
@@ -9961,29 +9957,73 @@ function parseAllStylesheets(cascade: Cascade): void {
 }
 
 // Origin first (UA below every author rule, later wins), then layer,
-// then specificity, then the order the rules were read in, where every
-// document sheet comes before every shadow tree's, even one appended
-// after the trees' were read. The pseudo-element rules are filed again in
-// that order.
+// then specificity, then the order the rules were read in, which a stable
+// sort keeps, where every document sheet comes before every shadow
+// tree's, even one appended after the trees' were read.
+function compareRules(a: ParsedCSSRule, b: ParsedCSSRule): number {
+	if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
+		return a.uaOrigin ? -1 : 1;
+	}
+	if (a.layerRank !== b.layerRank) {
+		return a.layerRank - b.layerRank;
+	}
+	if (a.specificity !== b.specificity) {
+		return a.specificity < b.specificity ? -1 : 1;
+	}
+	if ((a.scope === undefined) !== (b.scope === undefined)) {
+		return a.scope === undefined ? -1 : 1;
+	}
+	return 0;
+}
+
 function sortRulesForCascade(cascade: Cascade): void {
-	const sourceOrder = new Map(
-		cascade.parsedRules.map((rule, index) => [rule, index] as const),
-	);
-	cascade.parsedRules.sort((a, b) => {
-		if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
-			return a.uaOrigin ? -1 : 1;
+	cascade.parsedRules.sort(compareRules);
+	fileRulesByPseudoElement(cascade);
+}
+
+// The rules from `start` on were read after the rest, which are in
+// cascade order and ranked as they were, so only they are sorted, and
+// they are merged in after any earlier rule they tie with.
+function fileFreshRules(cascade: Cascade, start: number): void {
+	const rules = cascade.parsedRules;
+	const fresh = rules.slice(start).sort(compareRules);
+	const merged: ParsedCSSRule[] = [];
+	let i = 0;
+	let j = 0;
+	while (i < start && j < fresh.length) {
+		merged.push(
+			compareRules(rules[i], fresh[j]) <= 0 ? rules[i++] : fresh[j++],
+		);
+	}
+	while (i < start) {
+		merged.push(rules[i++]);
+	}
+	while (j < fresh.length) {
+		merged.push(fresh[j++]);
+	}
+	cascade.parsedRules = merged;
+	fileRulesByPseudoElement(cascade);
+}
+
+// Ranks every rule by its layer, and says whether a rule before `start`
+// moved, which a new layer ranked between the old ones does.
+function rankRules(cascade: Cascade, start: number): boolean {
+	const layerRanks = rankLayers(cascade);
+	let moved = false;
+	for (const [index, rule] of cascade.parsedRules.entries()) {
+		const rank = rule.layer === null
+			? cascade.unlayeredRank
+			: (layerRanks.get(rule.layer) ?? cascade.unlayeredRank);
+		if (index < start && rule.layerRank !== rank) {
+			moved = true;
 		}
-		if (a.layerRank !== b.layerRank) {
-			return a.layerRank - b.layerRank;
-		}
-		if (a.specificity !== b.specificity) {
-			return a.specificity < b.specificity ? -1 : 1;
-		}
-		if ((a.scope === undefined) !== (b.scope === undefined)) {
-			return a.scope === undefined ? -1 : 1;
-		}
-		return sourceOrder.get(a)! - sourceOrder.get(b)!;
-	});
+		rule.layerRank = rank;
+	}
+	return moved;
+}
+
+// The pseudo-element rules are filed again in cascade order.
+function fileRulesByPseudoElement(cascade: Cascade): void {
 	cascade.pseudoRulesByType = new Map();
 	for (const rule of cascade.parsedRules) {
 		if (rule.pseudoElement === undefined) {
