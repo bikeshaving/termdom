@@ -172,7 +172,7 @@ request it was given. That call goes straight to the network and does
 not come back to the listener, as with a Service Worker.
 
 An inline event handler, such as `onerror="..."` in the markup, runs
-only when the page is made with `scripting: true`. It then runs with
+only when the page is made with `scripting: "enabled"`. It then runs with
 full access to everything the program can reach, like the program's
 own code. Under a policy, a handler runs only if the policy allows
 `'unsafe-inline'` in the first of these directives that it names:

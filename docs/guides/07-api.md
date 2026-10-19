@@ -71,15 +71,20 @@ Options:
   policy and every load is allowed, which is also what a browser does
   without the header. A program that shows untrusted markup should set
   a policy. The images guide has recipes.
-- `scripting?: boolean`: whether the page's scripts run, as far as its
-  markup is concerned. TermDOM runs no `<script>` itself, so you say.
-  With `false` (default), a `<noscript>`'s markup is parsed and shown,
+- `scripting?: "none" | "enabled"`: whether the page's scripts run, as
+  far as its markup is concerned. The values are those of
+  `@media (scripting)`. TermDOM runs no `<script>` itself, so you say.
+  With `"none"` (default), a `<noscript>`'s markup is parsed and shown,
   as in a browser with scripting off, and handler attributes such as
-  `onclick="..."` never run. With `true`, a `<noscript>` shows nothing
-  and handler attributes run with the same access as your program, so
-  only turn it on for markup you trust. A `csp` whose
+  `onclick="..."` never run. With `"enabled"`, a `<noscript>` shows
+  nothing and handler attributes run with the same access as your
+  program, so only enable it for markup you trust. A `csp` whose
   `script-src-attr`, or the `script-src` or `default-src` it falls back
   to, is `'none'` turns it off.
+- `reducedMotion?: "no-preference" | "reduce"`: what
+  `@media (prefers-reduced-motion)` tells the page. With
+  `"no-preference"` (default), its transitions run as written. With
+  `"reduce"`, `@media (prefers-reduced-motion: reduce)` matches.
 - `images?: "auto" | "cells" | "none"`: how an `<img>` draws.
   - `"auto"` (default) uses the best method the terminal supports.
   - `"cells"` draws two pixels per cell with half-block characters.

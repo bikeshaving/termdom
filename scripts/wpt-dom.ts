@@ -997,7 +997,7 @@ async function runFile(file: string): Promise<Outcome> {
 			html,
 			url,
 			colorDepth: "rgb",
-			scripting: true,
+			scripting: "enabled",
 		});
 	} catch (error) {
 		return {

@@ -6,7 +6,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 test("an on* attribute reflects as a function and fires with the element as this", async () => {
 	const dom = new TermDOM({
 		transport: new MockProcess().transport,
-		scripting: true,
+		scripting: "enabled",
 	});
 	const {document, window} = dom;
 	document.body.innerHTML = "<button id=\"b\" onclick=\"this.dataset.hit = event.type\">go</button>";

@@ -5100,7 +5100,7 @@ const FORWARDED_HANDLER_ATTRIBUTES: ReadonlySet<string> =
 // Scripting is enabled for a document only while it has a browsing
 // context, i.e. a window (its default view), and the embedder asked for
 // scripting. Handler attributes run with the host's full powers, so a page
-// made without `scripting: true` never runs them. The documents an author
+// made without `scripting: "enabled"` never runs them. The documents an author
 // builds through the DOM -- a DOMParser result, createHTMLDocument, the
 // contents of a <template>, an iframe's content document -- have none, so
 // their markup is inert: `new Function` is never called for a handler

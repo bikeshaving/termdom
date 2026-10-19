@@ -25,8 +25,12 @@ const PNG = encodePNG({
 }) as Uint8Array<ArrayBuffer>;
 
 function create(
-	options: {html?: string; url?: string; csp?: string; scripting?: boolean} =
-		{},
+	options: {
+		html?: string;
+		url?: string;
+		csp?: string;
+		scripting?: "none" | "enabled";
+	} = {},
 ): TermDOM {
 	return new TermDOM({
 		transport: new MockProcess({cols: 40, rows: 12}).transport,
@@ -539,7 +543,9 @@ test("an inline handler runs only where the policy allows 'unsafe-inline', and a
 			["script-src 'none'; script-src-attr 'unsafe-inline'", true, false],
 		] as const) {
 			const dom = create(
-				csp === undefined ? {scripting: true} : {csp, scripting: true},
+				csp === undefined
+					? {scripting: "enabled"}
+					: {csp, scripting: "enabled"},
 			);
 			let ran = 0;
 			global.__inlineHandlerRan = () => ran++;

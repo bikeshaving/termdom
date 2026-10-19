@@ -1,8 +1,8 @@
 /**
  * <noscript> follows whether the page's scripts run, which the embedder
- * says with the `scripting` option. Off, the default, its markup is parsed
- * into elements and shown, as in a browser with scripting off. On, it
- * holds text and shows nothing. A policy that lets no script run turns it
+ * says with the `scripting` option. With "none", the default, its markup
+ * is parsed into elements and shown, as in a browser with scripting off.
+ * With "enabled", it holds text and shows nothing. A policy that lets no script run turns it
  * off whatever the option says.
  */
 import {expect, test} from "@b9g/libuild/test";
@@ -26,7 +26,7 @@ test("without scripting, a noscript's markup is elements, and shows", () => {
 });
 
 test("with scripting, a noscript holds text and shows nothing", () => {
-	const dom = new TermDOM({html: PAGE, scripting: true});
+	const dom = new TermDOM({html: PAGE, scripting: "enabled"});
 	expect(dom.document.getElementById("n")).toBe(null);
 	const text = render(dom);
 	expect(text).toContain("page");
@@ -36,7 +36,7 @@ test("with scripting, a noscript holds text and shows nothing", () => {
 test("a policy that lets no script run turns scripting off", () => {
 	const dom = new TermDOM({
 		html: PAGE,
-		scripting: true,
+		scripting: "enabled",
 		csp: "script-src 'none'",
 	});
 	expect(dom.document.getElementById("n")?.localName).toBe("p");
@@ -48,7 +48,7 @@ test("markup set later parses as its document does", () => {
 	const off = new TermDOM({html: PAGE});
 	off.document.body.innerHTML = markup;
 	expect(off.document.getElementById("m")?.localName).toBe("b");
-	const on = new TermDOM({html: PAGE, scripting: true});
+	const on = new TermDOM({html: PAGE, scripting: "enabled"});
 	on.document.body.innerHTML = markup;
 	expect(on.document.getElementById("m")).toBe(null);
 	expect(render(on)).not.toContain("later");

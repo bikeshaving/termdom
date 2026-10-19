@@ -225,24 +225,27 @@ export interface TermDOMOptions {
 	csp?: string;
 
 	/**
-	 * Whether the page's scripts run, as far as its markup is concerned.
-	 * TermDOM runs no <script> itself, so it is the embedder who says so.
-	 * With `false`, the default, a <noscript>'s markup is parsed and shown,
-	 * as in a browser with scripting off, and handler attributes such as
-	 * `onclick="..."` never run. With `true` a <noscript> shows nothing and
-	 * handler attributes run, with the same powers as the program itself,
-	 * so only set it for markup you trust. A `csp` whose script-src-attr,
-	 * or the script-src or default-src it falls back to, is 'none' turns
-	 * it off.
+	 * Whether the page's scripts run, as far as its markup is concerned,
+	 * with the values of `@media (scripting)`. TermDOM runs no <script>
+	 * itself, so it is the embedder who says so. With `"none"`, the
+	 * default, a <noscript>'s markup is parsed and shown, as in a browser
+	 * with scripting off, and handler attributes such as `onclick="..."`
+	 * never run. With `"enabled"` a <noscript> shows nothing and handler
+	 * attributes run, with the same powers as the program itself, so only
+	 * enable it for markup you trust. A `csp` whose script-src-attr, or
+	 * the script-src or default-src it falls back to, is 'none' turns it
+	 * off. Any other value throws a TypeError.
 	 */
-	scripting?: boolean;
+	scripting?: "none" | "enabled";
 
 	/**
-	 * Whether the page is told its reader prefers reduced motion, through
-	 * `@media (prefers-reduced-motion: reduce)`. Left out, it is told there
-	 * is no preference, and its transitions run as written.
+	 * Whether the page is told its reader prefers reduced motion, with
+	 * the values of `@media (prefers-reduced-motion)`. With
+	 * `"no-preference"`, the default, its transitions run as written.
+	 * With `"reduce"`, `@media (prefers-reduced-motion: reduce)` matches.
+	 * Any other value throws a TypeError.
 	 */
-	reducedMotion?: boolean;
+	reducedMotion?: "no-preference" | "reduce";
 
 	/**
 	 * How an <img> draws.
@@ -355,6 +358,26 @@ function toGraphicsSetting(
 		return "none";
 	}
 	throw new TypeError(`${name} must be "auto", "cells" or "none"`);
+}
+
+function toScripting(option: TermDOMOptions["scripting"]): boolean {
+	if (option === undefined || option === "none") {
+		return false;
+	}
+	if (option === "enabled") {
+		return true;
+	}
+	throw new TypeError('scripting must be "none" or "enabled"');
+}
+
+function toReducedMotion(option: TermDOMOptions["reducedMotion"]): boolean {
+	if (option === undefined || option === "no-preference") {
+		return false;
+	}
+	if (option === "reduce") {
+		return true;
+	}
+	throw new TypeError('reducedMotion must be "no-preference" or "reduce"');
 }
 
 function toFailFast(option: unknown): boolean {
@@ -559,13 +582,13 @@ export class TermDOM extends EventTarget {
 			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
 			url,
 			"text/html",
-			options.scripting === true &&
+			toScripting(options.scripting) &&
 				!forbidsScripts(parseContentSecurityPolicies(options.csp ?? "")),
 		);
 		this.window = window as unknown as globalThis.Window & typeof globalThis;
 
 		const document = this.document = this.window.document;
-		setReducedMotion(document, options.reducedMotion === true);
+		setReducedMotion(document, toReducedMotion(options.reducedMotion));
 		const requestPolicy: RequestPolicy = {
 			policies: parseContentSecurityPolicies(options.csp ?? ""),
 			signal: slots.loads.signal,

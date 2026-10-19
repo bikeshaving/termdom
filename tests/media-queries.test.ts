@@ -182,17 +182,30 @@ test("scripting and prefers-reduced-motion follow the options the page was made 
 	};
 	const plain = new TermDOM({html});
 	expect(color(plain)).toEqual(["rgb(255, 0, 0)", "400", true]);
-	const scripted = new TermDOM({html, scripting: true});
+	const scripted = new TermDOM({html, scripting: "enabled"});
 	expect(color(scripted)).toEqual(["rgb(0, 0, 255)", "400", false]);
 	const forbidden = new TermDOM({
 		html,
-		scripting: true,
+		scripting: "enabled",
 		csp: "script-src 'none'",
 	});
 	expect(color(forbidden)[0]).toBe("rgb(255, 0, 0)");
-	const reduced = new TermDOM({html, reducedMotion: true});
+	const reduced = new TermDOM({html, reducedMotion: "reduce"});
 	expect(color(reduced)[1]).toBe("700");
 	for (const dom of [plain, scripted, forbidden, reduced]) {
 		dom.dispose();
 	}
+});
+
+test("scripting and reducedMotion take their media feature's values, and throw on anything else", () => {
+	for (const scripting of ["none", "enabled"] as const) {
+		new TermDOM({scripting}).dispose();
+	}
+	for (const reducedMotion of ["no-preference", "reduce"] as const) {
+		new TermDOM({reducedMotion}).dispose();
+	}
+	expect(() => new TermDOM({scripting: true as unknown as "enabled"}))
+		.toThrow(TypeError);
+	expect(() => new TermDOM({reducedMotion: true as unknown as "reduce"}))
+		.toThrow(TypeError);
 });

@@ -121,7 +121,7 @@ test("a <script> in rendered HTML is inert, and a handler attribute is the app's
 	const dom = new TermDOM({
 		transport: t.transport,
 		colorDepth: "rgb",
-		scripting: true,
+		scripting: "enabled",
 	});
 	const flags = globalThis as unknown as {
 		__termdomScript?: boolean;
@@ -259,7 +259,7 @@ test("a handler compiles once its node is adopted into the live document", async
 	const dom = new TermDOM({
 		transport: new MockProcess().transport,
 		colorDepth: "rgb",
-		scripting: true,
+		scripting: "enabled",
 	});
 	const flags = globalThis as unknown as InertFlags;
 	flags.__termdomInert = false;
