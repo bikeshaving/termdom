@@ -98,14 +98,15 @@ as the markup&#039;s loads:</p><ol><li>The engine checks them against <code>conn
 the policy has no <code>connect-src</code>.</li><li>The engine offers them to the <code>&quot;fetch&quot;</code> listeners.</li><li>If no listener answers, the engine sends them to the network.</li></ol><p>A listener may call <code>fetch</code> itself, either while it answers or on the
 request it was given. That call goes straight to the network and does
 not come back to the listener, as with a Service Worker.</p><p>An inline event handler, such as <code>onerror=&quot;...&quot;</code> in the markup, runs
-with full access to everything the program can reach, like the
-program&#039;s own code. Under a policy, a handler runs only if the policy
-allows <code>&#039;unsafe-inline&#039;</code> in the first of these directives that it
-names: <code>script-src-attr</code>, <code>script-src</code>, <code>default-src</code>. A nonce or hash
-in the same list cancels <code>&#039;unsafe-inline&#039;</code>. When a handler is blocked,
-the engine reports it with <code>securitypolicyviolation</code>. Without a policy
-every handler runs. Markup the program does not trust therefore needs a
-policy, even one that only says <code>default-src &#039;none&#039;</code>.</p><p>The engine decodes PNG, JPEG, GIF and BMP:</p><table><thead><tr><th>Format</th><th>What decodes</th></tr></thead><tbody><tr><td>PNG</td><td>Every color type and bit depth, palettes, <code>tRNS</code> transparency, Adam7 interlacing</td></tr><tr><td>JPEG</td><td>Baseline and progressive, any chroma subsampling, restart markers, grayscale, CMYK and YCCK. The engine rotates the image by its Exif orientation, as browsers do by default</td></tr><tr><td>GIF</td><td>The first frame, with its transparent color</td></tr><tr><td>BMP</td><td>1, 4, 8, 16, 24 and 32 bits, RLE4 and RLE8</td></tr></tbody></table><p>It does not decode WebP, AVIF or SVG. It also does not decode
+only when the page is made with <code>scripting: &quot;enabled&quot;</code>. It then runs with
+full access to everything the program can reach, like the program&#039;s
+own code. Under a policy, a handler runs only if the policy allows
+<code>&#039;unsafe-inline&#039;</code> in the first of these directives that it names:
+<code>script-src-attr</code>, <code>script-src</code>, <code>default-src</code>. A nonce or hash in the
+same list cancels <code>&#039;unsafe-inline&#039;</code>. When a handler is blocked, the
+engine reports it with <code>securitypolicyviolation</code>. With scripting on
+and no policy, every handler runs. Leave scripting off for markup the
+program does not trust.</p><p>The engine decodes PNG, JPEG, GIF and BMP:</p><table><thead><tr><th>Format</th><th>What decodes</th></tr></thead><tbody><tr><td>PNG</td><td>Every color type and bit depth, palettes, <code>tRNS</code> transparency, Adam7 interlacing</td></tr><tr><td>JPEG</td><td>Baseline and progressive, any chroma subsampling, restart markers, grayscale, CMYK and YCCK. The engine rotates the image by its Exif orientation, as browsers do by default</td></tr><tr><td>GIF</td><td>The first frame, with its transparent color</td></tr><tr><td>BMP</td><td>1, 4, 8, 16, 24 and 32 bits, RLE4 and RLE8</td></tr></tbody></table><p>It does not decode WebP, AVIF or SVG. It also does not decode
 arithmetic-coded or lossless JPEGs.</p><p><code>load</code> and <code>error</code> fire as they do in a browser. <code>decode()</code>,
 <code>complete</code>, <code>naturalWidth</code>, <code>naturalHeight</code> and <code>currentSrc</code> report on
 the image. <code>new Image()</code> creates an <code>&lt;img&gt;</code>. The engine reads <code>srcset</code>
