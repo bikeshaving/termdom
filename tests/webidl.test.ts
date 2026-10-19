@@ -236,6 +236,42 @@ test("no interface a page can reach shows an internal member", () => {
 	expect(shown).toEqual([]);
 });
 
+test("a page's own class keeps the members it names with an underscore", () => {
+	const {window, document} = setup();
+
+	class Router extends window.EventTarget {
+		at: string;
+		constructor() {
+			super();
+			this.at = this._where();
+		}
+
+		_where(): string {
+			return "here";
+		}
+	}
+
+	expect(new Router().at).toBe("here");
+	expect(typeof Router.prototype._where).toBe("function");
+
+	class Widget extends window.HTMLElement {
+		_read(): number {
+			return 1;
+		}
+	}
+
+	class FancyWidget extends Widget {
+		_fancy(): number {
+			return this._read() + 1;
+		}
+	}
+
+	window.customElements.define("fancy-widget", FancyWidget);
+	const widget = document.createElement("fancy-widget");
+	document.body.append(widget);
+	expect(widget._fancy()).toBe(2);
+});
+
 test("no member the specs name starts with an underscore, which internal steps use", () => {
 	const named = Object.entries(DOM_INTERFACES).flatMap(([name, idl]) =>
 		idl.members.map(([key]) => `${name}.${key}`))

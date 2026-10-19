@@ -700,13 +700,17 @@ function hiddenPrototype(type: Constructor, root: Constructor): object {
 			: hiddenPrototype(getParentClass(type), root);
 		// A class that defines no internal steps of its own shares its
 		// parent's, so the records of a div and a span share a shape and a
-		// read of either stays fast.
-		hidden = parent !== null && !hasMovableMembers(type.prototype)
+		// read of either stays fast. A page's class has none: what it names
+		// with "_" is its own, and stays where the page put it.
+		const page = isPageClass(type, root);
+		hidden = parent !== null && (page || !hasMovableMembers(type.prototype))
 			? parent
 			: (Object.create(parent) as object);
 		hiddenPrototypes.set(type, hidden);
 		roots.set(type, root);
-		moveMembers(type.prototype, hidden);
+		if (!page) {
+			moveMembers(type.prototype, hidden);
+		}
 	}
 
 	return hidden;
@@ -714,6 +718,24 @@ function hiddenPrototype(type: Constructor, root: Constructor): object {
 
 // No Web IDL member's name starts with "_", so none of these is one a
 // page should see.
+// A page reaches the engine's classes through their interface objects,
+// which none of the engine's own classes extends.
+function isPageClass(type: Constructor, root: Constructor): boolean {
+	for (let current = type; current !== root;) {
+		const parent =
+			sealedParents.get(current) ??
+			(Object.getPrototypeOf(current) as Constructor);
+		if (interfaceObjects.has(parent)) {
+			return true;
+		}
+		if (typeof parent !== "function") {
+			return false;
+		}
+		current = getParentClass(current);
+	}
+	return false;
+}
+
 function internalKeys(object: object): string[] {
 	return Object.getOwnPropertyNames(object)
 		.filter((key) => key.startsWith("_"));
