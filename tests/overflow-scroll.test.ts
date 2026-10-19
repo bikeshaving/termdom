@@ -88,6 +88,28 @@ test("scrollTop writes round to whole rows and clamp to the extent", async () =>
 	dom.dispose();
 });
 
+test("a box's padding is part of the port it scrolls in, not room to scroll", async () => {
+	const {terminal, dom, box} = makeScrollerApp({boxHeight: 5, lines: 3});
+	box.style.padding = "1px 0";
+	await nextFrame(dom);
+	expect(box.scrollHeight).toBe(box.clientHeight);
+	box.scrollTop = 2;
+	expect(box.scrollTop).toBe(0);
+	await send(terminal, "\x1b[<65;2;3M");
+	await nextFrame(dom);
+	expect(box.scrollTop).toBe(0);
+	for (let i = 3; i < 6; i++) {
+		const line = dom.document.createElement("div");
+		line.textContent = `row ${i}`;
+		box.appendChild(line);
+	}
+	await nextFrame(dom);
+	box.scrollTop = 99;
+	expect(box.scrollTop).toBe(box.scrollHeight - box.clientHeight);
+	expect(box.scrollTop).toBe(3);
+	dom.dispose();
+});
+
 test("scrollTop pins to 0 on a box whose overflow is visible", async () => {
 	const terminal = new MockProcess({cols: 20, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});

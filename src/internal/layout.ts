@@ -6733,17 +6733,24 @@ export class Layout {
 	// determine the extent, which must not be clamped against.
 	scrollRange(element: Element, axis: "left" | "top"): number | null {
 		const extent = this.getScrollExtent(element);
-		const port = this.contentRect(element);
 		const size = extent === null
 			? null
 			: axis === "top" ? extent.height : extent.width;
-		if (size === null || !port) {
+		const rect = this.getRect(element);
+		const node = this.nodeMap.get(element);
+		if (size === null || !rect || node === undefined) {
 			return null;
 		}
 		const overflow =
 			getComputedValue(element, `overflow-${axis === "top" ? "y" : "x"}`) ||
 			getComputedValue(element, "overflow");
-		const room = size - Math.round(axis === "top" ? port.height : port.width);
+		// The extent reaches the far padding edge, as scrollHeight does, so
+		// the port it scrolls in is the padding box, as clientHeight is.
+		const {border} = node.style;
+		const port = axis === "top"
+			? rect.height - border.top - border.bottom
+			: rect.width - border.left - border.right;
+		const room = size - Math.round(port);
 		return isScrollingOverflow(overflow) ? Math.max(0, room) : 0;
 	}
 
