@@ -97,6 +97,23 @@ test("an ancestor's style attribute puts the markers inside", async () => {
 	dom.dispose();
 });
 
+test("a sheet a shadow tree adopts before its host connects styles the tree", async () => {
+	const dom = created("<main></main>");
+	await nextFrame(dom);
+	const w = dom.window as any;
+	const sheet = new w.CSSStyleSheet();
+	sheet.replaceSync(":host { display: block } .t { padding-left: 1px }");
+	const host = dom.document.createElement("div");
+	const shadow = host.attachShadow({mode: "open"});
+	shadow.adoptedStyleSheets = [sheet];
+	shadow.innerHTML = "<div class=t>in</div>";
+	dom.document.querySelector("main")!.append(host);
+	await nextFrame(dom);
+	const inner = shadow.querySelector(".t")!;
+	expect(dom.window.getComputedStyle(inner).paddingLeft).toBe("1px");
+	dom.dispose();
+});
+
 test("the screen after sheets come and go is what a fresh render shows", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 20});
 	const dom = new TermDOM({

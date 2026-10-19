@@ -3883,7 +3883,7 @@ function checkAdoptable(tree: Node, sheet: unknown): CSSStyleSheet {
 			sheet,
 		);
 	}
-	sheetNotifiers.set(sheet, () => getTreeCascade(tree)?.syncStylesheets());
+	sheetNotifiers.set(sheet, () => syncAdoptedSheets(tree, true));
 	return sheet;
 }
 
@@ -3933,7 +3933,7 @@ function observableAdopted(
 		return proxy;
 	}
 	const changed = (): void => {
-		getTreeCascade(target)?.syncStylesheets();
+		syncAdoptedSheets(target, false);
 	};
 	// Assignment to arbitrary indices of adoptedStyleSheets must be
 	// observed.
@@ -12060,7 +12060,34 @@ export function getAdoptedStyleSheets(tree: Node): globalThis.CSSStyleSheet[] {
 
 export function adoptStyleSheets(tree: Node, sheets: unknown): void {
 	adopt(tree, sheets);
-	getTreeCascade(tree)?.syncStylesheets();
+	syncAdoptedSheets(tree, false);
+}
+
+// A shadow tree's sheets are its own to catch up on, and one not yet
+// registered, whose host is not connected, reads them when it registers. The document's adopted
+// sheets come after its others, so ones appended to the list are read
+// alone, as an appended <style> is. A sheet whose rules changed is read
+// again with the rest.
+function syncAdoptedSheets(tree: Node, rulesChanged: boolean): void {
+	const cascade = getTreeCascade(tree);
+	if (cascade === undefined) {
+		return;
+	}
+	if (isShadowRoot(tree)) {
+		if (cascade.shadowRoots.has(tree) || tree.host.isConnected) {
+			cascade.syncShadowRoot(tree);
+		}
+		return;
+	}
+	if (
+		rulesChanged ||
+		cascade.stylesheetsDirty ||
+		cascade.documentSheets === null ||
+		cascade.parsing ||
+		!appendDocumentSheets(cascade)
+	) {
+		cascade.syncStylesheets();
+	}
 }
 
 /** A style element's sheet. Null outside a tree, as in a browser. */
