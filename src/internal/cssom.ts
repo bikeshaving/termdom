@@ -6689,6 +6689,9 @@ export class Cascade {
 	pseudoRulesByType: Map<string, ParsedCSSRule[]>;
 	counterRulesExist: boolean;
 	listItemRulesExist: boolean;
+	// Whether an author rule may set list-style-position to anything but
+	// outside, the one position whose marker has no node of its own.
+	insideMarkerRulesExist: boolean;
 	// The elements whose generated content reads a counter, and the
 	// counters each element declared when its scope was built. A counter
 	// one element changes renumbers the content of others, which nothing
@@ -6822,6 +6825,7 @@ export class Cascade {
 		this.pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 		this.counterRulesExist = false;
 		this.listItemRulesExist = false;
+		this.insideMarkerRulesExist = false;
 		this.counterUsers = new Set();
 		this.countersStale = false;
 		this.counterSets = new WeakMap();
@@ -8290,6 +8294,9 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 		}
 	}
 	for (const element of listItems) {
+		if (!markerMayBeInside(cascade, element)) {
+			continue;
+		}
 		const computedStyle = cascade.declarationFor(element);
 		const display = _(computedStyle)._computedValue("display");
 		const listStylePosition =
@@ -9894,6 +9901,7 @@ function parseAllStylesheets(cascade: Cascade): void {
 	cascade.pseudoSubjectTags = undefined;
 	cascade.counterRulesExist = false;
 	cascade.listItemRulesExist = false;
+	cascade.insideMarkerRulesExist = false;
 	cascade.scopedRulesExist = false;
 	cascade.hasRulesExist = false;
 	cascade.hasAnchors = new Set();
@@ -10946,6 +10954,13 @@ function parseSelector(
 	if (!uaOrigin && declarations["display"] === "list-item") {
 		cascade.listItemRulesExist = true;
 	}
+	if (
+		!uaOrigin &&
+		((declarations["list-style-position"] ?? "outside") !== "outside" ||
+			declarations.all !== undefined)
+	) {
+		cascade.insideMarkerRulesExist = true;
+	}
 
 	const required = reading.compounds.at(-1)?.required;
 	// `:where(svg)` requires its name as `svg` does.
@@ -11744,12 +11759,19 @@ function pseudoRuleCouldMatch(
 	pseudoType: string,
 ): boolean {
 	if (pseudoType === "::marker") {
-		// Markers exist only on display:list-item boxes.
+		// Markers exist only on display:list-item boxes, and only one inside
+		// the box is a node.
+		const name = getHTMLLocalName(element);
 		return (
-			getHTMLLocalName(element) === "li" ||
-			getHTMLLocalName(element) === "summary" ||
-			cascade.listItemRulesExist ||
-			(getAttributeValue(element, "style") ?? "").includes("list-item")
+			(name === "li" ||
+				name === "summary" ||
+				(getAttributeValue(element, "style") ?? "").includes("list-item") ||
+				(cascade.listItemRulesExist &&
+					anyRuleMatches(
+						cascade,
+						element,
+						(rule) => rule.declarations.display === "list-item",
+					))) && markerMayBeInside(cascade, element)
 		);
 	}
 	if (!cascade.pseudoRulesByType.has(pseudoType)) {
@@ -11772,6 +11794,73 @@ function pseudoRuleCouldMatch(
 		}
 		if (!rule.reachesHost) {
 			missed.add(rule.matcher);
+		}
+	}
+	return false;
+}
+
+// A list item's list-style-position is inside where its style attribute
+// or a rule of its own may say so, or else where its parent's is, as it
+// inherits. A page's rules seldom set it, so the parent's style, which
+// its items share, is built only when one does.
+function markerMayBeInside(cascade: Cascade, element: Element): boolean {
+	if (
+		getHTMLLocalName(element) === "summary" ||
+		(getAttributeValue(element, "style") ?? "").includes("inside") ||
+		(cascade.insideMarkerRulesExist &&
+			anyRuleMatches(
+				cascade,
+				element,
+				(rule) =>
+					rule.declarations["list-style-position"] !== undefined ||
+					rule.declarations.all !== undefined,
+			))
+	) {
+		return true;
+	}
+	const parent = flatParentElement(element);
+	if (parent === null) {
+		return false;
+	}
+	if (!cascade.insideMarkerRulesExist) {
+		return mayInheritInsideMarker(parent);
+	}
+	return _(cascade.declarationFor(parent))._computedValue(
+		"list-style-position",
+	) !== "outside";
+}
+
+// With no author rule for it, list-style-position is inside only where a
+// style attribute or the UA sheet's summary sets it.
+function mayInheritInsideMarker(element: Element): boolean {
+	for (
+		let at: Element | null = element; at !== null; at = flatParentElement(at)
+	) {
+		if (
+			getHTMLLocalName(at) === "summary" ||
+			(getAttributeValue(at, "style") ?? "").includes("inside")
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Whether a rule for the element itself, not one of its pseudo-elements,
+// that `wanted` picks matches it.
+function anyRuleMatches(
+	cascade: Cascade,
+	element: Element,
+	wanted: (rule: ParsedCSSRule) => boolean,
+): boolean {
+	for (const rule of getCandidateRules(cascade, element)) {
+		if (
+			rule.pseudoElement === undefined &&
+			wanted(rule) &&
+			subjectCouldMatch(element, rule) &&
+			ruleSelectorMatches(element, rule)
+		) {
+			return true;
 		}
 	}
 	return false;

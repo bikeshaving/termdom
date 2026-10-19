@@ -84,3 +84,15 @@ test("an appended sheet that puts markers inside gives the items marker nodes", 
 	expect(terminal.getPlainText()).toContain("    • one");
 	dom.dispose();
 });
+
+test("an ancestor's style attribute puts the markers inside", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 6});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		html: "<div style=\"list-style-position: inside\"><ul><li>one</li></ul></div>",
+	});
+	dom.attach();
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("    • one");
+	dom.dispose();
+});

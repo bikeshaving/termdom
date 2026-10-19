@@ -46,3 +46,12 @@ test("an inline list-item style gets a marker", async () => {
 		),
 	).toEqual(["▪ one"]);
 });
+
+test("a rule that puts markers inside reaches only the items it styles", async () => {
+	expect(
+		await lines(
+			"<style>.list-inside { list-style-position: inside } .list-item { display: list-item }</style>",
+			"<ul><li>one</li></ul><ul class=\"list-inside\"><li>two</li><div class=\"list-item\">three</div></ul><ul><li class=\"list-inside\">four</li></ul>",
+		),
+	).toEqual(["  • one", "    • two", "    • three", "    • four"]);
+});
