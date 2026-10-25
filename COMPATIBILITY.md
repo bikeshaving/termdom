@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-205 features supported, 31 probed and unsupported,
+207 features supported, 29 probed and unsupported,
 153 CSS properties not applicable to a character grid,
 128 applicable and not implemented,
 9 not yet probed.
@@ -209,7 +209,7 @@ changed.
 | `overflow-wrap` | yes |
 | `line-height` | yes |
 | `direction` | yes |
-| `opacity` | no (no effect) |
+| `opacity` | yes |
 | `font-family` | no (no effect) |
 | `font-size` | no (no effect) |
 | `letter-spacing` | no (no effect) |
@@ -224,7 +224,7 @@ changed.
 | `list-style` | yes |
 | `border-collapse` | yes |
 | `table-layout` | yes |
-| `vertical-align` | no (no effect) |
+| `vertical-align` | yes |
 | `content` | yes |
 | `counter-reset` | no (no effect) |
 | `counter-increment` | no (no effect) |
