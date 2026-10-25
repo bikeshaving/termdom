@@ -892,6 +892,26 @@ test("a row group spans its own rows", async () => {
 	dom.dispose();
 });
 
+test("a cell's percentage height is of its table's, and auto when the table's is", async () => {
+	// Email builders nest a table per module in an outer cell and give each
+	// module's cell height="100%". Of the outer cell, every module was as
+	// tall as all of them together.
+	const {box, dom} = await render(
+		"<table><tr><td id=outer>" +
+			"<table id=a><tr><td height=\"100%\">a</td></tr></table>" +
+			"<table id=b><tr><td style=\"height: 100%\">b</td></tr></table>" +
+			"</td></tr></table>" +
+			"<table id=sized style=\"height: 10px\"><tr><td height=\"100%\">c</td></tr></table>",
+	);
+	expect(box("#a").height).toBe(3);
+	expect(box("#b").height).toBe(3);
+	expect(box("#b").top).toBe(box("#a").top + 3);
+	expect(box("#outer").height).toBe(8);
+	expect(box("#sized").height).toBe(10);
+	expect(box("#sized td").height).toBe(10);
+	dom.dispose();
+});
+
 test("an absolute box after an anonymous table starts below it", async () => {
 	const {box, dom} = await render(
 		"<div style=\"position: relative\">" +

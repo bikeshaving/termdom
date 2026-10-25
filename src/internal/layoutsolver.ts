@@ -3882,6 +3882,15 @@ function layoutTable(
 
 	const rowHeights = new Array<number>(rows.length).fill(0);
 
+	// A cell's percentage height is of the table's, and is auto while the
+	// table's height is its content's (css2 §10.5), whatever the table
+	// sits in. Email builders put height="100%" on every module's cell.
+	const tableHeight =
+		heightSpace === "definite" &&
+			isStyleDimensionDefined(node, "column", ownerHeight)
+			? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
+			: NaN;
+
 	// Measured, not placed: the pass below places each cell once, at its
 	// row's height. Placing here as well laid every cell out twice, which
 	// doubled the work at each level of nested tables.
@@ -3901,10 +3910,10 @@ function layoutTable(
 				false,
 			);
 			// css2 §17.5.3: a cell's height is the least its row takes.
-			if (isStyleDimensionDefined(cell.node, "column", ownerHeight)) {
+			if (isStyleDimensionDefined(cell.node, "column", tableHeight)) {
 				cell.node.result.height = Math.max(
 					cell.node.result.height,
-					resolveValue(cell.node.style.height, ownerHeight),
+					resolveValue(cell.node.style.height, tableHeight),
 				);
 			}
 			cell.height = cell.node.result.height;
