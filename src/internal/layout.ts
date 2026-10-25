@@ -2202,21 +2202,25 @@ function dropLayoutNode(layout: Layout, node: Node): void {
 	untrackNode(layout, node);
 }
 
-// Whether the node is still the KIND of box the element generates: run
-// vs boxes of its own, and hidden vs not. Neither is fixable by
-// re-measuring.
+// Whether the node is still the KIND of box the element generates:
+// measured (a run, a replaced box or a math root) vs boxes of its own,
+// and hidden vs not. Neither is fixable by re-measuring. A block image
+// that loads after showing its alt text goes from boxes of its own to
+// replaced.
 function isBoxKindMatch(
 	layout: Layout,
 	element: Element,
 	layoutNode: LayoutNode,
 ): boolean {
-	if (isMeasuredAsRun(element) !== layout.measureNodes.has(layoutNode)) {
+	const hidden = getLayoutDisplay(element) === "none";
+	const measured =
+		!hidden && (
+			isReplacedBox(element) || isMathRoot(element) || isMeasuredAsRun(element)
+		);
+	if (measured !== layout.measureNodes.has(layoutNode)) {
 		return false;
 	}
-	return (
-		(getLayoutDisplay(element) === "none") ===
-		(layoutNode.style.displayType === "none")
-	);
+	return hidden === (layoutNode.style.displayType === "none");
 }
 
 function dropAnonymousBox(layout: Layout, box: Box): void {

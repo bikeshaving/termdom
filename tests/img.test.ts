@@ -701,6 +701,28 @@ test("an image that will not show is its alt text, inline", async () => {
 	dom.dispose();
 });
 
+test("a block image that shows its alt text takes its own size once it loads", async () => {
+	const wide = png(80, 32, () => BLUE); // 10 by 2 cells
+	const {dom, document} = await mount(
+		"<img src=missing.png alt=\"masthead\" style=\"display: block; width: 100%\">",
+	);
+	const image = document.querySelector("img")!;
+	await loaded(image);
+	await nextFrame(dom);
+	expect(image.getBoundingClientRect().height).toBe(1);
+	image.src = wide;
+	await until(() => image.naturalWidth > 0);
+	await nextFrame(dom);
+	expect(image.getBoundingClientRect().width).toBe(40);
+	expect(image.getBoundingClientRect().height).toBe(8);
+	// And back to its alt text when the next source is broken.
+	image.src = "missing.png";
+	await until(() => image.complete);
+	await nextFrame(dom);
+	expect(image.getBoundingClientRect().height).toBe(1);
+	dom.dispose();
+});
+
 test("in quirks mode, an image with a size that will not show is a box", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({
