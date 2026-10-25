@@ -1099,6 +1099,18 @@ export const DOM_INTERFACES: Readonly<Record<string, IdlInterface>> = {
 		iterable: "maplike",
 		members: [["highlightsFromPoint", "o2"]],
 	},
+	History: {
+		members: [
+			["length", "r"],
+			["scrollRestoration", "a"],
+			["state", "r"],
+			["back", "o0"],
+			["forward", "o0"],
+			["go", "o0"],
+			["pushState", "o2"],
+			["replaceState", "o2"],
+		],
+	},
 	HTMLAllCollection: {
 		indexed: true,
 		members: [["length", "r"], ["item", "o0"], ["namedItem", "o1"]],
@@ -2813,6 +2825,12 @@ export const DOM_INTERFACES: Readonly<Record<string, IdlInterface>> = {
 			["getCoalescedEvents", "o0"],
 			["getPredictedEvents", "o0"],
 		],
+	},
+	PopStateEvent: {
+		parent: "Event",
+		constructible: 1,
+		constructorArguments: "o1",
+		members: [["hasUAVisualTransition", "r"], ["state", "r"]],
 	},
 	ProcessingInstruction: {
 		parent: "CharacterData",
