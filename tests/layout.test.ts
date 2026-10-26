@@ -1413,6 +1413,31 @@ test("an overlay with no insets paints on the row its flow position names", asyn
 	termdom.dispose();
 });
 
+test("a positioned span keeps its padding, so a label clears the border it sits on", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 6});
+	const termdom = new TermDOM({transport: terminal.transport});
+	termdom.document.head.innerHTML =
+		"<style>" +
+		".box { position: relative; border: 1px solid; margin-top: 1px }" +
+		"span { position: absolute; padding: 0 1ch; background: Canvas }" +
+		".title { top: -1px; left: 1ch }" +
+		".hint { bottom: -1px; right: 1ch }" +
+		"</style>";
+	termdom.document.body.innerHTML =
+		"<div class=\"box\"><span class=\"title\">title</span>" +
+		"<div>body</div><span class=\"hint\">hint</span></div>";
+	await nextFrame(termdom);
+
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[1]).toBe("┌─ title ────────────────────┐");
+	expect(rows[3]).toBe("└───────────────────── hint ─┘");
+	expect(
+		termdom.document.querySelector(".title")!.getBoundingClientRect().width,
+	)
+		.toBe(7);
+	termdom.dispose();
+});
+
 test("a negative inset moves a box up and left", async () => {
 	const terminal = new MockProcess({cols: 30, rows: 6});
 	const termdom = new TermDOM({transport: terminal.transport});
