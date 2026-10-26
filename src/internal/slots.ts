@@ -253,6 +253,42 @@ export function getSlotClass(value: unknown): Constructor | null {
 	return record[kType] as Constructor | null;
 }
 
+// The classes each class takes its slots from, itself included.
+const lineages = new Map<Constructor, Set<Constructor>>();
+
+/** Whether objects `type` makes implement `owner`'s interface. */
+export function implementsInterface(
+	type: Constructor,
+	owner: Constructor,
+): boolean {
+	let lineage = lineages.get(type);
+	if (lineage === undefined) {
+		lineage = new Set();
+		for (
+			let current: unknown = type;
+			typeof current === "function" && current !== Function.prototype;
+			current = getParentClass(current as Constructor)
+		) {
+			lineage.add(current as Constructor);
+		}
+		lineages.set(type, lineage);
+	}
+	return lineage.has(owner);
+}
+
+/**
+ * Whether `value` is an object of `type`'s interface, as its slots say
+ * rather than its prototype, which can be another realm's. A Proxy
+ * around one is not, nor is an object a page gave its prototype.
+ */
+export function isPlatformObject<T extends object>(
+	value: unknown,
+	type: Constructor & {prototype: T},
+): value is T {
+	const made = getSlotClass(value);
+	return made !== null && (made === type || implementsInterface(made, type));
+}
+
 /**
  * Makes `parent` the class `type`'s slots and steps descend from, for a
  * class that extends some other constructor, such as the runtime's.

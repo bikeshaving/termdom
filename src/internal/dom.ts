@@ -77,6 +77,7 @@ import {
 	getSlotClass,
 	getSlots,
 	type internals,
+	isPlatformObject,
 	isSealed,
 	rememberObject,
 	seal,
@@ -2725,7 +2726,7 @@ function toEventTarget(value: unknown): EventTarget | null {
 	if (value == null) {
 		return null;
 	}
-	if (!(value instanceof EventTarget)) {
+	if (!(isPlatformObject(value, EventTarget))) {
 		throw new TypeError("That is not an event target");
 	}
 	return value;
@@ -3849,7 +3850,7 @@ export function lockDataTransfer(transfer: DataTransfer): void {
 // dispatching, as in a browser. This is for conformance, not security: an
 // app can still read the clipboard through navigator.clipboard.
 function protectClipboardData(event: Event): void {
-	if (!(event instanceof ClipboardEvent)) {
+	if (!(isPlatformObject(event, ClipboardEvent))) {
 		return;
 	}
 	const transfer = event.clipboardData;
@@ -4363,13 +4364,13 @@ function getListenerHoverCount(
 	if (!HOVER_EVENT_TYPES.has(type)) {
 		return null;
 	}
-	if (target instanceof Node) {
+	if (isPlatformObject(target, Node)) {
 		return getHoverCount(_(target).document);
 	}
 	// A window is an EventTarget with a document. Anything else is not
 	// counted.
 	const document = (target as {document?: unknown}).document;
-	return document instanceof Document ? getHoverCount(document) : null;
+	return isPlatformObject(document, Document) ? getHoverCount(document) : null;
 }
 
 function countHoverListener(target: EventTarget, listener: Listener): void {
@@ -4839,10 +4840,10 @@ function getDefaultPassiveValue(type: string, target: EventTarget): boolean {
 	) {
 		return false;
 	}
-	if (target instanceof Window) {
+	if (isPlatformObject(target, Window)) {
 		return true;
 	}
-	if (!(target instanceof Node)) {
+	if (!(isPlatformObject(target, Node))) {
 		return false;
 	}
 	const document = _(target).document;
@@ -4989,7 +4990,7 @@ function registerHandlerListener(
 // same shape.
 function isErrorEvent(event: Event): boolean {
 	return (
-		event instanceof ErrorEvent ||
+		isPlatformObject(event, ErrorEvent) ||
 		("message" in event &&
 			"filename" in event &&
 			"lineno" in event &&
@@ -5014,7 +5015,9 @@ function invokeEventHandler(
 	// arguments and returns true to cancel, the inverse of every other
 	// handler. A document's or element's error handler is an ordinary one.
 	const errorHandling =
-		type === "error" && !(target instanceof Node) && isErrorEvent(event);
+		type === "error" &&
+		!(isPlatformObject(target, Node)) &&
+		isErrorEvent(event);
 	let result: unknown;
 	try {
 		const called = callback as (...args: unknown[]) => unknown;
@@ -5218,7 +5221,7 @@ function retarget(
 ): EventTarget | null {
 	let current = object;
 	for (;;) {
-		if (!(current instanceof Node)) {
+		if (!(isPlatformObject(current, Node))) {
 			return current;
 		}
 		const root = getRoot(current);
@@ -5230,7 +5233,7 @@ function retarget(
 		// inside a nested shadow tree is not retargeted for a listener in the
 		// tree above.
 		if (
-			against instanceof Node &&
+			isPlatformObject(against, Node) &&
 			isShadowIncludingInclusiveAncestor(root, against)
 		) {
 			return current;
@@ -5241,7 +5244,7 @@ function retarget(
 
 /** Whether a root is a shadow root, meaning a fragment with a host. */
 export function isShadowRoot(root: unknown): root is ShadowRoot {
-	return root instanceof ShadowRoot;
+	return isPlatformObject(root, ShadowRoot);
 }
 
 function appendToPath(
@@ -5252,9 +5255,10 @@ function appendToPath(
 	slotInClosedTree: boolean,
 ): void {
 	const inShadowTree =
-		invocationTarget instanceof Node && isShadowRoot(getRoot(invocationTarget));
+		isPlatformObject(invocationTarget, Node) &&
+		isShadowRoot(getRoot(invocationTarget));
 	const rootOfClosedTree =
-		invocationTarget instanceof ShadowRoot &&
+		isPlatformObject(invocationTarget, ShadowRoot) &&
 		_(invocationTarget).extra.shadowMode === "closed";
 	state.path.push({
 		invocationTarget,
@@ -5471,7 +5475,7 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 				slottable = null;
 				const slotRoot = getRoot(parent as Node);
 				if (
-					slotRoot instanceof ShadowRoot &&
+					isPlatformObject(slotRoot, ShadowRoot) &&
 					_(slotRoot).extra.shadowMode === "closed"
 				) {
 					slotInClosedTree = true;
@@ -5484,8 +5488,8 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 			// A window, or a node in the target's own tree, joins the path as
 			// it is. Only a parent past a shadow boundary becomes the target.
 			if (
-				!(parent instanceof Node) ||
-				(eventTarget instanceof Node &&
+				!(isPlatformObject(parent, Node)) ||
+				(isPlatformObject(eventTarget, Node) &&
 					isShadowIncludingInclusiveAncestor(getRoot(eventTarget), parent))
 			) {
 				if (
@@ -5533,7 +5537,7 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 				break;
 			}
 		}
-		if (activationTarget instanceof HTMLInputElement) {
+		if (isPlatformObject(activationTarget, HTMLInputElement)) {
 			legacyPreActivationBehavior(activationTarget);
 		}
 		for (let index = state.path.length - 1; index >= 0; index--) {
@@ -5565,7 +5569,7 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 	if (activationTarget !== null) {
 		if (!state.canceled) {
 			runActivationBehavior(activationTarget, event);
-		} else if (activationTarget instanceof HTMLInputElement) {
+		} else if (isPlatformObject(activationTarget, HTMLInputElement)) {
 			legacyCanceledActivationBehavior(activationTarget);
 		}
 	}
@@ -5590,18 +5594,18 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 
 /** Whether a target is a node inside a shadow tree. */
 function isShadowRootTarget(target: EventTarget | null): boolean {
-	return target instanceof Node && isShadowRoot(getRoot(target));
+	return isPlatformObject(target, Node) && isShadowRoot(getRoot(target));
 }
 
 // Dispatch walks the path looking for a target with activation
 // behavior, then runs it after the walk.
 function hasActivationBehavior(target: EventTarget): boolean {
 	return (
-		target instanceof HTMLAnchorElement ||
-		target instanceof HTMLAreaElement ||
-		target instanceof HTMLButtonElement ||
-		target instanceof HTMLInputElement ||
-		target instanceof HTMLLabelElement ||
+		isPlatformObject(target, HTMLAnchorElement) ||
+		isPlatformObject(target, HTMLAreaElement) ||
+		isPlatformObject(target, HTMLButtonElement) ||
+		isPlatformObject(target, HTMLInputElement) ||
+		isPlatformObject(target, HTMLLabelElement) ||
 		isDetailsSummary(target)
 	);
 }
@@ -5611,19 +5615,19 @@ function hasActivationBehavior(target: EventTarget): boolean {
 // activation target that does nothing.
 function runActivationBehavior(target: EventTarget, event: Event): void {
 	if (
-		(target instanceof HTMLAnchorElement ||
-			target instanceof HTMLAreaElement) &&
+		(isPlatformObject(target, HTMLAnchorElement) ||
+			isPlatformObject(target, HTMLAreaElement)) &&
 		hasAttributeByName(target, "href")
 	) {
 		const url = (target as unknown as {href: string}).href;
 		if (isFragmentNavigation(_(target).document, url)) {
 			navigateToFragment(_(target).document, url);
 		}
-	} else if (target instanceof HTMLButtonElement) {
+	} else if (isPlatformObject(target, HTMLButtonElement)) {
 		activateButton(target, event);
-	} else if (target instanceof HTMLInputElement) {
+	} else if (isPlatformObject(target, HTMLInputElement)) {
 		activateInput(target, event);
-	} else if (target instanceof HTMLLabelElement) {
+	} else if (isPlatformObject(target, HTMLLabelElement)) {
 		activateLabel(target, event);
 	} else if (isDetailsSummary(target)) {
 		toggleTheDetails(target);
@@ -5678,7 +5682,7 @@ export function getKeyboardActivation(
 // HTML gives summary no interface of its own, and only the first summary
 // of a details toggles that details.
 function isDetailsSummary(target: EventTarget): target is HTMLElement {
-	if (!(target instanceof HTMLElement)) {
+	if (!(isPlatformObject(target, HTMLElement))) {
 		return false;
 	}
 	if (
@@ -5688,7 +5692,7 @@ function isDetailsSummary(target: EventTarget): target is HTMLElement {
 	}
 	const parent = getObject(_(target).parent);
 	return (
-		parent instanceof HTMLDetailsElement &&
+		isPlatformObject(parent, HTMLDetailsElement) &&
 		getFirstChildElement(parent, "summary") === target
 	);
 }
@@ -5733,7 +5737,8 @@ function runCommand(button: HTMLButtonElement, target: Element): void {
 	if (
 		!isPopover &&
 		!custom &&
-		!(target instanceof HTMLDialogElement && DIALOG_COMMANDS.has(command))
+		!(isPlatformObject(target, HTMLDialogElement) &&
+			DIALOG_COMMANDS.has(command))
 	) {
 		return;
 	}
@@ -6026,10 +6031,10 @@ export function reportError(
 
 // The document whose window an exception raised on this target reaches.
 function getEventTargetDocument(target: EventTarget): Document | null {
-	if (target instanceof Node) {
+	if (isPlatformObject(target, Node)) {
 		return _(target).document;
 	}
-	if (target instanceof Window) {
+	if (isPlatformObject(target, Window)) {
 		return target.document as unknown as Document;
 	}
 	return null;
@@ -6684,7 +6689,7 @@ function canBeAncestor(node: Node): boolean {
 		_(node).firstChild !== null ||
 		(getNodeType(node) === ELEMENT_NODE &&
 			(_((node as Element)).shadowRoot !== null ||
-				node instanceof HTMLTemplateElement))
+				isPlatformObject(node, HTMLTemplateElement)))
 	);
 }
 
@@ -6917,10 +6922,10 @@ function ensurePreInsertionValidity(
 }
 
 function preInsert(node: Node, parent: Node, child: Node | null): Node {
-	if (!(node instanceof Node)) {
+	if (!(isPlatformObject(node, Node))) {
 		throw new TypeError("That is not a node");
 	}
-	if (child != null && !(child instanceof Node)) {
+	if (child != null && !(isPlatformObject(child, Node))) {
 		throw new TypeError("That is not a node");
 	}
 	const reference = child ?? null;
@@ -6991,7 +6996,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	}
 	if (
 		isShadowRoot(getRoot(oldParent)) &&
-		oldParent instanceof HTMLSlotElement &&
+		isPlatformObject(oldParent, HTMLSlotElement) &&
 		_(oldParent).extra.assignedNodes.length === 0
 	) {
 		signalASlotChange(oldParent);
@@ -7039,7 +7044,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	}
 	if (
 		isShadowRoot(getRoot(newParent)) &&
-		newParent instanceof HTMLSlotElement &&
+		isPlatformObject(newParent, HTMLSlotElement) &&
 		_(newParent).extra.assignedNodes.length === 0
 	) {
 		signalASlotChange(newParent);
@@ -7164,7 +7169,7 @@ function insertNode(
 			}
 		}
 		if (
-			parent instanceof HTMLSlotElement &&
+			isPlatformObject(parent, HTMLSlotElement) &&
 			_(parent).extra.assignedNodes.length === 0 &&
 			isShadowRoot(getRoot(parent))
 		) {
@@ -7268,7 +7273,7 @@ function appendNode(node: Node, parent: Node): Node {
 }
 
 function replaceChild(child: Node, node: Node, parent: Node): Node {
-	if (!(node instanceof Node) || !(child instanceof Node)) {
+	if (!(isPlatformObject(node, Node)) || !(isPlatformObject(child, Node))) {
 		throw new TypeError("That is not a node");
 	}
 	validateInsertion(
@@ -7380,7 +7385,7 @@ function replaceAll(node: Node | null, parent: Node): void {
 }
 
 function preRemove(child: Node, parent: Node): Node {
-	if (!(child instanceof Node)) {
+	if (!(isPlatformObject(child, Node))) {
 		throw new TypeError("That is not a node");
 	}
 	if (getObject(_(child).parent) !== parent) {
@@ -7433,7 +7438,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 	}
 	if (
 		isShadowRoot(getRoot(parent)) &&
-		parent instanceof HTMLSlotElement &&
+		isPlatformObject(parent, HTMLSlotElement) &&
 		_(parent).extra.assignedNodes.length === 0
 	) {
 		signalASlotChange(parent);
@@ -7459,7 +7464,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 					next: oldNextSibling,
 				});
 				// The ancestors it left were :focus-within, and no longer are.
-				const left = parent instanceof ShadowRoot
+				const left = isPlatformObject(parent, ShadowRoot)
 					? (_(parent).extra.host as Element)
 					: getNodeType(parent) === ELEMENT_NODE ? (parent as Element) : null;
 				const attached = getAttachedDocument(document);
@@ -7862,7 +7867,7 @@ export class MutationObserver implements globalThis.MutationObserver {
 		if (arguments.length < 1) {
 			throw new TypeError("observe needs a target");
 		}
-		if (!(target instanceof Node)) {
+		if (!(isPlatformObject(target, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		const normalized = normalizeObserverOptions(options);
@@ -10826,21 +10831,21 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	setAttributeNode(attr: globalThis.Attr): globalThis.Attr | null {
-		if (!(attr instanceof Attr)) {
+		if (!(isPlatformObject(attr, Attr))) {
 			throw new TypeError("That is not an Attr");
 		}
 		return setAttributeNode(this, attr) as unknown as globalThis.Attr | null;
 	}
 
 	setAttributeNodeNS(attr: globalThis.Attr): globalThis.Attr | null {
-		if (!(attr instanceof Attr)) {
+		if (!(isPlatformObject(attr, Attr))) {
 			throw new TypeError("That is not an Attr");
 		}
 		return setAttributeNode(this, attr) as unknown as globalThis.Attr | null;
 	}
 
 	removeAttributeNode(attr: globalThis.Attr): globalThis.Attr {
-		if (!(attr instanceof Attr)) {
+		if (!(isPlatformObject(attr, Attr))) {
 			throw new TypeError("That is not an Attr");
 		}
 		if (!_(this).attributeList.includes(getSlots(attr))) {
@@ -11097,8 +11102,8 @@ export class Element extends Node implements globalThis.Element {
 		// the tree that names it, and a fieldset applies its disabling to what
 		// it contains.
 		if (
-			getOwner(this) instanceof HTMLFormElement ||
-			getOwner(this) instanceof HTMLFieldSetElement
+			isPlatformObject(getOwner(this), HTMLFormElement) ||
+			isPlatformObject(getOwner(this), HTMLFieldSetElement)
 		) {
 			resetFormOwners(root);
 		}
@@ -11115,8 +11120,8 @@ export class Element extends Node implements globalThis.Element {
 		resetTheFormOwner(getOwner(this));
 		syncFormDisabled(getOwner(this));
 		if (
-			getOwner(this) instanceof HTMLFormElement ||
-			getOwner(this) instanceof HTMLFieldSetElement
+			isPlatformObject(getOwner(this), HTMLFormElement) ||
+			isPlatformObject(getOwner(this), HTMLFieldSetElement)
 		) {
 			resetFormOwners(root);
 		}
@@ -11185,7 +11190,7 @@ export class Element extends Node implements globalThis.Element {
 		if (
 			namespace === null &&
 			localName === "name" &&
-			owner instanceof HTMLSlotElement
+			isPlatformObject(owner, HTMLSlotElement)
 		) {
 			updateSlotName(owner, oldValue, value);
 		}
@@ -11194,7 +11199,7 @@ export class Element extends Node implements globalThis.Element {
 		}
 		if (namespace === null && localName === "disabled") {
 			syncFormDisabled(getOwner(this));
-			if (getOwner(this) instanceof HTMLFieldSetElement) {
+			if (isPlatformObject(getOwner(this), HTMLFieldSetElement)) {
 				for (const node of descendants(getOwner(this))) {
 					if (getNodeType(node) === ELEMENT_NODE) {
 						syncFormDisabled(node as Element);
@@ -12995,7 +13000,7 @@ export class SVGElement extends Element {
 			nodeSlots = nodeSlots.parent) {
 			const node = getObject(nodeSlots);
 			if (
-				node instanceof Element &&
+				isPlatformObject(node, Element) &&
 				getNamespace(node) === SVG_NAMESPACE &&
 				getLocalName(node) === "svg"
 			) {
@@ -13224,7 +13229,9 @@ Object.defineProperty(MathMLElement.prototype, Symbol.toStringTag, {
 });
 
 function getMarkupHost(element: Element): Node {
-	return element instanceof HTMLTemplateElement ? element.content : element;
+	return isPlatformObject(element, HTMLTemplateElement)
+		? element.content
+		: element;
 }
 
 function setAttributeValue(
@@ -13354,7 +13361,7 @@ function createElementInternal(
 			} finally {
 				currentDocumentForConstruction = previousDocument;
 			}
-			if (!(result instanceof HTMLElement)) {
+			if (!(isPlatformObject(result, HTMLElement))) {
 				throw new TypeError("That constructor did not build an HTML element");
 			}
 			if (_(result).attributeList.length > 0) {
@@ -13864,7 +13871,7 @@ class CustomElementRegistry {
 	}
 
 	upgrade(root: Node): void {
-		if (!(root instanceof Node)) {
+		if (!(isPlatformObject(root, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		for (const candidate of shadowIncludingInclusiveDescendants(root)) {
@@ -13883,7 +13890,7 @@ class CustomElementRegistry {
 	// The realm's document registry cannot claim a document, because a
 	// document holds that registry from the moment it exists.
 	initialize(root: globalThis.Node): void {
-		if (!(root instanceof Node)) {
+		if (!(isPlatformObject(root, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (!_(this).scoped && getNodeType(root) === DOCUMENT_NODE) {
@@ -14131,7 +14138,10 @@ function getUpgradeDefinition(
 		const root = getRoot(element);
 		if (
 			getNodeType(root) === DOCUMENT_FRAGMENT_NODE &&
-			_((root as DocumentFragment)).extra.host instanceof HTMLTemplateElement
+			isPlatformObject(
+				_((root as DocumentFragment)).extra.host,
+				HTMLTemplateElement,
+			)
 		) {
 			return null;
 		}
@@ -14270,7 +14280,7 @@ export class ShadowRoot
 			if (root === (this as unknown as Node)) {
 				return current as unknown as globalThis.Element;
 			}
-			current = root instanceof ShadowRoot
+			current = isPlatformObject(root, ShadowRoot)
 				? ((root.host ?? null) as Node | null)
 				: null;
 		}
@@ -14431,7 +14441,7 @@ export class ShadowRoot
 		if (
 			!event.composed &&
 			path.length > 0 &&
-			path[0].invocationTarget instanceof Node &&
+			isPlatformObject(path[0].invocationTarget, Node) &&
 			getRoot(path[0].invocationTarget) === getOwner(this)
 		) {
 			return null;
@@ -14555,7 +14565,7 @@ function attachUAShadowTree<T>(target: Element): T {
  * UA rule, which every author rule outranks whatever its specificity.
  */
 export function isUAShadowTree(node: globalThis.Node): boolean {
-	return node instanceof ShadowRoot && _(node).extra.uaShadowTree;
+	return isPlatformObject(node, ShadowRoot) && _(node).extra.uaShadowTree;
 }
 
 /**
@@ -14580,7 +14590,7 @@ function isSlottable(node: Node): boolean {
 
 function isAssigned(target: EventTarget | null): boolean {
 	return (
-		target instanceof Node &&
+		isPlatformObject(target, Node) &&
 		isSlottable(target) &&
 		_((target as Slottable)).assignedSlot !== null
 	);
@@ -14589,7 +14599,7 @@ function isAssigned(target: EventTarget | null): boolean {
 function hasInclusiveDescendantSlot(node: Node): boolean {
 	let current: Node | null = node;
 	while (current !== null) {
-		if (current instanceof HTMLSlotElement) {
+		if (isPlatformObject(current, HTMLSlotElement)) {
 			return true;
 		}
 		current = nextInTree(current, node);
@@ -14612,7 +14622,7 @@ function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
 	if (_(shadow).extra.slotAssignment === "manual") {
 		for (const descendant of descendants(shadow)) {
 			if (
-				descendant instanceof HTMLSlotElement &&
+				isPlatformObject(descendant, HTMLSlotElement) &&
 				_(descendant).extra.manualAssignment.includes(slottable)
 			) {
 				return descendant;
@@ -14623,7 +14633,7 @@ function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
 	const name = isElement(slottable) ? _(slottable).slottableName : "";
 	for (const descendant of descendants(shadow)) {
 		if (
-			descendant instanceof HTMLSlotElement &&
+			isPlatformObject(descendant, HTMLSlotElement) &&
 			_(descendant).extra.slotName === name
 		) {
 			return descendant;
@@ -14694,7 +14704,7 @@ function assignSlottables(slot: HTMLSlotElement): void {
 
 function assignSlottablesForTree(root: Node): void {
 	for (const node of inclusiveDescendants(root)) {
-		if (node instanceof HTMLSlotElement) {
+		if (isPlatformObject(node, HTMLSlotElement)) {
 			assignSlottables(node);
 		}
 	}
@@ -14817,7 +14827,7 @@ class HTMLSlotElement extends HTMLElement {
 	// slots are recomputed too.
 	assign(...nodes: Array<globalThis.Element | globalThis.Text>): void {
 		for (const node of nodes) {
-			if (!(node instanceof Node) || !isSlottable(node)) {
+			if (!(isPlatformObject(node, Node)) || !isSlottable(node)) {
 				throw new TypeError("Only an element or a text node can be assigned");
 			}
 		}
@@ -14873,7 +14883,9 @@ function findFlattenedSlottables(slot: HTMLSlotElement): Slottable[] {
 		}
 	}
 	for (const node of slottables) {
-		if (node instanceof HTMLSlotElement && isShadowRoot(getRoot(node))) {
+		if (
+			isPlatformObject(node, HTMLSlotElement) && isShadowRoot(getRoot(node))
+		) {
 			result.push(...findFlattenedSlottables(node));
 		} else {
 			result.push(node);
@@ -15923,7 +15935,7 @@ class HTMLCanvasElement extends HTMLElement {
 			slots.extra.canvasBitmap = null;
 			slots.extra.canvasGrid = null;
 			const context = slots.extra.canvasContext;
-			if (context instanceof CanvasRenderingContext2D) {
+			if (isPlatformObject(context, CanvasRenderingContext2D)) {
 				clearCanvasText(context);
 				// A resize resets the context to its default state (HTML
 				// §4.12.5.1.1).
@@ -16017,8 +16029,8 @@ export function relayoutReplacedElements(
 	const visit = (scope: globalThis.Document | globalThis.ShadowRoot) => {
 		for (const element of scope.querySelectorAll("*")) {
 			if (
-				element instanceof HTMLImageElement ||
-				element instanceof HTMLCanvasElement
+				isPlatformObject(element, HTMLImageElement) ||
+				isPlatformObject(element, HTMLCanvasElement)
 			) {
 				_(attached).extra.layout.invalidate(element as unknown as Node);
 			}
@@ -16039,7 +16051,7 @@ export function getCanvasTextRuns(
 ): ReturnType<typeof getCanvasText> {
 	const context =
 		_((element as unknown as HTMLCanvasElement)).extra.canvasContext;
-	return context instanceof CanvasRenderingContext2D
+	return isPlatformObject(context, CanvasRenderingContext2D)
 		? getCanvasText(context)
 		: [];
 }
@@ -16074,7 +16086,7 @@ class HTMLDataListElement extends HTMLElement {
 				new HTMLCollection(() => {
 					const found: Element[] = [];
 					for (const node of descendants(this)) {
-						if (node instanceof HTMLOptionElement) {
+						if (isPlatformObject(node, HTMLOptionElement)) {
 							found.push(node);
 						}
 					}
@@ -16569,7 +16581,7 @@ export function renderedTopLayer(
  */
 export function isModalDialog(node: globalThis.Node): boolean {
 	return (
-		node instanceof HTMLDialogElement &&
+		isPlatformObject(node, HTMLDialogElement) &&
 		getTopLayer(_(node).document).has(node as Element)
 	);
 }
@@ -16762,7 +16774,9 @@ class HTMLFormElement extends HTMLElement {
 
 	requestSubmit(submitter: HTMLElement | null = null): void {
 		if (submitter != null) {
-			if (!(submitter instanceof Element) || !isSubmitButton(submitter)) {
+			if (
+				!(isPlatformObject(submitter, Element)) || !isSubmitButton(submitter)
+			) {
 				throw new TypeError("That element is not a submit button");
 			}
 			if (getFormOwner(submitter) !== this) {
@@ -16840,7 +16854,7 @@ function countListedChange(): void {
 }
 
 function noteListedChange(element: Element): void {
-	if (isListed(element) || element instanceof HTMLFormElement) {
+	if (isListed(element) || isPlatformObject(element, HTMLFormElement)) {
 		countListedChange();
 	}
 }
@@ -16869,7 +16883,9 @@ function findListedElements(form: HTMLFormElement): Element[] {
 		if (getFormOwner(element) !== form) {
 			continue;
 		}
-		if (element instanceof HTMLInputElement && element.type === "image") {
+		if (
+			isPlatformObject(element, HTMLInputElement) && element.type === "image"
+		) {
 			continue;
 		}
 		controls.push(element);
@@ -16878,10 +16894,10 @@ function findListedElements(form: HTMLFormElement): Element[] {
 }
 
 function isSubmitButton(element: Element): boolean {
-	if (element instanceof HTMLButtonElement) {
+	if (isPlatformObject(element, HTMLButtonElement)) {
 		return element.type === "submit";
 	}
-	if (element instanceof HTMLInputElement) {
+	if (isPlatformObject(element, HTMLInputElement)) {
 		const type = element.type;
 		return type === "submit" || type === "image";
 	}
@@ -16942,7 +16958,7 @@ function submitForm(
 			: form.method;
 	if (method === "dialog") {
 		let dialog = form.parentElement;
-		while (dialog !== null && !(dialog instanceof HTMLDialogElement)) {
+		while (dialog !== null && !(isPlatformObject(dialog, HTMLDialogElement))) {
 			dialog = dialog.parentElement;
 		}
 		if (dialog !== null) {
@@ -16988,7 +17004,7 @@ function implicitlySubmit(input: HTMLInputElement): void {
 	}
 	const blockers = listed.filter(
 		(element) =>
-			element instanceof HTMLInputElement &&
+			isPlatformObject(element, HTMLInputElement) &&
 			IMPLICIT_SUBMISSION_BLOCKERS.has(element.type),
 	);
 	if (blockers.length <= 1) {
@@ -17140,11 +17156,13 @@ class FormData extends globalThis.FormData {
 		if (form == null) {
 			return;
 		}
-		if (!(form instanceof HTMLFormElement)) {
+		if (!(isPlatformObject(form, HTMLFormElement))) {
 			throw new TypeError("A FormData takes a form element");
 		}
 		if (submitter != null) {
-			if (!(submitter instanceof Element) || !isSubmitButton(submitter)) {
+			if (
+				!(isPlatformObject(submitter, Element)) || !isSubmitButton(submitter)
+			) {
 				throw new TypeError("That element is not a submit button");
 			}
 			if (getFormOwner(submitter) !== form) {
@@ -17359,7 +17377,7 @@ class FormDataEvent extends Event {
 			"An event init",
 		);
 		const slots = _(this);
-		if (init.formData instanceof FormData) {
+		if (isPlatformObject(init.formData, FormData)) {
 			slots.eventFormData = init.formData;
 		} else {
 			const entries = readFormDataEntries(init.formData);
@@ -17399,10 +17417,10 @@ function isSubmittable(element: Element): boolean {
 // a plain button are skipped for the same reason a submit button that did
 // not submit is.
 function isButtonControl(element: Element): boolean {
-	if (element instanceof HTMLButtonElement) {
+	if (isPlatformObject(element, HTMLButtonElement)) {
 		return true;
 	}
-	if (element instanceof HTMLInputElement) {
+	if (isPlatformObject(element, HTMLInputElement)) {
 		const type = element.type;
 		return (
 			type === "submit" ||
@@ -17421,7 +17439,7 @@ function hasDataListAncestor(element: Element): boolean {
 		nodeSlots = nodeSlots.parent
 	) {
 		const node = getObject(nodeSlots);
-		if (node instanceof HTMLDataListElement) {
+		if (isPlatformObject(node, HTMLDataListElement)) {
 			return true;
 		}
 	}
@@ -17489,7 +17507,7 @@ function appendFieldEntries(
 	if (isButtonControl(field) && field !== submitter) {
 		return;
 	}
-	if (field instanceof HTMLInputElement) {
+	if (isPlatformObject(field, HTMLInputElement)) {
 		const type = field.type;
 		if ((type === "checkbox" || type === "radio") && !field.checked) {
 			return;
@@ -17510,7 +17528,7 @@ function appendFieldEntries(
 	if (name === null || name === "") {
 		return;
 	}
-	if (field instanceof HTMLSelectElement) {
+	if (isPlatformObject(field, HTMLSelectElement)) {
 		for (const option of field.selectedOptions) {
 			if (!isActuallyDisabled(option)) {
 				entries.push(createEntry(name, option.value));
@@ -17518,7 +17536,7 @@ function appendFieldEntries(
 		}
 		return;
 	}
-	if (field instanceof HTMLInputElement) {
+	if (isPlatformObject(field, HTMLInputElement)) {
 		const type = field.type;
 		if (type === "checkbox" || type === "radio") {
 			entries.push(
@@ -17540,18 +17558,18 @@ function appendFieldEntries(
 			return;
 		}
 	}
-	if (field instanceof HTMLObjectElement) {
+	if (isPlatformObject(field, HTMLObjectElement)) {
 		return;
 	}
 	if (
-		field instanceof HTMLInputElement &&
+		isPlatformObject(field, HTMLInputElement) &&
 		field.type === "hidden" &&
 		toASCIILowercase(name) === "_charset_"
 	) {
 		entries.push(createEntry(name, "UTF-8"));
 		return;
 	}
-	if (field instanceof HTMLTextAreaElement) {
+	if (isPlatformObject(field, HTMLTextAreaElement)) {
 		entries.push(createEntry(name, normalizeToCRLF(field.value)));
 		appendDirectionEntry(entries, field);
 		return;
@@ -17560,7 +17578,8 @@ function appendFieldEntries(
 		createEntry(name, (field as HTMLInputElement | HTMLButtonElement).value),
 	);
 	if (
-		field instanceof HTMLInputElement && DIRNAME_INPUT_TYPES.has(field.type)
+		isPlatformObject(field, HTMLInputElement) &&
+		DIRNAME_INPUT_TYPES.has(field.type)
 	) {
 		appendDirectionEntry(entries, field);
 	}
@@ -17717,7 +17736,7 @@ class RadioNodeList extends NodeList {
 
 	get value(): string {
 		for (const node of ensureList(this)) {
-			if (!(node instanceof HTMLInputElement)) {
+			if (!(isPlatformObject(node, HTMLInputElement))) {
 				continue;
 			}
 			if (node.type !== "radio" || !node.checked) {
@@ -17731,7 +17750,7 @@ class RadioNodeList extends NodeList {
 	set value(value: string) {
 		const wanted = String(value);
 		for (const node of ensureList(this)) {
-			if (!(node instanceof HTMLInputElement)) {
+			if (!(isPlatformObject(node, HTMLInputElement))) {
 				continue;
 			}
 			if (node.type !== "radio") {
@@ -18778,7 +18797,7 @@ export class HTMLInputElement extends HTMLElement {
 			if (getAttributeValue(element, "id") !== id) {
 				continue;
 			}
-			return element instanceof HTMLDataListElement ? element : null;
+			return isPlatformObject(element, HTMLDataListElement) ? element : null;
 		}
 		return null;
 	}
@@ -18969,7 +18988,7 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	set files(value: FileList | null) {
-		if (this.type === "file" && value instanceof FileList) {
+		if (this.type === "file" && isPlatformObject(value, FileList)) {
 			_(this).extra.files = value;
 		}
 	}
@@ -19831,7 +19850,7 @@ export function moveRangeThumb(
 	press: boolean,
 ): boolean {
 	if (
-		!(element instanceof HTMLInputElement) ||
+		!(isPlatformObject(element, HTMLInputElement)) ||
 		_(element).extra.kind !== "slider" ||
 		isActuallyDisabled(element)
 	) {
@@ -19869,7 +19888,7 @@ export function moveRangeThumb(
 
 /** The release that ends a press on a slider fires change if it moved. */
 export function commitRangeThumb(element: globalThis.Element): void {
-	if (!(element instanceof HTMLInputElement)) {
+	if (!(isPlatformObject(element, HTMLInputElement))) {
 		return;
 	}
 	const before = rangeDragStarts.get(element);
@@ -19889,7 +19908,7 @@ function getRadioGroup(input: HTMLInputElement): HTMLInputElement[] {
 	const root = getRoot(input);
 	const group: HTMLInputElement[] = [];
 	for (const node of descendants(root)) {
-		if (!(node instanceof HTMLInputElement)) {
+		if (!(isPlatformObject(node, HTMLInputElement))) {
 			continue;
 		}
 		if (node.type !== "radio") {
@@ -19956,7 +19975,7 @@ class HTMLLegendElement extends HTMLElement {
 	declare align: globalThis.HTMLLegendElement["align"];
 	get form(): HTMLFormElement | null {
 		const parent = getObject(_(this).parent);
-		if (parent === null || !(parent instanceof HTMLFieldSetElement)) {
+		if (parent === null || !(isPlatformObject(parent, HTMLFieldSetElement))) {
 			return null;
 		}
 		return getFormOwner(parent);
@@ -20020,7 +20039,7 @@ class HTMLMapElement extends HTMLElement {
 				new HTMLCollection(() => {
 					const found: Element[] = [];
 					for (const node of descendants(this)) {
-						if (node instanceof HTMLAreaElement) {
+						if (isPlatformObject(node, HTMLAreaElement)) {
 							found.push(node);
 						}
 					}
@@ -20735,7 +20754,7 @@ declareExtraSlots(HTMLMeterElement);
 // region is optimum, one region away is suboptimum, and two away is even
 // less good.
 export function getMeterLevel(element: Element): string | null {
-	if (!(element instanceof HTMLMeterElement)) {
+	if (!(isPlatformObject(element, HTMLMeterElement))) {
 		return null;
 	}
 	const {low, high, optimum, value} = element;
@@ -20759,7 +20778,7 @@ export function isMeterValue(
 	element: Element,
 	threshold: "low" | "high",
 ): boolean {
-	if (!(element instanceof HTMLMeterElement)) {
+	if (!(isPlatformObject(element, HTMLMeterElement))) {
 		return false;
 	}
 	return threshold === "low"
@@ -21002,12 +21021,12 @@ function getSelect(option: Element): HTMLSelectElement | null {
 	if (parent === null) {
 		return null;
 	}
-	if (parent instanceof HTMLSelectElement) {
+	if (isPlatformObject(parent, HTMLSelectElement)) {
 		return parent;
 	}
-	if (parent instanceof HTMLOptGroupElement) {
+	if (isPlatformObject(parent, HTMLOptGroupElement)) {
 		const grandparent = getObject(_(parent).parent);
-		if (grandparent instanceof HTMLSelectElement) {
+		if (isPlatformObject(grandparent, HTMLSelectElement)) {
 			return grandparent;
 		}
 	}
@@ -21077,8 +21096,8 @@ class HTMLOptionsCollection extends HTMLCollection {
 		before?: HTMLElement | number | null,
 	): void {
 		if (
-			!(element instanceof HTMLOptionElement) &&
-			!(element instanceof HTMLOptGroupElement)
+			!(isPlatformObject(element, HTMLOptionElement)) &&
+			!(isPlatformObject(element, HTMLOptGroupElement))
 		) {
 			throw new TypeError("Only an option or an option group can be added");
 		}
@@ -21097,7 +21116,7 @@ class HTMLOptionsCollection extends HTMLCollection {
 					? options[index]
 					: null;
 			} else {
-				if (!(before instanceof Element)) {
+				if (!(isPlatformObject(before, Element))) {
 					throw new TypeError("That is not an element");
 				}
 				if (!getOptions(slots.select).includes(before as HTMLOptionElement)) {
@@ -21889,9 +21908,9 @@ function getPickerRows(select: HTMLSelectElement): PickerRow[] {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = getObject(nodeSlots);
-		if (node instanceof HTMLOptionElement) {
+		if (isPlatformObject(node, HTMLOptionElement)) {
 			addOption(node, false);
-		} else if (node instanceof HTMLOptGroupElement) {
+		} else if (isPlatformObject(node, HTMLOptGroupElement)) {
 			rows.push({
 				part: "optgroup",
 				label: node.label,
@@ -21905,7 +21924,7 @@ function getPickerRows(select: HTMLSelectElement): PickerRow[] {
 				childSlots = childSlots.next
 			) {
 				const child = getObject(childSlots);
-				if (child instanceof HTMLOptionElement) {
+				if (isPlatformObject(child, HTMLOptionElement)) {
 					addOption(child, true);
 				}
 			}
@@ -22007,7 +22026,7 @@ function optionIsDisabled(option: HTMLOptionElement): boolean {
 		return true;
 	}
 	const parent = getObject(_(option).parent);
-	return parent instanceof HTMLOptGroupElement && parent.disabled;
+	return isPlatformObject(parent, HTMLOptGroupElement) && parent.disabled;
 }
 
 function rectContains(rect: globalThis.DOMRect, x: number, y: number): boolean {
@@ -22045,16 +22064,16 @@ function getOptions(select: Element): HTMLOptionElement[] {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = getObject(nodeSlots);
-		if (node instanceof HTMLOptionElement) {
+		if (isPlatformObject(node, HTMLOptionElement)) {
 			options.push(node);
-		} else if (node instanceof HTMLOptGroupElement) {
+		} else if (isPlatformObject(node, HTMLOptGroupElement)) {
 			for (
 				let childSlots = nodeSlots.firstChild;
 				childSlots !== null;
 				childSlots = childSlots.next
 			) {
 				const child = getObject(childSlots);
-				if (child instanceof HTMLOptionElement) {
+				if (isPlatformObject(child, HTMLOptionElement)) {
 					options.push(child);
 				}
 			}
@@ -22189,7 +22208,7 @@ class HTMLTableCellElement extends HTMLElement {
 	declare scope: globalThis.HTMLTableCellElement["scope"];
 	get cellIndex(): number {
 		const parent = getObject(_(this).parent);
-		if (!(parent instanceof HTMLTableRowElement)) {
+		if (!(isPlatformObject(parent, HTMLTableRowElement))) {
 			return -1;
 		}
 		return getRowCells(parent).indexOf(this);
@@ -22241,7 +22260,7 @@ class HTMLTableElement extends HTMLElement {
 	}
 
 	set caption(value: Element | null) {
-		if (value !== null && !(value instanceof HTMLTableCaptionElement)) {
+		if (value !== null && !(isPlatformObject(value, HTMLTableCaptionElement))) {
 			throw new TypeError("That is not a caption");
 		}
 		this.deleteCaption();
@@ -22258,7 +22277,7 @@ class HTMLTableElement extends HTMLElement {
 	set tHead(value: Element | null) {
 		if (
 			value !== null &&
-			!(value instanceof HTMLTableSectionElement &&
+			!(isPlatformObject(value, HTMLTableSectionElement) &&
 				getLocalName(value) === "thead")
 		) {
 			throw new TypeError("That is not a table head");
@@ -22292,7 +22311,7 @@ class HTMLTableElement extends HTMLElement {
 	set tFoot(value: Element | null) {
 		if (
 			value !== null &&
-			!(value instanceof HTMLTableSectionElement &&
+			!(isPlatformObject(value, HTMLTableSectionElement) &&
 				getLocalName(value) === "tfoot")
 		) {
 			throw new TypeError("That is not a table foot");
@@ -22552,9 +22571,11 @@ class HTMLTableRowElement extends HTMLElement {
 		let cells = slots.extra.cells;
 		if (cells === null) {
 			cells = live(
-				new HTMLCollection(() =>
-					getRowCells(this), this, (node) => node instanceof
-					HTMLTableCellElement),
+				new HTMLCollection(
+					() => getRowCells(this),
+					this,
+					(node) => isPlatformObject(node, HTMLTableCellElement),
+				),
 			);
 			slots.extra.cells = cells;
 		}
@@ -22610,7 +22631,7 @@ function getRowCells(row: Element): Element[] {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = getObject(nodeSlots);
-		if (node instanceof HTMLTableCellElement) {
+		if (isPlatformObject(node, HTMLTableCellElement)) {
 			cells.push(node);
 		}
 	}
@@ -23401,7 +23422,7 @@ function getPopoverValueState(value: string | null): "auto" | "manual" | null {
 /** Whether `:popover-open` matches. */
 export function isShowingPopover(node: globalThis.Node): boolean {
 	return (
-		node instanceof HTMLElement &&
+		isPlatformObject(node, HTMLElement) &&
 		popoverStates.get(node)?.visibility === "showing"
 	);
 }
@@ -23800,7 +23821,7 @@ function getTopmostClickedPopover(
 // Unlike a dialog, a popover does not take focus from the page when it
 // opens. Focus moves only if the content asks for it with autofocus.
 function popoverFocusingSteps(element: Element): void {
-	if (element instanceof HTMLDialogElement) {
+	if (isPlatformObject(element, HTMLDialogElement)) {
 		// A dialog shown as a popover focuses like a dialog, not like a popover.
 		focusDialog(element);
 		return;
@@ -23923,10 +23944,10 @@ function setAttributeElement(
 // A BUTTON as the popover target attributes define it: the button
 // element, and the input types that render as buttons.
 function isPopoverInvokerButton(node: Node): boolean {
-	if (node instanceof HTMLButtonElement) {
+	if (isPlatformObject(node, HTMLButtonElement)) {
 		return true;
 	}
-	if (!(node instanceof HTMLInputElement)) {
+	if (!(isPlatformObject(node, HTMLInputElement))) {
 		return false;
 	}
 	const type = node.type;
@@ -23967,7 +23988,7 @@ function popoverTargetActivationBehavior(node: Element, target: unknown): void {
 		return;
 	}
 	if (
-		target instanceof Node &&
+		isPlatformObject(target, Node) &&
 		isFlatInclusiveAncestor(popover, target) &&
 		isFlatInclusiveAncestor(node, popover) &&
 		popover !== node
@@ -24589,7 +24610,7 @@ function getFormOwner(element: Element): HTMLFormElement | null {
 			if (getAttributeValue(candidate, "id") !== id) {
 				continue;
 			}
-			return candidate instanceof HTMLFormElement ? candidate : null;
+			return isPlatformObject(candidate, HTMLFormElement) ? candidate : null;
 		}
 		return null;
 	}
@@ -24599,7 +24620,7 @@ function getFormOwner(element: Element): HTMLFormElement | null {
 		nodeSlots = nodeSlots.parent
 	) {
 		const node = getObject(nodeSlots);
-		if (node instanceof HTMLFormElement) {
+		if (isPlatformObject(node, HTMLFormElement)) {
 			return node;
 		}
 	}
@@ -25023,7 +25044,7 @@ class ElementInternals {
 		const slots = _(this);
 		if (anchor != null) {
 			if (
-				!(anchor instanceof HTMLElement) ||
+				!(isPlatformObject(anchor, HTMLElement)) ||
 				!isShadowIncludingInclusiveAncestor(
 					slots.elementInternalsTarget,
 					anchor,
@@ -25188,7 +25209,7 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 			if (many) {
 				const list: Element[] = [];
 				for (const entry of value as Iterable<unknown>) {
-					if (!(entry instanceof Element)) {
+					if (!(isPlatformObject(entry, Element))) {
 						throw new TypeError("That is not an element");
 					}
 					list.push(entry);
@@ -25196,7 +25217,7 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 				setARIATargets(this, property, attribute, list);
 				return;
 			}
-			if (!(value instanceof Element)) {
+			if (!(isPlatformObject(value, Element))) {
 				throw new TypeError("That is not an element");
 			}
 			setARIATargets(this, property, attribute, [value]);
@@ -25271,7 +25292,7 @@ function getLabels(element: Element): NodeListOf<HTMLLabelElement> {
 	const labels: Node[] = [];
 	const root = getRoot(element);
 	for (const node of descendants(root)) {
-		if (!(node instanceof HTMLLabelElement)) {
+		if (!(isPlatformObject(node, HTMLLabelElement))) {
 			continue;
 		}
 		if (node.control === element) {
@@ -25310,17 +25331,17 @@ function willValidate(element: Element): boolean {
 	if (isActuallyDisabled(element)) {
 		return false;
 	}
-	if (element instanceof HTMLObjectElement) {
+	if (isPlatformObject(element, HTMLObjectElement)) {
 		return false;
 	}
-	if (element instanceof HTMLFieldSetElement) {
+	if (isPlatformObject(element, HTMLFieldSetElement)) {
 		return false;
 	}
 	const elementSlots = _(element);
 	if (elementSlots.localName === "output") {
 		return false;
 	}
-	if (element instanceof HTMLInputElement) {
+	if (isPlatformObject(element, HTMLInputElement)) {
 		const type = element.type;
 		if (UNSUBMITTABLE_INPUT_TYPES.has(type)) {
 			return false;
@@ -25330,12 +25351,12 @@ function willValidate(element: Element): boolean {
 		) {
 			return false;
 		}
-	} else if (element instanceof HTMLButtonElement) {
+	} else if (isPlatformObject(element, HTMLButtonElement)) {
 		if (element.type !== "submit") {
 			return false;
 		}
 	} else if (
-		(element instanceof HTMLTextAreaElement ||
+		(isPlatformObject(element, HTMLTextAreaElement) ||
 			elementSlots.internals !== null) &&
 		hasAttributeByName(element, "readonly")
 	) {
@@ -25393,11 +25414,11 @@ function getValidityFlags(element: Element): ValidityFlags {
 	}
 	const flags = noValidityFlags();
 	flags.customError = (customValidityMessages.get(element) ?? "") !== "";
-	if (element instanceof HTMLInputElement) {
+	if (isPlatformObject(element, HTMLInputElement)) {
 		collectInputValidity(element, flags);
-	} else if (element instanceof HTMLSelectElement) {
+	} else if (isPlatformObject(element, HTMLSelectElement)) {
 		collectSelectValidity(element, flags);
-	} else if (element instanceof HTMLTextAreaElement) {
+	} else if (isPlatformObject(element, HTMLTextAreaElement)) {
 		collectTextAreaValidity(element, flags);
 	}
 	return flags;
@@ -25482,7 +25503,7 @@ function isRadioGroupChecked(input: HTMLInputElement): boolean {
 	const form = getFormOwner(input);
 	for (const node of descendants(getRoot(input))) {
 		if (
-			node instanceof HTMLInputElement &&
+			isPlatformObject(node, HTMLInputElement) &&
 			node.type === "radio" &&
 			getAttributeValue(node, "name") === name &&
 			getFormOwner(node) === form &&
@@ -25670,10 +25691,12 @@ function getValidationMessage(element: Element): string {
 		return customValidityMessages.get(element) ?? "";
 	}
 	if (flags.valueMissing) {
-		if (element instanceof HTMLSelectElement) {
+		if (isPlatformObject(element, HTMLSelectElement)) {
 			return "Please select an item in the list.";
 		}
-		const type = element instanceof HTMLInputElement ? element.type : "";
+		const type = isPlatformObject(element, HTMLInputElement)
+			? element.type
+			: "";
 		if (type === "checkbox") {
 			return "Please check this box if you want to proceed.";
 		}
@@ -25686,7 +25709,7 @@ function getValidationMessage(element: Element): string {
 		return "Please fill out this field.";
 	}
 	if (flags.typeMismatch) {
-		return element instanceof HTMLInputElement && element.type === "url"
+		return isPlatformObject(element, HTMLInputElement) && element.type === "url"
 			? "Please enter a URL."
 			: "Please enter an email address.";
 	}
@@ -26073,7 +26096,7 @@ function flatContentFirstChild(element: Element): Node | null {
 	if (shadow !== null) {
 		return getObject(_(shadow).firstChild);
 	}
-	if (element instanceof HTMLSlotElement) {
+	if (isPlatformObject(element, HTMLSlotElement)) {
 		const assigned = _(element).extra.assignedNodes;
 		if (assigned.length > 0) {
 			return assigned[0];
@@ -27229,7 +27252,7 @@ export class Document extends Node implements globalThis.Document {
 			if (root === (this as Node)) {
 				return current as unknown as globalThis.Element;
 			}
-			if (root instanceof ShadowRoot && root.host !== null) {
+			if (isPlatformObject(root, ShadowRoot) && root.host !== null) {
 				current = root.host as unknown as Node;
 				continue;
 			}
@@ -27451,40 +27474,33 @@ export class Document extends Node implements globalThis.Document {
 		return getDocumentCollection(
 			this,
 			"anchors",
-			(e) => e instanceof HTMLAnchorElement && hasAttributeByName(e, "name"),
+			(e) => isPlatformObject(e, HTMLAnchorElement) &&
+				hasAttributeByName(e, "name"),
 			"name",
 		) as unknown as HTMLCollectionOf<globalThis.HTMLAnchorElement>;
 	}
 
 	get forms(): HTMLCollectionOf<globalThis.HTMLFormElement> {
-		return getDocumentCollection(
-			this,
-			"forms",
-			(e) => e instanceof HTMLFormElement,
+		return getDocumentCollection(this, "forms", (e) =>
+			isPlatformObject(e, HTMLFormElement),
 		) as unknown as HTMLCollectionOf<globalThis.HTMLFormElement>;
 	}
 
 	get images(): HTMLCollectionOf<globalThis.HTMLImageElement> {
-		return getDocumentCollection(
-			this,
-			"images",
-			(e) => e instanceof HTMLImageElement,
+		return getDocumentCollection(this, "images", (e) =>
+			isPlatformObject(e, HTMLImageElement),
 		) as unknown as HTMLCollectionOf<globalThis.HTMLImageElement>;
 	}
 
 	get scripts(): HTMLCollectionOf<globalThis.HTMLScriptElement> {
-		return getDocumentCollection(
-			this,
-			"scripts",
-			(e) => e instanceof HTMLScriptElement,
+		return getDocumentCollection(this, "scripts", (e) =>
+			isPlatformObject(e, HTMLScriptElement),
 		) as unknown as HTMLCollectionOf<globalThis.HTMLScriptElement>;
 	}
 
 	get embeds(): HTMLCollectionOf<globalThis.HTMLEmbedElement> {
-		return getDocumentCollection(
-			this,
-			"embeds",
-			(e) => e instanceof HTMLEmbedElement,
+		return getDocumentCollection(this, "embeds", (e) =>
+			isPlatformObject(e, HTMLEmbedElement),
 		) as unknown as HTMLCollectionOf<globalThis.HTMLEmbedElement>;
 	}
 
@@ -27500,7 +27516,8 @@ export class Document extends Node implements globalThis.Document {
 			this,
 			"links",
 			(e) =>
-				(e instanceof HTMLAnchorElement || e instanceof HTMLAreaElement) &&
+				(isPlatformObject(e, HTMLAnchorElement) ||
+					isPlatformObject(e, HTMLAreaElement)) &&
 				hasAttributeByName(e, "href"),
 			"href",
 		) as unknown as HTMLCollectionOf<
@@ -28055,7 +28072,7 @@ export class Document extends Node implements globalThis.Document {
 		if (typeof options === "object" && options.customElementRegistry === null) {
 			throw new TypeError("customElementRegistry cannot be null");
 		}
-		if (!(node instanceof Node)) {
+		if (!(isPlatformObject(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (getNodeType(node) === DOCUMENT_NODE) {
@@ -28072,7 +28089,7 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	adoptNode<T extends globalThis.Node>(node: T): T {
-		if (!(node instanceof Node)) {
+		if (!(isPlatformObject(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (getNodeType(node) === DOCUMENT_NODE) {
@@ -28243,7 +28260,7 @@ export class Document extends Node implements globalThis.Document {
 		whatToShow = 0xffffffff,
 		filter: globalThis.NodeFilter | null = null,
 	): globalThis.NodeIterator {
-		if (!(root instanceof Node)) {
+		if (!(isPlatformObject(root, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		const iterator = new NodeIterator(
@@ -28262,7 +28279,7 @@ export class Document extends Node implements globalThis.Document {
 		whatToShow = 0xffffffff,
 		filter: globalThis.NodeFilter | null = null,
 	): globalThis.TreeWalker {
-		if (!(root instanceof Node)) {
+		if (!(isPlatformObject(root, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		return new TreeWalker(
@@ -28774,7 +28791,7 @@ function getOutsideUAShadowTrees(
 ): globalThis.Element | null {
 	while (element !== null) {
 		const root = getRoot(element);
-		if (!(root instanceof ShadowRoot) || !_(root).extra.uaShadowTree) {
+		if (!(isPlatformObject(root, ShadowRoot)) || !_(root).extra.uaShadowTree) {
 			break;
 		}
 		element = _(root).extra.host as Element;
@@ -28885,7 +28902,7 @@ function extractRegistry(
 	if (value == null) {
 		return null;
 	}
-	if (!(value instanceof CustomElementRegistry)) {
+	if (!(isPlatformObject(value, CustomElementRegistry))) {
 		throw new TypeError("That is not a custom element registry");
 	}
 	return value;
@@ -29153,11 +29170,11 @@ function buildHTMLSkeleton(document: Document, title?: string): void {
 type Insertable = Node | string;
 
 function convertNodesIntoNode(nodes: Insertable[], document: Document): Node {
-	if (nodes.length === 1 && nodes[0] instanceof Node) {
+	if (nodes.length === 1 && isPlatformObject(nodes[0], Node)) {
 		return nodes[0];
 	}
 	const converted = nodes.map((node) => {
-		if (node instanceof Node) {
+		if (isPlatformObject(node, Node)) {
 			return node;
 		}
 		const text = new Text(String(node));
@@ -29253,10 +29270,10 @@ const parentNodeMembers = {
 			if (arguments.length < 2) {
 				throw new TypeError("moveBefore needs a node and a child");
 			}
-			if (!(node instanceof Node)) {
+			if (!(isPlatformObject(node, Node))) {
 				throw new TypeError("That is not a node");
 			}
-			if (child != null && !(child instanceof Node)) {
+			if (child != null && !(isPlatformObject(child, Node))) {
 				throw new TypeError("That is not a node");
 			}
 			let reference = child ?? null;
@@ -30368,7 +30385,7 @@ function getStaticRangePoints(init: unknown): [Node, number, Node, number] {
 	const startContainer = dictionary.startContainer as Node;
 	const endContainer = dictionary.endContainer as Node;
 	for (const container of [startContainer, endContainer]) {
-		if (!(container instanceof Node)) {
+		if (!(isPlatformObject(container, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (
@@ -30465,7 +30482,7 @@ function moveRange(
 
 /** Any node except a doctype. */
 function assertBoundaryNode(node: unknown): asserts node is Node {
-	if (!(node instanceof Node)) {
+	if (!(isPlatformObject(node, Node))) {
 		throw new TypeError("That is not a node");
 	}
 	if (getNodeType(node) === DOCUMENT_TYPE_NODE) {
@@ -30523,7 +30540,7 @@ function setRangeBoundary(
 }
 
 function getBoundaryParent(node: unknown): Node {
-	if (!(node instanceof Node)) {
+	if (!(isPlatformObject(node, Node))) {
 		throw new TypeError("That is not a node");
 	}
 	const parent = getObject(_(node).parent);
@@ -30758,7 +30775,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (arguments.length < 2) {
 			throw new TypeError("compareBoundaryPoints needs a how and a range");
 		}
-		if (!(sourceRange instanceof Range)) {
+		if (!(isPlatformObject(sourceRange, Range))) {
 			throw new TypeError("That is not a range");
 		}
 		const which = toUnsignedShort(how);
@@ -30855,13 +30872,13 @@ class Range extends AbstractRange implements globalThis.Range {
 	createContextualFragment(markup: string): DocumentFragment {
 		const start = _(this).startNode;
 		const startSlots = _(start);
-		let context: Element | null = start instanceof Element
+		let context: Element | null = isPlatformObject(start, Element)
 			? start
-			: getObject(startSlots.parent) instanceof Element
+			: isPlatformObject(getObject(startSlots.parent), Element)
 			? (getObject(startSlots.parent) as Element)
 			: null;
 		if (context === null) {
-			const document = start instanceof Document
+			const document = isPlatformObject(start, Document)
 				? start
 				: (getOwnerDocument(start) as Document | null);
 			context = (document?.body ?? document?.documentElement ?? null) as
@@ -30877,14 +30894,17 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (arguments.length < 1) {
 			throw new TypeError("surroundContents needs a node");
 		}
-		if (!(newParent instanceof Node)) {
+		if (!(isPlatformObject(newParent, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		const slots = _(this);
 		for (const node of [slots.startNode, slots.endNode]) {
 			let current: Node | null = node;
 			while (current !== null) {
-				if (isPartiallyContained(current, this) && !(current instanceof Text)) {
+				if (
+					isPartiallyContained(current, this) &&
+					!(isPlatformObject(current, Text))
+				) {
 					throw domError(
 						"InvalidStateError",
 						"The range starts or ends inside a node it does not cover",
@@ -30934,7 +30954,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (arguments.length < 2) {
 			throw new TypeError("isPointInRange needs a node and an offset");
 		}
-		if (!(node instanceof Node)) {
+		if (!(isPlatformObject(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (getRoot(node) !== rangeRoot(this)) {
@@ -30961,7 +30981,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (arguments.length < 2) {
 			throw new TypeError("comparePoint needs a node and an offset");
 		}
-		if (!(node instanceof Node)) {
+		if (!(isPlatformObject(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (getRoot(node) !== rangeRoot(this)) {
@@ -30996,7 +31016,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (arguments.length < 1) {
 			throw new TypeError("intersectsNode needs a node");
 		}
-		if (!(node instanceof Node)) {
+		if (!(isPlatformObject(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (getRoot(node) !== rangeRoot(this)) {
@@ -31020,22 +31040,22 @@ class Range extends AbstractRange implements globalThis.Range {
 		const slots = _(this);
 		const startNode = slots.startNode;
 		const endNode = slots.endNode;
-		if (startNode === endNode && startNode instanceof Text) {
+		if (startNode === endNode && isPlatformObject(startNode, Text)) {
 			return _(startNode).data.slice(slots.startOffset, slots.endOffset);
 		}
 		let string = "";
-		if (startNode instanceof Text) {
+		if (isPlatformObject(startNode, Text)) {
 			string += _(startNode).data.slice(slots.startOffset);
 		}
 		for (const node of descendants(getCommonAncestor(this))) {
-			if (!(node instanceof Text)) {
+			if (!(isPlatformObject(node, Text))) {
 				continue;
 			}
 			if (isContained(node, this)) {
 				string += _(node).data;
 			}
 		}
-		if (endNode instanceof Text) {
+		if (isPlatformObject(endNode, Text)) {
 			string += _(endNode).data.slice(0, slots.endOffset);
 		}
 		return string;
@@ -31183,7 +31203,7 @@ function cloneRangeContents(range: Range): DocumentFragment {
 }
 
 function insertIntoRange(range: Range, node: Node): void {
-	if (!(node instanceof Node)) {
+	if (!(isPlatformObject(node, Node))) {
 		throw new TypeError("That is not a node");
 	}
 	const rangeSlots = _(range);
@@ -31192,13 +31212,13 @@ function insertIntoRange(range: Range, node: Node): void {
 	if (
 		type === PROCESSING_INSTRUCTION_NODE ||
 		type === COMMENT_NODE ||
-		(startNode instanceof Text && _(startNode).parent === null) ||
+		(isPlatformObject(startNode, Text) && _(startNode).parent === null) ||
 		startNode === node
 	) {
 		throw hierarchyRequestError("That range cannot take an inserted node");
 	}
 	let referenceNode: Node | null;
-	if (startNode instanceof Text) {
+	if (isPlatformObject(startNode, Text)) {
 		referenceNode = startNode;
 	} else {
 		let child = getObject(_(startNode).firstChild);
@@ -31213,7 +31233,7 @@ function insertIntoRange(range: Range, node: Node): void {
 		? startNode
 		: (getObject(_(referenceNode).parent) as Node);
 	ensurePreInsertionValidity(node, parent, referenceNode);
-	if (startNode instanceof Text) {
+	if (isPlatformObject(startNode, Text)) {
 		referenceNode = startNode.splitText(rangeSlots.startOffset);
 	}
 	const nodeSlots = _(node);
@@ -31603,7 +31623,7 @@ class Selection implements globalThis.Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("addRange needs a range");
 		}
-		if (!(range instanceof Range)) {
+		if (!(isPlatformObject(range, Range))) {
 			throw new TypeError("That is not a range");
 		}
 		const rangeSlots = _(range);
@@ -31626,7 +31646,7 @@ class Selection implements globalThis.Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("removeRange needs a range");
 		}
-		if (!(range instanceof Range)) {
+		if (!(isPlatformObject(range, Range))) {
 			throw new TypeError("That is not a range");
 		}
 		if (range !== _(this).range) {
@@ -31664,7 +31684,7 @@ class Selection implements globalThis.Selection {
 		const roots: ShadowRoot[] = [];
 		if (dictionary.shadowRoots != null) {
 			for (const root of dictionary.shadowRoots as Iterable<unknown>) {
-				if (!(root instanceof ShadowRoot)) {
+				if (!(isPlatformObject(root, ShadowRoot))) {
 					throw new TypeError("That is not a shadow root");
 				}
 				roots.push(root);
@@ -31771,7 +31791,7 @@ class Selection implements globalThis.Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("extend needs a node");
 		}
-		if (!(node instanceof Node)) {
+		if (!(isPlatformObject(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		const slots = _(this);
@@ -31806,7 +31826,10 @@ class Selection implements globalThis.Selection {
 		if (arguments.length < 4) {
 			throw new TypeError("setBaseAndExtent needs two boundary points");
 		}
-		if (!(anchorNode instanceof Node) || !(focusNode instanceof Node)) {
+		if (
+			!(isPlatformObject(anchorNode, Node)) ||
+			!(isPlatformObject(focusNode, Node))
+		) {
 			throw new TypeError("That is not a node");
 		}
 		const anchorAt = toUnsignedLong(anchorOffset);
@@ -31876,7 +31899,7 @@ class Selection implements globalThis.Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("containsNode needs a node");
 		}
-		if (!(node instanceof Node)) {
+		if (!(isPlatformObject(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		const slots = _(this);
@@ -32127,7 +32150,7 @@ function getSelectionTextNodes(
 			? shadow
 			: node;
 		if (
-			source instanceof HTMLSlotElement &&
+			isPlatformObject(source, HTMLSlotElement) &&
 			_(source).extra.assignedNodes.length > 0
 		) {
 			return [..._(source).extra.assignedNodes] as Node[];
@@ -32909,7 +32932,7 @@ class Highlight {
 	}
 
 	add(range: AbstractRange): Highlight {
-		if (!(range instanceof AbstractRange)) {
+		if (!(isPlatformObject(range, AbstractRange))) {
 			throw new TypeError("That is not a range");
 		}
 		_(this).highlightRanges.add(range);
@@ -33024,7 +33047,7 @@ class HighlightRegistry {
 		if (arguments.length < 2) {
 			throw new TypeError("set needs a name and a highlight");
 		}
-		if (!(highlight instanceof Highlight)) {
+		if (!(isPlatformObject(highlight, Highlight))) {
 			throw new TypeError("That is not a highlight");
 		}
 		const key = String(name);
@@ -33281,7 +33304,7 @@ export function getHighlightedTextNodes(
 		node !== null;
 		node = nextInTree(node, container)
 	) {
-		if (!(node instanceof Text)) {
+		if (!(isPlatformObject(node, Text))) {
 			continue;
 		}
 		const offsets = getHighlightedOffsets(range, node);
@@ -33583,7 +33606,7 @@ export class TreeWalker implements globalThis.TreeWalker {
 	}
 
 	set currentNode(node: globalThis.Node) {
-		if (!(node instanceof Node)) {
+		if (!(isPlatformObject(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		_(this).current = node as Node;
@@ -33885,7 +33908,7 @@ function movePointerStatesOffRemoval(
 	node: Node,
 	parent: Node,
 ): void {
-	const heir = parent instanceof ShadowRoot
+	const heir = isPlatformObject(parent, ShadowRoot)
 		? (_(parent).extra.host as Element)
 		: getNodeType(parent) === ELEMENT_NODE ? (parent as Element) : null;
 	for (const states of [activeElements, hoveredElements]) {
@@ -34412,7 +34435,9 @@ export function getUserValidityMatch(
 // What :in-range and :out-of-range say about an input that is being
 // validated and has range limitations, or null for any other element.
 export function getRangeMatch(element: Element): "in" | "out" | null {
-	if (!(element instanceof HTMLInputElement) || !willValidate(element)) {
+	if (
+		!(isPlatformObject(element, HTMLInputElement)) || !willValidate(element)
+	) {
 		return null;
 	}
 	const type = element.type;
@@ -36209,9 +36234,9 @@ type TextControlOrSelect =
 function onTextControlEditEvent(event: globalThis.Event): void {
 	const target = event.target;
 	if (!(
-		target instanceof HTMLInputElement ||
-		target instanceof HTMLTextAreaElement ||
-		target instanceof HTMLSelectElement
+		isPlatformObject(target, HTMLInputElement) ||
+		isPlatformObject(target, HTMLTextAreaElement) ||
+		isPlatformObject(target, HTMLSelectElement)
 	)) {
 		return;
 	}
@@ -36381,7 +36406,7 @@ export function revealPendingCaret(document: globalThis.Document): void {
 		return;
 	}
 	flushLayout(element);
-	if (element instanceof HTMLTextAreaElement) {
+	if (isPlatformObject(element, HTMLTextAreaElement)) {
 		revealCaretInTextArea(attached, element);
 	}
 	const rect = attachedSlots.extra.layout.getRect(element);
@@ -36477,7 +36502,10 @@ function handleMutationRecords(
 		const textarea = record.type === "childList"
 			? record.target
 			: record.type === "characterData" ? record.target.parentNode : null;
-		if (textarea instanceof HTMLTextAreaElement && !_(textarea).extra.dirty) {
+		if (
+			isPlatformObject(textarea, HTMLTextAreaElement) &&
+			!_(textarea).extra.dirty
+		) {
 			syncUAShadowTree(textarea);
 		}
 	}
@@ -38949,7 +38977,7 @@ export class Window extends EventTarget {
 				.then((buffer) => decodeImageOffThread(new Uint8Array(buffer)))
 				.then((bitmap) => settle(new ImageBitmap(bitmap)));
 		}
-		if (image instanceof HTMLImageElement && !image.complete) {
+		if (isPlatformObject(image, HTMLImageElement) && !image.complete) {
 			return image.decode().then(() => settle(image));
 		}
 		try {
@@ -39304,7 +39332,10 @@ function containsPlatformObject(
 	}
 	seen.add(value);
 	if (getSlotClass(value) !== null) {
-		if (!(value instanceof DOMRectReadOnly || value instanceof ImageData)) {
+		if (
+			!(isPlatformObject(value, DOMRectReadOnly) ||
+				isPlatformObject(value, ImageData))
+		) {
 			throw domError(
 				"DataCloneError",
 				`Failed to ${context}: ${getInterfaceName(value)} object could not be cloned.`,
@@ -39339,10 +39370,10 @@ function cloneWithPlatformObjects(
 		return copies.get(value);
 	}
 	let copy: unknown;
-	if (value instanceof DOMRectReadOnly) {
-		const Type = value instanceof DOMRect ? DOMRect : DOMRectReadOnly;
+	if (isPlatformObject(value, DOMRectReadOnly)) {
+		const Type = isPlatformObject(value, DOMRect) ? DOMRect : DOMRectReadOnly;
 		copy = new Type(value.x, value.y, value.width, value.height);
-	} else if (value instanceof ImageData) {
+	} else if (isPlatformObject(value, ImageData)) {
 		copy = new ImageData(
 			new Uint8ClampedArray(value.data),
 			value.width,
@@ -39426,7 +39457,8 @@ export function startPendingImages(
 ): void {
 	for (const element of root.querySelectorAll("*")) {
 		if (
-			element instanceof HTMLImageElement && _(element).extra.imageState.pending
+			isPlatformObject(element, HTMLImageElement) &&
+			_(element).extra.imageState.pending
 		) {
 			updateImageData(element);
 		}
