@@ -39,11 +39,14 @@ test("a change after a quiet spell is drawn without waiting", async () => {
 	await nextFrame(dom);
 	await new Promise((resolve) => setTimeout(resolve, 40));
 	const before = written().length;
-	const start = performance.now();
+	// By the order of the timers, not the clock: a frame drawn without
+	// waiting comes from a task due at once, which runs before a timer due
+	// a frame interval later however busy the machine is. A clock reading
+	// would count the drawing itself, which a loaded runner can stretch.
+	const atInterval = new Promise<number>((resolve) => {
+		setTimeout(() => resolve(frames(written().slice(before))), 16);
+	});
 	dom.document.body.textContent = "b";
-	while (frames(written().slice(before)) === 0) {
-		await new Promise((resolve) => setTimeout(resolve, 1));
-	}
-	expect(performance.now() - start).toBeLessThan(16);
+	expect(await atInterval).toBeGreaterThan(0);
 	dom.dispose();
 });
