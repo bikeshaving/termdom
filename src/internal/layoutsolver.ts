@@ -2076,11 +2076,12 @@ function layoutFlexbox(
 				getAxisMargin(child, cross, itemOwnerWidth);
 			lineCross = Math.max(lineCross, childCross);
 		}
-		// Only a definite cross size fills the line. An `shrink-to-fit` bound
-		// treated as definite becomes the container's content size, then its
-		// basis above.
+		// A single line in a definite cross size is that size, even where an
+		// item overflows it (css-flexbox-1 §9.4 step 15). An `shrink-to-fit`
+		// bound treated as definite becomes the container's content size,
+		// then its basis above.
 		if (!wrap && !Number.isNaN(innerCross) && crossSpace === "definite") {
-			lineCross = Math.max(lineCross, innerCross);
+			lineCross = innerCross;
 		}
 		line.crossDim = lineCross;
 
