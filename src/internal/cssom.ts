@@ -11877,11 +11877,8 @@ function pseudoRuleCouldMatch(
 				name === "summary" ||
 				(getAttributeValue(element, "style") ?? "").includes("list-item") ||
 				(cascade.listItemRulesExist &&
-					anyRuleMatches(
-						cascade,
-						element,
-						(rule) => rule.declarations.display === "list-item",
-					))) && markerMayBeInside(cascade, element)
+					anyRuleMatches(cascade, element, "list-item", isListItemRule))) &&
+			markerMayBeInside(cascade, element)
 		);
 	}
 	if (!cascade.pseudoRulesByType.has(pseudoType)) {
@@ -11890,10 +11887,13 @@ function pseudoRuleCouldMatch(
 	// Rules that repeat a selector share its matcher, and one that missed
 	// misses again.
 	const missed = new Set<CompiledSelector | null>();
-	for (const rule of getCandidateRules(cascade, null, element)) {
+	const candidates = narrowCandidates(
+		getCandidateRules(cascade, null, element),
+		pseudoType,
+		(rule) => rule.pseudoElement === pseudoType && mayGiveContent(rule),
+	);
+	for (const rule of candidates) {
 		if (
-			rule.pseudoElement !== pseudoType ||
-			!mayGiveContent(rule) ||
 			(!rule.reachesHost && missed.has(rule.matcher)) ||
 			!subjectCouldMatch(element, rule)
 		) {
@@ -11918,13 +11918,7 @@ function markerMayBeInside(cascade: Cascade, element: Element): boolean {
 		getHTMLLocalName(element) === "summary" ||
 		(getAttributeValue(element, "style") ?? "").includes("inside") ||
 		(cascade.insideMarkerRulesExist &&
-			anyRuleMatches(
-				cascade,
-				element,
-				(rule) =>
-					rule.declarations["list-style-position"] !== undefined ||
-					rule.declarations.all !== undefined,
-			))
+			anyRuleMatches(cascade, element, "marker-position", setsMarkerPosition))
 	) {
 		return true;
 	}
@@ -11956,19 +11950,54 @@ function mayInheritInsideMarker(element: Element): boolean {
 	return false;
 }
 
+function isListItemRule(rule: ParsedCSSRule): boolean {
+	return rule.declarations.display === "list-item";
+}
+
+function setsMarkerPosition(rule: ParsedCSSRule): boolean {
+	return rule.declarations["list-style-position"] !== undefined ||
+		rule.declarations.all !== undefined;
+}
+
+// A candidate list keeps the same rules until they change, so the few that
+// a test named `name` keeps are found once per list, not once per element.
+const narrowedCandidates = new WeakMap<
+	ParsedCSSRule[],
+	Map<string, ParsedCSSRule[]>
+>();
+
+function narrowCandidates(
+	candidates: ParsedCSSRule[],
+	name: string,
+	keep: (rule: ParsedCSSRule) => boolean,
+): ParsedCSSRule[] {
+	let byName = narrowedCandidates.get(candidates);
+	if (byName === undefined) {
+		narrowedCandidates.set(candidates, (byName = new Map()));
+	}
+	let kept = byName.get(name);
+	if (kept === undefined) {
+		byName.set(name, (kept = candidates.filter(keep)));
+	}
+	return kept;
+}
+
 // Whether a rule for the element itself, not one of its pseudo-elements,
-// that `wanted` picks matches it.
+// that `wanted` picks matches it. `name` names the test.
 function anyRuleMatches(
 	cascade: Cascade,
 	element: Element,
+	name: string,
 	wanted: (rule: ParsedCSSRule) => boolean,
 ): boolean {
-	for (const rule of getCandidateRules(cascade, element)) {
+	const candidates = narrowCandidates(
+		getCandidateRules(cascade, element),
+		name,
+		(rule) => rule.pseudoElement === undefined && wanted(rule),
+	);
+	for (const rule of candidates) {
 		if (
-			rule.pseudoElement === undefined &&
-			wanted(rule) &&
-			subjectCouldMatch(element, rule) &&
-			ruleSelectorMatches(element, rule)
+			subjectCouldMatch(element, rule) && ruleSelectorMatches(element, rule)
 		) {
 			return true;
 		}
