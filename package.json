@@ -56,6 +56,14 @@
     "linebreak": "1.1.0",
     "parse5": "^8.0.1"
   },
+  "peerDependencies": {
+    "node-pty": "^1.1.0"
+  },
+  "peerDependenciesMeta": {
+    "node-pty": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@b9g/crank": "^0.7.12",
     "@b9g/eslint-config": "^0.1.10",
