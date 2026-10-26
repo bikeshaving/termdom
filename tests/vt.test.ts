@@ -252,3 +252,38 @@ test("DECSCUSR sets the cursor's shape, and a full reset clears it", () => {
 	term.write("\x1b[2 q\x1bc");
 	expect(term.cursorShape).toBe(0);
 });
+
+function historyText(term: Terminal): string[] {
+	return term.history.map((line) => line.chars.join("").trimEnd());
+}
+
+test("lines that scroll off the top go into history, up to the limit", () => {
+	const {term} = create(10, 2);
+	term.write("a\r\nb\r\nc\r\nd");
+	expect(historyText(term)).toEqual([]);
+	term.setHistoryLimit(2);
+	term.write("\r\ne\r\nf\r\ng");
+	expect(historyText(term)).toEqual(["d", "e"]);
+	expect(screen(term)).toEqual(["f", "g"]);
+	term.setHistoryLimit(1);
+	expect(historyText(term)).toEqual(["e"]);
+	term.write("\x1b[3J");
+	expect(historyText(term)).toEqual([]);
+});
+
+test("the alternate screen and a scroll region keep no history", () => {
+	const {term} = create(10, 3);
+	term.setHistoryLimit(10);
+	term.write("\x1b[?1049h1\r\n2\r\n3\r\n4\x1b[?1049l");
+	term.write("\x1b[2;3r\x1b[3;1Hx\r\ny\r\nz\x1b[r");
+	expect(historyText(term)).toEqual([]);
+});
+
+test("rows a resize pushes off the top go into history", () => {
+	const {term} = create(10, 4);
+	term.setHistoryLimit(10);
+	term.write("a\r\nb\r\nc\r\nd");
+	term.resize(10, 2);
+	expect(historyText(term)).toEqual(["a", "b"]);
+	expect(screen(term)).toEqual(["c", "d"]);
+});

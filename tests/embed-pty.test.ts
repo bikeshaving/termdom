@@ -377,6 +377,66 @@ test("an embed in a frame draws in the frame and takes the keys there", async ()
 	expect(children[0].killed).toBe(true);
 });
 
+test("the wheel scrolls back through what scrolled off, and a key returns", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="2" scrollback="3" style="display: block">`,
+		spawn,
+	);
+	const embed = document.querySelector("embed")!;
+	const top = Math.round(embed.getBoundingClientRect().top);
+	children[0].options.onData("1\r\n2\r\n3\r\n4\r\n5\r\n6");
+	await settle(dom);
+	expect([rowText(terminal, top), rowText(terminal, top + 1)]).toEqual([
+		"5",
+		"6",
+	]);
+	await send(terminal, `\x1b[<64;2;${top + 1}M`);
+	await settle(dom);
+	expect([rowText(terminal, top), rowText(terminal, top + 1)]).toEqual([
+		"2",
+		"3",
+	]);
+	children[0].options.onData("\r\n7");
+	await settle(dom);
+	expect([rowText(terminal, top), rowText(terminal, top + 1)]).toEqual([
+		"3",
+		"4",
+	]);
+	embed.setAttribute("scrollback", "1");
+	await settle(dom);
+	expect([rowText(terminal, top), rowText(terminal, top + 1)]).toEqual([
+		"5",
+		"6",
+	]);
+	embed.focus();
+	await send(terminal, "x");
+	await settle(dom);
+	expect([rowText(terminal, top), rowText(terminal, top + 1)]).toEqual([
+		"6",
+		"7",
+	]);
+	expect(children[0].written).toEqual(["x"]);
+	await dom.dispose();
+});
+
+test("with scrollback=\"0\", the wheel passes to the page", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="2" scrollback="0" style="display: block"><div style="height: 40px"></div>`,
+		spawn,
+	);
+	const top = Math.round(
+		document.querySelector("embed")!.getBoundingClientRect().top,
+	);
+	children[0].options.onData("1\r\n2\r\n3");
+	await settle(dom);
+	await send(terminal, `\x1b[<65;2;${top + 1}M`);
+	await settle(dom);
+	expect(dom.window.scrollY).toBeGreaterThan(0);
+	await dom.dispose();
+});
+
 test("the pty option takes none or auto, and throws on anything else", () => {
 	expect(() => new TermDOM({pty: true as unknown as "auto"})).toThrow(
 		TypeError,

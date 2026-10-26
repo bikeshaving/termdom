@@ -1033,7 +1033,8 @@ function deliverMouseReport(input: Input, {
 }
 
 // The report for a program whose embed is under the point, at the cell of
-// its box the point is on. False where no program there takes the mouse.
+// its box the point is on. A wheel the program does not take scrolls its
+// history. False where no program there takes the mouse or the wheel.
 function sendMouseToProgram(
 	level: FramePointLevel,
 	x: number,
@@ -1060,6 +1061,9 @@ function sendMouseToProgram(
 	let taken = false;
 	for (let tick = 0; tick < ticks; tick++) {
 		taken = program.sendMouse(code, col, row, isRelease);
+	}
+	if (!taken && (code & 64) !== 0) {
+		return program.scrollBy((code & 1 ? -3 : 3) * ticks);
 	}
 	return taken;
 }
