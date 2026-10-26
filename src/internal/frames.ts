@@ -19,6 +19,7 @@ import {
 } from "./dom.ts";
 import {
 	adoptCellPixels,
+	type Caret,
 	CellContext,
 	CellGrid,
 	clearGrid,
@@ -69,7 +70,11 @@ setFrameEngineFactory((document, window, parent, changed) => {
 	});
 	const painter = new Painter(document, layout, cascade, framebuffer);
 	let grid = new CellGrid(0, 0);
+	let caret: Caret | null = null;
 	return {
+		get caret() {
+			return caret;
+		},
 		fit(cols, rows) {
 			const cell = parentSlots.framebuffer.cellPixels;
 			if (
@@ -92,7 +97,13 @@ setFrameEngineFactory((document, window, parent, changed) => {
 			applyMutations(document as unknown as globalThis.Document);
 			layout.performLayout();
 			clearGrid(grid);
-			paint(painter, new CellContext(grid, rows, cols, -framebuffer.scrollTop));
+			const context = new CellContext(grid, rows, cols, -framebuffer.scrollTop);
+			paint(painter, context);
+			// The painter puts the caret in document rows. The grid's rows are
+			// the viewport's.
+			caret = context.caret === null
+				? null
+				: {...context.caret, row: context.caret.row + context.viewportOffset};
 			return grid;
 		},
 		dispose() {

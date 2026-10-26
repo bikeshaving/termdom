@@ -35,6 +35,7 @@ import {
 import * as CSSValues from "./cssvalues.ts";
 import type {Exchange} from "./exchange.ts";
 import {
+	type Caret,
 	CellContext,
 	CellGrid,
 	drawGrid,
@@ -1746,7 +1747,8 @@ function keepsOwnFields(base: typeof globalThis.Event): boolean {
 	try {
 		return Object.getOwnPropertyNames(new base("probe"))
 			.some((name) => name !== "isTrusted");
-	} catch {
+	} catch (_err) {
+		// One the runtime cannot make is no base either.
 		return true;
 	}
 }
@@ -18030,6 +18032,9 @@ export interface FrameRenderer {
 	// The frame's cells at `cols` by `rows`. The same grid comes back while
 	// the size holds, painted again only once the frame has changed.
 	fit(cols: number, rows: number): CellGrid;
+	// Where the frame's caret is in the grid the last fit returned, as its
+	// focused field puts it, or null.
+	readonly caret: Caret | null;
 	dispose(): void;
 }
 
@@ -18169,6 +18174,12 @@ class HTMLIFrameElement extends HTMLElement {
 			height: 150,
 			fit: (cols: number, rows: number) => fitFrame(this, cols, rows),
 			version: slots.extra.frameVersion,
+			// The frame's caret is the cursor while the frame has the focus of
+			// the document it is in.
+			caret: () =>
+				getFocusedElement(slots.document) === this
+					? slots.extra.frameRenderer?.caret ?? null
+					: null,
 		}));
 	}
 
@@ -18195,41 +18206,77 @@ class HTMLIFrameElement extends HTMLElement {
 		syncFrameIndexes(this.document);
 		// The document is built lazily on first access. Building it here would
 		// re-enter the parser while a parse containing this iframe is still
-		// running. The load event fires from a task, after the insertion has
-		// finished and its listeners are attached.
-		const slots = this;
-		const run = (slots.extra.frameDocumentRun = {});
-		setTimeout(() => {
-			if (getOwner(this).isConnected && slots.extra.frameDocumentRun === run) {
-				getOwner(this).dispatchEvent(
-					constructInternal(() => new Event("load")),
-				);
-			}
-		}, 0);
+		// running.
+		scheduleFrameLoad(getOwner(this));
+	}
+
+	// A new srcdoc or src navigates the frame: its document and window go,
+	// and the next read or paint builds the new one, which fires load.
+	override _attributeChangeSteps(
+		this: Slots<HTMLIFrameElement>,
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		superStep(HTMLIFrameElement, "_attributeChangeSteps").call(
+			this,
+			localName,
+			oldValue,
+			value,
+			namespace,
+		);
+		if (
+			namespace !== null ||
+			(localName !== "srcdoc" && localName !== "src") ||
+			!getOwner(this).isConnected
+		) {
+			return;
+		}
+		discardFrame(getOwner(this));
+		scheduleFrameLoad(getOwner(this));
+		frameChanged(getOwner(this));
 	}
 
 	override _removingSteps(this: Slots<HTMLIFrameElement>, parent: Node): void {
 		superStep(HTMLIFrameElement, "_removingSteps").call(this, parent);
-		const slots = this;
-		// A removed frame's window is no longer in the frames of the one it was
-		// in. The bindings may remember a class the frame's page made, which
-		// would hold the frame's realm after it is gone.
-		const window = slots.extra.contentWindow;
-		if (isPlatformObject(window, Window)) {
-			_(window).parentWindow = null;
-			_(window).frameOwner = null;
-			forgetClasses();
-		}
-		slots.extra.frameRenderer?.dispose();
-		slots.extra.frameRenderer = null;
-		slots.extra.contentDocument = null;
-		slots.extra.contentWindow = null;
-		slots.extra.frameDocumentRun = {};
+		discardFrame(getOwner(this));
 		syncFrameIndexes(this.document);
 	}
 }
 
 declareExtraSlots(HTMLIFrameElement);
+
+// The frame's document and window go, as a removal or a navigation
+// discards them. A removed frame's window is no longer in the frames of
+// the one it was in, and the bindings may remember a class the frame's
+// page made, which would hold the frame's realm after it is gone.
+function discardFrame(frame: HTMLIFrameElement): void {
+	const slots = _(frame);
+	const window = slots.extra.contentWindow;
+	if (isPlatformObject(window, Window)) {
+		_(window).parentWindow = null;
+		_(window).frameOwner = null;
+		forgetClasses();
+	}
+	slots.extra.frameRenderer?.dispose();
+	slots.extra.frameRenderer = null;
+	slots.extra.contentDocument = null;
+	slots.extra.contentWindow = null;
+	slots.extra.frameDocumentRun = {};
+}
+
+// load fires from a task, after the insertion or navigation has finished
+// and its listeners are attached, and only for the latest of them.
+function scheduleFrameLoad(frame: HTMLIFrameElement): void {
+	const slots = _(frame);
+	const run = (slots.extra.frameDocumentRun = {});
+	setTimeout(() => {
+		if (frame.isConnected && slots.extra.frameDocumentRun === run) {
+			frame.dispatchEvent(constructInternal(() => new Event("load")));
+		}
+	}, 0);
+}
 
 /**
  * The iframe `document` is the content document of, or null for one that
@@ -18242,9 +18289,13 @@ export function getFrameOwner(
 	return window === null ? null : _(window).frameOwner;
 }
 
-// The document a drawn iframe shows, or null for an element that is not
-// one: input reaches a frame only where its cells are on the screen.
-function getDrawnFrameDocument(element: Element | null): Document | null {
+/**
+ * The document a drawn iframe shows, or null for an element that is not
+ * one: input reaches a frame only where its cells are on the screen.
+ */
+export function getDrawnFrameDocument(
+	element: globalThis.Element | Element | null,
+): Document | null {
 	return isPlatformObject(element, HTMLIFrameElement) &&
 		_(element).extra.frameRenderer !== null
 		? _(element).extra.contentDocument
@@ -18252,20 +18303,51 @@ function getDrawnFrameDocument(element: Element | null): Document | null {
 }
 
 /**
+ * One document a point passes through: the element under the point in it,
+ * and where its coordinates start, and its viewport, in the outermost
+ * document's coordinates.
+ */
+export interface FramePointLevel {
+	document: Document;
+	element: Element | null;
+	// The point is at x - left, y - top in the document, and at
+	// y - top - scrollTop in its viewport.
+	left: number;
+	top: number;
+	scrollTop: number;
+}
+
+/**
  * The element at the document point `x`, `y` of `document`, looking into
  * the frames drawn there, with the document it is in and where that
- * document's viewport is in `document`'s coordinates. A point on a frame's
- * border or padding is the iframe's own.
+ * document's coordinates start in `document`'s, and each document the point
+ * passed through, outermost first. A point on a frame's border or padding
+ * is the iframe's own.
  */
 export function elementAtPointThroughFrames(
 	document: globalThis.Document,
 	x: number,
 	y: number,
-): {element: Element | null; document: Document; left: number; top: number} {
+): {
+	element: Element | null;
+	document: Document;
+	left: number;
+	top: number;
+	levels: FramePointLevel[];
+} {
 	let current = document as Document;
 	let element = elementAtDocumentPoint(document, x, y, null) as Element | null;
 	let left = 0;
 	let top = 0;
+	const levels: FramePointLevel[] = [
+		{
+			document: current,
+			element,
+			left,
+			top,
+			scrollTop: _(current).extra.framebuffer.scrollTop,
+		},
+	];
 	for (
 		let inner = getDrawnFrameDocument(element);
 		inner !== null;
@@ -18281,8 +18363,9 @@ export function elementAtPointThroughFrames(
 		) {
 			break;
 		}
+		const scrollTop = _(inner).extra.framebuffer.scrollTop;
 		left += box.left;
-		top += box.top - _(inner).extra.framebuffer.scrollTop;
+		top += box.top - scrollTop;
 		current = inner;
 		element = (elementAtDocumentPoint(
 			inner as unknown as globalThis.Document,
@@ -18290,8 +18373,9 @@ export function elementAtPointThroughFrames(
 			y - top,
 			null,
 		) ?? inner.body) as Element | null;
+		levels.push({document: current, element, left, top, scrollTop});
 	}
-	return {element, document: current, left, top};
+	return {element, document: current, left, top, levels};
 }
 
 /**
