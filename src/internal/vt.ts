@@ -151,7 +151,8 @@ function defaultTabStops(cols: number): boolean[] {
 /**
  * A terminal's screen and modes, changed by what the program writes.
  * Answers to the program's questions, such as where the cursor is, go to
- * `reply`. It keeps no scrollback, since the embed shows only the screen.
+ * `reply`. Lines that scroll off the top of the normal screen go into
+ * `history`, up to `historyLimit` of them.
  */
 export class Terminal {
 	cols: number;
@@ -169,6 +170,10 @@ export class Terminal {
 	normal: ScreenBuffer;
 	alternate: ScreenBuffer;
 	buffer: ScreenBuffer;
+	history: Line[];
+	historyLimit: number;
+	// Every line that ever went into history, so a view of it can stay put.
+	historyAdded: number;
 	tabStops: boolean[];
 	charsets: string[];
 	shift: number;
@@ -209,6 +214,9 @@ export class Terminal {
 		this.normal = createBuffer(this.cols, this.rows);
 		this.alternate = createBuffer(this.cols, this.rows);
 		this.buffer = this.normal;
+		this.history = [];
+		this.historyLimit = 0;
+		this.historyAdded = 0;
 		this.x = 0;
 		this.y = 0;
 		this.wrapPending = false;
@@ -246,6 +254,27 @@ export class Terminal {
 
 	get alternateScreen(): boolean {
 		return this.buffer === this.alternate;
+	}
+
+	setHistoryLimit(limit: number): void {
+		this.historyLimit = Math.max(0, limit);
+		this.trimHistory();
+	}
+
+	keepHistory(lines: Line[]): void {
+		if (this.historyLimit === 0) {
+			return;
+		}
+		this.history.push(...lines);
+		this.historyAdded += lines.length;
+		this.trimHistory();
+	}
+
+	trimHistory(): void {
+		const excess = this.history.length - this.historyLimit;
+		if (excess > 0) {
+			this.history.splice(0, excess);
+		}
 	}
 
 	write(data: Uint8Array | string): void {
@@ -289,6 +318,9 @@ export class Terminal {
 				const fromBottom = Math.min(excess, Math.max(0, below));
 				lines = lines.slice(0, lines.length - fromBottom);
 				excess -= fromBottom;
+				if (buffer === this.normal) {
+					this.keepHistory(lines.slice(0, excess));
+				}
 				lines = lines.slice(excess);
 				if (active) {
 					this.y -= excess;
@@ -558,6 +590,9 @@ export class Terminal {
 	lineFeed(): void {
 		this.wrapPending = false;
 		if (this.y === this.scrollBottom) {
+			if (this.scrollTop === 0 && this.buffer === this.normal) {
+				this.keepHistory([this.lines[0]]);
+			}
 			this.scrollUp(1);
 		} else if (this.y < this.rows - 1) {
 			this.y++;
@@ -1055,6 +1090,8 @@ export class Terminal {
 			for (const line of lines) {
 				eraseCells(line, 0, this.cols, this.bg);
 			}
+		} else if (mode === 3) {
+			this.history = [];
 		}
 	}
 

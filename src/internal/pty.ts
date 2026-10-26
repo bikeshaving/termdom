@@ -384,6 +384,8 @@ export class PtySession {
 	// The version the grid was drawn at, or -1 for one not drawn yet.
 	drawn: number;
 	disposed: boolean;
+	// How many lines of history the view is scrolled back.
+	scrolled: number;
 
 	constructor(
 		command: string,
@@ -401,6 +403,7 @@ export class PtySession {
 		this.grid = new CellGrid(this.rows, this.cols);
 		this.drawn = -1;
 		this.disposed = false;
+		this.scrolled = 0;
 		this.terminal = new Terminal(this.cols, this.rows, (data) =>
 			this.write(data),
 		);
@@ -411,7 +414,17 @@ export class PtySession {
 				if (this.disposed) {
 					return;
 				}
-				this.terminal.write(data);
+				const terminal = this.terminal;
+				const added = terminal.historyAdded;
+				terminal.write(data);
+				this.scrolled = terminal.alternateScreen
+					? 0
+					: Math.min(
+						this.scrolled === 0
+							? 0
+							: this.scrolled + terminal.historyAdded - added,
+						terminal.history.length,
+					);
 				this.version++;
 				this.onchange();
 			},
@@ -427,12 +440,13 @@ export class PtySession {
 	/** Where the program's cursor is, or null while it is hidden or gone. */
 	get caret(): Caret | null {
 		const terminal = this.terminal;
-		if (this.exited || !terminal.cursorVisible) {
+		const row = terminal.y + this.scrolled;
+		if (this.exited || !terminal.cursorVisible || row >= this.rows) {
 			return null;
 		}
 		return {
 			col: Math.min(terminal.x, this.cols - 1),
-			row: terminal.y,
+			row,
 			shape: terminal.cursorShape,
 			color: null,
 		};
@@ -448,6 +462,7 @@ export class PtySession {
 		if (bytes === null) {
 			return false;
 		}
+		this.scrollBy(-this.scrolled);
 		this.write(bytes);
 		return true;
 	}
@@ -458,6 +473,7 @@ export class PtySession {
 	 */
 	paste(text: string): void {
 		const body = text.replace(/\r?\n/g, "\r");
+		this.scrollBy(-this.scrolled);
 		this.write(
 			this.terminal.bracketedPaste ? `\x1b[200~${body}\x1b[201~` : body,
 		);
@@ -504,6 +520,35 @@ export class PtySession {
 		return true;
 	}
 
+	/**
+	 * Scrolls the view back through history by `lines`, or forward for
+	 * a negative count. Returns whether it moved.
+	 */
+	scrollBy(lines: number): boolean {
+		const terminal = this.terminal;
+		const scrolled = terminal.alternateScreen
+			? 0
+			: Math.max(0, Math.min(this.scrolled + lines, terminal.history.length));
+		if (scrolled === this.scrolled) {
+			return false;
+		}
+		this.scrolled = scrolled;
+		this.version++;
+		this.onchange();
+		return true;
+	}
+
+	/** Keeps at most `limit` lines that scroll off the top. */
+	setScrollback(limit: number): void {
+		const terminal = this.terminal;
+		terminal.setHistoryLimit(limit);
+		if (this.scrolled > terminal.history.length) {
+			this.scrolled = terminal.history.length;
+			this.version++;
+			this.onchange();
+		}
+	}
+
 	/** Tells the program its box gained or lost focus, if it asked. */
 	sendFocus(focused: boolean): void {
 		if (this.terminal.focusReporting && !this.exited) {
@@ -534,6 +579,7 @@ export class PtySession {
 			drawScreen(
 				new CellContext(this.grid, this.rows, this.cols, 0),
 				this.terminal,
+				this.scrolled,
 			);
 		}
 		return this.grid;
@@ -557,11 +603,18 @@ function isBlank(chars: string, style: CellStyle): boolean {
 		!style.overline;
 }
 
-function drawScreen(cells: CellContext, terminal: Terminal): void {
-	const lines = terminal.lines;
+function drawScreen(
+	cells: CellContext,
+	terminal: Terminal,
+	scrolled: number,
+): void {
+	const {lines, history} = terminal;
 	for (let row = 0; row < terminal.rows; row++) {
-		const line = lines[row];
-		for (let col = 0; col < terminal.cols; col++) {
+		const line = row < scrolled
+			? history[history.length - scrolled + row]
+			: lines[row - scrolled];
+		const cols = Math.min(terminal.cols, line.cols);
+		for (let col = 0; col < cols; col++) {
 			if (line.widths[col] === 0) {
 				continue;
 			}

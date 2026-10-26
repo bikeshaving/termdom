@@ -16913,6 +16913,8 @@ class HTMLEmbedElement extends HTMLElement {
 			this.extra.program !== null
 		) {
 			invalidateReplaced(getOwner(this), true);
+		} else if (localName === "scrollback") {
+			this.extra.program?.setScrollback(getScrollbackLimit(getOwner(this)));
 		}
 	}
 
@@ -16963,6 +16965,13 @@ function getProgramNaturalSize(embed: HTMLEmbedElement): {
 		width: read("width", 80, cell.width),
 		height: read("height", 24, cell.height),
 	};
+}
+
+// How many lines that scroll off the top the embed keeps, from its
+// scrollback attribute, or 2000, as tmux keeps.
+function getScrollbackLimit(embed: HTMLEmbedElement): number {
+	const value = getAttributeValue(embed, "scrollback");
+	return (value === null ? null : parseNonNegativeInteger(value)) ?? 2000;
 }
 
 function stopProgram(embed: HTMLEmbedElement): void {
@@ -17023,6 +17032,7 @@ function startProgram(embed: HTMLEmbedElement): void {
 		fire("error");
 		return;
 	}
+	program.setScrollback(getScrollbackLimit(embed));
 	slots.extra.program = program;
 	// While its program runs, the embed is replaced by the program's
 	// screen, drawn as an iframe draws its document.
