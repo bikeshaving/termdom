@@ -255,12 +255,15 @@ export function getSlotClass(value: unknown): Constructor | null {
 
 // The classes each class takes its slots from, itself included.
 const lineages = new Map<Constructor, Set<Constructor>>();
+// The class looked up last and its lineage, since the objects checked in
+// a row are often made by one class, as a run of spans is.
+let lastLineageType: Constructor | null = null;
+let lastLineage: Set<Constructor> | null = null;
 
-/** Whether objects `type` makes implement `owner`'s interface. */
-export function implementsInterface(
-	type: Constructor,
-	owner: Constructor,
-): boolean {
+function getLineage(type: Constructor): Set<Constructor> {
+	if (type === lastLineageType) {
+		return lastLineage!;
+	}
 	let lineage = lineages.get(type);
 	if (lineage === undefined) {
 		lineage = new Set();
@@ -273,7 +276,17 @@ export function implementsInterface(
 		}
 		lineages.set(type, lineage);
 	}
-	return lineage.has(owner);
+	lastLineageType = type;
+	lastLineage = lineage;
+	return lineage;
+}
+
+/** Whether objects `type` makes implement `owner`'s interface. */
+export function implementsInterface(
+	type: Constructor,
+	owner: Constructor,
+): boolean {
+	return getLineage(type).has(owner);
 }
 
 /**
@@ -285,8 +298,23 @@ export function isPlatformObject<T extends object>(
 	value: unknown,
 	type: Constructor & {prototype: T},
 ): value is T {
-	const made = getSlotClass(value);
-	return made !== null && (made === type || implementsInterface(made, type));
+	// Read past the cache of recent records without changing it: the
+	// engine checks many objects in passing, and remembering each would
+	// push out the ones it is working on.
+	let record: SlotRecord | null;
+	if (value === newestObject) {
+		record = newestRecord;
+	} else if (value === olderObject) {
+		record = olderRecord;
+	} else if (
+		(typeof value !== "object" && typeof value !== "function") || value === null
+	) {
+		return false;
+	} else {
+		record = Slot.find(value);
+	}
+	const made = record?.[kType] as Constructor | null | undefined;
+	return made != null && (made === type || getLineage(made).has(type));
 }
 
 /**
