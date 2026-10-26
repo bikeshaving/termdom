@@ -179,14 +179,23 @@ declare global {
 
 	interface HTMLEmbedElement {
 		/**
-		 * Types `message` into the program of an `<embed
-		 * type="application/x-pty">`. It is there only while the embed
+		 * Sends `message` to the program of an `<embed
+		 * type="application/x-pty">`: text, typed as is, or a keydown,
+		 * keyup or paste event, or an object shaped like one, forwarded as
+		 * the user's own input would be. It is there only while the embed
 		 * runs a program, as a Native Client module's embed had it.
 		 *
 		 * @experimental The element and its events may change in a minor
 		 * release.
 		 */
-		postMessage?(message: string): void;
+		postMessage?(
+			message:
+				string |
+				KeyboardEvent |
+				ClipboardEvent |
+				(KeyboardEventInit & {type: "keydown" | "keyup"}) |
+				{type: "paste"; clipboardData: Pick<DataTransfer, "getData">},
+		): void;
 	}
 }
 
