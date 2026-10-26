@@ -6493,6 +6493,10 @@ interface ParsedCSSRule {
 	// which is the cascade's encapsulation boundary in both directions.
 	scope?: Node;
 
+	// The document's sheet that holds this rule, itself or through an
+	// @import. Document rules that tie in the cascade rank by it.
+	documentSheet?: CSSStyleSheet;
+
 	// `:host` is the one thing that reaches outside the tree its
 	// stylesheet belongs to.
 	reachesHost?: boolean;
@@ -9422,27 +9426,55 @@ function parseStylesheetsIfStale(cascade: Cascade): void {
 	}
 }
 
-// Sheets added after the ones the last parse read come after them in the
-// cascade too, so their rules are read alone. A sheet that left or moved,
-// or one that declares a layer the others may have ranked, needs the
-// whole parse.
+function parseDocumentSheet(cascade: Cascade, sheet: CSSStyleSheet): void {
+	const start = cascade.parsedRules.length;
+	parseStyleSheet(cascade, sheet);
+	const rules = cascade.parsedRules;
+	for (let index = start; index < rules.length; index++) {
+		rules[index].documentSheet = sheet;
+	}
+}
+
+// The sheets in `sheets` that `parsed` does not hold, or null when one of
+// `parsed` left or moved. A page that keeps a <style> in its body and
+// appends more to its head adds each one before that body style.
+function findAddedSheets(
+	parsed: CSSStyleSheet[],
+	sheets: CSSStyleSheet[],
+): CSSStyleSheet[] | null {
+	const old = new Set(parsed);
+	const added: CSSStyleSheet[] = [];
+	let next = 0;
+	for (const sheet of sheets) {
+		if (sheet === parsed[next]) {
+			next++;
+		} else if (old.has(sheet)) {
+			return null;
+		} else {
+			added.push(sheet);
+		}
+	}
+	return next === parsed.length ? added : null;
+}
+
+// Sheets added among the ones the last parse read are read alone, and
+// their rules ranked among the others by where their sheets are. A sheet
+// that left or moved, or one that declares a layer the others may have
+// ranked, needs the whole parse.
 function appendDocumentSheets(cascade: Cascade): boolean {
-	const parsed = cascade.documentSheets!;
 	const sheets = getDocumentStyleSheets(cascade.document);
-	if (
-		sheets.length < parsed.length ||
-		parsed.some((sheet, index) => sheets[index] !== sheet)
-	) {
+	const added = findAddedSheets(cascade.documentSheets!, sheets);
+	if (added === null) {
 		return false;
 	}
-	if (sheets.length === parsed.length) {
+	if (added.length === 0) {
 		return true;
 	}
 	const layers = cascade.layerPaths.length;
 	const anonymousLayers = cascade.anonymousLayers;
 	const before = cascade.parsedRules.length;
-	for (const sheet of sheets.slice(parsed.length)) {
-		parseStyleSheet(cascade, sheet);
+	for (const sheet of added) {
+		parseDocumentSheet(cascade, sheet);
 	}
 	if (
 		cascade.layerPaths.length !== layers ||
@@ -9455,10 +9487,17 @@ function appendDocumentSheets(cascade: Cascade): boolean {
 	if (fresh.length === 0) {
 		return true;
 	}
+	const positions = new Map(sheets.map((sheet, index) => [sheet, index]));
+	const compare = (a: ParsedCSSRule, b: ParsedCSSRule): number =>
+		compareRules(a, b) ||
+		(a.documentSheet && b.documentSheet
+			? positions.get(a.documentSheet)! - positions.get(b.documentSheet)!
+			: 0);
 	if (rankRules(cascade, before)) {
-		sortRulesForCascade(cascade);
+		cascade.parsedRules.sort(compare);
+		fileRulesByPseudoElement(cascade);
 	} else {
-		fileFreshRules(cascade, before);
+		fileFreshRules(cascade, before, compare);
 	}
 	cascade.sharedRoot = new Map();
 	cascade.passedTokens = new Map();
@@ -9993,7 +10032,7 @@ function parseAllStylesheets(cascade: Cascade): void {
 
 	cascade.documentSheets = getDocumentStyleSheets(document);
 	for (const sheet of cascade.documentSheets) {
-		parseStyleSheet(cascade, sheet);
+		parseDocumentSheet(cascade, sheet);
 	}
 
 	// Disconnected roots parse too. attach-populate-connect is the standard
@@ -10048,16 +10087,18 @@ function sortRulesForCascade(cascade: Cascade): void {
 // The rules from `start` on were read after the rest, which are in
 // cascade order and ranked as they were, so only they are sorted, and
 // they are merged in after any earlier rule they tie with.
-function fileFreshRules(cascade: Cascade, start: number): void {
+function fileFreshRules(
+	cascade: Cascade,
+	start: number,
+	compare = compareRules,
+): void {
 	const rules = cascade.parsedRules;
-	const fresh = rules.slice(start).sort(compareRules);
+	const fresh = rules.slice(start).sort(compare);
 	const merged: ParsedCSSRule[] = [];
 	let i = 0;
 	let j = 0;
 	while (i < start && j < fresh.length) {
-		merged.push(
-			compareRules(rules[i], fresh[j]) <= 0 ? rules[i++] : fresh[j++],
-		);
+		merged.push(compare(rules[i], fresh[j]) <= 0 ? rules[i++] : fresh[j++]);
 	}
 	while (i < start) {
 		merged.push(rules[i++]);
