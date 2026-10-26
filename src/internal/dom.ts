@@ -1732,9 +1732,23 @@ const mirroredEventTypes: object[] = [];
 function getEventBase(Runtime: object | undefined): typeof Event {
 	const base = Runtime as typeof globalThis.Event | undefined;
 	return constructsRuntimeEvents &&
-			getRuntimeEventSupport(base) === runtimeEventSupport
+			getRuntimeEventSupport(base) === runtimeEventSupport &&
+			!keepsOwnFields(base!)
 		? base as unknown as typeof Event
 		: Event;
+}
+
+// Whether the runtime's class keeps its state in fields of the event's
+// own, as Deno's MessageEvent keeps data and origin, which its constructor
+// would write over the attributes the class here defines, and throw. Only
+// isTrusted is the object's own in every browser.
+function keepsOwnFields(base: typeof globalThis.Event): boolean {
+	try {
+		return Object.getOwnPropertyNames(new base("probe"))
+			.some((name) => name !== "isTrusted");
+	} catch {
+		return true;
+	}
 }
 
 // A subclass that extends the runtime's class takes Event's members and
