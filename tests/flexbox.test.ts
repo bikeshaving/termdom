@@ -1021,3 +1021,21 @@ test("a fit-content flex container takes its growing items' content, not their z
 	expect(roomy.text).toBe("SearchDuck");
 	expect(measure("6ch").width).toBe(6);
 });
+
+test("a single line in a definite height centers in that height, though an item overflows it", async () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 40, rows: 12}).transport,
+	});
+	dom.document.body.innerHTML =
+		"<div style=\"display: flex; align-items: center; height: 4px\">" +
+		"<span id=\"icon\" style=\"display: flex\"></span>" +
+		"<span style=\"display: block; height: 8px; width: 4ch\"></span>" +
+		"<span id=\"short\" style=\"display: block; height: 2px; width: 4ch\"></span>" +
+		"</div>";
+	await nextFrame(dom);
+	const top = (id: string): number =>
+		dom.document.getElementById(id)!.getBoundingClientRect().top -
+		dom.document.body.getBoundingClientRect().top;
+	expect([top("icon"), top("short")]).toEqual([2, 1]);
+	dom.dispose();
+});
