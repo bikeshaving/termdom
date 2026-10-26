@@ -610,9 +610,17 @@ export function getActiveRealm(): Realm | null {
 // inherits from, so a callback's realm is known when the engine calls it.
 const realmsByFunctionPrototype = new WeakMap<object, Realm>();
 
+let realmsMade = false;
+
 /** Makes `realm` known as the realm of the functions it makes. */
 export function registerRealm(realm: Realm): void {
 	realmsByFunctionPrototype.set(realm.functionPrototype, realm);
+	realmsMade = true;
+}
+
+/** Whether any realm but the engine's own has been made. */
+export function hasRealms(): boolean {
+	return realmsMade;
 }
 
 /**

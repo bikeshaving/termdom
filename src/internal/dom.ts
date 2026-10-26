@@ -149,6 +149,7 @@ import {
 	getDocumentRealm,
 	getFunctionRealm,
 	getInterfaceName,
+	hasRealms,
 	placeInRealm,
 	type Realm,
 	runInRealm,
@@ -4428,34 +4429,31 @@ interface Listener {
 // be one more allocation each.
 const NO_LISTENERS = Object.freeze([]) as unknown as Listener[];
 
-// The object the next event target is built onto instead of a new one,
-// as a frame's window is built onto its realm's global object.
-let pendingTargetObject: object | null = null;
-
-const EventTargetBase = function EventTargetBase(): object | void {
-	if (pendingTargetObject !== null) {
-		const target = pendingTargetObject;
-		pendingTargetObject = null;
-		return target;
-	}
-} as unknown as new () => object;
-
-/**
- * Runs `construct`, whose first event target is built onto `target`, an
- * object that exists already, such as a realm's global, rather than a new
- * one.
- */
-export function constructOnto<T>(target: object, construct: () => T): T {
-	pendingTargetObject = target;
-	try {
-		return construct();
-	} finally {
-		pendingTargetObject = null;
-	}
-}
+const EventTargetBase = function EventTargetBase(): void {} as unknown as
+	new () => object;
 
 EventTargetBase.prototype =
 	Object.create(globalThis.EventTarget.prototype) as object;
+
+/**
+ * Runs `construct`, whose event target is built onto `target`, an object
+ * that exists already, such as a realm's global, rather than a new one.
+ * EventTarget's base, which super() reads when it runs, returns `target`
+ * for as long as this runs, so the targets made every other time pass
+ * through an empty base.
+ */
+export function constructOnto<T>(target: object, construct: () => T): T {
+	const OntoBase = function EventTargetBase(): object {
+		return target;
+	};
+	OntoBase.prototype = EventTargetBase.prototype;
+	Object.setPrototypeOf(EventTarget, OntoBase);
+	try {
+		return construct();
+	} finally {
+		Object.setPrototypeOf(EventTarget, EventTargetBase);
+	}
+}
 
 export interface EventTargetSlots {
 	listeners: Listener[];
@@ -6253,6 +6251,10 @@ export interface NodeExtra {}
 
 // The nodeType each class of node reports, learned from its first node.
 const nodeTypes = new WeakMap<object, number>();
+// The class the last node was made by and its node type, since nodes come
+// many of a kind. A frame's going forgets it, with the frame's classes.
+let lastNodeClass: object | null = null;
+let lastNodeType: number | undefined;
 
 export interface NodeSlots extends EventTargetSlots {
 	// The fields in RARE_FIELDS, once one of them is set to anything but its
@@ -6354,10 +6356,15 @@ export class Node extends EventTarget implements globalThis.Node {
 		if (new.target === Node) {
 			throw new TypeError("Illegal constructor");
 		}
-		let nodeType = nodeTypes.get(new.target);
+		let nodeType = new.target === lastNodeClass ? lastNodeType : undefined;
 		if (nodeType === undefined) {
-			nodeType = Reflect.get(Node.prototype, "nodeType", this) as number;
-			nodeTypes.set(new.target, nodeType);
+			nodeType = nodeTypes.get(new.target);
+			if (nodeType === undefined) {
+				nodeType = Reflect.get(Node.prototype, "nodeType", this) as number;
+				nodeTypes.set(new.target, nodeType);
+			}
+			lastNodeClass = new.target;
+			lastNodeType = nodeType;
 		}
 		slots.nodeType = nodeType;
 		// A Document is its own node document. Every other node gets one from
@@ -7575,7 +7582,10 @@ function removeNode(node: Node, suppressObservers = false): void {
 // node keeps the realm it was made in wherever it goes.
 function setNodeDocument(node: Node, document: Document): void {
 	_(node).document = document;
-	placeInRealm(getDocumentRealm(document), node);
+	// Until a frame has made a realm, every node is the engine's.
+	if (hasRealms()) {
+		placeInRealm(getDocumentRealm(document), node);
+	}
 }
 
 function adoptNode(node: Node, document: Document): void {
@@ -18258,6 +18268,7 @@ function discardFrame(frame: HTMLIFrameElement): void {
 		_(window).parentWindow = null;
 		_(window).frameOwner = null;
 		forgetClasses();
+		lastNodeClass = null;
 	}
 	slots.extra.frameRenderer?.dispose();
 	slots.extra.frameRenderer = null;
