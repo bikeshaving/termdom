@@ -1,3 +1,4 @@
+import "./internal/frames.ts";
 import "./internal/inspector.ts";
 
 import type {CanvasCellGridContext} from "./internal/canvas.ts";
