@@ -15,6 +15,7 @@ import {
 import {CSSOM_INTERFACES} from "./cssom.ts";
 import {
 	cloneStructured,
+	constructOnto,
 	createWindowRegistry,
 	type Document,
 	DOMException,
@@ -26,20 +27,48 @@ import {
 	reportError,
 	runtime,
 	setAttributeByName,
+	setFrameWindowFactory,
 	startPendingImages,
 	toImageDimension,
 	Window,
 	windowTimers,
 } from "./dom.ts";
+import {createRealm} from "./realms.ts";
+import {
+	createWindowFetch,
+	getDocumentLoader,
+	setDocumentLoader,
+} from "./resources.ts";
 import {_, prepareClasses} from "./slots.ts";
 import type {setTimeout} from "./timers.ts";
-import {type Constructor, installInterfaces, windowMember} from "./webidl.ts";
+import {
+	type Constructor,
+	installInterfaces,
+	type Realm,
+	runInRealm,
+	windowMember,
+} from "./webidl.ts";
 
 // A window starts with its interfaces and the timers any script expects
 // to find. The display fills in the rest (sizing, scrolling, animation
-// frames, the clipboard) as it mounts the document.
-export function buildWindow(document: Document): Window {
-	const window = new Window(document) as unknown as Record<string, unknown>;
+// frames, the clipboard) as it mounts the document. A frame's window is
+// its realm's global object, with the realm's interfaces, and its timers
+// run with the realm active.
+export function buildWindow(
+	document: Document,
+	realm: Realm | null = null,
+): Window {
+	let window: Record<string, unknown>;
+	if (realm === null) {
+		window = new Window(document) as unknown as Record<string, unknown>;
+	} else {
+		// The window keeps the prototype it is built with under its named
+		// properties, so it takes the realm's first.
+		Object.setPrototypeOf(realm.global, realm.prototypes.get(Window)!);
+		window = runInRealm(realm, () =>
+			constructOnto(realm.global, () => new Window(document))) as unknown as
+			Record<string, unknown>;
+	}
 	// HTML reports an exception a timer or a microtask lets escape, as it
 	// does a listener's, and the page goes on. The runtime's own would end
 	// the process.
@@ -47,11 +76,13 @@ export function buildWindow(document: Document): Window {
 		typeof handler !== "function"
 			? handler
 			: () => {
-				try {
-					(handler as (...args: unknown[]) => void)(...args);
-				} catch (error) {
-					reportError(error, document);
-				}
+				runInRealm(realm, () => {
+					try {
+						(handler as (...args: unknown[]) => void)(...args);
+					} catch (error) {
+						reportError(error, document);
+					}
+				});
 			};
 	// The page's outstanding timers, which stop with the window, by the
 	// number HTML hands the page for each: the runtime's own handle is the
@@ -76,7 +107,7 @@ export function buildWindow(document: Document): Window {
 	Object.assign(
 		window,
 		getWindowClasses(),
-		Object.fromEntries(getInterfaceObjects()),
+		Object.fromEntries(realm?.interfaces ?? getInterfaceObjects()),
 		{
 		// The platform's DOMException, which is the one the DOM and the CSSOM
 		// throw. A caller's `instanceof DOMException` has to match the class
@@ -142,7 +173,8 @@ export function buildWindow(document: Document): Window {
 		return image;
 	} as unknown as typeof HTMLImageElement;
 	Object.defineProperty(Image, "prototype", {
-		value: HTMLImageElement.prototype,
+		value:
+			realm?.prototypes.get(HTMLImageElement) ?? HTMLImageElement.prototype,
 	});
 	window.Image = Image;
 	window.window = window;
@@ -188,6 +220,35 @@ export function getWindowClasses(): Readonly<Record<string, Constructor>> {
 export function getInterfaceObjects(): ReadonlyMap<string, Constructor> {
 	return installInterfaces(getWindowClasses());
 }
+
+// A frame's document and window, built in a realm of their own where the
+// runtime can make one. Its handler attributes stay inert, as a frame's
+// did before it had a realm, and its requests are the window's it is in:
+// held to the same policy, and offered to the same fetch listeners.
+setFrameWindowFactory((source, url, registry, parent, frame) => {
+	const realm = createRealm();
+	if (realm === null) {
+		return null;
+	}
+	return runInRealm(realm, () => {
+		const document = parseHTMLDocument(source, url, true, registry);
+		realm.document = document;
+		const window = buildWindow(document, realm);
+		const windowSlots = _(window);
+		windowSlots.parentWindow = parent;
+		windowSlots.frameOwner = frame;
+		windowSlots.realm = realm;
+		const loader = parent === null ? null : getDocumentLoader(parent);
+		if (loader !== null) {
+			setDocumentLoader(window, loader);
+			(window as unknown as Record<string, unknown>).fetch = createWindowFetch(
+				document,
+				loader,
+			);
+		}
+		return {document, window};
+	});
+});
 
 /**
  * Parse a document from markup and display it in a window of its own. An

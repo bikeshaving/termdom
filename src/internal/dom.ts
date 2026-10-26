@@ -63,6 +63,7 @@ import {
 	resolveImageURL,
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
+import {rehomeClone} from "./realms.ts";
 import type {ResourceLoader} from "./resources.ts";
 import {
 	_,
@@ -138,7 +139,19 @@ import {
 	pxFromCells,
 	UNIT_CELL,
 } from "./units.ts";
-import {getInterfaceName} from "./webidl.ts";
+import {
+	createDocumentIn,
+	declareNodeClasses,
+	forgetClasses,
+	getActiveRealm,
+	getCallerRealm,
+	getDocumentRealm,
+	getFunctionRealm,
+	getInterfaceName,
+	placeInRealm,
+	type Realm,
+	runInRealm,
+} from "./webidl.ts";
 
 /**
  * What the DOM asks of the CSSOM and the cascade: the style objects it
@@ -4399,8 +4412,31 @@ interface Listener {
 // be one more allocation each.
 const NO_LISTENERS = Object.freeze([]) as unknown as Listener[];
 
-const EventTargetBase = function EventTargetBase(): void {} as unknown as
-	new () => object;
+// The object the next event target is built onto instead of a new one,
+// as a frame's window is built onto its realm's global object.
+let pendingTargetObject: object | null = null;
+
+const EventTargetBase = function EventTargetBase(): object | void {
+	if (pendingTargetObject !== null) {
+		const target = pendingTargetObject;
+		pendingTargetObject = null;
+		return target;
+	}
+} as unknown as new () => object;
+
+/**
+ * Runs `construct`, whose first event target is built onto `target`, an
+ * object that exists already, such as a realm's global, rather than a new
+ * one.
+ */
+export function constructOnto<T>(target: object, construct: () => T): T {
+	pendingTargetObject = target;
+	try {
+		return construct();
+	} finally {
+		pendingTargetObject = null;
+	}
+}
 
 EventTargetBase.prototype =
 	Object.create(globalThis.EventTarget.prototype) as object;
@@ -5105,8 +5141,9 @@ const FORWARDED_HANDLER_ATTRIBUTES: ReadonlySet<string> =
 // scripting. Handler attributes run with the host's full powers, so a page
 // made without `scripting: "enabled"` never runs them. The documents an author
 // builds through the DOM -- a DOMParser result, createHTMLDocument, the
-// contents of a <template>, an iframe's content document -- have none, so
-// their markup is inert: `new Function` is never called for a handler
+// contents of a <template> -- have no window, and an iframe's content
+// document, which has one where it has a realm, is never a scripted
+// document, so their markup is inert: `new Function` is never called for a handler
 // content attribute in them, and the attribute reflects as null. This is
 // the guarantee HTML sanitizers such as DOMPurify rely on when they parse
 // hostile markup into an inert document, measure it, and strip the
@@ -5959,21 +5996,35 @@ function isDocumentVisible(document: Document): boolean {
 	return attached === undefined || _(attached).extra.visible;
 }
 
-// For an object callback, handleEvent is looked up at call time.
+// For an object callback, handleEvent is looked up at call time. A
+// listener runs in the realm it was made in, a frame's or the engine's.
 function callListener(
 	callback: globalThis.EventListenerOrEventListenerObject,
 	thisArg: EventTarget | null,
 	event: Event,
 ): void {
 	if (typeof callback === "function") {
-		callback.call(thisArg, event);
+		callInRealm(callback, thisArg, event);
 		return;
 	}
 	const handleEvent = (callback as {handleEvent?: unknown}).handleEvent;
 	if (typeof handleEvent !== "function") {
 		throw new TypeError("An event listener object needs a handleEvent method");
 	}
-	(handleEvent as (event: Event) => void).call(callback, event);
+	callInRealm(handleEvent as (event: Event) => void, callback, event);
+}
+
+function callInRealm(
+	listener: (event: Event) => void,
+	thisArg: unknown,
+	event: Event,
+): void {
+	const realm = getFunctionRealm(listener);
+	if (realm === getActiveRealm()) {
+		listener.call(thisArg, event);
+	} else {
+		runInRealm(realm, () => listener.call(thisArg, event));
+	}
 }
 
 // HTML's "report an exception": the document's window hears an error
@@ -6185,7 +6236,7 @@ let nodeSerial = 0;
 export interface NodeExtra {}
 
 // The nodeType each class of node reports, learned from its first node.
-const nodeTypes = new Map<unknown, number>();
+const nodeTypes = new WeakMap<object, number>();
 
 export interface NodeSlots extends EventTargetSlots {
 	// The fields in RARE_FIELDS, once one of them is set to anything but its
@@ -7503,6 +7554,14 @@ function removeNode(node: Node, suppressObservers = false): void {
 	}
 }
 
+// Gives a node being made its node document, and with it its realm, which
+// is its node document's. Adoption moves a node without this, since a
+// node keeps the realm it was made in wherever it goes.
+function setNodeDocument(node: Node, document: Document): void {
+	_(node).document = document;
+	placeInRealm(getDocumentRealm(document), node);
+}
+
 function adoptNode(node: Node, document: Document): void {
 	const nodeSlots = _(node);
 	const oldDocument = nodeSlots.document;
@@ -7512,11 +7571,37 @@ function adoptNode(node: Node, document: Document): void {
 	if (oldDocument === document) {
 		return;
 	}
+	const documentRegistry = getEffectiveGlobalRegistry(_(document).registry);
 	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
-		_(descendant).document = document;
-		if (getNodeType(descendant) === ELEMENT_NODE) {
+		const descendantSlots = _(descendant);
+		descendantSlots.document = document;
+		const registry = descendantSlots.registry;
+		if (isPlatformObject(descendant, ShadowRoot)) {
+			// A shadow root moves to the new document's registry, unless it has
+			// a scoped one, or none that it is keeping.
+			if (
+				registry === null
+					? !_(descendant).extra.keepRegistryNull
+					: !_(registry).scoped
+			) {
+				descendantSlots.registry = documentRegistry;
+			}
+		} else if (getNodeType(descendant) === ELEMENT_NODE) {
 			for (const attr of _((descendant as Element)).attributeList) {
 				attr.document = document;
+			}
+			// An element moves to the registry its new place gives it, unless
+			// it has a scoped one: the new document's at the top of what moves,
+			// or else its parent's, which tree order has already moved.
+			if (registry === null || !_(registry).scoped) {
+				const parent = descendantSlots.parent;
+				descendantSlots.registry =
+					registry !== null ||
+					parent === null ||
+					(parent.nodeType === DOCUMENT_FRAGMENT_NODE &&
+						!isPlatformObject(getOwner(parent), ShadowRoot))
+						? documentRegistry
+						: getEffectiveGlobalRegistry(parent.registry);
 			}
 		}
 	}
@@ -9399,7 +9484,7 @@ export interface Text {
 export class Text extends CharacterData implements globalThis.Text {
 	constructor(data = "") {
 		super(data === null ? "null" : String(data));
-		_(this).document = getCurrentDocument();
+		setNodeDocument(this, getCurrentDocument());
 	}
 
 	get assignedSlot(): globalThis.HTMLSlotElement | null {
@@ -9447,7 +9532,7 @@ export class Text extends CharacterData implements globalThis.Text {
 		const count = length - start;
 		const data = this.substringData(start, count);
 		const created = new Text(data);
-		_(created).document = slots.document;
+		setNodeDocument(created, slots.document);
 		const parent = getObject(slots.parent);
 		if (parent !== null) {
 			insertNode(created, parent, getObject(slots.next), false);
@@ -9464,7 +9549,7 @@ export class Text extends CharacterData implements globalThis.Text {
 
 	override _cloneSingle(this: Slots<Text>, document: Document): Node {
 		const copy = new Text(this.data);
-		_(copy).document = document;
+		setNodeDocument(copy, document);
 		return copy;
 	}
 }
@@ -9494,7 +9579,7 @@ class CDATASection extends Text {
 
 	override _cloneSingle(this: Slots<CDATASection>, document: Document): Node {
 		const copy = new CDATASection(this.data);
-		_(copy).document = document;
+		setNodeDocument(copy, document);
 		return copy;
 	}
 }
@@ -9514,7 +9599,7 @@ export interface Comment {
 export class Comment extends CharacterData implements globalThis.Comment {
 	constructor(data = "") {
 		super(data === null ? "null" : String(data));
-		_(this).document = getCurrentDocument();
+		setNodeDocument(this, getCurrentDocument());
 	}
 
 	override get nodeType(): number {
@@ -9527,7 +9612,7 @@ export class Comment extends CharacterData implements globalThis.Comment {
 
 	override _cloneSingle(this: Slots<Comment>, document: Document): Node {
 		const copy = new Comment(this.data);
-		_(copy).document = document;
+		setNodeDocument(copy, document);
 		return copy;
 	}
 }
@@ -9579,7 +9664,7 @@ class ProcessingInstruction extends CharacterData {
 	): Node {
 		const slots = this;
 		const copy = new ProcessingInstruction(slots.extra.target, slots.data);
-		_(copy).document = document;
+		setNodeDocument(copy, document);
 		return copy;
 	}
 }
@@ -9648,7 +9733,7 @@ class DocumentType extends Node {
 			slots.extra.publicId,
 			slots.extra.systemId,
 		);
-		_(copy).document = document;
+		setNodeDocument(copy, document);
 		return copy;
 	}
 }
@@ -9691,7 +9776,7 @@ export class DocumentFragment
 		super();
 		const slots = _(this);
 		slots.extra.host = null;
-		slots.document = getCurrentDocument();
+		setNodeDocument(this, getCurrentDocument());
 	}
 
 	override get nodeType(): number {
@@ -9727,7 +9812,7 @@ export class DocumentFragment
 
 	override _cloneSingle(document: Document): Node {
 		const copy = new DocumentFragment();
-		_(copy).document = document;
+		setNodeDocument(copy, document);
 		return copy;
 	}
 }
@@ -9757,7 +9842,7 @@ function setDescendantText(node: Node, value: string | null): void {
 	let replacement: Node | null = null;
 	if (string !== "") {
 		replacement = new Text(string);
-		_(replacement).document = _(node).document;
+		setNodeDocument(replacement, _(node).document);
 	}
 	replaceAll(replacement, node);
 }
@@ -9870,7 +9955,7 @@ class Attr extends Node implements globalThis.Attr {
 			slots.extra.localName,
 			slots.extra.value,
 		);
-		_(copy).document = document;
+		setNodeDocument(copy, document);
 		return copy;
 	}
 }
@@ -10449,7 +10534,7 @@ export class Element extends Node implements globalThis.Element {
 		slots.shadowRoot = null;
 		slots.assignedSlot = null;
 		slots.pseudoHost = null;
-		slots.document = getCurrentDocument();
+		setNodeDocument(this, getCurrentDocument());
 	}
 
 	override get nodeType(): number {
@@ -10948,7 +11033,7 @@ export class Element extends Node implements globalThis.Element {
 
 	insertAdjacentText(where: InsertPosition, data: string): void {
 		const text = new Text(String(data));
-		_(text).document = _(this).document;
+		setNodeDocument(text, _(this).document);
 		insertAdjacent(this, String(where), text);
 	}
 
@@ -11236,7 +11321,7 @@ export class Element extends Node implements globalThis.Element {
 				attribute.extra.localName,
 				attribute.extra.value,
 			);
-			_(copiedAttribute).document = document;
+			setNodeDocument(copiedAttribute, document);
 			appendAttribute(copy, copiedAttribute);
 		}
 		return copy;
@@ -11684,7 +11769,7 @@ function createTextFragment(
 	value: string,
 ): DocumentFragment {
 	const fragment = new DocumentFragment();
-	_(fragment).document = document;
+	setNodeDocument(fragment, document);
 	const text = String(value);
 	const lines = text.split(/\r\n|\r|\n/);
 	for (const [index, line] of lines.entries()) {
@@ -11696,7 +11781,7 @@ function createTextFragment(
 		}
 		if (line !== "") {
 			const text = new Text(line);
-			_(text).document = document;
+			setNodeDocument(text, document);
 			appendNode(text, fragment);
 		}
 	}
@@ -13244,7 +13329,7 @@ function setAttributeValue(
 	const attribute = getAttributeByNamespace(element, namespace, localName);
 	if (attribute === null) {
 		const created = new Attr(namespace, prefix, localName, value);
-		_(created).document = _(element).document;
+		setNodeDocument(created, _(element).document);
 		appendAttribute(element, created);
 		return;
 	}
@@ -13276,8 +13361,11 @@ function getElementInterface(
 let currentDocumentForConstruction: Document | null = null;
 let ambientDocument: Document | null = null;
 
+// The document a bare constructor makes its nodes in: the active realm's,
+// whose window shows it, or else the one last attached to a window here.
 function getAmbientDocument(): Document | null {
-	return ambientDocument;
+	return (getActiveRealm()?.document as Document | null | undefined) ??
+		ambientDocument;
 }
 
 function buildElement(
@@ -13299,7 +13387,7 @@ function buildElement(
 		currentDocumentForConstruction = previousDocument;
 		internalConstruction = previousInternal;
 	}
-	_(element).document = document;
+	setNodeDocument(element, document);
 	_(element).namespace = namespace;
 	_(element).prefix = prefix;
 	_(element).upperName = null;
@@ -14011,8 +14099,8 @@ function getConstructorDefinition(
 		return upgrading;
 	}
 	const ambient =
-		_maybe((currentDocumentForConstruction ?? ambientDocument))?.registry ??
-		null;
+		_maybe((currentDocumentForConstruction ?? getAmbientDocument()))
+			?.registry ?? null;
 	return (
 		definitions.find((definition) => definition.registry === ambient) ??
 		definitions[0] ??
@@ -14024,6 +14112,14 @@ function getConstructorDefinition(
 // shared by every window in the realm, but the names defined for them
 // are not, so two windows in one process, such as two terminal sessions,
 // each define their own elements.
+// DOM's "effective global custom element registry": a registry that is
+// not scoped, or else none.
+function getEffectiveGlobalRegistry(
+	registry: CustomElementRegistry | null,
+): CustomElementRegistry | null {
+	return registry !== null && !_(registry).scoped ? registry : null;
+}
+
 export function createWindowRegistry(): CustomElementRegistry {
 	return constructInternal(() => new CustomElementRegistry());
 }
@@ -14206,6 +14302,10 @@ export interface ShadowRootExtra extends DocumentFragmentExtra {
 	clonable: boolean;
 	serializable: boolean;
 	declarative: boolean;
+	// DOM's "keep custom element registry null": a declarative shadow root
+	// that asks for a registry of its own starts with none, and keeps none
+	// when it is adopted until one claims it.
+	keepRegistryNull: boolean;
 	availableToInternals: boolean;
 }
 
@@ -14248,6 +14348,7 @@ export class ShadowRoot
 		slots.extra.serializable = false;
 		slots.extra.declarative = false;
 		slots.extra.availableToInternals = false;
+		slots.extra.keepRegistryNull = false;
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
@@ -14520,7 +14621,7 @@ function attachShadowRoot(
 	}
 	const shadow = constructInternal(() => new ShadowRoot());
 	const shadowSlots = _(shadow);
-	shadowSlots.document = elementSlots.document;
+	setNodeDocument(shadow, elementSlots.document);
 	shadowSlots.extra.host = element;
 	shadowSlots.connected = elementSlots.connected;
 	shadowSlots.extra.shadowMode = mode;
@@ -14550,7 +14651,7 @@ function attachUAShadowTree<T>(target: Element): T {
 	const shadow = constructInternal(() => new ShadowRoot());
 	const hostSlots = _(host);
 	const shadowSlots = _(shadow);
-	shadowSlots.document = hostSlots.document;
+	setNodeDocument(shadow, hostSlots.document);
 	shadowSlots.extra.host = host;
 	shadowSlots.connected = hostSlots.connected;
 	shadowSlots.extra.shadowMode = "closed";
@@ -14929,7 +15030,7 @@ class HTMLTemplateElement extends HTMLElement {
 		let content = slots.extra.templateContent;
 		if (content === null) {
 			content = new DocumentFragment();
-			_(content).document = getTemplateContentsOwner(slots.document);
+			setNodeDocument(content, getTemplateContentsOwner(slots.document));
 			_(content).extra.host = this;
 			slots.extra.templateContent = content;
 		}
@@ -15019,7 +15120,9 @@ function getTemplateContentsOwner(document: Document): Document {
 	}
 	let owner = documentSlots.extra.templateDocument;
 	if (owner === null) {
-		owner = constructInternal(() => new Document());
+		owner = createDocumentIn(getDocumentRealm(document), () =>
+			constructInternal(() => new Document()),
+		);
 		_(owner).extra.templateDocument = owner;
 		documentSlots.extra.templateDocument = owner;
 	}
@@ -17884,16 +17987,88 @@ interface FrameWindowLike {
 	HTMLElement: typeof HTMLElement;
 }
 
-// A nested document without a browsing context. On insertion the iframe
-// gets a content document (its srcdoc parsed, or about:blank) with its
-// own registry, and fires load. Removal discards it, as removal discards a
-// browsing context. The src attribute does nothing, because this engine
-// performs no fetches, so a src iframe holds about:blank, the same
-// document a browser shows before navigation. There is no second realm;
-// the frame's constructors are this realm's.
+// A frame's document and the window that shows it, built in a realm of
+// their own, or null where the runtime cannot make a realm. window.ts
+// gives the factory, since a window is built above the DOM.
+type FrameWindowFactory = (
+	source: string,
+	url: string,
+	registry: CustomElementRegistry,
+	parent: Window | null,
+	frame: HTMLIFrameElement,
+) => {document: Document; window: Window} | null;
+
+let frameWindowFactory: FrameWindowFactory | null = null;
+
+// The window at the top of `window`'s frames: itself, unless it is a frame's.
+function getTopWindow(window: Window): Window {
+	let current = window;
+	for (
+		let parent = _(current).parentWindow;
+		parent !== null;
+		parent = _(current).parentWindow
+	) {
+		current = parent;
+	}
+	return current;
+}
+
+// The iframes of `document`'s own tree, in tree order, which are its
+// window's frames. Those in shadow trees are not.
+function getDocumentFrames(document: Document): HTMLIFrameElement[] {
+	const frames: HTMLIFrameElement[] = [];
+	const visit = (node: Node) => {
+		for (const child of getChildNodeArray(node)) {
+			if (getNodeType(child) !== ELEMENT_NODE) {
+				continue;
+			}
+			if (isPlatformObject(child, HTMLIFrameElement)) {
+				frames.push(child);
+			}
+			visit(child);
+		}
+	};
+	visit(document);
+	return frames;
+}
+
+// Gives `document`'s window an indexed property for each of its frames,
+// window[0] for the first, as the frames come and go.
+function syncFrameIndexes(document: Document): void {
+	const window = _(document).extra.defaultView as Window | null;
+	if (window === null) {
+		return;
+	}
+	const slots = _(window);
+	const count = getDocumentFrames(document).length;
+	for (let index = count; index < slots.frameIndexes; index++) {
+		delete slots.namedProperties[String(index)];
+	}
+	for (let index = slots.frameIndexes; index < count; index++) {
+		Object.defineProperty(slots.namedProperties, String(index), {
+			get: () => getDocumentFrames(document)[index]?.contentWindow ?? undefined,
+			configurable: true,
+		});
+	}
+	slots.frameIndexes = count;
+}
+
+export function setFrameWindowFactory(factory: FrameWindowFactory): void {
+	frameWindowFactory = factory;
+}
+
+// A nested document. On insertion the iframe gets a content document (its
+// srcdoc parsed, or about:blank) with its own registry, and fires load.
+// Removal discards it, as removal discards a browsing context. The src
+// attribute does nothing, because this engine performs no fetches, so a
+// src iframe holds about:blank, the same document a browser shows before
+// navigation. Where the runtime can make a realm, the document has a
+// window of its own in one, with its own interfaces and intrinsics.
+// Otherwise there is no second realm: the frame's constructors are this
+// realm's, and its window is a stand-in.
 interface HTMLIFrameElementExtra extends NodeExtra {
 	contentDocument: Document | null;
-	contentWindow: FrameWindowLike | null;
+	contentWindow: FrameWindowLike | Window | null;
 	// Identifies the stretch of connectedness the current content document
 	// belongs to. Each removal and insertion starts a new one, so the load
 	// task fires only for the insertion that scheduled it.
@@ -17953,6 +18128,7 @@ class HTMLIFrameElement extends HTMLElement {
 		if (!getOwner(this).isConnected) {
 			return;
 		}
+		syncFrameIndexes(this.document);
 		// The document is built lazily on first access. Building it here would
 		// re-enter the parser while a parse containing this iframe is still
 		// running. The load event fires from a task, after the insertion has
@@ -17971,9 +18147,19 @@ class HTMLIFrameElement extends HTMLElement {
 	override _removingSteps(this: Slots<HTMLIFrameElement>, parent: Node): void {
 		superStep(HTMLIFrameElement, "_removingSteps").call(this, parent);
 		const slots = this;
+		// A removed frame's window is no longer in the frames of the one it was
+		// in. The bindings may remember a class the frame's page made, which
+		// would hold the frame's realm after it is gone.
+		const window = slots.extra.contentWindow;
+		if (isPlatformObject(window, Window)) {
+			_(window).parentWindow = null;
+			_(window).frameOwner = null;
+			forgetClasses();
+		}
 		slots.extra.contentDocument = null;
 		slots.extra.contentWindow = null;
 		slots.extra.frameDocumentRun = {};
+		syncFrameIndexes(this.document);
 	}
 }
 
@@ -17985,13 +18171,17 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 		return;
 	}
 	const srcdoc = getAttributeValue(frame, "srcdoc");
+	const url = srcdoc === null ? "about:blank" : "about:srcdoc";
 	const registry = createWindowRegistry();
-	const contentDocument = parseHTMLDocument(
-		srcdoc ?? "",
-		srcdoc === null ? "about:blank" : "about:srcdoc",
-		true,
-		registry,
-	);
+	const parent = _(frameSlots.document).extra.defaultView as Window | null;
+	const built =
+		frameWindowFactory?.(srcdoc ?? "", url, registry, parent, frame) ?? null;
+	if (built !== null) {
+		frameSlots.extra.contentDocument = built.document;
+		frameSlots.extra.contentWindow = built.window;
+		return;
+	}
+	const contentDocument = parseHTMLDocument(srcdoc ?? "", url, true, registry);
 	frameSlots.extra.contentDocument = contentDocument;
 	frameSlots.extra.contentWindow = {
 		document: contentDocument,
@@ -26910,13 +27100,20 @@ function getThresholdIndex(
 	return index;
 }
 
-// A window here is not the global object, so there is no "current
-// global object" to consult. A bare `new Text()` belongs to whichever
-// document was last attached to a window, or to one created here if
-// none has been.
+// The top window is not the global object, so there is no "current
+// global object" to consult. A bare `new Text()` belongs to the document
+// of the realm whose constructor it called, a frame's, or else to
+// whichever document was last attached to a window, or to one created
+// here if none has been.
 function getCurrentDocument(): Document {
 	if (currentDocumentForConstruction !== null) {
 		return currentDocumentForConstruction;
+	}
+	const realmDocument = getActiveRealm()?.document as Document |
+		null |
+		undefined;
+	if (realmDocument != null) {
+		return realmDocument;
 	}
 	if (ambientDocument === null) {
 		const document = new Document();
@@ -28000,7 +28197,7 @@ export class Document extends Node implements globalThis.Document {
 
 	createDocumentFragment(): globalThis.DocumentFragment {
 		const fragment = new DocumentFragment();
-		_(fragment).document = this;
+		setNodeDocument(fragment, this);
 		return fragment as unknown as globalThis.DocumentFragment;
 	}
 
@@ -28009,7 +28206,7 @@ export class Document extends Node implements globalThis.Document {
 			throw new TypeError("createTextNode needs data");
 		}
 		const text = new Text(String(data));
-		_(text).document = this;
+		setNodeDocument(text, this);
 		return text as unknown as globalThis.Text;
 	}
 
@@ -28028,7 +28225,7 @@ export class Document extends Node implements globalThis.Document {
 			);
 		}
 		const section = new CDATASection(string);
-		_(section).document = this;
+		setNodeDocument(section, this);
 		return section as unknown as globalThis.CDATASection;
 	}
 
@@ -28037,7 +28234,7 @@ export class Document extends Node implements globalThis.Document {
 			throw new TypeError("createComment needs data");
 		}
 		const comment = new Comment(String(data));
-		_(comment).document = this;
+		setNodeDocument(comment, this);
 		return comment as unknown as globalThis.Comment;
 	}
 
@@ -28060,7 +28257,7 @@ export class Document extends Node implements globalThis.Document {
 			);
 		}
 		const instruction = new ProcessingInstruction(name, string);
-		_(instruction).document = this;
+		setNodeDocument(instruction, this);
 		return instruction as unknown as globalThis.ProcessingInstruction;
 	}
 
@@ -28112,7 +28309,7 @@ export class Document extends Node implements globalThis.Document {
 			name = toASCIILowercase(name);
 		}
 		const attribute = new Attr(null, null, name, "");
-		_(attribute).document = this;
+		setNodeDocument(attribute, this);
 		return attribute as unknown as globalThis.Attr;
 	}
 
@@ -28134,7 +28331,7 @@ export class Document extends Node implements globalThis.Document {
 			extracted.localName,
 			"",
 		);
-		_(attribute).document = this;
+		setNodeDocument(attribute, this);
 		return attribute as unknown as globalThis.Attr;
 	}
 
@@ -28447,7 +28644,9 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	override _cloneSingle(this: Slots<Document>, _document: Document): Node {
-		const copy = new Document();
+		const copy = createDocumentIn(getDocumentRealm(getOwner(this)), () =>
+			new Document(),
+		);
 		copyDocumentState(getOwner(this), copy);
 		return copy;
 	}
@@ -28859,7 +29058,9 @@ interface XMLDocument {
 
 class XMLDocument extends Document {
 	override _cloneSingle(this: Slots<XMLDocument>, _document: Document): Node {
-		const copy = new XMLDocument();
+		const copy = createDocumentIn(getDocumentRealm(getOwner(this)), () =>
+			new XMLDocument(),
+		);
 		copyDocumentState(getOwner(this), copy);
 		return copy;
 	}
@@ -29045,7 +29246,7 @@ class DOMImplementation {
 		const name = String(qualifiedName);
 		validateDoctypeName(name);
 		const doctype = new DocumentType(name, String(publicId), String(systemId));
-		_(doctype).document = _(this).document;
+		setNodeDocument(doctype, _(this).document);
 		return doctype;
 	}
 
@@ -29057,7 +29258,9 @@ class DOMImplementation {
 		if (arguments.length < 2) {
 			throw new TypeError("createDocument needs a namespace and a name");
 		}
-		const document = new XMLDocument();
+		const document = createDocumentIn(getDocumentRealm(_(this).document), () =>
+			new XMLDocument(),
+		);
 		const documentSlots = _(document);
 		documentSlots.extra.type = "xml";
 		documentSlots.extra.contentType = "application/xml";
@@ -29085,11 +29288,12 @@ class DOMImplementation {
 	}
 
 	createHTMLDocument(title?: string): Document {
-		return createHTMLDocument(
-			title === undefined ? undefined : String(title),
-			"about:blank",
-			null,
-		);
+		return createDocumentIn(getDocumentRealm(_(this).document), () =>
+			createHTMLDocument(
+				title === undefined ? undefined : String(title),
+				"about:blank",
+				null,
+			));
 	}
 
 	hasFeature(..._args: any[]): true {
@@ -29146,7 +29350,7 @@ function buildHTMLSkeleton(document: Document, title?: string): void {
 	documentSlots.extra.type = "html";
 	documentSlots.extra.contentType = "text/html";
 	const doctype = new DocumentType("html", "", "");
-	_(doctype).document = document;
+	setNodeDocument(doctype, document);
 	appendNode(doctype, document);
 	const html = createElementInternal(document, "html", HTML_NAMESPACE);
 	appendNode(html, document);
@@ -29160,7 +29364,7 @@ function buildHTMLSkeleton(document: Document, title?: string): void {
 		);
 		appendNode(titleElement, head);
 		const text = new Text(title);
-		_(text).document = document;
+		setNodeDocument(text, document);
 		appendNode(text, titleElement);
 	}
 	const body = createElementInternal(document, "body", HTML_NAMESPACE);
@@ -29178,7 +29382,7 @@ function convertNodesIntoNode(nodes: Insertable[], document: Document): Node {
 			return node;
 		}
 		const text = new Text(String(node));
-		_(text).document = document;
+		setNodeDocument(text, document);
 		return text as Node;
 	});
 	if (converted.length === 1) {
@@ -30555,7 +30759,7 @@ function getBoundaryParent(node: unknown): Node {
 
 function createFragment(document: Document): DocumentFragment {
 	const fragment = new DocumentFragment();
-	_(fragment).document = document;
+	setNodeDocument(fragment, document);
 	return fragment;
 }
 
@@ -34551,7 +34755,7 @@ function createTreeAdapter(document: Document | null) {
 				return;
 			}
 			const doctype = new DocumentType(name, publicId, systemId);
-			_(doctype).document = documentNode;
+			setNodeDocument(doctype, documentNode);
 			insertNode(doctype, documentNode, null, true);
 		},
 		setDocumentMode(
@@ -34604,7 +34808,7 @@ function createTreeAdapter(document: Document | null) {
 					continue;
 				}
 				const created = new Attr(namespace, prefix, localName, attribute.value);
-				_(created).document = _(recipient).document;
+				setNodeDocument(created, _(recipient).document);
 				appendAttribute(recipient, created);
 			}
 		},
@@ -34762,6 +34966,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 	const shadow = _((host as Element)).shadowRoot as ShadowRoot;
 	const shadowSlots = _(shadow);
 	shadowSlots.extra.declarative = true;
+	shadowSlots.extra.keepRegistryNull = shadowSlots.registry === null;
 	const content = templateSlots.extra.templateContent;
 	removeNode(template);
 	if (content !== null) {
@@ -35090,7 +35295,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 			fail("A comment cannot contain --");
 		}
 		const comment = new Comment(data);
-		_(comment).document = document;
+		setNodeDocument(comment, document);
 		insertNode(comment, parent, null, true);
 	}
 
@@ -35116,7 +35321,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 			pos = end + 2;
 		}
 		const instruction = new ProcessingInstruction(target, data);
-		_(instruction).document = document;
+		setNodeDocument(instruction, document);
 		insertNode(instruction, parent, null, true);
 	}
 
@@ -35248,7 +35453,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 			fail("The doctype is missing its closing >");
 		}
 		const doctype = new DocumentType(name, publicId, systemId);
-		_(doctype).document = document;
+		setNodeDocument(doctype, document);
 		insertNode(doctype, document, null, true);
 	}
 
@@ -35259,7 +35464,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 			fail("A CDATA section is missing its closing ]]>");
 		}
 		const section = new CDATASection(input.slice(pos, end));
-		_(section).document = document;
+		setNodeDocument(section, document);
 		insertNode(section, parent, null, true);
 		pos = end + 3;
 	}
@@ -35385,7 +35590,7 @@ function parseXMLIntoDocument(source: string, document: Document): void {
 			}
 			seen.add(key);
 			const created = new Attr(namespace, prefix, localName, attribute.value);
-			_(created).document = document;
+			setNodeDocument(created, document);
 			appendAttribute(element, created);
 		}
 		insertNode(element, parent, null, true);
@@ -38204,6 +38409,14 @@ export interface WindowSlots extends EventTargetSlots {
 	// The Window's named properties object, between the window and its
 	// prototype.
 	namedProperties: Record<string, unknown>;
+	// A frame's window: the window of the document its iframe is in, the
+	// iframe, and the realm the window is the global of. A top window has
+	// none of them.
+	parentWindow: Window | null;
+	frameOwner: HTMLIFrameElement | null;
+	realm: Realm | null;
+	// How many frames the window's indexed properties name.
+	frameIndexes: number;
 }
 
 export interface Window {
@@ -38459,7 +38672,10 @@ export class Window extends EventTarget {
 	declare ondeviceorientation: globalThis.Window["ondeviceorientation"];
 	declare ondeviceorientationabsolute: globalThis.Window["ondeviceorientationabsolute"];
 	declare onorientationchange: globalThis.Window["onorientationchange"];
-	readonly document: Document;
+	// Assigned in the constructor rather than declared as a field: a field
+	// is defined on the object, and node:vm makes a field defined on a
+	// realm's global read-only, which a frame's window is.
+	declare readonly document: Document;
 	constructor(document: Document) {
 		super();
 		this.document = document;
@@ -38467,12 +38683,19 @@ export class Window extends EventTarget {
 		// document is the one bare node constructors use.
 		const documentSlots = _(document);
 		documentSlots.extra.defaultView = this;
-		ambientDocument = document;
+		// A frame's window is its realm's, and leaves the top window's be.
+		if (getActiveRealm() === null) {
+			ambientDocument = document;
+		}
 		const slots = _(this);
 		slots.namedProperties = Object.create(
 			Object.getPrototypeOf(this) as object,
 		) as Record<string, unknown>;
 		Object.setPrototypeOf(this, slots.namedProperties);
+		slots.parentWindow = null;
+		slots.frameOwner = null;
+		slots.realm = null;
+		slots.frameIndexes = 0;
 		for (const name of new Set([
 			...documentSlots.extra.idMap.keys(),
 			...documentSlots.extra.nameMap.keys(),
@@ -38634,7 +38857,7 @@ export class Window extends EventTarget {
 	}
 
 	get frameElement(): globalThis.Element | null {
-		return null;
+		return _(this).frameOwner;
 	}
 
 	get frames(): Window {
@@ -38653,7 +38876,7 @@ export class Window extends EventTarget {
 	}
 
 	get length(): number {
-		return 0;
+		return getDocumentFrames(this.document).length;
 	}
 
 	get locationbar(): globalThis.BarProp {
@@ -38703,7 +38926,7 @@ export class Window extends EventTarget {
 	}
 
 	get parent(): Window {
-		return this;
+		return _(this).parentWindow ?? this;
 	}
 
 	get screen(): globalThis.Screen {
@@ -38736,7 +38959,7 @@ export class Window extends EventTarget {
 	}
 
 	get top(): Window | null {
-		return this;
+		return getTopWindow(this);
 	}
 
 	get visualViewport(): globalThis.VisualViewport | null {
@@ -38751,10 +38974,15 @@ export class Window extends EventTarget {
 		return true;
 	}
 
+	// A frame showing srcdoc or about:blank has the origin of the window it
+	// is in, as HTML gives such a document its creator's.
 	get origin(): string {
-		return URL.canParse(this.document.URL)
-			? new URL(this.document.URL).origin
-			: "null";
+		const url = this.document.URL;
+		const parent = _(this).parentWindow;
+		if (parent !== null && (url === "about:srcdoc" || url === "about:blank")) {
+			return parent.origin;
+		}
+		return URL.canParse(url) ? new URL(url).origin : "null";
 	}
 
 	get localStorage(): Storage {
@@ -39001,28 +39229,61 @@ export class Window extends EventTarget {
 		return null;
 	}
 
-	// The message lands on this same window, as it would on a window that
-	// posts to itself: there is no other window to post to.
+	// HTML's window post message steps: the message is a clone made in this
+	// window's realm, from the window whose code posted it, which is the
+	// realm a frame's binding was called from, or the realm running when a
+	// top window's is. It lands only if this window's origin is the one
+	// the poster named.
 	postMessage(
 		message: any,
 		targetOrigin: string,
 		transfer?: globalThis.Transferable[],
 	): void;
 	postMessage(message: any, options?: globalThis.WindowPostMessageOptions): void;
-	postMessage(message: any): void {
-		const data = cloneStructured(message, "execute 'postMessage' on 'Window'");
-		const origin = this.origin;
+	postMessage(message: any, settings?: unknown): void {
+		const slots = _(this);
+		const callerRealm = slots.realm !== null
+			? getCallerRealm()
+			: getActiveRealm();
+		const source = callerRealm !== null
+			? callerRealm.global as unknown as Window
+			: getTopWindow(this);
+		const named = typeof settings === "object" && settings !== null
+			? (settings as {targetOrigin?: unknown}).targetOrigin
+			: settings;
+		let targetOrigin = named === undefined ? "/" : String(named);
+		if (targetOrigin === "/") {
+			targetOrigin = source.origin;
+		} else if (targetOrigin !== "*") {
+			if (!URL.canParse(targetOrigin)) {
+				throw domError(
+					"SyntaxError",
+					`Failed to execute 'postMessage' on 'Window': Invalid target origin '${targetOrigin}'.`,
+				);
+			}
+			targetOrigin = new URL(targetOrigin).origin;
+		}
+		const realm = slots.realm;
+		const data = runInRealm(realm, () => {
+			const clone = cloneStructured(
+				message,
+				"execute 'postMessage' on 'Window'",
+			);
+			return realm === null ? clone : rehomeClone(clone, realm);
+		});
+		const origin = source.origin;
 		setTimeout(() => {
-			dispatch(
-				this,
+			if (targetOrigin !== "*" && targetOrigin !== this.origin) {
+				return;
+			}
+			const event = runInRealm(realm, () =>
 				constructInternal(() =>
 					new MessageEvent("message", {
 						data,
 						origin,
-						source: this as unknown as globalThis.MessageEventSource,
-					}),
-				),
-			);
+						source: source as unknown as globalThis.MessageEventSource,
+					})));
+			dispatch(this, event);
 		}, 0);
 	}
 
@@ -39282,6 +39543,8 @@ export const platform = {
 	XMLDocument,
 } as const;
 
+declareNodeClasses(Node, Document);
+
 // The runtime's own, as the module found them. installGlobals() puts the
 // window's in their place, and the window's call these.
 // Bound, since a browser's throws when called on anything but its global.
@@ -39526,7 +39789,7 @@ export function setAttributeByName(
 		}
 	}
 	const attribute = new Attr(null, null, name, string);
-	_(attribute).document = slots.document;
+	setNodeDocument(attribute, slots.document);
 	appendAttribute(target, attribute);
 }
 
@@ -39559,7 +39822,7 @@ function toggleAttributeByName(
 	if (attribute === null) {
 		if (force === undefined || force === true) {
 			const created = new Attr(null, null, name, "");
-			_(created).document = slots.document;
+			setNodeDocument(created, slots.document);
 			appendAttribute(target, created);
 			return true;
 		}

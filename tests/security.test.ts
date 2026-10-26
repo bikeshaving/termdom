@@ -147,8 +147,9 @@ test("a <script> in rendered HTML is inert, and a handler attribute is the app's
 });
 
 // A document an author builds through the DOM -- a DOMParser result,
-// createHTMLDocument, a <template>'s contents, an iframe's content document --
-// has no browsing context, so scripting is disabled for it. Its handler
+// createHTMLDocument, a <template>'s contents -- has no browsing context, and
+// an iframe's content document, which has one in a realm of its own, is never
+// scripted, so scripting is disabled for each. Its handler
 // content attributes must stay inert: they never compile or run, even for the
 // events the engine dispatches on its own (a <details open> toggle, an
 // <iframe> load), and they reflect as null. This is the guarantee a sanitizer

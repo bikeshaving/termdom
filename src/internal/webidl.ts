@@ -14,9 +14,11 @@
 import {DOM_INTERFACES} from "../generated/domidl.ts";
 import {
 	declareInterfaceObject,
+	forgetRecentClasses,
 	getParentClass,
 	getSlotClass,
 	implementsInterface,
+	isInterfaceObject,
 	isSealedClass,
 	onSeal,
 } from "./slots.ts";
@@ -110,7 +112,7 @@ function parseCheck(
 	if (types.length === 0 && runtimeTypes.length === 0 && !stringifies) {
 		return null;
 	}
-	return {
+	const check: Check = {
 		types,
 		runtimeTypes,
 		accepted: null,
@@ -120,6 +122,11 @@ function parseCheck(
 		nullable,
 		stringifies,
 	};
+	onForgetClasses(() => {
+		check.accepted = null;
+		check.acceptedBefore = null;
+	});
+	return check;
 }
 
 // Whether `value` is an object of one of the check's interfaces. One
@@ -257,6 +264,10 @@ function wrapOperation(
 	const direct = resolve.direct;
 	let accepted: Constructor | null = null;
 	let acceptedBefore: Constructor | null = null;
+	onForgetClasses(() => {
+		accepted = null;
+		acceptedBefore = null;
+	});
 	const brand = (object: unknown): Constructor => {
 		const type = getSlotClass(object);
 		if (type === null) {
@@ -363,6 +374,10 @@ function wrapAttribute(
 ): PropertyDescriptor {
 	let accepted: Constructor | null = null;
 	let acceptedBefore: Constructor | null = null;
+	onForgetClasses(() => {
+		accepted = null;
+		acceptedBefore = null;
+	});
 	const brand = (object: unknown): Constructor | null => {
 		const type = getSlotClass(object);
 		if (type === null) {
@@ -483,11 +498,330 @@ const instanceMembers = new Map<
 	Constructor,
 	Array<[string, PropertyDescriptor]>
 >();
-const instanceMembersOfType = new Map<
+const instanceMembersOfType = new WeakMap<
 	Constructor,
 	Array<[string, PropertyDescriptor]> | null
 >();
 let installed = false;
+// The window's bindings remember the last classes they saw, and a class a
+// frame's page made holds the frame's realm. The bindings installInterfaces()
+// makes register how to forget theirs; a frame's own interface objects die
+// with its realm, and are not listed.
+const classCacheResets: Array<() => void> = [];
+let listingClassCaches = false;
+
+function onForgetClasses(reset: () => void): void {
+	if (listingClassCaches) {
+		classCacheResets.push(reset);
+	}
+}
+
+// The window's classes by interface name, as installInterfaces() found them.
+let installedClasses: ReadonlyMap<string, Constructor> = new Map();
+
+/**
+ * A JavaScript realm other than the one the engine runs in, such as a
+ * frame's: its own intrinsics, and its own interface objects and
+ * prototypes, whose members call the engine's with the realm active.
+ */
+export interface Realm {
+	readonly global: Record<PropertyKey, unknown>;
+	// The object node:vm keeps the global's own properties on, which the
+	// runtime hands an accessor of the global as `this`.
+	readonly sandbox: object;
+	readonly objectPrototype: object;
+	readonly functionPrototype: object;
+	// The realm's own constructors by name, for values made for it.
+	readonly intrinsics: Readonly<Record<string, Constructor>>;
+	readonly interfaces: Map<string, Constructor>;
+	// The realm's prototype for each of the engine's classes.
+	readonly prototypes: Map<Constructor, object>;
+	readonly instanceMembers: Map<
+		Constructor,
+		Array<[string, PropertyDescriptor]> | null
+	>;
+	// The document the realm's window shows, which a bare constructor of the
+	// realm, such as `new Text()`, makes its nodes in.
+	document: object | null;
+}
+
+let activeRealm: Realm | null = null;
+
+// A node's realm is its node document's, which the DOM settles after the
+// node is made; a document's is the realm it is made in, or the one its
+// maker names.
+let nodeClass: Constructor | null = null;
+let documentClass: Constructor | null = null;
+let documentRealmOverride: Realm | null | undefined;
+const documentRealms = new WeakMap<object, Realm>();
+
+/** Names the classes whose objects take their realm from a document. */
+export function declareNodeClasses(
+	node: Constructor,
+	document: Constructor,
+): void {
+	nodeClass = node;
+	documentClass = document;
+}
+
+/** The realm `document` is in, or null for the engine's own. */
+export function getDocumentRealm(document: object): Realm | null {
+	return documentRealms.get(document) ?? null;
+}
+
+/**
+ * Runs `create`, whose documents are in `realm` whatever realm is active,
+ * as a document made for another is in that one's.
+ */
+export function createDocumentIn<T>(realm: Realm | null, create: () => T): T {
+	const outer = documentRealmOverride;
+	documentRealmOverride = realm;
+	try {
+		return create();
+	} finally {
+		documentRealmOverride = outer;
+	}
+}
+
+/**
+ * Puts `node` in `realm`, its node document's, or in the engine's own for
+ * null, as it is being made. A page's class keeps its own prototype.
+ */
+export function placeInRealm(realm: Realm | null, node: object): void {
+	const type = getSlotClass(node)!;
+	if (realm !== null) {
+		defineRealmMembers(realm, node, type);
+	} else if (
+		Object.getPrototypeOf(node) !== type.prototype && !isPageClass(type)
+	) {
+		Object.setPrototypeOf(node, type.prototype);
+	}
+}
+
+/**
+ * The realm whose bindings are running, or null for the engine's own,
+ * the top window's.
+ */
+export function getActiveRealm(): Realm | null {
+	return activeRealm;
+}
+
+// Each realm by its Function.prototype, which a function made in the realm
+// inherits from, so a callback's realm is known when the engine calls it.
+const realmsByFunctionPrototype = new WeakMap<object, Realm>();
+
+/** Makes `realm` known as the realm of the functions it makes. */
+export function registerRealm(realm: Realm): void {
+	realmsByFunctionPrototype.set(realm.functionPrototype, realm);
+}
+
+/**
+ * The realm `value` was made in, as a function a page passes as a callback,
+ * or null for the engine's own or one this cannot tell.
+ */
+export function getFunctionRealm(value: unknown): Realm | null {
+	return typeof value === "function"
+		? realmsByFunctionPrototype.get(Object.getPrototypeOf(value) as object) ??
+			null
+		: null;
+}
+
+// The realm that was active when the innermost of a realm's bindings was
+// called: the one its caller ran in, HTML's incumbent.
+let callerRealm: Realm | null = null;
+
+/**
+ * The realm the running binding of a realm was called from, which the
+ * engine's own window's bindings, which do not enter a realm, leave active.
+ */
+export function getCallerRealm(): Realm | null {
+	return callerRealm;
+}
+
+/** Runs `run` with `realm` active, as its bindings do. */
+export function runInRealm<T>(realm: Realm | null, run: () => T): T {
+	const outer = activeRealm;
+	activeRealm = realm;
+	try {
+		return run();
+	} finally {
+		activeRealm = outer;
+	}
+}
+
+// `value` as a function of `realm`: its own object, with the realm's
+// Function.prototype, that runs `value` with the realm active. Called on
+// nothing, or on the object node:vm stands in for the global with, it is
+// called on the realm's global, as Web IDL calls a global's members.
+function bindToRealm<T extends (...args: never[]) => unknown>(
+	realm: Realm,
+	value: T,
+): T {
+	const bound = function (this: unknown, ...args: unknown[]): unknown {
+		const outer = activeRealm;
+		const outerCaller = callerRealm;
+		activeRealm = realm;
+		callerRealm = outer;
+		try {
+			return (value as unknown as (...args: unknown[]) => unknown).apply(
+				this === undefined || this === realm.sandbox ? realm.global : this,
+				args,
+			);
+		} finally {
+			activeRealm = outer;
+			callerRealm = outerCaller;
+		}
+	};
+	Object.defineProperty(bound, "name", {value: value.name});
+	Object.defineProperty(bound, "length", {value: value.length});
+	Object.setPrototypeOf(bound, realm.functionPrototype);
+	return bound as unknown as T;
+}
+
+function bindDescriptor(
+	realm: Realm,
+	descriptor: PropertyDescriptor,
+): PropertyDescriptor {
+	const bound = {...descriptor};
+	if (typeof descriptor.value === "function") {
+		bound.value = bindToRealm(realm, descriptor.value as () => unknown);
+	}
+	if (descriptor.get !== undefined) {
+		bound.get = bindToRealm(realm, descriptor.get);
+	}
+	if (descriptor.set !== undefined) {
+		bound.set = bindToRealm(realm, descriptor.set);
+	}
+	return bound;
+}
+
+/**
+ * Gives `realm` an interface object and a prototype of its own for each
+ * of the window's interfaces, chained as the interfaces are, down to the
+ * realm's Object.prototype and Function.prototype.
+ */
+export function installRealmInterfaces(realm: Realm): void {
+	const make = (name: string): object => {
+		const type = installedClasses.get(name)!;
+		const existing = realm.prototypes.get(type);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const parent = DOM_INTERFACES[name].parent;
+		const prototype = Object.create(
+			parent !== undefined && installedClasses.has(parent)
+				? make(parent)
+				: realm.objectPrototype,
+		) as object;
+		realm.prototypes.set(type, prototype);
+		for (const key of Reflect.ownKeys(type.prototype)) {
+			if (key === "constructor") {
+				continue;
+			}
+			Object.defineProperty(
+				prototype,
+				key,
+				bindDescriptor(
+					realm,
+					Object.getOwnPropertyDescriptor(type.prototype, key)!,
+				),
+			);
+		}
+		const object = createInterfaceObject(
+			name,
+			type,
+			installedClasses,
+			prototype,
+			realm,
+		);
+		realm.interfaces.set(name, object);
+		Object.defineProperty(prototype, "constructor", {
+			value: object,
+			writable: true,
+			configurable: true,
+		});
+		return prototype;
+	};
+	for (const name of installedClasses.keys()) {
+		make(name);
+	}
+	for (const [name, object] of realm.interfaces) {
+		const parent = DOM_INTERFACES[name].parent;
+		Object.setPrototypeOf(
+			object,
+			(parent !== undefined ? realm.interfaces.get(parent) : undefined) ??
+				realm.functionPrototype,
+		);
+	}
+}
+
+// The realm's prototype for `type`'s objects: its own interface's, or the
+// nearest one the realm has above it.
+function getRealmPrototype(realm: Realm, type: Constructor): object | null {
+	for (const current of [type, ...ancestors(type)]) {
+		const prototype = realm.prototypes.get(current);
+		if (prototype !== undefined) {
+			return prototype;
+		}
+	}
+	return null;
+}
+
+// Whether `type` is a page's class, which extends an interface object,
+// rather than one of the engine's, which extend each other.
+const pageClasses = new WeakMap<Constructor, boolean>();
+
+function isPageClass(type: Constructor): boolean {
+	let page = pageClasses.get(type);
+	if (page === undefined) {
+		page = false;
+		for (
+			let current: unknown = Object.getPrototypeOf(type);
+			typeof current === "function" && current !== Function.prototype;
+			current = Object.getPrototypeOf(current)
+		) {
+			if (isInterfaceObject(current)) {
+				page = true;
+				break;
+			}
+		}
+		pageClasses.set(type, page);
+	}
+	return page;
+}
+
+// An object made while `realm` is active is the realm's: it takes the
+// realm's prototype, unless a page's class made it, whose prototype it
+// keeps, and the realm's own copy of each member that belongs to the
+// object.
+function defineRealmMembers(
+	realm: Realm,
+	target: object,
+	type: Constructor,
+): void {
+	if (Object.getPrototypeOf(target) === type.prototype && !isPageClass(type)) {
+		const prototype = getRealmPrototype(realm, type);
+		if (prototype !== null) {
+			Object.setPrototypeOf(target, prototype);
+		}
+	}
+	let list = realm.instanceMembers.get(type);
+	if (list === undefined) {
+		const found: Array<[string, PropertyDescriptor]> = [];
+		for (const current of [type, ...ancestors(type)]) {
+			for (const [key, descriptor] of instanceMembers.get(current) ?? []) {
+				found.push([key, bindDescriptor(realm, descriptor)]);
+			}
+		}
+		list = found.length === 0 ? null : found;
+		realm.instanceMembers.set(type, list);
+	}
+	if (list !== null) {
+		for (const [key, descriptor] of list) {
+			Object.defineProperty(target, key, descriptor);
+		}
+	}
+}
 
 /**
  * The name of the interface `value` was made as, the nearest one the
@@ -519,6 +853,7 @@ export function installInterfaces(
 		return interfaceObjects;
 	}
 	installed = true;
+	listingClassCaches = true;
 
 	const byName = new Map<string, Constructor>();
 	for (const [name, type] of Object.entries(classes)) {
@@ -637,11 +972,17 @@ export function installInterfaces(
 			return chain;
 		};
 		if (![...overrides.values()].some(callsSuper)) {
-			const firsts = new Map<Constructor, PropertyDescriptor | undefined>();
+			const firsts = new WeakMap<Constructor, PropertyDescriptor | undefined>();
 			let lastType: Constructor | null = null;
 			let lastFirst: PropertyDescriptor | undefined;
 			let priorType: Constructor | null = null;
 			let priorFirst: PropertyDescriptor | undefined;
+			onForgetClasses(() => {
+				lastType = null;
+				lastFirst = undefined;
+				priorType = null;
+				priorFirst = undefined;
+			});
 			const direct = (type: Constructor) => {
 				if (type === lastType) {
 					return lastFirst;
@@ -660,13 +1001,19 @@ export function installInterfaces(
 			};
 			return {fixed: undefined, direct, enter: direct, leave() {}};
 		}
-		const chains =
-			new Map<Constructor, Array<PropertyDescriptor | undefined>>();
+		const chains = new WeakMap<
+			Constructor,
+			Array<PropertyDescriptor | undefined>
+		>();
 		const objects: unknown[] = [];
 		const depths: number[] = [];
 		let calls = 0;
 		let lastType: Constructor | null = null;
 		let lastChain: Array<PropertyDescriptor | undefined> = [];
+		onForgetClasses(() => {
+			lastType = null;
+			lastChain = [];
+		});
 		return {
 			fixed: undefined,
 			direct: undefined,
@@ -802,6 +1149,7 @@ export function installInterfaces(
 		}
 	}
 
+	installedClasses = byName;
 	for (const [name, type] of byName) {
 		interfaceObjects.set(name, createInterfaceObject(name, type, byName));
 	}
@@ -822,6 +1170,7 @@ export function installInterfaces(
 	}
 
 	onSeal(defineInstanceMembers);
+	listingClassCaches = false;
 	return interfaceObjects;
 }
 
@@ -896,6 +1245,8 @@ function createInterfaceObject(
 	name: string,
 	type: Constructor,
 	classes: ReadonlyMap<string, Constructor>,
+	prototype: object = type.prototype,
+	realm: Realm | null = null,
 ): Constructor {
 	const idl = DOM_INTERFACES[name];
 	const signature = parseMember(idl.constructorArguments ?? "o0", classes);
@@ -915,11 +1266,11 @@ function createInterfaceObject(
 		if (args.length < signature.required) {
 			throw arity(context, signature.required, args.length);
 		}
-		return Reflect.construct(
-			type,
-			convertArguments(args, signature, context) ?? args,
-			new.target,
-		);
+		const converted = convertArguments(args, signature, context) ?? args;
+		const target = new.target;
+		return realm === null
+			? Reflect.construct(type, converted, target)
+			: runInRealm(realm, () => Reflect.construct(type, converted, target));
 	} as unknown as Constructor;
 	Object.defineProperty(object, "name", {value: name});
 	for (const key of Reflect.ownKeys(type)) {
@@ -931,7 +1282,7 @@ function createInterfaceObject(
 			);
 		}
 	}
-	Object.defineProperty(object, "prototype", {value: type.prototype});
+	Object.defineProperty(object, "prototype", {value: prototype});
 	Object.defineProperty(object, "length", {
 		value: signature.required,
 		configurable: true,
@@ -944,7 +1295,35 @@ function createInterfaceObject(
 let lastSealedType: Constructor | null = null;
 let lastSealedMembers: Array<[string, PropertyDescriptor]> | null = null;
 
+/** Empties every cache of recent classes, as a frame is discarded. */
+export function forgetClasses(): void {
+	for (const reset of classCacheResets) {
+		reset();
+	}
+	lastSealedType = null;
+	lastSealedMembers = null;
+	forgetRecentClasses();
+}
+
 function defineInstanceMembers(target: object, type: Constructor): void {
+	if (activeRealm !== null || documentRealmOverride !== undefined) {
+		if (documentClass !== null && implementsInterface(type, documentClass)) {
+			const realm = documentRealmOverride !== undefined
+				? documentRealmOverride
+				: activeRealm;
+			if (realm !== null) {
+				documentRealms.set(target, realm);
+				defineRealmMembers(realm, target, type);
+				return;
+			}
+		} else if (
+			activeRealm !== null &&
+			(nodeClass === null || !implementsInterface(type, nodeClass))
+		) {
+			defineRealmMembers(activeRealm, target, type);
+			return;
+		}
+	}
 	if (type === lastSealedType && lastSealedMembers === null) {
 		return;
 	}
