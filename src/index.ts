@@ -120,6 +120,7 @@ import {
 	resolveDocumentScrollBand,
 	resolveScrollShift,
 } from "./internal/painter.ts";
+import {getBuiltinSpawner, type PtySpawner} from "./internal/pty.ts";
 import {
 	answerRequest,
 	checkInlineHandler,
@@ -144,6 +145,7 @@ import {
 import {createWindow} from "./internal/window.ts";
 
 export type {CanvasCellGridContext} from "./internal/canvas.ts";
+export type {PtyProcess, PtySpawner, PtySpawnOptions} from "./internal/pty.ts";
 export type {CellSize} from "./internal/units.ts";
 export {
 	HistoryChangeEvent,
@@ -272,6 +274,25 @@ export interface TermDOMOptions {
 	canvas?: "auto" | "cells" | "none";
 
 	/**
+	 * Whether `<embed type="application/x-pty" src="htop">` runs its
+	 * command, in a pseudo-terminal shown in the embed's box.
+	 *
+	 * - `"none"` (the default): it runs nothing and fires `error`. Markup
+	 *   from anywhere else, such as email, must never start a program.
+	 * - `"auto"`: it runs `src` with `/bin/sh -c` in the runtime's own
+	 *   pseudo-terminal. Bun has one. Where there is none, it fires
+	 *   `error`.
+	 * - A function: it starts the command itself, for a runtime without
+	 *   a pseudo-terminal, such as Node with node-pty.
+	 *
+	 * Any other value throws a TypeError.
+	 *
+	 * @experimental The element and its events may change in a minor
+	 * release.
+	 */
+	pty?: "none" | "auto" | PtySpawner;
+
+	/**
 	 * The colors the terminal shows, in the bits `screen.colorDepth`
 	 * reports: `24` for 24-bit color, `8` for the 256-color palette, `4`
 	 * for the 16 basic colors. `"rgb"`, `"256"` and `"ansi"` name the same
@@ -382,6 +403,19 @@ function toReducedMotion(option: TermDOMOptions["reducedMotion"]): boolean {
 		return true;
 	}
 	throw new TypeError('reducedMotion must be "no-preference" or "reduce"');
+}
+
+function toPtySpawner(option: TermDOMOptions["pty"]): PtySpawner | null {
+	if (option === undefined || option === "none") {
+		return null;
+	}
+	if (option === "auto") {
+		return getBuiltinSpawner();
+	}
+	if (typeof option === "function") {
+		return option;
+	}
+	throw new TypeError('pty must be "none", "auto" or a function');
 }
 
 function toFailFast(option: unknown): boolean {
@@ -546,6 +580,7 @@ export class TermDOM extends EventTarget {
 		const cellSize = toCellSizeSetting(options.cellSize);
 		const images = toGraphicsSetting("images", options.images);
 		const canvas = toGraphicsSetting("canvas", options.canvas);
+		const pty = toPtySpawner(options.pty);
 		const slots = _(this);
 		slots.colorDepth = toColorDepth(options.colorDepth);
 		const url = toDocumentURL(options.url);
@@ -658,6 +693,7 @@ export class TermDOM extends EventTarget {
 			cellSize,
 			images,
 			canvas,
+			pty,
 			load: (request, context) =>
 				answerRequest(
 					slots.fetchTarget,

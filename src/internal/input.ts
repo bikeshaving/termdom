@@ -23,6 +23,7 @@ import {
 	getKeyboardActivation,
 	getKeyTarget,
 	getPointerState,
+	getRunningProgram,
 	getScrollOffset,
 	getShadowRoot,
 	getTextControlCaretOffset,
@@ -192,7 +193,7 @@ function getLegacyKeyCode(keyName: string): number {
 
 // What Tab traverses and what a mousedown focuses.
 const FOCUSABLE_SELECTOR =
-	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, iframe, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])';
+	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, iframe, embed[type="application/x-pty" i], [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])';
 
 // `barrier` is the nearest scope owner above with a negative tabindex.
 // The stop cannot be tabbed into from outside, but focus scripted inside
@@ -837,6 +838,16 @@ function deliverMouseReport(input: Input, {
 			? getClientPoint(input, x, y)
 			: getLevelClientPoint(input, found.levels.at(-1)!, x, y);
 
+	// A program that asked for the mouse hears it in its box's cells, and
+	// the wheel scrolls the program rather than the page.
+	if (
+		found !== null &&
+		sendMouseToProgram(found.levels.at(-1)!, x, y, code, isRelease, ticks) &&
+		(wheelDeltaY !== null || wheelDeltaX !== null)
+	) {
+		return;
+	}
+
 	if (wheelDeltaY !== null) {
 		const notCanceled = dispatchAsUserAgent(
 			hit,
@@ -1021,6 +1032,38 @@ function deliverMouseReport(input: Input, {
 	}
 }
 
+// The report for a program whose embed is under the point, at the cell of
+// its box the point is on. False where no program there takes the mouse.
+function sendMouseToProgram(
+	level: FramePointLevel,
+	x: number,
+	y: number,
+	code: number,
+	isRelease: boolean,
+	ticks: number,
+): boolean {
+	const program = getRunningProgram(level.element);
+	const box = program === null
+		? null
+		: _(level.document).extra.layout.contentRect(level.element!);
+	if (program === null || box === null) {
+		return false;
+	}
+	const col = Math.min(
+		program.cols - 1,
+		Math.max(0, Math.floor(x - level.left - box.left)),
+	);
+	const row = Math.min(
+		program.rows - 1,
+		Math.max(0, Math.floor(y - level.top - box.top)),
+	);
+	let taken = false;
+	for (let tick = 0; tick < ticks; tick++) {
+		taken = program.sendMouse(code, col, row, isRelease);
+	}
+	return taken;
+}
+
 // The input as it is in a frame: the frame's document, window, layout,
 // cascade and framebuffer in place of the outermost document's, and the
 // rest inherited. A drag in the frame keeps its state on it.
@@ -1067,6 +1110,12 @@ function deliverPaste(input: Input, text: string): void {
 			}),
 		),
 	);
+	// A focused program takes the paste as its terminal would send it.
+	const program = proceed ? getRunningProgram(target) : null;
+	if (program !== null) {
+		program.paste(text);
+		return;
+	}
 	const tag = getHTMLLocalName(target);
 	if (proceed && (tag === "input" || tag === "textarea")) {
 		const event = constructInternal(() =>
@@ -1666,9 +1715,40 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		}),
 	);
 
+	const dispatchKeyup = (): void => {
+		dispatchAsUserAgent(
+			targetElement,
+			constructInternal(() =>
+				new (getEventWindow(input, targetElement).KeyboardEvent)("keyup", {
+					key: keyName,
+					code: getDOMCode(keyName),
+					keyCode,
+					charCode: 0,
+					which: keyCode,
+					ctrlKey,
+					shiftKey,
+					altKey,
+					metaKey,
+					bubbles: true,
+					composed: true,
+					cancelable: true,
+				}),
+			),
+		);
+	};
+
 	dispatchAsUserAgent(targetElement, keydownEvent);
 	runControlDefaultAction(targetElement, keydownEvent);
 	const notCanceled = !keydownEvent.defaultPrevented;
+
+	// A focused program takes the key as its terminal would send it, in
+	// place of every default action a key has in the page: Tab, Escape,
+	// Ctrl+L and Ctrl+Z are the program's.
+	const program = notCanceled ? getRunningProgram(targetElement) : null;
+	if (program !== null && program.sendKey(stroke)) {
+		dispatchKeyup();
+		return;
+	}
 
 	// A close request on the top of the top layer, whether or not keydown
 	// was canceled. It does not exit fullscreen. The alternate screen takes
@@ -1753,23 +1833,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 		}
 	}
 
-	const keyupEvent = constructInternal(() =>
-		new (getEventWindow(input, targetElement).KeyboardEvent)("keyup", {
-			key: keyName,
-			code: getDOMCode(keyName),
-			keyCode,
-			charCode: 0,
-			which: keyCode,
-			ctrlKey,
-			shiftKey,
-			altKey,
-			metaKey,
-			bubbles: true,
-			composed: true,
-			cancelable: true,
-		}),
-	);
-	dispatchAsUserAgent(targetElement, keyupEvent);
+	dispatchKeyup();
 }
 
 function insertText(input: Input, target: Element, text: string): void {
