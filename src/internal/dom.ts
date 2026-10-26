@@ -2581,6 +2581,51 @@ Object.defineProperty(PopStateEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+interface CloseEventInit extends EventInit {
+	wasClean?: boolean;
+	code?: number;
+	reason?: string;
+}
+
+interface CloseEventSlots extends EventSlots {
+	wasClean: boolean;
+	code: number;
+	reason: string;
+}
+
+interface CloseEvent {
+	readonly [internals]: CloseEventSlots;
+}
+
+/** Fired when a connection, or a program an embed runs, ends. */
+class CloseEvent extends Event {
+	constructor(type: string, eventInitDict: CloseEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<CloseEventInit>(eventInitDict, "An event init");
+		const slots = _(this);
+		slots.wasClean = Boolean(init.wasClean);
+		slots.code = Number(init.code ?? 0) & 0xffff;
+		slots.reason = String(init.reason ?? "");
+	}
+
+	get wasClean(): boolean {
+		return _(this).wasClean;
+	}
+
+	get code(): number {
+		return _(this).code;
+	}
+
+	get reason(): string {
+		return _(this).reason;
+	}
+}
+
+Object.defineProperty(CloseEvent.prototype, Symbol.toStringTag, {
+	value: "CloseEvent",
+	configurable: true,
+});
+
 interface StorageEventInit extends EventInit {
 	key?: string | null;
 	oldValue?: string | null;
@@ -16980,6 +17025,7 @@ function stopProgram(embed: HTMLEmbedElement): void {
 	const program = slots.extra.program;
 	if (program !== null) {
 		slots.extra.program = null;
+		delete (embed as {postMessage?: unknown}).postMessage;
 		program.dispose();
 		invalidateReplaced(embed, true);
 		unregisterReplacedContent(embed);
@@ -17001,11 +17047,12 @@ function startProgram(embed: HTMLEmbedElement): void {
 	}
 	const slots = _(embed);
 	const run = (slots.extra.programRun = new AbortController()).signal;
-	const fire = (type: string) => setTimeout(() => {
-		if (!run.aborted) {
-			embed.dispatchEvent(constructInternal(() => new Event(type)));
-		}
-	}, 0);
+	const fire = (type: string, build = (): Event => new Event(type)) =>
+		setTimeout(() => {
+			if (!run.aborted) {
+				embed.dispatchEvent(constructInternal(build));
+			}
+		}, 0);
 	const attachedSlots = _(attached);
 	const spawn = attachedSlots.extra.pty;
 	if (spawn === null || attachedSlots.extra.loadSignal.aborted) {
@@ -17021,10 +17068,19 @@ function startProgram(embed: HTMLEmbedElement): void {
 			spawn,
 			Math.round(width / cell.width),
 			Math.round(height / cell.height),
-			() => invalidateReplaced(embed, false),
-			() => {
-				invalidateReplaced(embed, false);
-				fire("close");
+			{
+				change: () => invalidateReplaced(embed, false),
+				exit: (code) => {
+					invalidateReplaced(embed, false);
+					fire("close", () =>
+						new CloseEvent("close", {wasClean: code !== null, code: code ?? 0}),
+					);
+				},
+				titlechange: (title) =>
+					fire("titlechange", () =>
+						new CustomEvent("titlechange", {detail: title}),
+					),
+				bell: () => fire("bell"),
 			},
 		);
 	} catch (error) {
@@ -17034,6 +17090,21 @@ function startProgram(embed: HTMLEmbedElement): void {
 	}
 	program.setScrollback(getScrollbackLimit(embed));
 	slots.extra.program = program;
+	// As a Native Client module's embed did, the embed takes messages for
+	// its program while it runs one: text typed into it.
+	Object.defineProperty(embed, "postMessage", {
+		value(message: string): void {
+			if (arguments.length < 1) {
+				throw new TypeError("postMessage needs a message");
+			}
+			if (program.exited || slots.extra.program !== program) {
+				throw domError("InvalidStateError", "The program is not running");
+			}
+			program.input(String(message));
+		},
+		configurable: true,
+		writable: true,
+	});
 	// While its program runs, the embed is replaced by the program's
 	// screen, drawn as an iframe draws its document.
 	registerReplacedContent(embed, () => ({
@@ -40058,6 +40129,7 @@ export const platform = {
 	Clipboard,
 	ClipboardEvent,
 	ClipboardItem,
+	CloseEvent,
 	CommandEvent,
 	Comment,
 	CompositionEvent,
@@ -40546,6 +40618,7 @@ export type {
 	MessageEvent,
 	HashChangeEvent,
 	PopStateEvent,
+	CloseEvent,
 	History,
 	ErrorEvent,
 	PromiseRejectionEvent,
