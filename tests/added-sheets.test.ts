@@ -29,6 +29,37 @@ test("a sheet appended to the document applies before the observer delivers", ()
 	dom.dispose();
 });
 
+test("sheets added to the head before a body's sheet rank as a parse from scratch ranks them", async () => {
+	const body = "<main><style>.a { color: green }</style><p class=\"a b\">x</p></main>";
+	const sheets = [
+		".a { color: blue } .b { color: red }",
+		"p.b { color: purple }",
+	];
+	const late = created(`<style>p { color: gray }</style>${body}`);
+	await nextFrame(late);
+	expect(color(late, "p")).toBe("rgb(0, 128, 0)");
+	const first = late.document.createElement("style");
+	first.textContent = sheets[0];
+	late.document.head.append(first);
+	expect(color(late, "p")).toBe("rgb(0, 128, 0)");
+	await nextFrame(late);
+	const second = late.document.createElement("style");
+	second.textContent = sheets[1];
+	late.document.head.prepend(second);
+	const early = created(
+		`<style>${sheets[1]}</style><style>p { color: gray }</style>` +
+			`<style>${sheets[0]}</style>${body}`,
+	);
+	expect(color(late, "p")).toBe(color(early, "p"));
+	expect(color(late, "p")).toBe("rgb(128, 0, 128)");
+	await nextFrame(late);
+	late.document.querySelector("main style")!.remove();
+	await nextFrame(late);
+	expect(color(late, "p")).toBe("rgb(128, 0, 128)");
+	late.dispose();
+	early.dispose();
+});
+
 test("a sheet appended after a shadow tree's ranks as a parse from scratch ranks it", async () => {
 	const shadowCSS = ":host { color: blue }";
 	const documentCSS = ".host { color: red }";
