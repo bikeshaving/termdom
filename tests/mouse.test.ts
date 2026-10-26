@@ -1005,3 +1005,43 @@ test("an element that leaves the document loses its pointer capture", async () =
 	await send(proc, "\x1b[<0;2;1m");
 	termdom.dispose();
 });
+
+test("a press focuses a link without scrolling, so the click lands on it", async () => {
+	const proc = new MockProcess({cols: 40, rows: 10});
+	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
+	const {document, window} = termdom;
+	document.body.innerHTML =
+		`<div style="height: 8px">top</div>` +
+		`<a href="#post" style="display: block; height: 6px">post</a>` +
+		`<div style="height: 20px"></div>`;
+	await nextFrame(termdom);
+	const clicks: string[] = [];
+	document.addEventListener("click", (event) => {
+		clicks.push((event.target as Element).localName);
+		event.preventDefault();
+	});
+	const top = Math.round(
+		document.querySelector("a")!.getBoundingClientRect().top,
+	);
+	await send(proc, `\x1b[<0;2;${top + 1}M`);
+	expect(document.activeElement).toBe(document.querySelector("a"));
+	expect(window.scrollY).toBe(0);
+	await send(proc, `\x1b[<0;2;${top + 1}m`);
+	expect(clicks).toEqual(["a"]);
+	termdom.dispose();
+});
+
+test("pointer-events: none lets the point through, and auto below it takes it", async () => {
+	const termdom = new TermDOM({
+		transport: transportFromProcess(new MockProcess() as any),
+	});
+	const {document} = termdom;
+	document.body.innerHTML =
+		`<div id="under" style="height: 4px">under</div>` +
+		`<div id="cover" style="position: absolute; inset: 0; pointer-events: none">` +
+		`<span id="live" style="pointer-events: auto">live</span></div>`;
+	await nextFrame(termdom);
+	expect(document.elementFromPoint(20, 2)?.id).toBe("under");
+	expect(document.elementFromPoint(1, 0)?.id).toBe("live");
+	termdom.dispose();
+});

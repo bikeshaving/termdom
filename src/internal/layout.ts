@@ -5894,7 +5894,11 @@ function hitTestInFlow(
 			return hit;
 		}
 	}
-	return contained ? element : null;
+	// pointer-events: none lets the point through to what is behind, while
+	// a descendant that sets it back to auto still takes it.
+	return contained && getComputedValue(element, "pointer-events") !== "none"
+		? element
+		: null;
 }
 
 // CSS 2 §10.3.7, read from the flow the box left: after the previous

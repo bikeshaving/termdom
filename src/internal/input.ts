@@ -1213,7 +1213,9 @@ function dispatchPress(
 	}
 	// Default action: focus the nearest focusable ancestor, or blur. A
 	// press in editable content focuses its editing host, unless what it
-	// found is part of that content, a field inside it, say.
+	// found is part of that content, a field inside it, say. Focus from a
+	// press does not scroll, as in browsers, or the page would move under
+	// the pointer before the button comes up.
 	let focusable: Element | null = target;
 	while (focusable !== null && !focusable.matches(FOCUSABLE_SELECTOR)) {
 		focusable = flatParentElement(focusable);
@@ -1224,7 +1226,7 @@ function dispatchPress(
 	}
 	const active = getFocusedElement(input.document);
 	if (focusable && focusable !== active) {
-		(focusable as HTMLElement).focus();
+		(focusable as HTMLElement).focus({preventScroll: true});
 		requestRender(input.document);
 	} else if (!focusable && active && active !== input.document.body) {
 		(active as HTMLElement).blur();
@@ -1380,7 +1382,7 @@ function dispatchRelease(
 				? target.control
 				: null;
 		if (control) {
-			control.focus();
+			control.focus({preventScroll: true});
 			requestRender(input.document);
 		}
 
