@@ -12507,6 +12507,12 @@ function runFocusingSteps(element: HTMLElement): void {
 		if (element !== document.body) {
 			focusStartingPoints.delete(document);
 		}
+		// Focus in a frame's document is focus in the frame, in the document
+		// the frame is in, as HTML's focus chain runs up through the frames.
+		const owner = getFrameOwner(document);
+		if (owner !== null && getInnermostActive(_(owner).document) !== owner) {
+			runFocusingSteps(owner);
+		}
 	}
 	if (previous === element || getInnermostActive(document) !== element) {
 		return;
@@ -16133,7 +16139,8 @@ export function relayoutReplacedElements(
 		for (const element of scope.querySelectorAll("*")) {
 			if (
 				isPlatformObject(element, HTMLImageElement) ||
-				isPlatformObject(element, HTMLCanvasElement)
+				isPlatformObject(element, HTMLCanvasElement) ||
+				isPlatformObject(element, HTMLIFrameElement)
 			) {
 				_(attached).extra.layout.invalidate(element as unknown as Node);
 			}
@@ -18000,6 +18007,34 @@ type FrameWindowFactory = (
 
 let frameWindowFactory: FrameWindowFactory | null = null;
 
+/**
+ * What draws a frame: its document laid out and painted into a cell grid
+ * the size of the iframe's content box, which the iframe paints as a
+ * replaced element's content.
+ */
+export interface FrameRenderer {
+	// The frame's cells at `cols` by `rows`. The same grid comes back while
+	// the size holds, painted again only once the frame has changed.
+	fit(cols: number, rows: number): CellGrid;
+	dispose(): void;
+}
+
+// Builds a frame document's engine, given the attached document the
+// iframe is in and what to call when the frame changes. index.ts gives
+// the factory, since the engine is built above the DOM.
+type FrameEngineFactory = (
+	document: Document,
+	window: Window,
+	parent: Document,
+	changed: () => void,
+) => FrameRenderer;
+
+let frameEngineFactory: FrameEngineFactory | null = null;
+
+export function setFrameEngineFactory(factory: FrameEngineFactory): void {
+	frameEngineFactory = factory;
+}
+
 // The window at the top of `window`'s frames: itself, unless it is a frame's.
 function getTopWindow(window: Window): Window {
 	let current = window;
@@ -18073,6 +18108,11 @@ interface HTMLIFrameElementExtra extends NodeExtra {
 	// belongs to. Each removal and insertion starts a new one, so the load
 	// task fires only for the insertion that scheduled it.
 	frameDocumentRun: object;
+	// What draws the frame, made the first time it is painted, and a count
+	// that moves each time the frame changes, which its painted cells are
+	// kept by.
+	frameRenderer: FrameRenderer | null;
+	frameVersion: number;
 }
 
 interface HTMLIFrameElementSlots extends HTMLElementSlots {
@@ -18106,6 +18146,16 @@ class HTMLIFrameElement extends HTMLElement {
 		slots.extra.contentDocument = null;
 		slots.extra.contentWindow = null;
 		slots.extra.frameDocumentRun = {};
+		slots.extra.frameRenderer = null;
+		slots.extra.frameVersion = 0;
+		// HTML's default size for a frame is 300 by 150 CSS pixels.
+		registerReplacedContent(this, () => ({
+			kind: "grid",
+			width: 300,
+			height: 150,
+			fit: (cols: number, rows: number) => fitFrame(this, cols, rows),
+			version: slots.extra.frameVersion,
+		}));
 	}
 
 	get contentDocument(): Document | null {
@@ -18156,6 +18206,8 @@ class HTMLIFrameElement extends HTMLElement {
 			_(window).frameOwner = null;
 			forgetClasses();
 		}
+		slots.extra.frameRenderer?.dispose();
+		slots.extra.frameRenderer = null;
 		slots.extra.contentDocument = null;
 		slots.extra.contentWindow = null;
 		slots.extra.frameDocumentRun = {};
@@ -18164,6 +18216,126 @@ class HTMLIFrameElement extends HTMLElement {
 }
 
 declareExtraSlots(HTMLIFrameElement);
+
+/**
+ * The iframe `document` is the content document of, or null for one that
+ * is no frame's.
+ */
+export function getFrameOwner(
+	document: globalThis.Document | Document,
+): HTMLIFrameElement | null {
+	const window = _(document as Document).extra.defaultView as Window | null;
+	return window === null ? null : _(window).frameOwner;
+}
+
+// The document a drawn iframe shows, or null for an element that is not
+// one: input reaches a frame only where its cells are on the screen.
+function getDrawnFrameDocument(element: Element | null): Document | null {
+	return isPlatformObject(element, HTMLIFrameElement) &&
+		_(element).extra.frameRenderer !== null
+		? _(element).extra.contentDocument
+		: null;
+}
+
+/**
+ * The element at the document point `x`, `y` of `document`, looking into
+ * the frames drawn there, with the document it is in and where that
+ * document's viewport is in `document`'s coordinates. A point on a frame's
+ * border or padding is the iframe's own.
+ */
+export function elementAtPointThroughFrames(
+	document: globalThis.Document,
+	x: number,
+	y: number,
+): {element: Element | null; document: Document; left: number; top: number} {
+	let current = document as Document;
+	let element = elementAtDocumentPoint(document, x, y, null) as Element | null;
+	let left = 0;
+	let top = 0;
+	for (
+		let inner = getDrawnFrameDocument(element);
+		inner !== null;
+		inner = getDrawnFrameDocument(element)
+	) {
+		const box = _(current).extra.layout.contentRect(element!);
+		if (
+			box === null ||
+			x - left < box.left ||
+			x - left >= box.right ||
+			y - top < box.top ||
+			y - top >= box.bottom
+		) {
+			break;
+		}
+		left += box.left;
+		top += box.top - _(inner).extra.framebuffer.scrollTop;
+		current = inner;
+		element = (elementAtDocumentPoint(
+			inner as unknown as globalThis.Document,
+			x - left,
+			y - top,
+			null,
+		) ?? inner.body) as Element | null;
+	}
+	return {element, document: current, left, top};
+}
+
+/**
+ * The element keys go to: the focused element of `document`, and where
+ * that is a drawn frame, the one focused in the frame, or its body.
+ */
+export function getKeyTarget(
+	document: globalThis.Document,
+): globalThis.Element | null {
+	let focused = getFocusedElement(document);
+	for (
+		let inner = getDrawnFrameDocument(focused as Element | null);
+		inner !== null;
+		inner = getDrawnFrameDocument(focused as Element | null)
+	) {
+		focused =
+			getFocusedElement(inner as unknown as globalThis.Document) ??
+			(inner.body as globalThis.Element | null);
+	}
+	return focused;
+}
+
+// The frame's cells at the size its box gives it. A frame is drawn only
+// where it has a window of its own to lay its document out under, and
+// is in a document an engine displays; elsewhere it is an empty box.
+function fitFrame(
+	frame: HTMLIFrameElement,
+	cols: number,
+	rows: number,
+): CellGrid {
+	const slots = _(frame);
+	let renderer = slots.extra.frameRenderer;
+	if (renderer === null) {
+		const parent = getAttachedDocument(frame);
+		ensureFrameDocument(frame);
+		const window = slots.extra.contentWindow;
+		const document = slots.extra.contentDocument;
+		if (
+			frameEngineFactory !== null &&
+			parent !== undefined &&
+			document !== null &&
+			isPlatformObject(window, Window)
+		) {
+			renderer = frameEngineFactory(document, window, parent, () =>
+				frameChanged(frame),
+			);
+			slots.extra.frameRenderer = renderer;
+		}
+	}
+	return renderer?.fit(cols, rows) ?? new CellGrid(rows, cols);
+}
+
+// The frame's document changed: its cells are painted again with the
+// next frame of the document the iframe is in.
+function frameChanged(frame: HTMLIFrameElement): void {
+	_(frame).extra.frameVersion++;
+	invalidateReplaced(frame, false);
+}
 
 function ensureFrameDocument(frame: HTMLIFrameElement): void {
 	const frameSlots = _(frame);
@@ -27978,6 +28150,11 @@ export class Document extends Node implements globalThis.Document {
 	// sealed into the terminal's scrollback, and a later mutation starts a
 	// fresh document below the sealed block.
 	close(): void {
+		// A frame's document is drawn inside another, and seals nothing.
+		const window = _(this).extra.defaultView as Window | null;
+		if (window !== null && _(window).frameOwner !== null) {
+			return;
+		}
 		_maybe(getAttachedDocument(this))?.extra.exchange.dispatchEvent(
 			constructInternal(() => new Event("seal")),
 		);

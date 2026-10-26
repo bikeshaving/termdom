@@ -10,13 +10,16 @@ import {
 	constructInternal,
 	dispatchAsUserAgent,
 	elementAtDocumentPoint,
+	elementAtPointThroughFrames,
 	flatParentElement,
 	flushLayout,
 	type FocusStartingPoint,
 	getActiveElement,
 	getEditingHost,
 	getFocusedElement,
+	getFrameOwner,
 	getKeyboardActivation,
+	getKeyTarget,
 	getPointerState,
 	getScrollOffset,
 	getShadowRoot,
@@ -567,6 +570,14 @@ export function resolvePendingHover(input: Input): void {
 // Every pointer event the mouse fires carries the same pointer. A
 // button held down presses at half pressure, as a browser reports a
 // mouse that cannot sense it.
+// The window an event at `target` is made by: the one its document is
+// shown in, a frame's for a node in a frame, so the event is an object of
+// the realm it lands in.
+function getEventWindow(input: Input, target: Element): Input["window"] {
+	const view = target.ownerDocument.defaultView;
+	return (view ?? input.window) as Input["window"];
+}
+
 function dispatchMouseLike(
 	input: Input,
 	kind: "pointer" | "mouse",
@@ -575,9 +586,11 @@ function dispatchMouseLike(
 	init: MouseEventInit,
 ): boolean {
 	const event = kind === "mouse"
-		? constructInternal(() => new input.window.MouseEvent(type, init))
+		? constructInternal(() =>
+			new (getEventWindow(input, target).MouseEvent)(type, init),
+		)
 		: constructInternal(() =>
-			new input.window.PointerEvent(type, {
+			new (getEventWindow(input, target).PointerEvent)(type, {
 				...init,
 				detail: type.startsWith("pointer") ? 0 : init.detail,
 				pointerId: MOUSE_POINTER_ID,
@@ -662,18 +675,34 @@ function deliverMouseReport(input: Input, {
 		}
 	}
 
-	const hit =
-		(isInDocument && elementAtDocumentPoint(input.document, x, y, null)) ||
-		input.document.body;
+	// What is under the pointer, inside the frames drawn there. Events
+	// inside a frame carry points in its viewport.
+	const found = isInDocument
+		? elementAtPointThroughFrames(input.document, x, y)
+		: null;
+	const hit = found?.element || input.document.body;
+	const clientPoint = (): {clientX: number; clientY: number} =>
+		found === null || found.document === input.document
+			? getClientPoint(input, x, y)
+			: {
+				clientX: pxFromCells(x - found.left, false, found.document),
+				clientY: pxFromCells(y - found.top, true, found.document),
+			};
+	// A frame does not scroll, so the wheel over one scrolls what the frame
+	// is in, as a scroll chains past a box that cannot take it.
+	const scrolled = found === null || found.document === input.document
+		? hit
+		: (elementAtDocumentPoint(input.document, x, y, null) ||
+			input.document.body);
 
 	if (wheelDeltaY !== null) {
 		const notCanceled = dispatchAsUserAgent(
 			hit,
 			constructInternal(() =>
-				new input.window.WheelEvent("wheel", {
+				new (getEventWindow(input, hit).WheelEvent)("wheel", {
 					deltaY: wheelDeltaY,
 					deltaMode: 1,
-					...getClientPoint(input, x, y),
+					...clientPoint(),
 					...getScreenPoint(input, x, y),
 					shiftKey,
 					altKey,
@@ -684,7 +713,7 @@ function deliverMouseReport(input: Input, {
 				}),
 			),
 		);
-		if (notCanceled && scrollByWheel(input, hit, wheelDeltaY)) {
+		if (notCanceled && scrollByWheel(input, scrolled, wheelDeltaY)) {
 			// Scroll chaining. The parent scroller is the terminal's own
 			// scrollback, so the mouse is yielded to it. preventDefault on
 			// the wheel event opts out, as in a browser.
@@ -699,10 +728,10 @@ function deliverMouseReport(input: Input, {
 		const notCanceled = dispatchAsUserAgent(
 			hit,
 			constructInternal(() =>
-				new input.window.WheelEvent("wheel", {
+				new (getEventWindow(input, hit).WheelEvent)("wheel", {
 					deltaX: wheelDeltaX,
 					deltaMode: 1,
-					...getClientPoint(input, x, y),
+					...clientPoint(),
 					...getScreenPoint(input, x, y),
 					shiftKey,
 					altKey,
@@ -766,7 +795,7 @@ function deliverMouseReport(input: Input, {
 		detail,
 		button,
 		buttons: state.buttons,
-		...getClientPoint(input, x, y),
+		...clientPoint(),
 		...getScreenPoint(input, x, y),
 		...getMovement(input, x, y, last),
 		shiftKey,
@@ -830,17 +859,17 @@ function deliverPaste(input: Input, text: string): void {
 	// A terminal pastes line breaks as CR (tmux documents the replacement).
 	// The DOM's paste carries LF.
 	text = text.replace(/\r\n?/g, "\n");
-	const focused = getFocusedElement(input.document);
+	const focused = getKeyTarget(input.document);
 	const target = focused && focused !== input.document.body
 		? focused
 		: input.document.body;
-	const clipboardData = new input.window.DataTransfer();
+	const clipboardData = new (getEventWindow(input, target).DataTransfer)();
 	clipboardData.setData("text/plain", text);
 	lockDataTransfer(clipboardData);
 	const proceed = dispatchAsUserAgent(
 		target,
 		constructInternal(() =>
-			new input.window.ClipboardEvent("paste", {
+			new (getEventWindow(input, target).ClipboardEvent)("paste", {
 				clipboardData,
 				bubbles: true,
 				composed: true,
@@ -851,7 +880,7 @@ function deliverPaste(input: Input, text: string): void {
 	const tag = getHTMLLocalName(target);
 	if (proceed && (tag === "input" || tag === "textarea")) {
 		const event = constructInternal(() =>
-			new input.window.InputEvent("beforeinput", {
+			new (getEventWindow(input, target).InputEvent)("beforeinput", {
 				inputType: "insertFromPaste",
 				data: text,
 				bubbles: true,
@@ -1205,7 +1234,7 @@ function dispatchPress(
 		requestRender(input.document);
 	}
 	const mousedown = constructInternal(() =>
-		new input.window.MouseEvent("mousedown", eventInit),
+		new (getEventWindow(input, target).MouseEvent)("mousedown", eventInit),
 	);
 	const notCanceled =
 		input.mouseEventsSuppressed || dispatchAsUserAgent(target, mousedown);
@@ -1226,6 +1255,9 @@ function dispatchPress(
 		focusable = host;
 	}
 	const active = getFocusedElement(input.document);
+	// A press in a frame on nothing focusable focuses the frame, as a click
+	// into a frame's page does.
+	focusable ??= getFrameOwner(target.ownerDocument);
 	if (focusable && focusable !== active) {
 		(focusable as HTMLElement).focus({preventScroll: true});
 		requestRender(input.document);
@@ -1406,14 +1438,15 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	}
 
 	// A fullscreen element is usually not focusable, so keydown falls back
-	// to it before the body.
-	const active = getFocusedElement(input.document);
+	// to it before the body. In a focused frame, keys go to what is focused
+	// in the frame.
+	const active = getKeyTarget(input.document);
 	const targetElement = active && active !== input.document.body
 		? active
 		: input.document.fullscreenElement || input.document.body;
 
 	const keydownEvent = constructInternal(() =>
-		new input.window.KeyboardEvent("keydown", {
+		new (getEventWindow(input, targetElement).KeyboardEvent)("keydown", {
 			key: keyName,
 			code: getDOMCode(keyName),
 			keyCode,
@@ -1478,7 +1511,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 				dispatchAsUserAgent(
 					targetElement,
 					constructInternal(() =>
-						new input.window.PointerEvent("click", {
+						new (getEventWindow(input, targetElement).PointerEvent)("click", {
 							pointerId: -1,
 							bubbles: true,
 							cancelable: true,
@@ -1496,7 +1529,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	if (notCanceled && char !== "") {
 		const charCode = char.codePointAt(0)!;
 		const keypressEvent = constructInternal(() =>
-			new input.window.KeyboardEvent("keypress", {
+			new (getEventWindow(input, targetElement).KeyboardEvent)("keypress", {
 				key: char,
 				code: getDOMCode(char),
 				keyCode: charCode,
@@ -1517,7 +1550,7 @@ function dispatchKey(input: Input, stroke: WireKey): void {
 	}
 
 	const keyupEvent = constructInternal(() =>
-		new input.window.KeyboardEvent("keyup", {
+		new (getEventWindow(input, targetElement).KeyboardEvent)("keyup", {
 			key: keyName,
 			code: getDOMCode(keyName),
 			keyCode,
@@ -1542,7 +1575,7 @@ function insertText(input: Input, target: Element, text: string): void {
 		return;
 	}
 	const event = constructInternal(() =>
-		new input.window.InputEvent("beforeinput", {
+		new (getEventWindow(input, target).InputEvent)("beforeinput", {
 			inputType: "insertText",
 			data: text,
 			bubbles: true,
