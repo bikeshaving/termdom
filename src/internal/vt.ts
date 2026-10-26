@@ -186,6 +186,10 @@ export class Terminal {
 	// DECSCUSR's shape: 0 for the terminal's own, 1 to 6 for a blinking or
 	// steady block, underline or bar.
 	cursorShape: number;
+	// The window title the program set with OSC 0 or 2.
+	title: string;
+	// How many times the program rang the bell.
+	bells: number;
 	insertMode: boolean;
 	newlineMode: boolean;
 	bracketedPaste: boolean;
@@ -234,6 +238,8 @@ export class Terminal {
 		this.autowrap = true;
 		this.cursorVisible = true;
 		this.cursorShape = 0;
+		this.title = "";
+		this.bells = 0;
 		this.insertMode = false;
 		this.newlineMode = false;
 		this.bracketedPaste = false;
@@ -480,6 +486,9 @@ export class Terminal {
 
 	execute(code: number): void {
 		switch (code) {
+			case 0x07:
+				this.bells++;
+				return;
 			case 0x08:
 				this.wrapPending = false;
 				if (this.x > 0) {
@@ -1274,6 +1283,10 @@ export class Terminal {
 	}
 
 	dispatchOsc(): void {
+		const match = /^([02]);(.*)$/s.exec(this.osc);
+		if (match !== null) {
+			this.title = match[2];
+		}
 		this.osc = "";
 	}
 }

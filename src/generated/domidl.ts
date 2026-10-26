@@ -181,6 +181,12 @@ export const DOM_INTERFACES: Readonly<Record<string, IdlInterface>> = {
 		statics: ["supports"],
 		members: [["presentationStyle", "r"], ["types", "r"], ["getType", "o1"]],
 	},
+	CloseEvent: {
+		parent: "Event",
+		constructible: 1,
+		constructorArguments: "o1",
+		members: [["code", "r"], ["reason", "r"], ["wasClean", "r"]],
+	},
 	CommandEvent: {
 		parent: "Event",
 		constructible: 1,

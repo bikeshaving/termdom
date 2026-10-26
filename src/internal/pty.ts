@@ -366,11 +366,19 @@ export function encodeKey(
 	return `${alt}${key.key}`;
 }
 
+/** What a session tells its embed about the program. */
+export interface PtySessionListeners {
+	change(): void;
+	exit(code: number | null): void;
+	titlechange(title: string): void;
+	bell(): void;
+}
+
 /**
  * One program on one pseudo-terminal, and the screen it draws. It draws
  * into a box as a frame's document does: fit() gives the cells at the
  * box's size, and caret says where the terminal's cursor goes. Every
- * change to the screen calls `onchange`.
+ * change to the screen calls the `change` listener.
  */
 export class PtySession {
 	cols: number;
@@ -379,7 +387,7 @@ export class PtySession {
 	exited: boolean;
 	process: PtyProcess | null;
 	terminal: Terminal;
-	onchange: () => void;
+	listeners: PtySessionListeners;
 	grid: CellGrid;
 	// The version the grid was drawn at, or -1 for one not drawn yet.
 	drawn: number;
@@ -392,14 +400,13 @@ export class PtySession {
 		spawn: PtySpawner,
 		cols: number,
 		rows: number,
-		onchange: () => void,
-		onexit: (code: number | null) => void,
+		listeners: PtySessionListeners,
 	) {
 		this.cols = Math.max(1, cols);
 		this.rows = Math.max(1, rows);
 		this.version = 0;
 		this.exited = false;
-		this.onchange = onchange;
+		this.listeners = listeners;
 		this.grid = new CellGrid(this.rows, this.cols);
 		this.drawn = -1;
 		this.disposed = false;
@@ -415,7 +422,7 @@ export class PtySession {
 					return;
 				}
 				const terminal = this.terminal;
-				const added = terminal.historyAdded;
+				const {historyAdded: added, title, bells} = terminal;
 				terminal.write(data);
 				this.scrolled = terminal.alternateScreen
 					? 0
@@ -426,13 +433,19 @@ export class PtySession {
 						terminal.history.length,
 					);
 				this.version++;
-				this.onchange();
+				listeners.change();
+				if (terminal.title !== title) {
+					listeners.titlechange(terminal.title);
+				}
+				if (terminal.bells !== bells) {
+					listeners.bell();
+				}
 			},
 			onExit: (code) => {
 				this.exited = true;
 				this.process = null;
 				this.version++;
-				onexit(code);
+				listeners.exit(code);
 			},
 		});
 	}
@@ -456,14 +469,19 @@ export class PtySession {
 		this.process?.write(data);
 	}
 
+	/** Sends what the user typed, returning the view to the bottom. */
+	input(data: string): void {
+		this.scrollBy(-this.scrolled);
+		this.write(data);
+	}
+
 	/** Sends a key, or returns false for a key the terminal sends nothing for. */
 	sendKey(key: KeyLike): boolean {
 		const bytes = encodeKey(key, this.terminal.applicationCursor);
 		if (bytes === null) {
 			return false;
 		}
-		this.scrollBy(-this.scrolled);
-		this.write(bytes);
+		this.input(bytes);
 		return true;
 	}
 
@@ -473,8 +491,7 @@ export class PtySession {
 	 */
 	paste(text: string): void {
 		const body = text.replace(/\r?\n/g, "\r");
-		this.scrollBy(-this.scrolled);
-		this.write(
+		this.input(
 			this.terminal.bracketedPaste ? `\x1b[200~${body}\x1b[201~` : body,
 		);
 	}
@@ -534,7 +551,7 @@ export class PtySession {
 		}
 		this.scrolled = scrolled;
 		this.version++;
-		this.onchange();
+		this.listeners.change();
 		return true;
 	}
 
@@ -545,7 +562,7 @@ export class PtySession {
 		if (this.scrolled > terminal.history.length) {
 			this.scrolled = terminal.history.length;
 			this.version++;
-			this.onchange();
+			this.listeners.change();
 		}
 	}
 

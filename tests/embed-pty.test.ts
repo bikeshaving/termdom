@@ -184,6 +184,72 @@ test("load fires when the program starts, and close when it ends", async () => {
 	await dom.dispose();
 });
 
+test("close is a CloseEvent with the program's exit code", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, document} = await mount(
+		`<embed type="application/x-pty" src="one"><embed type="application/x-pty" src="two">`,
+		spawn,
+	);
+	const closes: CloseEvent[] = [];
+	document.addEventListener(
+		"close",
+		(event) => {
+			closes.push(event as CloseEvent);
+		},
+		true,
+	);
+	children[0].options.onExit(3);
+	children[1].options.onExit(null);
+	await until(() => closes.length === 2);
+	expect(
+		closes.map((event) => [
+			event.constructor === dom.window.CloseEvent,
+			event.code,
+			event.wasClean,
+		]),
+	).toEqual([[true, 3, true], [true, 0, false]]);
+	await dom.dispose();
+});
+
+test("titlechange and bell fire when the program sets its title and rings", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, document} = await mount(
+		`<embed type="application/x-pty" src="sh">`,
+		spawn,
+	);
+	const embed = document.querySelector("embed")!;
+	const heard: string[] = [];
+	embed.addEventListener("titlechange", (event) => {
+		heard.push(`title ${(event as CustomEvent<string>).detail}`);
+	});
+	embed.addEventListener("bell", () => heard.push("bell"));
+	children[0].options.onData("\x1b]0;make: building\x07");
+	children[0].options.onData("\x1b]2;make: done\x1b\\\x07\x07");
+	children[0].options.onData("\x1b]2;make: done\x07");
+	await until(() => heard.length === 3);
+	await settle(dom);
+	expect(heard).toEqual(["title make: building", "title make: done", "bell"]);
+	await dom.dispose();
+});
+
+test("postMessage types into the program while it runs, and only then", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, document} = await mount(
+		`<embed type="application/x-pty" src="sh"><embed src="plain.svg">`,
+		spawn,
+	);
+	const [embed, plain] = document.querySelectorAll("embed");
+	expect("postMessage" in plain).toBe(false);
+	embed.postMessage!("make\r");
+	expect(children[0].written).toEqual(["make\r"]);
+	expect(() => (embed.postMessage as () => void)()).toThrow(TypeError);
+	children[0].options.onExit(0);
+	expect(() => embed.postMessage!("x")).toThrow(dom.window.DOMException);
+	embed.remove();
+	expect("postMessage" in embed).toBe(false);
+	await dom.dispose();
+});
+
 test("removing the embed or changing its src stops the program", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, document} = await mount(

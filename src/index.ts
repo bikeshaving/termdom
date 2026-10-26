@@ -176,6 +176,18 @@ declare global {
 			options?: unknown,
 		): CanvasCellGridContext | null;
 	}
+
+	interface HTMLEmbedElement {
+		/**
+		 * Types `message` into the program of an `<embed
+		 * type="application/x-pty">`. It is there only while the embed
+		 * runs a program, as a Native Client module's embed had it.
+		 *
+		 * @experimental The element and its events may change in a minor
+		 * release.
+		 */
+		postMessage?(message: string): void;
+	}
 }
 
 // Images decode on the runtime's web Worker, running src/image-decode.worker.ts,
