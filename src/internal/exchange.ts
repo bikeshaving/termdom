@@ -5,6 +5,7 @@ import {
 	Event,
 	EventTarget,
 	type EventTargetSlots,
+	focusTakesInterrupt,
 	requestRender,
 	syncMediaQueries,
 	type Window,
@@ -2246,8 +2247,13 @@ function routeItems(session: Exchange, items: WireItem[]): void {
 		switch (item.kind) {
 			case "key":
 				// Raw mode delivers Ctrl-C as data. Closing is the window's
-				// decision, and a close it allows is an interrupt.
-				if (item.ctrlKey && item.key === "c") {
+				// decision, and a close it allows is an interrupt. A focused
+				// program's embed takes it as a key, for its own program.
+				if (
+					item.ctrlKey &&
+					item.key === "c" &&
+					!focusTakesInterrupt(sessionSlots.window.document)
+				) {
 					flushKeys();
 					sessionSlots.interrupted = true;
 					sessionSlots.window.close();

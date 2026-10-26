@@ -62,8 +62,10 @@ import {
 	readImageResponse,
 	registerReplacedContent,
 	resolveImageURL,
+	unregisterReplacedContent,
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
+import {PtySession, type PtySpawner} from "./pty.ts";
 import {rehomeClone} from "./realms.ts";
 import type {ResourceLoader} from "./resources.ts";
 import {
@@ -12475,6 +12477,7 @@ export class HTMLElement extends Element {
 		cssom.handleFocusChange(_(attached).extra.cascade, this, null);
 		invalidate(_(attached).extra.framebuffer);
 		void _(attached).extra.render();
+		reportProgramFocus(this as unknown as Element, false);
 		dispatchAsUserAgent(
 			this,
 			constructInternal(() =>
@@ -12645,6 +12648,8 @@ function runFocusingSteps(element: HTMLElement): void {
 	// An edit the user made in the control focus is leaving is committed
 	// first, so change fires before blur.
 	commitTextControl(previous as Element | null);
+	reportProgramFocus(previous as Element | null, false);
+	reportProgramFocus(element as Element, true);
 	// The body holds focus whenever nothing else does, so moving focus off
 	// the body fires no blur.
 	if (previous !== null && previous !== (document.body as unknown)) {
@@ -13035,6 +13040,8 @@ function getDefaultTabIndex(element: Element): number {
 		case "select":
 		case "textarea":
 			return 0;
+		case "embed":
+			return isPtyEmbed(element) ? 0 : -1;
 		case "summary": {
 			const parent = getObject(elementSlots.parent);
 			return parent !== null &&
@@ -16828,6 +16835,35 @@ class HTMLDListElement extends HTMLElement {
 }
 
 /** Never loads, so it has no SVG document. */
+const PTY_TYPE = "application/x-pty";
+
+function isPtyEmbed(element: Element): boolean {
+	return _(element).localName === "embed" &&
+		getAttributeValue(element, "type")?.trim().toLowerCase() === PTY_TYPE;
+}
+
+/**
+ * <embed>: nothing, except with type="application/x-pty", where src is
+ * a command run in a pseudo-terminal and its screen is drawn in the
+ * embed's box, as an iframe draws its document. A program allows that
+ * with the pty option. The program is resized to the box, and takes the
+ * keys, pastes and mouse while the embed has focus.
+ */
+interface HTMLEmbedElementExtra extends NodeExtra {
+	// What draws the program, while one runs.
+	program: PtySession | null;
+	// Aborted when the program it started is stopped.
+	programRun: AbortController;
+}
+
+interface HTMLEmbedElementSlots extends HTMLElementSlots {
+	extra: HTMLEmbedElementExtra;
+}
+
+interface HTMLEmbedElement {
+	readonly [internals]: HTMLEmbedElementSlots;
+}
+
 class HTMLEmbedElement extends HTMLElement {
 	declare name: globalThis.HTMLEmbedElement["name"];
 	declare height: globalThis.HTMLEmbedElement["height"];
@@ -16835,9 +16871,176 @@ class HTMLEmbedElement extends HTMLElement {
 	declare align: globalThis.HTMLEmbedElement["align"];
 	declare src: globalThis.HTMLEmbedElement["src"];
 	declare type: globalThis.HTMLEmbedElement["type"];
+
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		const slots = _(this);
+		slots.extra.program = null;
+		slots.extra.programRun = new AbortController();
+	}
+
 	getSVGDocument(): Document | null {
 		return null;
 	}
+
+	override _insertionSteps(this: Slots<HTMLEmbedElement>): void {
+		superStep(HTMLEmbedElement, "_insertionSteps").call(this);
+		startProgram(getOwner(this));
+	}
+
+	override _attributeChangeSteps(
+		this: Slots<HTMLEmbedElement>,
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		superStep(HTMLEmbedElement, "_attributeChangeSteps").call(
+			this,
+			localName,
+			oldValue,
+			value,
+			namespace,
+		);
+		if (namespace !== null || oldValue === value) {
+			return;
+		}
+		if (localName === "src" || localName === "type") {
+			stopProgram(getOwner(this));
+			startProgram(getOwner(this));
+		} else if (
+			(localName === "width" || localName === "height") &&
+			this.extra.program !== null
+		) {
+			invalidateReplaced(getOwner(this), true);
+		}
+	}
+
+	override _removingSteps(this: Slots<HTMLEmbedElement>, parent: Node): void {
+		superStep(HTMLEmbedElement, "_removingSteps").call(this, parent);
+		stopProgram(getOwner(this));
+	}
+}
+
+declareExtraSlots(HTMLEmbedElement);
+
+/** The program an embed runs, or null for an element that runs none. */
+export function getRunningProgram(
+	element: globalThis.Element | Element | null,
+): PtySession | null {
+	if (element === null || !implementsInterface(element, HTMLEmbedElement)) {
+		return null;
+	}
+	const program = _(element as HTMLEmbedElement).extra.program;
+	return program !== null && !program.exited ? program : null;
+}
+
+/**
+ * Whether keys go to a program now: the element keys go to, through the
+ * frames, is an embed whose program is running. It takes Ctrl+C, as a
+ * terminal's program would.
+ */
+export function focusTakesInterrupt(document: globalThis.Document): boolean {
+	return getRunningProgram(getKeyTarget(document)) !== null;
+}
+
+function reportProgramFocus(element: Element | null, focused: boolean): void {
+	getRunningProgram(element)?.sendFocus(focused);
+}
+
+// The size the embed asks for, in CSS pixels, from its width and height
+// attributes, or a terminal's usual 80 by 24 cells.
+function getProgramNaturalSize(embed: HTMLEmbedElement): {
+	width: number;
+	height: number;
+} {
+	const cell = getCellSize(embed as unknown as Node);
+	const read = (name: string, cells: number, size: number) => {
+		const value = parseFloat(getAttributeValue(embed, name) ?? "");
+		return Number.isFinite(value) && value > 0 ? value : cells * size;
+	};
+	return {
+		width: read("width", 80, cell.width),
+		height: read("height", 24, cell.height),
+	};
+}
+
+function stopProgram(embed: HTMLEmbedElement): void {
+	const slots = _(embed);
+	slots.extra.programRun.abort();
+	const program = slots.extra.program;
+	if (program !== null) {
+		slots.extra.program = null;
+		program.dispose();
+		invalidateReplaced(embed, true);
+		unregisterReplacedContent(embed);
+	}
+}
+
+// load, error and close fire from a task, after the insertion that
+// started the program has finished and its listeners are attached.
+function startProgram(embed: HTMLEmbedElement): void {
+	const attached = getAttachedDocument(embed);
+	const command = getAttributeValue(embed, "src")?.trim() ?? "";
+	if (
+		attached === undefined ||
+		!embed.isConnected ||
+		!isPtyEmbed(embed) ||
+		command === ""
+	) {
+		return;
+	}
+	const slots = _(embed);
+	const run = (slots.extra.programRun = new AbortController()).signal;
+	const fire = (type: string) => setTimeout(() => {
+		if (!run.aborted) {
+			embed.dispatchEvent(constructInternal(() => new Event(type)));
+		}
+	}, 0);
+	const attachedSlots = _(attached);
+	const spawn = attachedSlots.extra.pty;
+	if (spawn === null || attachedSlots.extra.loadSignal.aborted) {
+		fire("error");
+		return;
+	}
+	const {width, height} = getProgramNaturalSize(embed);
+	const cell = getCellSize(embed as unknown as Node);
+	let program: PtySession;
+	try {
+		program = new PtySession(
+			command,
+			spawn,
+			Math.round(width / cell.width),
+			Math.round(height / cell.height),
+			() => invalidateReplaced(embed, false),
+			() => {
+				invalidateReplaced(embed, false);
+				fire("close");
+			},
+		);
+	} catch (error) {
+		attachedSlots.extra.reportUncaught(error);
+		fire("error");
+		return;
+	}
+	slots.extra.program = program;
+	// While its program runs, the embed is replaced by the program's
+	// screen, drawn as an iframe draws its document.
+	registerReplacedContent(embed, () => ({
+		kind: "grid",
+		...getProgramNaturalSize(embed),
+		fit: (cols: number, rows: number) => program.fit(cols, rows),
+		version: program.version,
+		caret: () =>
+			getFocusedElement(slots.document) === embed ? program.caret : null,
+	}));
+	attachedSlots.extra.loadSignal.addEventListener(
+		"abort",
+		() => stopProgram(embed),
+		{once: true, signal: run},
+	);
+	invalidateReplaced(embed, true);
+	fire("load");
 }
 
 interface HTMLFieldSetElementExtra extends NodeExtra {
@@ -18125,16 +18328,17 @@ type FrameWindowFactory = (
 let frameWindowFactory: FrameWindowFactory | null = null;
 
 /**
- * What draws a frame: its document laid out and painted into a cell grid
- * the size of the iframe's content box, which the iframe paints as a
- * replaced element's content.
+ * What draws into an element's box from a world of its own: an iframe's
+ * document laid out and painted, or an embed's program and its screen.
+ * Either paints into a cell grid the size of the content box, which the
+ * element paints as a replaced element's content.
  */
-export interface FrameRenderer {
-	// The frame's cells at `cols` by `rows`. The same grid comes back while
-	// the size holds, painted again only once the frame has changed.
+export interface BoxRenderer {
+	// The cells at `cols` by `rows`. The same grid comes back while the
+	// size holds, painted again only once something in it has changed.
 	fit(cols: number, rows: number): CellGrid;
-	// Where the frame's caret is in the grid the last fit returned, as its
-	// focused field puts it, or null.
+	// Where the terminal's cursor goes in the grid the last fit returned,
+	// as a frame's focused field or a program puts it, or null.
 	readonly caret: Caret | null;
 	dispose(): void;
 }
@@ -18147,7 +18351,7 @@ type FrameEngineFactory = (
 	window: Window,
 	parent: Document,
 	changed: () => void,
-) => FrameRenderer;
+) => BoxRenderer;
 
 let frameEngineFactory: FrameEngineFactory | null = null;
 
@@ -18231,7 +18435,7 @@ interface HTMLIFrameElementExtra extends NodeExtra {
 	// What draws the frame, made the first time it is painted, and a count
 	// that moves each time the frame changes, which its painted cells are
 	// kept by.
-	frameRenderer: FrameRenderer | null;
+	frameRenderer: BoxRenderer | null;
 	frameVersion: number;
 }
 
@@ -27573,6 +27777,9 @@ export interface DocumentExtra extends NodeExtra {
 	// "none" when it draws none.
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
+	// Starts an <embed type="application/x-pty">'s program, or null when
+	// the program the document is shown by allows none.
+	pty: PtySpawner | null;
 	load: ResourceLoader;
 	loadSignal: globalThis.AbortSignal;
 	// Whether the document's policies let an element's inline handler run.
@@ -36789,6 +36996,7 @@ export interface DocumentEngine {
 	cellSize: CellSizeSetting;
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
+	pty: PtySpawner | null;
 	// Answers the loads the document's markup asks for.
 	load: ResourceLoader;
 	allowsInlineHandler(element: globalThis.Element): boolean;
@@ -36837,6 +37045,7 @@ export function attachDocument(
 	attachedSlots.extra.cellSize = cellSize;
 	attachedSlots.extra.images = images;
 	attachedSlots.extra.canvas = canvas;
+	attachedSlots.extra.pty = engine.pty;
 	attachedSlots.extra.pendingCaretReveal = null;
 	attachedSlots.extra.pendingEditingReveal = null;
 	for (const type of ["input", "select", "change", "selectionchange"]) {
@@ -36871,6 +37080,14 @@ export function attachDocument(
 			: null;
 		if (root !== null) {
 			connectShadowRoot(root);
+		}
+		// An embed parsed before its document had an engine, as one in the
+		// starting markup or in a frame's srcdoc is, starts its program now.
+		if (
+			implementsInterface(node, HTMLEmbedElement) &&
+			_(node as HTMLEmbedElement).extra.program === null
+		) {
+			startProgram(node as HTMLEmbedElement);
 		}
 	}
 }

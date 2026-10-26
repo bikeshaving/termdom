@@ -146,14 +146,16 @@ export const UA_DOCUMENT_STYLES = `
 	details[open] > summary:first-of-type { list-style-type: disclosure-open; }
 	legend::before, legend::after { content: " "; white-space: pre; }
 	/*
-	 * Focus on an element that edits text shows as the terminal cursor.
-	 * Every other focused element takes an outline instead. The type list
-	 * matches takesTextCursor in dom.ts.
+	 * Focus on an element that edits text shows as the terminal cursor,
+	 * and on a program's embed as that program's cursor. Every other
+	 * focused element takes an outline instead. The type list matches
+	 * takesTextCursor in dom.ts.
 	 */
 	:focus-visible { outline-width: 1px; outline-style: solid; }
 	textarea:focus-visible,
 	input:not([type=button i], [type=checkbox i], [type=color i], [type=file i], [type=image i], [type=radio i], [type=range i], [type=reset i], [type=submit i]):focus-visible,
-	[contenteditable]:not([contenteditable=false i]):focus-visible { outline-style: none; }
+	[contenteditable]:not([contenteditable=false i]):focus-visible,
+	embed[type="application/x-pty" i]:focus-visible { outline-style: none; }
 	a[href]:focus-visible { background-color: Highlight; color: HighlightText; }
 `;
 

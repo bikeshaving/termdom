@@ -113,10 +113,10 @@ export function getNaturalRatio(
 }
 
 // What one of the element's pixels is measured against: the page's cell
-// for a canvas, whose pixels are CSS pixels, and for an image the
-// screen's cell where a CSS pixel is a cell.
+// for a canvas or an embed, whose pixels are CSS pixels, and for an image
+// the screen's cell where a CSS pixel is a cell.
 function getPixelCellSize(element: Element): {width: number; height: number} {
-	return element.localName === "canvas"
+	return element.localName === "canvas" || element.localName === "embed"
 		? getCellSize(element as unknown as Node)
 		: getImageCellSize(element as unknown as Node);
 }

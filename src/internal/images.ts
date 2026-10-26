@@ -2078,6 +2078,10 @@ export function registerReplacedContent(
 	replacedSources.set(owner, read);
 }
 
+export function unregisterReplacedContent(owner: object): void {
+	replacedSources.delete(owner);
+}
+
 export function getReplacedContent(owner: object): ReplacedContent {
 	return replacedSources.get(owner)?.() ?? null;
 }
