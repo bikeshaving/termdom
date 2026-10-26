@@ -250,6 +250,40 @@ test("postMessage types into the program while it runs, and only then", async ()
 	await dom.dispose();
 });
 
+test("postMessage forwards key and paste events as the user's own input", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, document} = await mount(
+		`<embed type="application/x-pty" src="vi">`,
+		spawn,
+	);
+	const {KeyboardEvent, ClipboardEvent, DataTransfer} = dom.window;
+	const embed = document.querySelector("embed")!;
+	const written = children[0].written;
+	embed.postMessage!({type: "keydown", key: "ArrowUp"});
+	children[0].options.onData("\x1b[?1h\x1b[?2004h");
+	embed.postMessage!(new KeyboardEvent("keydown", {key: "ArrowUp"}));
+	embed.postMessage!(new KeyboardEvent("keydown", {key: "c", ctrlKey: true}));
+	embed.postMessage!(new KeyboardEvent("keyup", {key: "c", ctrlKey: true}));
+	embed.postMessage!({type: "keydown", key: "Shift", shiftKey: true});
+	embed.postMessage!({type: "keydown", key: "a", isComposing: true});
+	const clipboardData = new DataTransfer();
+	clipboardData.setData("text/plain", "one\ntwo");
+	embed.postMessage!(new ClipboardEvent("paste", {clipboardData}));
+	embed.postMessage!(42 as unknown as string);
+	expect(written).toEqual([
+		"\x1b[A",
+		"\x1bOA",
+		"\x03",
+		"\x1b[200~one\rtwo\x1b[201~",
+		"42",
+	]);
+	expect(() => embed.postMessage!({key: "a"} as any)).toThrow(TypeError);
+	expect(() => embed.postMessage!({type: "keydown"} as any)).toThrow(TypeError);
+	expect(() => embed.postMessage!({type: "paste"} as any)).toThrow(TypeError);
+	expect(() => embed.postMessage!({type: "click"} as any)).toThrow(TypeError);
+	await dom.dispose();
+});
+
 test("removing the embed or changing its src stops the program", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, document} = await mount(

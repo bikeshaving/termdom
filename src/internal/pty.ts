@@ -475,6 +475,51 @@ export class PtySession {
 		this.write(data);
 	}
 
+	/**
+	 * Takes what a page posts to the program: text, or an event, or an
+	 * object shaped like one, forwarded as the user's own input would
+	 * be. A keydown is the key in the program's modes and a paste is
+	 * its text. A keyup, a key alone such as Shift, and a key still
+	 * composing send nothing.
+	 */
+	receive(message: unknown): void {
+		if (typeof message !== "object" || message === null) {
+			this.input(String(message));
+			return;
+		}
+		const event = message as Record<string, unknown>;
+		switch (event.type) {
+			case "keydown":
+				if (typeof event.key !== "string") {
+					throw new TypeError("A keydown message needs a key");
+				}
+				if (!event.isComposing) {
+					this.sendKey({
+						key: event.key,
+						ctrlKey: Boolean(event.ctrlKey),
+						shiftKey: Boolean(event.shiftKey),
+						altKey: Boolean(event.altKey),
+						metaKey: Boolean(event.metaKey),
+					});
+				}
+				return;
+			case "keyup":
+				return;
+			case "paste": {
+				const data = event.clipboardData as
+					{getData(format: string): string} | null | undefined;
+				if (typeof data?.getData !== "function") {
+					throw new TypeError("A paste message needs clipboardData");
+				}
+				this.paste(data.getData("text/plain"));
+				return;
+			}
+		}
+		throw new TypeError(
+			"A message is text, or a keydown, keyup or paste event",
+		);
+	}
+
 	/** Sends a key, or returns false for a key the terminal sends nothing for. */
 	sendKey(key: KeyLike): boolean {
 		const bytes = encodeKey(key, this.terminal.applicationCursor);

@@ -17091,16 +17091,16 @@ function startProgram(embed: HTMLEmbedElement): void {
 	program.setScrollback(getScrollbackLimit(embed));
 	slots.extra.program = program;
 	// As a Native Client module's embed did, the embed takes messages for
-	// its program while it runs one: text typed into it.
+	// its program while it runs one.
 	Object.defineProperty(embed, "postMessage", {
-		value(message: string): void {
+		value(message: unknown): void {
 			if (arguments.length < 1) {
 				throw new TypeError("postMessage needs a message");
 			}
 			if (program.exited || slots.extra.program !== program) {
 				throw domError("InvalidStateError", "The program is not running");
 			}
-			program.input(String(message));
+			program.receive(message);
 		},
 		configurable: true,
 		writable: true,
