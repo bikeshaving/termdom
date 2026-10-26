@@ -391,20 +391,14 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: the move happens inside a frame's document",
 	"dom/nodes/moveBefore/css-transition-cross-document.html":
 		"requires-browsing-context: the transitioning node moves into a frame's document",
-	"dom/nodes/node-realm-adoption-after-frame-removal.html":
-		"requires-browsing-context: a node's realm after its frame is removed",
 	"dom/nodes/remove-and-adopt-thcrash.html":
 		"requires-browsing-context: adoption into a frame's document",
-	"dom/traversal/TreeWalker-realm.html":
-		"requires-browsing-context: a TreeWalker built in another realm",
 	"dom/traversal/TreeWalker-acceptNode-filter-cross-realm.html":
 		"requires-browsing-context: filters that are objects from another realm",
 	"dom/traversal/TreeWalker-acceptNode-filter-cross-realm-null-browsing-context.html":
 		"requires-browsing-context: a filter from a detached frame's realm",
 	"dom/events/Event-dispatch-throwing-multiple-globals.html":
 		"requires-browsing-context: which global an error event is fired at, across frames",
-	"dom/events/Event-timestamp-cross-realm-getter.html":
-		"requires-browsing-context: a timeStamp getter taken from a frame's realm",
 	"dom/events/EventListener-handleEvent-cross-realm.html":
 		"requires-browsing-context: listener objects built in a frame's realm",
 	"dom/events/EventListener-incumbent-global-1.sub.html":

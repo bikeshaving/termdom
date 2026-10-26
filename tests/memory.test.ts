@@ -79,6 +79,43 @@ async function mountAndRemove(dom: TermDOM, html: string): Promise<void> {
 	},
 );
 
+// A frame's realm has its own interfaces, and the engine keeps tables by
+// class, which a class a frame's page makes is one of. Through that class
+// a table would hold the whole realm. Bun keeps the node:vm context it
+// made last whatever holds it, so the frames before the last are the
+// ones that must go.
+(collect === null ? test.skip : test)(
+	"a removed frame's realm is collected, with the classes its page made",
+	async () => {
+		const dom = create();
+		await nextFrame(dom);
+		const mount = () => {
+			const iframe = dom.document.createElement("iframe");
+			iframe.setAttribute("srcdoc", "<p>frame</p>");
+			dom.document.body.append(iframe);
+			const frame = iframe.contentWindow as any;
+			const PageEvent = frame.eval(
+				"(class PageEvent extends Event { constructor() { super('page'); } })",
+			);
+			frame.document.body.append(new PageEvent().type);
+			iframe.remove();
+			// eslint-disable-next-line no-restricted-globals
+			return [new WeakRef(frame), new WeakRef(PageEvent)];
+		};
+		const refs = [mount(), mount(), mount()].slice(0, 2).flat();
+		for (let i = 0; i < 10 && refs.some((ref) => ref.deref()); i++) {
+			await settle();
+		}
+		expect(refs.map((ref) => ref.deref())).toEqual([
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+		]);
+		dom.dispose();
+	},
+);
+
 // Scrolled boxes are tracked to clamp their offsets and to send
 // scrollend, and a box another box's scrolling keeps waiting is still
 // a box that was removed.

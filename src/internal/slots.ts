@@ -92,13 +92,20 @@ class Slot extends Stamp {
 	}
 }
 
-const hiddenPrototypes = new Map<Constructor, object>();
-const roots = new Map<Constructor, Constructor>();
+const hiddenPrototypes = new WeakMap<Constructor, object>();
+// The classes given a hidden prototype or a family plan before the modules
+// finished loading, which moveLateMembers() visits once. Every later class
+// is in the weak maps alone, so a page's class, and a frame's realm with
+// it, can be collected.
+const earlyHiddenTypes: Constructor[] = [];
+const earlyPlanTypes: Constructor[] = [];
+let lateMembersMoved = false;
+const roots = new WeakMap<Constructor, Constructor>();
 const superSteps = new Map<
 	Constructor,
 	Map<string, (this: object, ...args: unknown[]) => unknown>
 >();
-const recordTypes = new Map<Constructor, new () => SlotRecord>();
+const recordTypes = new WeakMap<Constructor, new () => SlotRecord>();
 
 interface Family {
 	prototype: object;
@@ -117,17 +124,17 @@ interface FamilyPlan {
 	Extra: (new () => object) | null;
 }
 
-const sealedRoots = new Set<Constructor>();
+const sealedRoots = new WeakSet<Constructor>();
 // The function a page constructs a class through, and the class.
-const interfaceObjects = new Map<Constructor, Constructor>();
+const interfaceObjects = new WeakMap<Constructor, Constructor>();
 let sealedHook: ((target: object, type: Constructor) => void) | null = null;
-const sealedParents = new Map<Constructor, Constructor>();
-const familyRoots = new Set<Constructor>();
-const families = new Map<Constructor, Family>();
-const familyPlans = new Map<Constructor, FamilyPlan | null>();
-const extraTypes = new Set<Constructor>();
+const sealedParents = new WeakMap<Constructor, Constructor>();
+const familyRoots = new WeakSet<Constructor>();
+const families = new WeakMap<Constructor, Family>();
+const familyPlans = new WeakMap<Constructor, FamilyPlan | null>();
+const extraTypes = new WeakSet<Constructor>();
 let extraKey: string | symbol = Symbol("unused extra");
-const recordTypesByPrototype = new Map<object, new () => SlotRecord>();
+const recordTypesByPrototype = new WeakMap<object, new () => SlotRecord>();
 // The two objects looked up most recently, newest first, since the
 // engine often goes back and forth between two, such as an element and
 // its computed style. Reading #record sees every element class's shape,
@@ -164,6 +171,9 @@ export function seal(
 		if (found === undefined) {
 			found = planFamilyRecord(type, root);
 			familyPlans.set(type, found);
+			if (!lateMembersMoved) {
+				earlyPlanTypes.push(type);
+			}
 		}
 
 		plan = found;
@@ -218,6 +228,11 @@ export function declareInterfaceObject(
 	lastSealedConstructor = null;
 }
 
+/** Whether `value` is a function a page constructs a class through. */
+export function isInterfaceObject(value: unknown): boolean {
+	return interfaceObjects.has(value as Constructor);
+}
+
 /** Calls `hook` with each object sealed from now on, and its class. */
 export function onSeal(
 	hook: (target: object, type: Constructor) => void,
@@ -254,11 +269,24 @@ export function getSlotClass(value: unknown): Constructor | null {
 }
 
 // The classes each class takes its slots from, itself included.
-const lineages = new Map<Constructor, Set<Constructor>>();
+const lineages = new WeakMap<Constructor, Set<Constructor>>();
 // The class looked up last and its lineage, since the objects checked in
 // a row are often made by one class, as a run of spans is.
 let lastLineageType: Constructor | null = null;
 let lastLineage: Set<Constructor> | null = null;
+
+/**
+ * Empties the caches here that remember the last classes they saw. A
+ * class a frame's page made holds the frame's whole realm, so they forget
+ * when a frame goes.
+ */
+export function forgetRecentClasses(): void {
+	lastSealedConstructor = null;
+	lastSealedType = null;
+	lastSealedPlan = null;
+	lastLineageType = null;
+	lastLineage = null;
+}
 
 function getLineage(type: Constructor): Set<Constructor> {
 	if (type === lastLineageType) {
@@ -398,6 +426,9 @@ export function prepareClasses(values: Iterable<unknown>): void {
 		if (root !== null && !familyPlans.has(type)) {
 			const plan = planFamilyRecord(type, root);
 			familyPlans.set(type, plan);
+			if (!lateMembersMoved) {
+				earlyPlanTypes.push(type);
+			}
 			lastSealedConstructor = null;
 			if (plan === null) {
 				hiddenPrototype(type, root);
@@ -735,7 +766,9 @@ function hiddenMember(
  * have loaded.
  */
 export function moveLateMembers(): void {
-	for (const [type, hidden] of hiddenPrototypes) {
+	lateMembersMoved = true;
+	for (const type of earlyHiddenTypes) {
+		const hidden = hiddenPrototypes.get(type)!;
 		if (
 			hasMovableMembers(type.prototype) &&
 			hidden === hiddenPrototypes.get(getParentClass(type))
@@ -748,8 +781,8 @@ export function moveLateMembers(): void {
 		moveMembers(type.prototype, hidden);
 	}
 
-	for (const [type, plan] of familyPlans) {
-		if (plan !== null) {
+	for (const type of earlyPlanTypes) {
+		if (familyPlans.get(type) != null) {
 			familyPlans.delete(type);
 			lastSealedConstructor = null;
 		}
@@ -771,6 +804,9 @@ function hiddenPrototype(type: Constructor, root: Constructor): object {
 			? parent
 			: (Object.create(parent) as object);
 		hiddenPrototypes.set(type, hidden);
+		if (!lateMembersMoved) {
+			earlyHiddenTypes.push(type);
+		}
 		roots.set(type, root);
 		if (!page) {
 			moveMembers(type.prototype, hidden);

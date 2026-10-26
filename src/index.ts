@@ -121,12 +121,14 @@ import {
 import {
 	answerRequest,
 	checkInlineHandler,
+	createWindowFetch,
+	type DocumentLoader,
 	type FetchEvent,
 	forbidsScripts,
 	isWindowFetch,
 	parseContentSecurityPolicies,
 	type RequestPolicy,
-	setWindowFetch,
+	setDocumentLoader,
 } from "./internal/resources.ts";
 import {_, type internals, moveLateMembers} from "./internal/slots.ts";
 import {queueMicrotask, queueTask, setTimeout} from "./internal/timers.ts";
@@ -612,26 +614,14 @@ export class TermDOM extends EventTarget {
 			},
 		};
 
-		// The page's fetch resolves a relative URL against the document, as a
-		// browser's does, and is held to the policy and offered to the fetch
-		// listeners as the markup's loads are.
-		this.window.fetch = setWindowFetch(
-			async (input: RequestInfo | URL, init?: RequestInit) =>
-				answerRequest(
-					slots.fetchTarget,
-					document,
-					input instanceof Request && init === undefined
-						? input
-						: new Request(
-							typeof input === "string"
-								? new URL(input, document.baseURI)
-								: input,
-							init,
-						),
-					{initiator: null},
-					requestPolicy,
-				),
-		) as typeof this.window.fetch;
+		// The page's fetch is held to the policy and offered to the fetch
+		// listeners as the markup's loads are, and so are a frame's, which
+		// takes the loader of the window it is in.
+		const loader: DocumentLoader = (target, request, context) =>
+			answerRequest(slots.fetchTarget, target, request, context, requestPolicy);
+		setDocumentLoader(this.window, loader);
+		this.window.fetch = createWindowFetch(document, loader) as
+			typeof this.window.fetch;
 
 		slots.layout = new Layout(
 			window,

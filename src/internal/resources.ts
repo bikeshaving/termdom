@@ -26,6 +26,51 @@ export function setWindowFetch(fetcher: typeof fetch): typeof fetch {
 	return fetcher;
 }
 
+/**
+ * How a window's documents make requests: offered to its TermDOM's fetch
+ * listeners and sent to the network, under its policy. A frame's window
+ * makes them as the window it is in does.
+ */
+export type DocumentLoader = (
+	document: Document,
+	request: Request,
+	context: RequestContext,
+) => Promise<Response>;
+
+const documentLoaders = new WeakMap<object, DocumentLoader>();
+
+export function setDocumentLoader(
+	window: object,
+	loader: DocumentLoader,
+): void {
+	documentLoaders.set(window, loader);
+}
+
+export function getDocumentLoader(window: object): DocumentLoader | null {
+	return documentLoaders.get(window) ?? null;
+}
+
+/**
+ * A window's fetch, which resolves a relative URL against `document`, as
+ * a browser's does, and makes the request through `loader`.
+ */
+export function createWindowFetch(
+	document: Document,
+	loader: DocumentLoader,
+): typeof fetch {
+	return setWindowFetch(async (input: RequestInfo | URL, init?: RequestInit) =>
+		loader(
+			document,
+			input instanceof Request && init === undefined
+				? input
+				: new Request(
+					typeof input === "string" ? new URL(input, document.baseURI) : input,
+					init,
+				),
+			{initiator: null},
+		));
+}
+
 export function isWindowFetch(value: unknown): boolean {
 	return typeof value === "function" && windowFetches.has(value);
 }
