@@ -1559,7 +1559,7 @@ function styleLayoutNodeProperties(
 	// auto, `<span style="width:30ch">` in a flex row came out as wide as its
 	// text.
 	const parentIsFlex = hasItemParent(element);
-	const inlineBox = display === "inline" && !parentIsFlex;
+	const inlineBox = display === "inline" && !isBlockified(element);
 	// An inline box has no size, ratio, margin, padding or border of its
 	// own: the record's initial values stand, and the edges are zero.
 	if (inlineBox) {
@@ -1606,10 +1606,8 @@ function styleLayoutNodeProperties(
 				? (ratio * cell.height) / cell.width
 				: NaN;
 
-		// A blockified inline flex item keeps its padding, margin and
-		// border like any block (css-display-3 §2.7). Without the parentIsFlex
-		// exception, `.row{display:flex} .row span{padding:1}` dropped the span's
-		// padding.
+		// A blockified inline, a flex item or a positioned span, keeps its
+		// padding, margin and border like any block (css-display-3 §2.7).
 		const padding = getCellPadding(element);
 		for (const edge of EDGES) {
 			const property = `margin-${edge}`;
@@ -3626,7 +3624,7 @@ function getEdgeWidth(leaf: EdgeLeaf): number {
 
 // A blockified inline lays its edges out in its own box.
 function hasInlineEdges(element: Element): boolean {
-	return getLayoutDisplay(element) === "inline" && !hasItemParent(element);
+	return getLayoutDisplay(element) === "inline" && !isBlockified(element);
 }
 
 function pushEdge(
