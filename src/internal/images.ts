@@ -12,7 +12,7 @@
  * and the canvas and the painter read it back through the registry at
  * the bottom.
  */
-import type {CellGrid} from "./framebuffer.ts";
+import type {Caret, CellGrid} from "./framebuffer.ts";
 import {clearTimeout, setTimeout} from "./timers.ts";
 
 /** Straight (not premultiplied) RGBA, four bytes a pixel, rows top down. */
@@ -2062,6 +2062,9 @@ export type ReplacedContent =
 		// The grid resized to the cells its box holds.
 		fit(cols: number, rows: number): CellGrid;
 		version: number;
+		// Where in the grid the terminal's cursor goes, as a frame's focused
+		// field puts it, read once the grid is fitted. None for no caret.
+		caret?: () => Caret | null;
 	} |
 	{kind: "text"; text: string; loading: boolean} |
 	null;

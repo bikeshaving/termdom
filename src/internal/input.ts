@@ -14,7 +14,9 @@ import {
 	flatParentElement,
 	flushLayout,
 	type FocusStartingPoint,
+	type FramePointLevel,
 	getActiveElement,
+	getDrawnFrameDocument,
 	getEditingHost,
 	getFocusedElement,
 	getFrameOwner,
@@ -54,8 +56,9 @@ import {requestEditingInsert} from "./editing.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import {type Framebuffer, repaintAll, requestFrame} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";
-import {isPlatformObject} from "./slots.ts";
+import {_, isPlatformObject} from "./slots.ts";
 import {
+	getAttachedDocument,
 	getAttributeValue,
 	getHTMLLocalName,
 	getLocalName,
@@ -188,7 +191,7 @@ function getLegacyKeyCode(keyName: string): number {
 
 // What Tab traverses and what a mousedown focuses.
 const FOCUSABLE_SELECTOR =
-	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])';
+	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, iframe, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])';
 
 // `barrier` is the nearest scope owner above with a negative tabindex.
 // The stop cannot be tabbed into from outside, but focus scripted inside
@@ -330,8 +333,12 @@ function getWheelScroller(
 	delta: number,
 	axis: "top" | "left",
 ): Element | null {
-	const document = input.document;
-	const layout = input.layout;
+	// The target's own document's, which is a frame's for a node in one.
+	const document = target.ownerDocument;
+	const attached = getAttachedDocument(target);
+	const layout = attached === undefined
+		? input.layout
+		: _(attached).extra.layout;
 	for (
 		let element: Element | null = target;
 		element &&
@@ -384,6 +391,15 @@ export class Input {
 	} | null;
 
 	hoverElement: Element | null;
+	// The element hovered in each document the pointer is over: the one it
+	// is on, and the iframe it is in, in the document the iframe is in.
+	hoveredByDocument: Map<Document, Element>;
+	// Each frame's view of the input, and the one a press in a frame runs
+	// its default actions through until its last button lets go, with where
+	// the frame's coordinates start.
+	frameViews: WeakMap<Document, Input>;
+	pressView: Input | null;
+	pressOffset: {left: number; top: number};
 	// The document scroll hit its top and the user kept scrolling up, so
 	// the wheel belongs to the terminal's scrollback until the next
 	// keystroke: terminals snap to the live screen on input, and none
@@ -434,6 +450,10 @@ export class Input {
 		this.lastMouse = null;
 		this.pendingHover = null;
 		this.hoverElement = null;
+		this.hoveredByDocument = new Map();
+		this.frameViews = new WeakMap();
+		this.pressView = null;
+		this.pressOffset = {left: 0, top: 0};
 		this.mouseDownTarget = null;
 		this.popoverPressTarget = null;
 		this.selectionDragAnchor = null;
@@ -485,14 +505,26 @@ export function resolvePendingHover(input: Input): void {
 	const {x, y, shiftKey, altKey, ctrlKey} = pending;
 	processPendingPointerCapture(input);
 	const buttons = getPointerState(input.document).buttons;
-	const target =
-		getPointerState(input.document).active ??
-		(elementAtDocumentPoint(input.document, x, y, null) || input.document.body);
+	const active = getPointerState(input.document).active;
+	// What is under the pointer, inside the frames drawn there, unless a
+	// button holds it captured.
+	const found = active === null
+		? elementAtPointThroughFrames(input.document, x, y)
+		: null;
+	const target = active ?? found?.element ?? input.document.body;
 	const previous = input.hoverElement;
+	// Each event is at the point in its own document's viewport.
+	const pointFor = (node: Element): {clientX: number; clientY: number} => {
+		const level = found?.levels.find(
+			(candidate) => candidate.document === node.ownerDocument,
+		);
+		return level === undefined
+			? getClientPoint(input, x, y)
+			: getLevelClientPoint(input, level, x, y);
+	};
 	const init = {
 		button: 0,
 		buttons,
-		...getClientPoint(input, x, y),
 		...getScreenPoint(input, x, y),
 		shiftKey,
 		altKey,
@@ -500,14 +532,13 @@ export function resolvePendingHover(input: Input): void {
 	};
 	if (target !== previous) {
 		input.hoverElement = target;
-		setHoveredElement(input.document, target);
-		handleHoverChange(input.cascade, previous, target);
+		updateHoveredDocuments(input, target);
+		// Up through the frames: a frame's root is in the iframe that shows it.
 		const getChain = (element: Element | null): Element[] => {
 			const chain: Element[] = [];
-			for (
-				let node: Element | null = element; node; node = flatParentElement(node)
-			) {
+			for (let node: Element | null = element; node;) {
 				chain.push(node);
+				node = flatParentElement(node) ?? getFrameOwner(node.ownerDocument);
 			}
 			return chain;
 		};
@@ -521,10 +552,23 @@ export function resolvePendingHover(input: Input): void {
 		// events in the same order: out, leave (exited element up), over,
 		// enter (outermost entered ancestor down), then the move.
 		for (const kind of ["pointer", "mouse"] as const) {
-			const fire = (type: string, node: Element, extra: object): void => {
+			// A related target in another document is none, as a frame's
+			// events name nothing outside it.
+			const fire = (
+				type: string,
+				node: Element,
+				extra: MouseEventInit & {relatedTarget?: Element | null},
+			): void => {
+				const related = extra.relatedTarget;
 				dispatchMouseLike(input, kind, `${kind}${type}`, node, {
 					...init,
+					...pointFor(node),
 					...extra,
+					relatedTarget:
+						related != null &&
+						related.ownerDocument === node.ownerDocument
+							? related
+							: null,
 				});
 			};
 			if (previous !== null) {
@@ -553,6 +597,7 @@ export function resolvePendingHover(input: Input): void {
 		const last = input.lastMouse;
 		const moveInit = {
 			...init,
+			...pointFor(target),
 			...getMovement(input, x, y, last),
 			bubbles: true,
 			cancelable: true,
@@ -567,9 +612,57 @@ export function resolvePendingHover(input: Input): void {
 	}
 }
 
-// Every pointer event the mouse fires carries the same pointer. A
-// button held down presses at half pressure, as a browser reports a
-// mouse that cannot sense it.
+// The viewport point of `x`, `y` in the document `level` describes: the
+// outermost document's, or a frame's, through where it is and its scroll.
+function getLevelClientPoint(
+	input: Input,
+	level: FramePointLevel,
+	x: number,
+	y: number,
+): {clientX: number; clientY: number} {
+	return level.document === input.document
+		? getClientPoint(input, x, y)
+		: {
+			clientX: pxFromCells(x - level.left, false, level.document),
+			clientY: pxFromCells(
+				y - level.top - level.scrollTop,
+				true,
+				level.document,
+			),
+		};
+}
+
+// Hover in each document out from `target`: it in its own, and each iframe
+// it is in, in the document that iframe is in. A document whose hovered
+// element changes restyles with its cascade, and a frame's is drawn again.
+function updateHoveredDocuments(input: Input, target: Element): void {
+	const next = new Map<Document, Element>();
+	for (
+		let node: Element | null = target;
+		node !== null;
+		node = getFrameOwner(node.ownerDocument)
+	) {
+		next.set(node.ownerDocument as Document, node);
+	}
+	const previous = input.hoveredByDocument;
+	for (const document of new Set([...previous.keys(), ...next.keys()])) {
+		const was = previous.get(document) ?? null;
+		const now = next.get(document) ?? null;
+		if (was === now) {
+			continue;
+		}
+		setHoveredElement(document, now);
+		const attached = getAttachedDocument(document);
+		if (attached !== undefined) {
+			handleHoverChange(_(attached).extra.cascade, was, now);
+			if (document !== input.document) {
+				requestRender(document);
+			}
+		}
+	}
+	input.hoveredByDocument = next;
+}
+
 // The window an event at `target` is made by: the one its document is
 // shown in, a frame's for a node in a frame, so the event is an object of
 // the realm it lands in.
@@ -578,6 +671,9 @@ function getEventWindow(input: Input, target: Element): Input["window"] {
 	return (view ?? input.window) as Input["window"];
 }
 
+// Every pointer event the mouse fires carries the same pointer. A
+// button held down presses at half pressure, as a browser reports a
+// mouse that cannot sense it.
 function dispatchMouseLike(
 	input: Input,
 	kind: "pointer" | "mouse",
@@ -682,18 +778,9 @@ function deliverMouseReport(input: Input, {
 		: null;
 	const hit = found?.element || input.document.body;
 	const clientPoint = (): {clientX: number; clientY: number} =>
-		found === null || found.document === input.document
+		found === null
 			? getClientPoint(input, x, y)
-			: {
-				clientX: pxFromCells(x - found.left, false, found.document),
-				clientY: pxFromCells(y - found.top, true, found.document),
-			};
-	// A frame does not scroll, so the wheel over one scrolls what the frame
-	// is in, as a scroll chains past a box that cannot take it.
-	const scrolled = found === null || found.document === input.document
-		? hit
-		: (elementAtDocumentPoint(input.document, x, y, null) ||
-			input.document.body);
+			: getLevelClientPoint(input, found.levels.at(-1)!, x, y);
 
 	if (wheelDeltaY !== null) {
 		const notCanceled = dispatchAsUserAgent(
@@ -713,7 +800,7 @@ function deliverMouseReport(input: Input, {
 				}),
 			),
 		);
-		if (notCanceled && scrollByWheel(input, scrolled, wheelDeltaY)) {
+		if (notCanceled && scrollByWheel(input, hit, wheelDeltaY)) {
 			// Scroll chaining. The parent scroller is the terminal's own
 			// scrollback, so the mouse is yielded to it. preventDefault on
 			// the wheel event opts out, as in a browser.
@@ -809,6 +896,22 @@ function deliverMouseReport(input: Input, {
 
 	processPendingPointerCapture(input);
 	const target = state.active ?? hit;
+	// A press in a frame runs its default actions in the frame: caret,
+	// selection and drag, at points in the frame's own coordinates, until
+	// the last button lets go.
+	if (!isMotion && !isRelease && before === 0) {
+		const level = found?.levels.at(-1);
+		if (level !== undefined && level.document !== input.document) {
+			input.pressView = getFrameView(input, level);
+			input.pressOffset = {left: level.left, top: level.top};
+		} else {
+			input.pressView = null;
+		}
+	}
+	const view = input.pressView ?? input;
+	const viewX = x - (view === input ? 0 : input.pressOffset.left);
+	const viewY = y - (view === input ? 0 : input.pressOffset.top);
+	const inView = view === input ? isInDocument : true;
 	if (isMotion) {
 		dispatchMouseLike(input, "pointer", "pointermove", target, {
 			...eventInit,
@@ -817,7 +920,7 @@ function deliverMouseReport(input: Input, {
 		if (!input.mouseEventsSuppressed) {
 			dispatchMouseLike(input, "mouse", "mousemove", target, eventInit);
 		}
-		dragTo(input, x, y, isInDocument);
+		dragTo(view, viewX, viewY, inView);
 		return;
 	}
 
@@ -833,7 +936,7 @@ function deliverMouseReport(input: Input, {
 		} else {
 			dispatchMouseLike(input, "pointer", "pointermove", target, eventInit);
 		}
-		dispatchPress(input, target, base, x, y, isInDocument, eventInit, detail);
+		dispatchPress(view, target, base, viewX, viewY, inView, eventInit, detail);
 		// The menu itself is the browser's, and a terminal has none to open.
 		if (button === 2) {
 			dispatchMouseLike(input, "pointer", "contextmenu", target, eventInit);
@@ -849,10 +952,35 @@ function deliverMouseReport(input: Input, {
 	} else {
 		dispatchMouseLike(input, "pointer", "pointermove", target, eventInit);
 	}
-	dispatchRelease(input, target, button, eventInit);
+	dispatchRelease(view, target, button, eventInit);
 	if (state.buttons === 0) {
 		input.mouseEventsSuppressed = false;
+		input.pressView = null;
 	}
+}
+
+// The input as it is in a frame: the frame's document, window, layout,
+// cascade and framebuffer in place of the outermost document's, and the
+// rest inherited. A drag in the frame keeps its state on it.
+function getFrameView(input: Input, level: FramePointLevel): Input {
+	let view = input.frameViews.get(level.document);
+	if (view === undefined) {
+		const attached = _(getAttachedDocument(level.document)!).extra;
+		view = Object.create(input) as Input;
+		Object.assign(view, {
+			document: level.document,
+			window: level.document.defaultView,
+			layout: attached.layout,
+			cascade: attached.cascade,
+			framebuffer: attached.framebuffer,
+			selectionDragAnchor: null,
+			textControlDragAnchor: null,
+			rangeDrag: null,
+			selectionUnit: null,
+		});
+		input.frameViews.set(level.document, view);
+	}
+	return view;
 }
 
 function deliverPaste(input: Input, text: string): void {
@@ -1021,6 +1149,27 @@ function getScreenPoint(
 // so the wheel goes to the terminal's scrollback. Fullscreen has no
 // document scroll to move, so a tick past every scroller does nothing.
 function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
+	// Out through the frames the target is in: a box in the frame that can
+	// scroll, then the frame's own document, then on from the iframe in the
+	// document it is in, as a scroll chains past what cannot take it.
+	for (
+		let owner = getFrameOwner(target.ownerDocument);
+		owner !== null;
+		owner = getFrameOwner(target.ownerDocument)
+	) {
+		const scroller = getWheelScroller(input, target, deltaY, "top");
+		if (scroller) {
+			scroller.scrollTop += pxFromCells(deltaY, true, target.ownerDocument);
+			return false;
+		}
+		const framebuffer = _(getAttachedDocument(target)!).extra.framebuffer;
+		const before = framebuffer.scrollTop;
+		scrollDocumentTo(target.ownerDocument, before + deltaY);
+		if (framebuffer.scrollTop !== before) {
+			return false;
+		}
+		target = owner;
+	}
 	const scroller = getWheelScroller(input, target, deltaY, "top");
 	if (scroller) {
 		scroller.scrollTop += pxFromCells(deltaY, true, input.document);
@@ -1078,7 +1227,12 @@ function scrollByKey(input: Input, target: Element, key: string): void {
 	if (direction === 0) {
 		return;
 	}
-	const document = input.document;
+	// The focused node's own document scrolls, a frame's for a node in one.
+	const document = target.ownerDocument;
+	const attached = getAttachedDocument(target);
+	const framebuffer = attached === undefined
+		? input.framebuffer
+		: _(attached).extra.framebuffer;
 	const edge = key === "Home" || key === "End";
 	const page = key === "PageUp" || key === "PageDown" || key === " ";
 	const scroller = getWheelScroller(input, target, direction, "top");
@@ -1098,8 +1252,8 @@ function scrollByKey(input: Input, target: Element, key: string): void {
 	if (document.fullscreenElement !== null) {
 		return;
 	}
-	const top = input.framebuffer.scrollTop;
-	const rows = page ? Math.max(1, input.framebuffer.rows - 1) : 1;
+	const top = framebuffer.scrollTop;
+	const rows = page ? Math.max(1, framebuffer.rows - 1) : 1;
 	scrollDocumentTo(
 		document,
 		edge
@@ -1632,16 +1786,74 @@ function getIndexPastPoint(
 	return -1;
 }
 
+type FocusEntry = ReturnType<typeof getSequentialFocusEntries>[number];
+
+// Tab order through the frames drawn in it: a frame's stops take the
+// iframe's place, as a browser navigates into a frame, and the iframe
+// stays a stop of its own when its frame holds none.
+function expandFrameStops(entries: FocusEntry[]): FocusEntry[] {
+	const expanded: FocusEntry[] = [];
+	for (const entry of entries) {
+		const inner = getDrawnFrameDocument(entry.element);
+		const attached = inner === null ? undefined : getAttachedDocument(inner);
+		if (inner === null || attached === undefined) {
+			expanded.push(entry);
+			continue;
+		}
+		flushLayout(inner as unknown as globalThis.Document);
+		const stops = expandFrameStops(
+			getSequentialFocusEntries(
+				inner as unknown as globalThis.Document,
+				_(attached).extra.layout,
+			),
+		);
+		if (stops.length === 0) {
+			expanded.push(entry);
+			continue;
+		}
+		for (const stop of stops) {
+			expanded.push({...stop, barrier: stop.barrier ?? entry.barrier});
+		}
+	}
+	return expanded;
+}
+
+// Whether `element` is in the frame `frame` shows, or a frame in it.
+function isInFrameOf(element: Element, frame: Element): boolean {
+	for (
+		let owner = getFrameOwner(element.ownerDocument);
+		owner !== null;
+		owner = getFrameOwner(owner.ownerDocument)
+	) {
+		if (owner === frame) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function moveFocus(input: Input, reverse: boolean): void {
 	// Which elements are focusable depends on what renders, so the layout
 	// is brought up to date first, whether or not a frame has painted it.
 	flushLayout(input.document);
 	// Tab cannot leave a modal dialog.
 	const scope = topmostModalDialog(input.document) ?? input.document;
-	const entries = getSequentialFocusEntries(scope, input.layout);
+	const entries = expandFrameStops(
+		getSequentialFocusEntries(scope, input.layout),
+	);
 
-	const current = getFocusedElement(input.document);
-	const currentIndex = entries.findIndex((entry) => entry.element === current);
+	// The focus inside the focused frames, or a frame focused with nothing
+	// in it, which stands just before its first stop.
+	const focused = getFocusedElement(input.document);
+	const current = getKeyTarget(input.document);
+	let currentIndex = entries.findIndex((entry) => entry.element === current);
+	if (currentIndex === -1 && getDrawnFrameDocument(focused) !== null) {
+		const first = entries.findIndex((entry) =>
+			isInFrameOf(entry.element, focused as Element));
+		if (first !== -1) {
+			currentIndex = reverse ? first : first - 1;
+		}
+	}
 	const currentBarrier = currentIndex === -1
 		? null
 		: entries[currentIndex].barrier;

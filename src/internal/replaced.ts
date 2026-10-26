@@ -24,6 +24,7 @@ import {
 	drawBox,
 	drawGrid,
 	drawText,
+	setCaret,
 	settleBorders,
 } from "./framebuffer.ts";
 import {
@@ -551,6 +552,18 @@ export function renderReplaced(
 				top,
 				style,
 			);
+			// The cursor goes where the grid's own caret is, as a frame's
+			// focused field puts it.
+			const caret = content.caret?.() ?? null;
+			if (caret !== null && caret.col < cols && caret.row < rows) {
+				setCaret(
+					ctx,
+					left + caret.col,
+					top + caret.row,
+					caret.shape,
+					caret.color,
+				);
+			}
 		} else if (cols * rows * 2 <= MAX_IMAGE_PIXELS) {
 			// Past the limit the pixels a box samples are more than an image
 			// may hold, and like a canvas past it, the box shows nothing.
