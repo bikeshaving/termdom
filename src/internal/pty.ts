@@ -45,11 +45,7 @@ export interface PtySpawnOptions {
 	onExit(code: number | null): void;
 }
 
-/**
- * Starts `command` in a pseudo-terminal. The pty option takes one of
- * these for runtimes without a pseudo-terminal of their own, such as
- * Node with node-pty.
- */
+/** Starts `command` in a pseudo-terminal. */
 export type PtySpawner = (
 	command: string,
 	options: PtySpawnOptions,
@@ -81,12 +77,54 @@ interface BunLike {
 	): BunSubprocess;
 }
 
-/** Bun's own pseudo-terminal, or null where there is none. */
-export function getBuiltinSpawner(): PtySpawner | null {
+interface NodePtyChild {
+	onData(listener: (data: string) => void): void;
+	onExit(listener: (event: {exitCode: number}) => void): void;
+	write(data: string): void;
+	resize(cols: number, rows: number): void;
+	kill(signal?: string): void;
+}
+
+interface NodePty {
+	spawn(
+		file: string,
+		args: string[],
+		options: {
+			name: string;
+			cols: number;
+			rows: number;
+			env: Record<string, string | undefined>;
+		},
+	): NodePtyChild;
+}
+
+let replacement: PtySpawner | null = null;
+
+/** Stands in for the runtime's pseudo-terminal, as the tests do. */
+export function replaceSpawner(spawner: PtySpawner | null): void {
+	replacement = spawner;
+}
+
+/**
+ * The pseudo-terminal this runtime can use: Bun's own, or node-pty on
+ * Node when it is installed. Null where there is none.
+ */
+export function findSpawner(): PtySpawner | null {
+	if (replacement !== null) {
+		return replacement;
+	}
 	const bun = (globalThis as {Bun?: BunLike}).Bun;
-	if (bun === undefined || typeof bun.spawn !== "function") {
+	if (bun !== undefined && typeof bun.spawn === "function") {
+		return createBunSpawner(bun);
+	}
+	if ("Deno" in globalThis) {
 		return null;
 	}
+	const nodePty = loadNodePty();
+	return nodePty === null ? null : createNodePtySpawner(nodePty);
+}
+
+function createBunSpawner(bun: BunLike): PtySpawner {
 	return (command, {cols, rows, onData, onExit}) => {
 		const child = bun.spawn(
 			["/bin/sh", "-c", command],
@@ -107,6 +145,52 @@ export function getBuiltinSpawner(): PtySpawner | null {
 		return {
 			write: (data) => terminal.write(data),
 			resize: (newCols, newRows) => terminal.resize(newCols, newRows),
+			kill: () => child.kill("SIGHUP"),
+		};
+	};
+}
+
+interface NodeModule {
+	createRequire(from: string): (id: string) => unknown;
+}
+
+function loadNodePty(): NodePty | null {
+	const {process} =
+		globalThis as {process?: {getBuiltinModule?: (id: string) => unknown}};
+	if (process === undefined || typeof process.getBuiltinModule !== "function") {
+		return null;
+	}
+	const nodeModule = process.getBuiltinModule("node:module") as NodeModule;
+	const from = typeof import.meta.url === "string"
+		? import.meta.url
+		: `${globalThis.process.cwd()}/`;
+	try {
+		return nodeModule.createRequire(from)("node-pty") as NodePty;
+	} catch (err) {
+		if ((err as {code?: unknown}).code === "MODULE_NOT_FOUND") {
+			return null;
+		}
+		throw err;
+	}
+}
+
+function createNodePtySpawner(nodePty: NodePty): PtySpawner {
+	return (command, {cols, rows, onData, onExit}) => {
+		const child = nodePty.spawn(
+			"/bin/sh",
+			["-c", command],
+			{
+				name: "xterm-256color",
+				cols,
+				rows,
+				env: {...process.env, TERM: "xterm-256color"},
+			},
+		);
+		child.onData(onData);
+		child.onExit(({exitCode}) => onExit(exitCode));
+		return {
+			write: (data) => child.write(data),
+			resize: (newCols, newRows) => child.resize(newCols, newRows),
 			kill: () => child.kill("SIGHUP"),
 		};
 	};

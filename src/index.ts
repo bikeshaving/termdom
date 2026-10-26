@@ -120,7 +120,7 @@ import {
 	resolveDocumentScrollBand,
 	resolveScrollShift,
 } from "./internal/painter.ts";
-import {getBuiltinSpawner, type PtySpawner} from "./internal/pty.ts";
+import {findSpawner, type PtySpawner} from "./internal/pty.ts";
 import {
 	answerRequest,
 	checkInlineHandler,
@@ -145,7 +145,6 @@ import {
 import {createWindow} from "./internal/window.ts";
 
 export type {CanvasCellGridContext} from "./internal/canvas.ts";
-export type {PtyProcess, PtySpawner, PtySpawnOptions} from "./internal/pty.ts";
 export type {CellSize} from "./internal/units.ts";
 export {
 	HistoryChangeEvent,
@@ -279,18 +278,16 @@ export interface TermDOMOptions {
 	 *
 	 * - `"none"` (the default): it runs nothing and fires `error`. Markup
 	 *   from anywhere else, such as email, must never start a program.
-	 * - `"auto"`: it runs `src` with `/bin/sh -c` in the runtime's own
-	 *   pseudo-terminal. Bun has one. Where there is none, it fires
-	 *   `error`.
-	 * - A function: it starts the command itself, for a runtime without
-	 *   a pseudo-terminal, such as Node with node-pty.
+	 * - `"auto"`: it runs `src` with `/bin/sh -c` in a pseudo-terminal:
+	 *   Bun's own, or on Node the node-pty package when it is installed.
+	 *   Where there is none, such as on Deno, it fires `error`.
 	 *
 	 * Any other value throws a TypeError.
 	 *
 	 * @experimental The element and its events may change in a minor
 	 * release.
 	 */
-	pty?: "none" | "auto" | PtySpawner;
+	pty?: "none" | "auto";
 
 	/**
 	 * The colors the terminal shows, in the bits `screen.colorDepth`
@@ -410,12 +407,9 @@ function toPtySpawner(option: TermDOMOptions["pty"]): PtySpawner | null {
 		return null;
 	}
 	if (option === "auto") {
-		return getBuiltinSpawner();
+		return findSpawner();
 	}
-	if (typeof option === "function") {
-		return option;
-	}
-	throw new TypeError('pty must be "none", "auto" or a function');
+	throw new TypeError('pty must be "none" or "auto"');
 }
 
 function toFailFast(option: unknown): boolean {

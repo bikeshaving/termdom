@@ -1,17 +1,18 @@
 /**
  * <embed type="application/x-pty">: a command run in a pseudo-terminal and
- * drawn in the embed's box. A fake spawner stands in for the
+ * drawn in the embed's box. A fake spawner stands in for the runtime's
  * pseudo-terminal, so these run where the runtime has none.
  */
 import {expect, test} from "@b9g/libuild/test";
 
+import {TermDOM} from "../src/index.ts";
 import {
+	encodeKey,
 	type PtyProcess,
 	type PtySpawner,
 	type PtySpawnOptions,
-	TermDOM,
-} from "../src/index.ts";
-import {encodeKey} from "../src/internal/pty.ts";
+	replaceSpawner,
+} from "../src/internal/pty.ts";
 import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.js";
 
 interface FakeChild {
@@ -53,8 +54,12 @@ async function mount(
 	document: Document;
 	heard: string[];
 }> {
+	replaceSpawner(typeof pty === "function" ? pty : null);
 	const terminal = new MockProcess({cols: 40, rows: 12});
-	const dom = new TermDOM({transport: terminal.transport, pty});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		pty: typeof pty === "function" ? "auto" : pty,
+	});
 	const heard: string[] = [];
 	for (const type of ["load", "error", "close"]) {
 		dom.document.addEventListener(type, () => heard.push(type), true);
@@ -339,10 +344,11 @@ test("a program that asks hears when its embed gains and loses focus", async () 
 
 test("an embed in the starting markup starts once the page is attached", async () => {
 	const {spawn, children} = fakeSpawner();
+	replaceSpawner(spawn);
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({
 		transport: terminal.transport,
-		pty: spawn,
+		pty: "auto",
 		html: `<embed type="application/x-pty" src="top" width="10" height="2">`,
 	});
 	expect(children.map((child) => child.command)).toEqual(["top"]);
@@ -371,8 +377,12 @@ test("an embed in a frame draws in the frame and takes the keys there", async ()
 	expect(children[0].killed).toBe(true);
 });
 
-test("the pty option takes none, auto or a function, and throws on anything else", () => {
+test("the pty option takes none or auto, and throws on anything else", () => {
 	expect(() => new TermDOM({pty: true as unknown as "auto"})).toThrow(
+		TypeError,
+	);
+	const {spawn} = fakeSpawner();
+	expect(() => new TermDOM({pty: spawn as unknown as "auto"})).toThrow(
 		TypeError,
 	);
 });
