@@ -46,6 +46,7 @@ import {
 	_,
 	declareSealedRoot,
 	type internals,
+	isPlatformObject,
 	seal,
 	type Slots,
 } from "./slots.ts";
@@ -84,7 +85,7 @@ function readDrawable(source: unknown): Bitmap | null {
 }
 
 function readDrawableKept(source: unknown): Bitmap | null {
-	if (source instanceof ImageData) {
+	if (isPlatformObject(source, ImageData)) {
 		return {width: source.width, height: source.height, data: source.data};
 	}
 	const read = typeof source === "object" && source !== null
@@ -790,7 +791,7 @@ export class Path2D {
 		seal(this, new.target, Path2D);
 		const slots = _(this);
 		slots.builder = new PathBuilder();
-		if (path instanceof Path2D) {
+		if (isPlatformObject(path, Path2D)) {
 			slots.builder.append(_(path).builder.subpaths, [1, 0, 0, 1, 0, 0]);
 		} else if (typeof path === "string") {
 			parseSVGPath(path, this);
@@ -1587,7 +1588,7 @@ function getPaintColor(
 	x: number,
 	y: number,
 ): RGBA | null {
-	return paint instanceof CanvasGradient
+	return isPlatformObject(paint, CanvasGradient)
 		? getGradientColor(_(paint), x, y)
 		: getPatternColor(_(paint), x, y);
 }
@@ -2379,7 +2380,7 @@ export class CanvasRenderingContext2D {
 		let x: number;
 		let y: number;
 		let rule: FillRule;
-		if (pathOrX instanceof Path2D) {
+		if (isPlatformObject(pathOrX, Path2D)) {
 			path = pathOrX;
 			x = xOrY;
 			y = yOrRule as number;
@@ -2419,7 +2420,7 @@ export class CanvasRenderingContext2D {
 		xOrY: number,
 		maybeY?: number,
 	): boolean {
-		const path = pathOrX instanceof Path2D ? pathOrX : undefined;
+		const path = isPlatformObject(pathOrX, Path2D) ? pathOrX : undefined;
 		const x = path ? xOrY : (pathOrX as number);
 		const y = path ? maybeY! : xOrY;
 		if (!isFiniteAll(x, y)) {
@@ -2700,7 +2701,7 @@ export class CanvasRenderingContext2D {
 	}
 
 	createImageData(widthOrData: number | ImageData, height?: number): ImageData {
-		if (widthOrData instanceof ImageData) {
+		if (isPlatformObject(widthOrData, ImageData)) {
 			return new ImageData(widthOrData.width, widthOrData.height);
 		}
 		return new ImageData(Math.abs(widthOrData), Math.abs(height ?? 0));
@@ -2744,7 +2745,7 @@ export class CanvasRenderingContext2D {
 		dirtyWidth = image.width,
 		dirtyHeight = image.height,
 	): void {
-		if (!(image instanceof ImageData)) {
+		if (!(isPlatformObject(image, ImageData))) {
 			throw new TypeError("putImageData takes an ImageData");
 		}
 		if (!isFiniteAll(dx, dy, dirtyX, dirtyY, dirtyWidth, dirtyHeight)) {
@@ -2850,7 +2851,7 @@ function readPathArgs(
 	pathOrRule?: Path2D | FillRule,
 	maybeRule?: FillRule,
 ): {path: Path2D | undefined; rule: FillRule} {
-	if (pathOrRule instanceof Path2D) {
+	if (isPlatformObject(pathOrRule, Path2D)) {
 		return {
 			path: pathOrRule,
 			rule: maybeRule === "evenodd" ? "evenodd" : "nonzero",
@@ -3098,7 +3099,10 @@ function drawContextText(
 declareSealedRoot(CanvasRenderingContext2D);
 
 function readPaint(value: Paint, previous: Paint): Paint {
-	if (value instanceof CanvasGradient || value instanceof CanvasPattern) {
+	if (
+		isPlatformObject(value, CanvasGradient) ||
+		isPlatformObject(value, CanvasPattern)
+	) {
 		return value;
 	}
 	const color = parseCanvasColor(String(value));

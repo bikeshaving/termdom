@@ -93,6 +93,7 @@ import {
 	isReplacedBox,
 	measureReplaced,
 } from "./replaced.ts";
+import {isPlatformObject} from "./slots.ts";
 import {
 	getParagraphDirection,
 	getStringWidth,
@@ -6154,7 +6155,7 @@ function isPointInRects(
 ): boolean {
 	const allRects = rects.flat();
 	return allRects.some((rect) => {
-		if (Array.isArray(rect) || rect instanceof DOMRectList) {
+		if (Array.isArray(rect) || isPlatformObject(rect, DOMRectList)) {
 			return isPointInRects(x, y, ...rect);
 		}
 		return (

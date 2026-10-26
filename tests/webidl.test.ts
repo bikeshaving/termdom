@@ -94,6 +94,34 @@ test("an argument of the wrong interface names the operation and the parameter",
 		.toBe("p");
 });
 
+// A copy of `prototype`'s chain down to Object.prototype, with every
+// member, as another realm's interfaces would be.
+function copyChain(prototype: object): object {
+	const parent = Object.getPrototypeOf(prototype) as object | null;
+	return Object.create(
+		parent === null || parent === Object.prototype
+			? Object.prototype
+			: copyChain(parent),
+		Object.getOwnPropertyDescriptors(prototype),
+	) as object;
+}
+
+test("a node is a node whatever its prototype, as its slots say", () => {
+	// What a frame's realm will do to every object it makes: the engine
+	// tells its objects by their slots, never by their prototypes.
+	const {window, document} = setup();
+	const div = document.createElement("div");
+	div.id = "swapped";
+	div.textContent = "kept";
+	Object.setPrototypeOf(div, copyChain(window.HTMLDivElement.prototype));
+	expect(div instanceof window.Node).toBe(false);
+	window.Node.prototype.appendChild.call(document.body, div);
+	expect(document.getElementById("swapped")).toBe(div);
+	expect(document.body.contains(div)).toBe(true);
+	expect(window.getComputedStyle(div).display).toBe("block");
+	expect(document.body.textContent).toBe("kept");
+});
+
 test("where a string will do, anything that is not a node becomes one", () => {
 	const {document} = setup();
 	const div = document.createElement("div");

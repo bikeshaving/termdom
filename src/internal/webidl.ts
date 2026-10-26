@@ -16,6 +16,7 @@ import {
 	declareInterfaceObject,
 	getParentClass,
 	getSlotClass,
+	implementsInterface,
 	isSealedClass,
 	onSeal,
 } from "./slots.ts";
@@ -119,26 +120,6 @@ function parseCheck(
 		nullable,
 		stringifies,
 	};
-}
-
-// The classes each class takes its slots from, itself included.
-const lineages = new Map<Constructor, Set<Constructor>>();
-
-/** Whether objects `type` makes implement `owner`'s interface. */
-function implementsInterface(type: Constructor, owner: Constructor): boolean {
-	let lineage = lineages.get(type);
-	if (lineage === undefined) {
-		lineage = new Set();
-		for (
-			let current: unknown = type;
-			typeof current === "function" && current !== Function.prototype;
-			current = getParentClass(current as Constructor)
-		) {
-			lineage.add(current as Constructor);
-		}
-		lineages.set(type, lineage);
-	}
-	return lineage.has(owner);
 }
 
 // Whether `value` is an object of one of the check's interfaces. One
