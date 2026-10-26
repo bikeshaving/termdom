@@ -44,6 +44,7 @@ const RUNNABLE = [
 	"images",
 	"lists",
 	"markdown",
+	"panels",
 	"password",
 	"prism",
 	"progress-bar",
