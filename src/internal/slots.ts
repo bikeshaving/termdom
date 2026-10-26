@@ -149,6 +149,11 @@ let olderRecord: SlotRecord | null = null;
 let lastSealedConstructor: Constructor | null = null;
 let lastSealedType: Constructor | null = null;
 let lastSealedPlan: FamilyPlan | null = null;
+// And the one before it, since kinds often alternate, as a span and its
+// text do.
+let priorSealedConstructor: Constructor | null = null;
+let priorSealedType: Constructor | null = null;
+let priorSealedPlan: FamilyPlan | null = null;
 
 /**
  * Gives a newly constructed object its slots. The root class of each
@@ -165,6 +170,15 @@ export function seal(
 	if (constructor === lastSealedConstructor) {
 		type = lastSealedType!;
 		plan = lastSealedPlan;
+	} else if (constructor === priorSealedConstructor) {
+		type = priorSealedType!;
+		plan = priorSealedPlan;
+		priorSealedConstructor = lastSealedConstructor;
+		priorSealedType = lastSealedType;
+		priorSealedPlan = lastSealedPlan;
+		lastSealedConstructor = constructor;
+		lastSealedType = type;
+		lastSealedPlan = plan;
 	} else {
 		type = interfaceObjects.get(constructor) ?? constructor;
 		let found = familyPlans.get(type);
@@ -178,6 +192,9 @@ export function seal(
 
 		plan = found;
 
+		priorSealedConstructor = lastSealedConstructor;
+		priorSealedType = lastSealedType;
+		priorSealedPlan = lastSealedPlan;
 		lastSealedConstructor = constructor;
 		lastSealedType = type;
 		lastSealedPlan = plan;
@@ -226,6 +243,7 @@ export function declareInterfaceObject(
 ): void {
 	interfaceObjects.set(object, type);
 	lastSealedConstructor = null;
+	priorSealedConstructor = null;
 }
 
 /** Whether `value` is a function a page constructs a class through. */
@@ -274,6 +292,8 @@ const lineages = new WeakMap<Constructor, Set<Constructor>>();
 // a row are often made by one class, as a run of spans is.
 let lastLineageType: Constructor | null = null;
 let lastLineage: Set<Constructor> | null = null;
+let priorLineageType: Constructor | null = null;
+let priorLineage: Set<Constructor> | null = null;
 
 /**
  * Empties the caches here that remember the last classes they saw. A
@@ -284,13 +304,26 @@ export function forgetRecentClasses(): void {
 	lastSealedConstructor = null;
 	lastSealedType = null;
 	lastSealedPlan = null;
+	priorSealedConstructor = null;
+	priorSealedType = null;
+	priorSealedPlan = null;
 	lastLineageType = null;
 	lastLineage = null;
+	priorLineageType = null;
+	priorLineage = null;
 }
 
 function getLineage(type: Constructor): Set<Constructor> {
 	if (type === lastLineageType) {
 		return lastLineage!;
+	}
+	if (type === priorLineageType) {
+		const lineage = priorLineage!;
+		priorLineageType = lastLineageType;
+		priorLineage = lastLineage;
+		lastLineageType = type;
+		lastLineage = lineage;
+		return lineage;
 	}
 	let lineage = lineages.get(type);
 	if (lineage === undefined) {
@@ -304,6 +337,8 @@ function getLineage(type: Constructor): Set<Constructor> {
 		}
 		lineages.set(type, lineage);
 	}
+	priorLineageType = lastLineageType;
+	priorLineage = lastLineage;
 	lastLineageType = type;
 	lastLineage = lineage;
 	return lineage;
@@ -430,6 +465,7 @@ export function prepareClasses(values: Iterable<unknown>): void {
 				earlyPlanTypes.push(type);
 			}
 			lastSealedConstructor = null;
+			priorSealedConstructor = null;
 			if (plan === null) {
 				hiddenPrototype(type, root);
 			}
@@ -785,6 +821,7 @@ export function moveLateMembers(): void {
 		if (familyPlans.get(type) != null) {
 			familyPlans.delete(type);
 			lastSealedConstructor = null;
+			priorSealedConstructor = null;
 		}
 	}
 }
