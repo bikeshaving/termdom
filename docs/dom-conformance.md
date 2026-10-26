@@ -17,14 +17,14 @@ uncaught errors to the window as error and unhandledrejection events.
 It supplies no behavior of its own, and no frame documents, so tests
 that need them fail.
 
-- Test files in the suites: 1173
+- Test files in the suites: 1249
 - Reference tests (no testharness, scored by pixels): 59
-- Excluded, each with its reason below: 239
+- Excluded, each with its reason below: 238
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 773
-- Files whose harness did not complete: 102
-- Subtests passed: 96264
-- Subtests failed: 1436
+- Files whose harness completed: 834
+- Files whose harness did not complete: 118
+- Subtests passed: 95796
+- Subtests failed: 1462
 
 ## Exclusions
 
@@ -82,7 +82,6 @@ that need them fail.
 | custom-elements/upgrading/Node-cloneNode-customized-builtins.html | customized built-ins: cloning an element with an is value |
 | custom-elements/upgrading/upgrading-parser-created-element.html | requires-script-execution: the element under test is one the parser created around a script it ran |
 | dom/events/Event-dispatch-throwing-multiple-globals.html | requires-browsing-context: which global an error event is fired at, across frames |
-| dom/events/Event-timestamp-cross-realm-getter.html | requires-browsing-context: a timeStamp getter taken from a frame's realm |
 | dom/events/EventListener-handleEvent-cross-realm.html | requires-browsing-context: listener objects built in a frame's realm |
 | dom/events/EventListener-incumbent-global-1.sub.html | requires-browsing-context: which global a listener is called with, across frames |
 | dom/events/EventListener-incumbent-global-2.sub.html | requires-browsing-context: which global a listener is called with, across frames |
@@ -162,13 +161,14 @@ that need them fail.
 | dom/nodes/insertion-removing-steps/Node-appendChild-three-scripts-from-fragment.html | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/insertion-removing-steps/Node-appendChild-three-scripts.html | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/insertion-removing-steps/blur-event.window.js | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
+| dom/nodes/insertion-removing-steps/change-event.window.js | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
+| dom/nodes/insertion-removing-steps/frame-post-connection-steps.html | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/insertion-removing-steps/insertion-removing-steps-iframe.window.js | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/insertion-removing-steps/insertion-removing-steps-script.window.js | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/insertion-removing-steps/later-script-removed-by-earlier-script.html | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/insertion-removing-steps/script-does-not-run-on-child-removal.window.js | requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies |
 | dom/nodes/moveBefore/css-transition-cross-document.html | requires-browsing-context: the transitioning node moves into a frame's document |
 | dom/nodes/moveBefore/iframe-document-preserve.window.js | requires-browsing-context: the move happens inside a frame's document |
-| dom/nodes/node-realm-adoption-after-frame-removal.html | requires-browsing-context: a node's realm after its frame is removed |
 | dom/nodes/processing-instruction-attributes.html | not-a-standard: the XML parses succeed, but 130 of the 140 subtests test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not |
 | dom/nodes/query-target-in-load-event.html | requires-browsing-context: the query runs in a frame's load event |
 | dom/nodes/remove-and-adopt-thcrash.html | requires-browsing-context: adoption into a frame's document |
@@ -200,7 +200,6 @@ that need them fail.
 | dom/ranges/tentative/OpaqueRange-validation.html | not-a-standard: OpaqueRange and the createValueRange that builds one are a proposal, filed under tentative in the suite |
 | dom/traversal/TreeWalker-acceptNode-filter-cross-realm-null-browsing-context.html | requires-browsing-context: a filter from a detached frame's realm |
 | dom/traversal/TreeWalker-acceptNode-filter-cross-realm.html | requires-browsing-context: filters that are objects from another realm |
-| dom/traversal/TreeWalker-realm.html | requires-browsing-context: a TreeWalker built in another realm |
 | selection/Document-open.html | requires-browsing-context: the selection under test is an iframe's, across a document.open() |
 | selection/deleteFromDocument.html | requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another |
 | selection/textcontrols/click-input-after-iframe-focus.html | requires-browsing-context: the focus moves in from an iframe |
@@ -324,7 +323,8 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/ChildNode-after.html | OK | 45 | 0 |
 | dom/nodes/ChildNode-before.html | OK | 45 | 0 |
 | dom/nodes/ChildNode-replaceWith.html | OK | 33 | 0 |
-| dom/nodes/Comment-constructor.html | OK | 15 | 1 |
+| dom/nodes/Comment-constructor.html | OK | 16 | 0 |
+| dom/nodes/DOMImplementation-createDocument-no-browsing-context.html | OK | 4 | 1 |
 | dom/nodes/DOMImplementation-createDocument.html | OK | 434 | 0 |
 | dom/nodes/DOMImplementation-createDocumentType.html | OK | 82 | 0 |
 | dom/nodes/DOMImplementation-createHTMLDocument-with-saved-implementation.html | OK | 1 | 0 |
@@ -332,7 +332,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/DOMImplementation-hasFeature.html | OK | 137 | 0 |
 | dom/nodes/Document-URL.html | EXCLUDED (requires-browsing-context: a frame's document URL) | 0 | 0 |
 | dom/nodes/Document-adoptNode-DocumentFragment-with-host.window.js | OK | 7 | 0 |
-| dom/nodes/Document-adoptNode.html | OK | 4 | 0 |
+| dom/nodes/Document-adoptNode.html | OK | 7 | 0 |
 | dom/nodes/Document-characterSet-normalization-1.html | EXCLUDED (requires-fetch: encoding labels normalized from fetched documents) | 0 | 0 |
 | dom/nodes/Document-characterSet-normalization-2.html | EXCLUDED (requires-fetch: encoding labels normalized from fetched documents) | 0 | 0 |
 | dom/nodes/Document-constructor.html | OK | 5 | 0 |
@@ -391,6 +391,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/Element-childElementCount.html | OK | 1 | 0 |
 | dom/nodes/Element-children.html | OK | 2 | 0 |
 | dom/nodes/Element-classlist.html | OK | 1420 | 0 |
+| dom/nodes/Element-closest-null-selectors.html | OK | 2 | 0 |
 | dom/nodes/Element-closest.html | OK | 29 | 0 |
 | dom/nodes/Element-firstElementChild-namespace.html | OK | 1 | 0 |
 | dom/nodes/Element-firstElementChild.html | OK | 1 | 0 |
@@ -403,26 +404,34 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/Element-insertAdjacentElement.html | OK | 6 | 0 |
 | dom/nodes/Element-insertAdjacentText.html | OK | 6 | 0 |
 | dom/nodes/Element-lastElementChild.html | OK | 1 | 0 |
+| dom/nodes/Element-matches-active-pseudo-class.html | OK | 4 | 0 |
+| dom/nodes/Element-matches-complex-nth-last-of-type.html | OK | 1 | 0 |
+| dom/nodes/Element-matches-disabled-pseudo-class.html | OK | 11 | 0 |
 | dom/nodes/Element-matches-namespaced-elements.html | OK | 6 | 0 |
 | dom/nodes/Element-matches.html | OK | 0 | 1 |
 | dom/nodes/Element-nextElementSibling.html | OK | 1 | 0 |
 | dom/nodes/Element-previousElementSibling.html | OK | 1 | 0 |
+| dom/nodes/Element-querySelectorAll-context-element.html | OK | 3 | 0 |
 | dom/nodes/Element-remove.html | OK | 4 | 0 |
 | dom/nodes/Element-removeAttribute.html | OK | 2 | 0 |
 | dom/nodes/Element-removeAttributeNS.html | OK | 1 | 0 |
 | dom/nodes/Element-setAttribute-crbug-1138487.html | OK | 1 | 0 |
 | dom/nodes/Element-setAttribute.html | OK | 2 | 0 |
+| dom/nodes/Element-setAttributeNodeNS.html | OK | 3 | 0 |
 | dom/nodes/Element-siblingElement-null.html | OK | 1 | 0 |
+| dom/nodes/Element-tagName-adopt.html | OK | 1 | 0 |
 | dom/nodes/Element-tagName.html | OK | 6 | 0 |
 | dom/nodes/Element-webkitMatchesSelector.html | OK | 0 | 1 |
 | dom/nodes/MutationObserver-attributes.html | OK | 42 | 0 |
 | dom/nodes/MutationObserver-callback-arguments.html | OK | 1 | 0 |
+| dom/nodes/MutationObserver-callback-tricky.html | OK | 2 | 0 |
 | dom/nodes/MutationObserver-characterData.html | OK | 23 | 0 |
 | dom/nodes/MutationObserver-childList.html | OK | 40 | 0 |
 | dom/nodes/MutationObserver-cross-realm-callback-report-exception.html | EXCLUDED (requires-browsing-context: a callback taken from a frame's realm, and which global its exception is reported to) | 0 | 0 |
 | dom/nodes/MutationObserver-disconnect.html | OK | 2 | 0 |
 | dom/nodes/MutationObserver-document.html | EXCLUDED (requires-script-execution: the observer is installed by a script the parser runs partway through the document, and the records under test are the parser's own insertions) | 0 | 0 |
 | dom/nodes/MutationObserver-inner-outer.html | OK | 3 | 0 |
+| dom/nodes/MutationObserver-overlapping-registrations.html | OK | 3 | 0 |
 | dom/nodes/MutationObserver-sanity.html | OK | 16 | 0 |
 | dom/nodes/MutationObserver-takeRecords.html | OK | 3 | 0 |
 | dom/nodes/MutationObserver-textContent.html | OK | 4 | 0 |
@@ -435,7 +444,8 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/Node-cloneNode-XMLDocument.html | OK | 1 | 0 |
 | dom/nodes/Node-cloneNode-document-allow-declarative-shadow-roots.window.js | OK | 0 | 1 |
 | dom/nodes/Node-cloneNode-document-with-doctype.html | OK | 3 | 0 |
-| dom/nodes/Node-cloneNode-external-stylesheet-no-bc.sub.html | OK | 1 | 0 |
+| dom/nodes/Node-cloneNode-external-stylesheet-no-bc.sub.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/nodes/Node-cloneNode-parser-created-names.html | OK | 2 | 0 |
 | dom/nodes/Node-cloneNode-svg.html | OK | 4 | 0 |
 | dom/nodes/Node-cloneNode.html | OK | 135 | 0 |
 | dom/nodes/Node-compareDocumentPosition.html | OK | 1444 | 0 |
@@ -450,11 +460,12 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/Node-mutation-adoptNode.html | OK | 2 | 0 |
 | dom/nodes/Node-nodeName.html | OK | 6 | 0 |
 | dom/nodes/Node-nodeValue.html | OK | 7 | 0 |
+| dom/nodes/Node-normalize-2.html | OK | 2 | 0 |
 | dom/nodes/Node-normalize.html | OK | 4 | 0 |
 | dom/nodes/Node-parentElement.html | OK | 12 | 0 |
 | dom/nodes/Node-parentNode-iframe.html | REFTEST | 0 | 0 |
 | dom/nodes/Node-parentNode.html | EXCLUDED (requires-browsing-context: a frame's document element parentage) | 0 | 0 |
-| dom/nodes/Node-properties.html | OK | 726 | 0 |
+| dom/nodes/Node-properties.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/nodes/Node-removeChild.html | OK | 19 | 9 |
 | dom/nodes/Node-replaceChild.html | OK | 29 | 0 |
 | dom/nodes/Node-textContent.html | OK | 81 | 0 |
@@ -462,34 +473,73 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/NodeList-live-mutations.window.js | OK | 4 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-3.html | ERROR | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-3.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | ERROR | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | OK | 1 | 0 |
+| dom/nodes/NonDocumentTypeChildNode-sibling-element.html | OK | 6 | 0 |
 | dom/nodes/ParentNode-append.html | OK | 25 | 0 |
 | dom/nodes/ParentNode-children.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-prepend.html | OK | 22 | 0 |
+| dom/nodes/ParentNode-properties.html | OK | 12 | 0 |
+| dom/nodes/ParentNode-querySelector-All-comma-selector.html | OK | 2 | 0 |
 | dom/nodes/ParentNode-querySelector-All-content.html | REFTEST | 0 | 0 |
+| dom/nodes/ParentNode-querySelector-All-multiple-not.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelector-All-scope.html | OK | 8 | 0 |
 | dom/nodes/ParentNode-querySelector-All.html | OK | 0 | 1 |
+| dom/nodes/ParentNode-querySelector-argument-stringification.html | OK | 3 | 0 |
+| dom/nodes/ParentNode-querySelector-attribute-change.html | OK | 7 | 0 |
+| dom/nodes/ParentNode-querySelector-basic-has.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-querySelector-case-insensitive.html | OK | 2 | 0 |
+| dom/nodes/ParentNode-querySelector-class-change.html | OK | 6 | 0 |
+| dom/nodes/ParentNode-querySelector-dupe-id.html | OK | 2 | 0 |
+| dom/nodes/ParentNode-querySelector-empty-attribute-value.html | OK | 2 | 0 |
 | dom/nodes/ParentNode-querySelector-escapes.html | OK | 68 | 0 |
+| dom/nodes/ParentNode-querySelector-host-pseudo-class.html | OK | 0 | 1 |
+| dom/nodes/ParentNode-querySelector-hyphen-prefix.html | OK | 3 | 1 |
+| dom/nodes/ParentNode-querySelector-innerHTML.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelector-invalid-comment-like.html | OK | 3 | 0 |
+| dom/nodes/ParentNode-querySelector-is-nested-pseudo-class.html | OK | 2 | 0 |
+| dom/nodes/ParentNode-querySelector-is-not.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelector-last-child-combinator.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelector-matches.html | OK | 4 | 0 |
+| dom/nodes/ParentNode-querySelector-namespace-tagname-attribute.html | OK | 8 | 0 |
+| dom/nodes/ParentNode-querySelector-nested-nth-child.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelector-nested.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelector-nth-of-type-complex.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelector-orphan-scope.html | OK | 2 | 0 |
+| dom/nodes/ParentNode-querySelector-parent-context.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelector-scope-in-not.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-querySelector-scope.html | OK | 4 | 0 |
+| dom/nodes/ParentNode-querySelector-shadowroot-nth-child.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelector-svg-not-root.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelector-tag-case.html | OK | 6 | 0 |
+| dom/nodes/ParentNode-querySelector-xml-capitalization.window.js | OK | 3 | 0 |
+| dom/nodes/ParentNode-querySelectorAll-case-insensitive-attribute-flag.html | OK | 2 | 0 |
+| dom/nodes/ParentNode-querySelectorAll-namespace.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelectorAll-nested-not-has.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelectorAll-not-descendant.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-querySelectorAll-removed-elements.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelectorAll-scope-change.html | OK | 1 | 0 |
+| dom/nodes/ParentNode-querySelectorAll-scope-colon-id-class.html | OK | 2 | 0 |
+| dom/nodes/ParentNode-querySelectorAll-svg-append.html | OK | 2 | 0 |
+| dom/nodes/ParentNode-querySelectorAll-svg-class.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-querySelectors-exclusive.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-querySelectors-namespaces.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-querySelectors-space-and-dash-attribute-value.html | OK | 2 | 0 |
 | dom/nodes/ParentNode-replaceChildren.html | OK | 31 | 0 |
-| dom/nodes/Text-constructor.html | OK | 15 | 1 |
+| dom/nodes/Text-constructor.html | OK | 16 | 0 |
 | dom/nodes/Text-splitText.html | OK | 6 | 0 |
 | dom/nodes/Text-wholeText.html | OK | 1 | 0 |
 | dom/nodes/adoption.window.js | OK | 6 | 0 |
 | dom/nodes/append-on-Document.html | OK | 5 | 0 |
-| dom/nodes/attach-shadow-realm-after-adoption.html | OK | 4 | 1 |
+| dom/nodes/attach-shadow-realm-after-adoption.html | OK | 5 | 0 |
 | dom/nodes/attributes-namednodemap-cross-document.window.js | OK | 2 | 0 |
 | dom/nodes/attributes-namednodemap.html | OK | 8 | 0 |
 | dom/nodes/attributes.html | OK | 67 | 0 |
 | dom/nodes/case.html | OK | 285 | 0 |
-| dom/nodes/create-element-realm-after-adoption.html | OK | 2 | 3 |
+| dom/nodes/create-element-realm-after-adoption.html | OK | 5 | 0 |
+| dom/nodes/getElementById-namespaced-id.html | OK | 0 | 4 |
 | dom/nodes/getElementsByClassName-32.html | OK | 4 | 0 |
 | dom/nodes/getElementsByClassName-empty-set.html | OK | 3 | 0 |
 | dom/nodes/getElementsByClassName-whitespace-class-names.html | OK | 26 | 0 |
@@ -510,12 +560,15 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/insertion-removing-steps/Node-appendChild-three-scripts-from-fragment.html | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
 | dom/nodes/insertion-removing-steps/Node-appendChild-three-scripts.html | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
 | dom/nodes/insertion-removing-steps/blur-event.window.js | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
+| dom/nodes/insertion-removing-steps/change-event.window.js | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
+| dom/nodes/insertion-removing-steps/frame-post-connection-steps.html | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
 | dom/nodes/insertion-removing-steps/insertion-removing-steps-iframe.window.js | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
 | dom/nodes/insertion-removing-steps/insertion-removing-steps-script.window.js | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
 | dom/nodes/insertion-removing-steps/later-script-removed-by-earlier-script.html | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
 | dom/nodes/insertion-removing-steps/script-does-not-run-on-child-removal.window.js | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
-| dom/nodes/moveBefore/Node-moveBefore.html | OK | 31 | 1 |
-| dom/nodes/moveBefore/child-style-preserve.html | OK | 1 | 0 |
+| dom/nodes/live-collections-batched-mutations.window.js | OK | 2 | 0 |
+| dom/nodes/moveBefore/Node-moveBefore.html | OK | 32 | 0 |
+| dom/nodes/moveBefore/child-style-preserve.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/nodes/moveBefore/continue-css-animation-left.html | TIMEOUT | 0 | 1 |
 | dom/nodes/moveBefore/continue-css-animation-transform.html | TIMEOUT | 0 | 1 |
 | dom/nodes/moveBefore/continue-css-transition-left-pseudo.html | OK | 1 | 0 |
@@ -532,7 +585,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/moveBefore/fieldset-child-date-input-blur-event.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/fire-focusin-focusout.html | OK | 5 | 0 |
 | dom/nodes/moveBefore/focus-preserve-render.html | REFTEST | 0 | 0 |
-| dom/nodes/moveBefore/focus-preserve.html | OK | 4 | 0 |
+| dom/nodes/moveBefore/focus-preserve.html | OK | 5 | 0 |
 | dom/nodes/moveBefore/focus-within.html | OK | 5 | 0 |
 | dom/nodes/moveBefore/fullscreen-preserve.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/hover-style-update.html | OK | 0 | 2 |
@@ -542,14 +595,14 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/moveBefore/modal-dialog.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-as-flex-item.html | REFTEST | 0 | 0 |
 | dom/nodes/moveBefore/moveBefore-dir.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-from-light-to-shadow.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/moveBefore-from-light-to-shadow.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/nodes/moveBefore/moveBefore-id-map.html | OK | 3 | 1 |
 | dom/nodes/moveBefore/moveBefore-lang.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-name-map.html | OK | 2 | 1 |
 | dom/nodes/moveBefore/moveBefore-nodeiterator.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-option-recalc-style.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-selector-matching.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-shadow-inside.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/moveBefore-shadow-inside.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/nodes/moveBefore/moveBefore-shadow-root.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-size-query.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/mutation-observer.html | OK | 2 | 0 |
@@ -566,13 +619,17 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/moveBefore/selection-preserve.html | OK | 0 | 6 |
 | dom/nodes/moveBefore/slotchange-events.html | OK | 4 | 0 |
 | dom/nodes/moveBefore/style-applies.html | OK | 1 | 0 |
+| dom/nodes/moveBefore/stylesheet-cascade-order.html | TIMEOUT | 0 | 1 |
+| dom/nodes/moveBefore/stylesheet-no-refetch.html | TIMEOUT | 0 | 1 |
 | dom/nodes/moveBefore/throws-exception.html | OK | 1 | 0 |
 | dom/nodes/name-validation.html | OK | 5 | 0 |
-| dom/nodes/node-creation-realm.html | OK | 1 | 12 |
-| dom/nodes/node-realm-adoption-after-frame-removal.html | EXCLUDED (requires-browsing-context: a node's realm after its frame is removed) | 0 | 0 |
-| dom/nodes/node-realm-mixed-across-adoption.html | OK | 1 | 3 |
-| dom/nodes/node-realm-preserved-across-adoption.html | OK | 1 | 4 |
-| dom/nodes/node-realm-preserved-across-frameless-adoption.html | OK | 1 | 3 |
+| dom/nodes/namespaced-attribute-mutations.html | OK | 14 | 10 |
+| dom/nodes/node-creation-realm.html | OK | 13 | 0 |
+| dom/nodes/node-realm-adoption-after-frame-removal.html | OK | 3 | 0 |
+| dom/nodes/node-realm-mixed-across-adoption.html | OK | 4 | 0 |
+| dom/nodes/node-realm-preserved-across-adoption.html | OK | 5 | 0 |
+| dom/nodes/node-realm-preserved-across-frameless-adoption.html | OK | 4 | 0 |
+| dom/nodes/post-connection-steps-shadow-tree.html | OK | 0 | 1 |
 | dom/nodes/prepend-on-Document.html | OK | 5 | 0 |
 | dom/nodes/processing-instruction-attributes.html | EXCLUDED (not-a-standard: the XML parses succeed, but 130 of the 140 subtests test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not) | 0 | 0 |
 | dom/nodes/query-target-in-load-event.html | EXCLUDED (requires-browsing-context: the query runs in a frame's load event) | 0 | 0 |
@@ -582,7 +639,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/querySelector-mixed-case.html | OK | 1 | 0 |
 | dom/nodes/remove-and-adopt-thcrash.html | EXCLUDED (requires-browsing-context: adoption into a frame's document) | 0 | 0 |
 | dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html | EXCLUDED (requires-browsing-context: the node is adopted into a frame's document) | 0 | 0 |
-| dom/nodes/remove-next-sibling-during-replace-with.html | OK | 0 | 1 |
+| dom/nodes/remove-next-sibling-during-replace-with.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/nodes/remove-unscopable.html | OK | 6 | 0 |
 | dom/nodes/rootNode.html | OK | 5 | 0 |
 | dom/nodes/svg-template-querySelector.html | OK | 3 | 0 |
@@ -598,16 +655,17 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/traversal/TreeWalker-nextNode-detached-currentNode.window.js | OK | 3 | 0 |
 | dom/traversal/TreeWalker-previousNodeLastChildReject.html | OK | 1 | 0 |
 | dom/traversal/TreeWalker-previousSiblingLastChildSkip.html | OK | 1 | 0 |
-| dom/traversal/TreeWalker-realm.html | EXCLUDED (requires-browsing-context: a TreeWalker built in another realm) | 0 | 0 |
+| dom/traversal/TreeWalker-realm.html | OK | 2 | 0 |
 | dom/traversal/TreeWalker-traversal-reject.html | OK | 6 | 0 |
 | dom/traversal/TreeWalker-traversal-skip-most.html | OK | 2 | 0 |
 | dom/traversal/TreeWalker-traversal-skip.html | OK | 6 | 0 |
 | dom/traversal/TreeWalker-walking-outside-a-tree.html | OK | 1 | 0 |
 | dom/traversal/TreeWalker.html | OK | 761 | 0 |
-| dom/collections/HTMLCollection-as-prototype.html | OK | 0 | 2 |
+| dom/collections/HTMLCollection-as-prototype.html | OK | 1 | 1 |
 | dom/collections/HTMLCollection-delete.html | OK | 0 | 4 |
 | dom/collections/HTMLCollection-empty-name.html | OK | 7 | 0 |
 | dom/collections/HTMLCollection-iterator.html | OK | 6 | 0 |
+| dom/collections/HTMLCollection-live-item-removal.html | OK | 2 | 0 |
 | dom/collections/HTMLCollection-live-mutations.window.js | OK | 5 | 0 |
 | dom/collections/HTMLCollection-own-props.html | OK | 6 | 2 |
 | dom/collections/HTMLCollection-supported-property-indices.html | OK | 2 | 5 |
@@ -622,11 +680,11 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/events/AddEventListenerOptions-once.any.js | OK | 4 | 0 |
 | dom/events/AddEventListenerOptions-passive.any.js | OK | 5 | 0 |
 | dom/events/AddEventListenerOptions-signal.any.js | OK | 11 | 0 |
-| dom/events/Body-FrameSet-Event-Handlers.html | OK | 48 | 0 |
+| dom/events/Body-FrameSet-Event-Handlers.html | OK | 30 | 18 |
 | dom/events/CustomEvent.html | OK | 3 | 0 |
-| dom/events/Event-cancelBubble.html | OK | 8 | 0 |
+| dom/events/Event-cancelBubble.html | OK | 7 | 1 |
 | dom/events/Event-constants.html | OK | 4 | 0 |
-| dom/events/Event-constructors.any.js | OK | 14 | 0 |
+| dom/events/Event-constructors.any.js | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/events/Event-defaultPrevented-after-dispatch.html | OK | 2 | 0 |
 | dom/events/Event-defaultPrevented.html | OK | 8 | 0 |
 | dom/events/Event-dispatch-bubble-canceled.html | OK | 1 | 0 |
@@ -637,7 +695,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/events/Event-dispatch-detached-click.html | OK | 2 | 0 |
 | dom/events/Event-dispatch-detached-input-and-change.html | OK | 12 | 0 |
 | dom/events/Event-dispatch-handlers-changed.html | OK | 0 | 1 |
-| dom/events/Event-dispatch-listener-order.window.js | OK | 1 | 0 |
+| dom/events/Event-dispatch-listener-order.window.js | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/events/Event-dispatch-multiple-cancelBubble.html | OK | 0 | 1 |
 | dom/events/Event-dispatch-multiple-stopPropagation.html | OK | 0 | 1 |
 | dom/events/Event-dispatch-omitted-capture.html | OK | 0 | 1 |
@@ -648,20 +706,20 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/events/Event-dispatch-propagation-stopped.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-redispatch.html | OK | 3 | 1 |
 | dom/events/Event-dispatch-reenter.html | OK | 0 | 1 |
-| dom/events/Event-dispatch-single-activation-behavior.html | OK | 124 | 8 |
+| dom/events/Event-dispatch-single-activation-behavior.html | OK | 102 | 30 |
 | dom/events/Event-dispatch-target-moved.html | OK | 0 | 1 |
 | dom/events/Event-dispatch-target-removed.html | OK | 0 | 1 |
 | dom/events/Event-dispatch-throwing-multiple-globals.html | EXCLUDED (requires-browsing-context: which global an error event is fired at, across frames) | 0 | 0 |
-| dom/events/Event-dispatch-throwing.html | OK | 2 | 0 |
-| dom/events/Event-init-while-dispatching.html | OK | 5 | 0 |
-| dom/events/Event-initEvent.html | OK | 12 | 0 |
-| dom/events/Event-isTrusted.any.js | OK | 1 | 0 |
+| dom/events/Event-dispatch-throwing.html | OK | 0 | 2 |
+| dom/events/Event-init-while-dispatching.html | OK | 4 | 1 |
+| dom/events/Event-initEvent.html | OK | 11 | 1 |
+| dom/events/Event-isTrusted.any.js | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/events/Event-propagation.html | OK | 7 | 0 |
 | dom/events/Event-returnValue.html | OK | 7 | 0 |
 | dom/events/Event-stopImmediatePropagation.html | OK | 1 | 0 |
-| dom/events/Event-stopPropagation-cancel-bubbling.html | ERROR | 0 | 1 |
+| dom/events/Event-stopPropagation-cancel-bubbling.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/events/Event-subclasses-constructors.html | OK | 43 | 6 |
-| dom/events/Event-timestamp-cross-realm-getter.html | EXCLUDED (requires-browsing-context: a timeStamp getter taken from a frame's realm) | 0 | 0 |
+| dom/events/Event-timestamp-cross-realm-getter.html | OK | 1 | 0 |
 | dom/events/Event-timestamp-high-resolution.html | OK | 4 | 0 |
 | dom/events/Event-timestamp-high-resolution.https.html | OK | 0 | 1 |
 | dom/events/Event-timestamp-safe-resolution.html | OK | 0 | 1 |
@@ -685,18 +743,22 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/events/EventTarget-dispatchEvent.html | OK | 23 | 2 |
 | dom/events/EventTarget-removeEventListener.any.js | OK | 1 | 0 |
 | dom/events/EventTarget-this-of-listener.html | OK | 6 | 0 |
+| dom/events/EventTarget-window-constructor.html | OK | 1 | 0 |
 | dom/events/KeyEvent-initKeyEvent.html | OK | 3 | 0 |
 | dom/events/click-on-absolute-pseudo.html | OK | 0 | 1 |
+| dom/events/element-click.html | OK | 3 | 0 |
 | dom/events/event-disabled-dynamic.html | OK | 1 | 0 |
+| dom/events/event-global-event-targets.html | OK | 0 | 5 |
 | dom/events/event-global-extra.window.js | EXCLUDED (requires-browsing-context: window.event across frames) | 0 | 0 |
-| dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | OK | 0 | 1 |
-| dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | OK | 0 | 1 |
+| dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | TIMEOUT | 0 | 0 |
+| dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | TIMEOUT | 0 | 1 |
+| dom/events/event-global-replaceable.html | OK | 0 | 2 |
 | dom/events/event-global-set-before-handleEvent-lookup.window.js | OK | 0 | 1 |
 | dom/events/event-global.html | OK | 1 | 7 |
 | dom/events/event-handler-attribute-replace-preserves-passive.html | OK | 2 | 0 |
 | dom/events/event-src-element-nullable.html | OK | 1 | 0 |
-| dom/events/focus-event-document-move.html | OK | 1 | 0 |
-| dom/events/handler-count.html | ERROR | 0 | 2 |
+| dom/events/focus-event-document-move.html | ERROR | 1 | 0 |
+| dom/events/handler-count.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/events/label-default-action.html | OK | 1 | 0 |
 | dom/events/legacy-pre-activation-behavior.window.js | OK | 1 | 0 |
 | dom/events/mouse-event-retarget.html | OK | 1 | 0 |
@@ -743,6 +805,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-root.html | OK | 0 | 1 |
 | dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html | OK | 0 | 1 |
 | dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | OK | 8 | 4 |
+| dom/events/passive-by-default-non-node.html | OK | 2 | 0 |
 | dom/events/passive-by-default.html | OK | 100 | 0 |
 | dom/events/pointer-event-document-move.html | OK | 1 | 0 |
 | dom/events/preventDefault-during-activation-behavior.html | OK | 1 | 0 |
@@ -750,47 +813,50 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/events/remove-all-listeners.html | OK | 2 | 0 |
 | dom/events/scrolling/iframe-chains.html | OK | 0 | 1 |
 | dom/events/scrolling/input-text-scroll-event-when-using-arrow-keys.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | ERROR | 0 | 2 |
+| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/save-iframe-scroll-offset-when-display-none.sub.html | REFTEST | 0 | 0 |
-| dom/events/scrolling/scroll-cross-origin-iframes.html | ERROR | 0 | 1 |
+| dom/events/scrolling/scroll-cross-origin-iframes.html | TIMEOUT | 0 | 1 |
 | dom/events/scrolling/scroll-cross-origin-iframes.sub.html | REFTEST | 0 | 0 |
 | dom/events/scrolling/scroll-event-fired-to-element.html | OK | 4 | 0 |
-| dom/events/scrolling/scroll-event-fired-to-iframe.html | OK | 0 | 4 |
-| dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html | TIMEOUT | 0 | 1 |
+| dom/events/scrolling/scroll-event-fired-to-iframe.html | OK | 2 | 2 |
+| dom/events/scrolling/scroll-event-not-fired-on-ancestor-style-change.html | OK | 1 | 0 |
+| dom/events/scrolling/scroll-events-fired-once-per-frame-across-display-none.html | OK | 1 | 1 |
+| dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html | TIMEOUT | 0 | 1 |
 | dom/events/scrolling/scrollend-event-fired-after-sequence-of-scrolls.tentative.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-after-snap.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-for-mandatory-snap-point-after-load.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-to-document.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-to-element-with-overscroll-behavior.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-to-window.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fires-for-repeat-key-ending-after-scroll-container-end-is-reached.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fires-on-visual-viewport.html | ERROR | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fires-on-visual-viewport.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fires-to-iframe-inner-frame.html | REFTEST | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fires-to-iframe-window.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-for-user-scroll.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-handler-content-attributes.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-not-fired-after-removing-scroller.tentative.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html | OK | 1 | 3 |
+| dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-fires-to-text-input.html | OK | 5 | 0 |
 | dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html | OK | 0 | 1 |
+| dom/events/scrolling/visibility-hidden-scrolls.html | OK | 0 | 2 |
 | dom/events/scrolling/wheel-event-composed.html | ERROR | 0 | 1 |
-| dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html | OK | 0 | 1 |
-| dom/events/scrolling/wheel-event-transactions-basic.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/wheel-event-transactions-basic.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html | TIMEOUT | 0 | 1 |
-| dom/events/scrolling/wheel-event-transactions-target-display-change.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/wheel-event-transactions-target-display-change.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-elements.html | OK | 0 | 1 |
 | dom/events/scrolling/wheel-event-transactions-target-move.html | TIMEOUT | 0 | 1 |
 | dom/events/scrolling/wheel-event-transactions-target-removal.html | TIMEOUT | 0 | 1 |
-| dom/events/scrolling/wheel-event-transactions-target-resize.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/wheel-event-transactions-target-resize.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | dom/events/shadow-relatedTarget.html | OK | 2 | 0 |
 | dom/events/webkit-animation-end-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-iteration-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-start-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
-| dom/events/webkit-transition-end-event.html | OK | 13 | 0 |
+| dom/events/webkit-transition-end-event.html | OK | 7 | 6 |
 | dom/events/window-composed-path.html | ERROR | 1 | 0 |
 | dom/events/window-event-restored-after-throwing-onerror.html | OK | 0 | 1 |
 | dom/ranges/Range-adopt-test.html | OK | 4 | 0 |
@@ -831,6 +897,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/ranges/Range-mutations-deleteData.html | OK | 564 | 0 |
 | dom/ranges/Range-mutations-insertBefore.html | OK | 76 | 0 |
 | dom/ranges/Range-mutations-insertData.html | OK | 382 | 0 |
+| dom/ranges/Range-mutations-normalize.html | OK | 4 | 0 |
 | dom/ranges/Range-mutations-removeChild.html | OK | 20 | 0 |
 | dom/ranges/Range-mutations-replaceChild.html | OK | 60 | 0 |
 | dom/ranges/Range-mutations-replaceData.html | OK | 1146 | 0 |
@@ -876,16 +943,16 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | selection/addRange-48.html | OK | 232 | 0 |
 | selection/addRange-52.html | OK | 232 | 0 |
 | selection/addRange-56.html | OK | 116 | 0 |
-| selection/addRange.tentative.html | OK | 1 | 0 |
+| selection/addRange.tentative.html | TIMEOUT | 0 | 0 |
 | selection/anchor-removal.html | OK | 2 | 0 |
 | selection/anonymous/details-ancestor.html | OK | 0 | 1 |
-| selection/anonymous/details-mutate.html | OK | 0 | 1 |
+| selection/anonymous/details-mutate.html | TIMEOUT | 0 | 0 |
 | selection/anonymous/setBaseAndExtent-start-or-end-in-anonymous-shadow-container.html | OK | 11 | 0 |
-| selection/bidi/modify-extend-by-character.html | OK | 18 | 10 |
-| selection/bidi/modify-move-by-character.html | OK | 18 | 10 |
+| selection/bidi/modify-extend-by-character.html | OK | 0 | 28 |
+| selection/bidi/modify-move-by-character.html | OK | 0 | 28 |
 | selection/bidi/modify.tentative.html | OK | 24 | 12 |
 | selection/canvas-click.html | OK | 0 | 1 |
-| selection/canvas-drag.html | OK | 1 | 0 |
+| selection/canvas-drag.html | OK | 0 | 1 |
 | selection/caret-position-should-be-correct-while-moveup-movedown.html | OK | 8 | 16 |
 | selection/caret/after-designMode-off.html | REFTEST | 0 | 0 |
 | selection/caret/collapse-pre-linestart-1.html | REFTEST | 0 | 0 |
@@ -906,14 +973,15 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | selection/contenteditable/collapse.html | OK | 0 | 3 |
 | selection/contenteditable/initial-selection-during-focus-event-propagation.html | OK | 1 | 2 |
 | selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR ("" is not a valid element name) | 0 | 0 |
-| selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 1 | 35 |
+| selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 15 | 21 |
 | selection/contenteditable/modify-around-non-editable-span.html | OK | 0 | 16 |
 | selection/contenteditable/modify.tentative.html | OK | 15 | 0 |
-| selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | OK | 3 | 4 |
+| selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html | OK | 4 | 3 |
-| selection/contenteditable/selection-outside-focused-editing-host.tentative.html | OK | 2 | 1 |
+| selection/contenteditable/selection-outside-focused-editing-host.tentative.html | ERROR | 0 | 0 |
 | selection/deleteFromDocument-HTMLDetails.html | OK | 30 | 0 |
 | selection/deleteFromDocument.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
+| selection/document-selectionchange.html | OK | 1 | 4 |
 | selection/drag-disabled-textarea-shadow-dom.html | ERROR | 0 | 1 |
 | selection/drag-out-of-floated-content.html | OK | 0 | 1 |
 | selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html | OK | 0 | 1 |
@@ -922,14 +990,14 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | selection/extend-20.html | OK | 2376 | 0 |
 | selection/extend-40.html | OK | 176 | 0 |
 | selection/extend-exception.html | OK | 1 | 0 |
-| selection/extend-selection-backward-on-input.html | OK | 0 | 1 |
-| selection/extend-selection-in-shadow-tree.html | OK | 0 | 1 |
+| selection/extend-selection-backward-on-input.html | OK | 1 | 0 |
+| selection/extend-selection-in-shadow-tree.html | OK | 1 | 0 |
 | selection/fire-selectionchange-event-on-deleting-single-character-inside-inline-element.html | OK | 3 | 0 |
 | selection/fire-selectionchange-event-on-document-if-textcontrol-element-is-in-shadow-tree.html | OK | 0 | 1 |
 | selection/fire-selectionchange-event-on-pressing-backspace.html | OK | 2 | 0 |
 | selection/fire-selectionchange-event-on-textcontrol-element-on-pressing-backspace.html | OK | 1 | 0 |
 | selection/getRangeAt.html | OK | 4 | 0 |
-| selection/getSelection.html | OK | 6 | 12 |
+| selection/getSelection.html | OK | 14 | 4 |
 | selection/idlharness.window.js | ERROR (missing script /resources/WebIDLParser.js) | 0 | 0 |
 | selection/isCollapsed.html | OK | 29 | 0 |
 | selection/modify-extend-word-trailing-inline-block.tentative.html | OK | 1 | 0 |
@@ -947,7 +1015,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | selection/onselectstart-on-key-in-contenteditable.html | OK | 30 | 0 |
 | selection/removeAllRanges.html | OK | 116 | 0 |
 | selection/removeRange.html | OK | 29 | 0 |
-| selection/script-and-style-elements.html | OK | 0 | 1 |
+| selection/script-and-style-elements.html | TIMEOUT | 0 | 0 |
 | selection/select-end-of-line-image.tentative.html | OK | 0 | 1 |
 | selection/selectAllChildren.html | OK | 2242 | 0 |
 | selection/selection-content-visibility-hidden.html | OK | 1 | 0 |
@@ -985,12 +1053,12 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | selection/shadow-dom/tentative/Selection-getComposedRanges.html | OK | 12 | 0 |
 | selection/shadow-dom/tentative/Selection-isCollapsed.html | OK | 4 | 0 |
 | selection/shadow-dom/tentative/Selection-later-become-slotted-content.html | OK | 1 | 0 |
-| selection/stringifier.tentative.html | OK | 1 | 0 |
-| selection/stringifier_editable_element.tentative.html | ERROR | 1 | 11 |
+| selection/stringifier.tentative.html | TIMEOUT | 0 | 0 |
+| selection/stringifier_editable_element.tentative.html | TIMEOUT | 0 | 0 |
 | selection/test-iframe.html | REFTEST | 0 | 0 |
 | selection/textcontrols/click-input-after-iframe-focus.html | EXCLUDED (requires-browsing-context: the focus moves in from an iframe) | 0 | 0 |
 | selection/textcontrols/focus.html | OK | 0 | 1 |
-| selection/textcontrols/initial-selection-during-focus-event-propagation.html | OK | 3 | 0 |
+| selection/textcontrols/initial-selection-during-focus-event-propagation.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
 | selection/textcontrols/onselectionchange-content-attribute.html | OK | 2 | 0 |
 | selection/textcontrols/selectionchange-bubble.html | OK | 4 | 0 |
 | selection/textcontrols/selectionchange-on-shadow-dom.html | OK | 0 | 1 |
@@ -1019,12 +1087,12 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | shadow-dom/assign-slottables-after-removing-shadow-tree-from-document.html | OK | 1 | 0 |
 | shadow-dom/attach-shadow-non-html-namespace.html | OK | 304 | 0 |
 | shadow-dom/attachShadow-with-ShadowRoot.html | OK | 2 | 0 |
-| shadow-dom/build-deep-detached-shadow-then-append-text.html | ERROR | 1 | 0 |
+| shadow-dom/build-deep-detached-shadow-then-append-text.html | OK | 1 | 0 |
 | shadow-dom/capturing-and-bubbling-event-listeners-across-shadow-trees.html | OK | 5 | 0 |
 | shadow-dom/declarative/declarative-after-attachshadow.html | EXCLUDED (requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one) | 0 | 0 |
 | shadow-dom/declarative/declarative-parser-interaction.html | EXCLUDED (requires-script-execution: the case is what a script sees while the parser is still inside the template) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-attachment.html | OK | 654 | 0 |
-| shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html | OK | 0 | 1 |
+| shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html | TIMEOUT | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-basic.html | OK | 22 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-opt-in.html | EXCLUDED (requires-script-execution: the opt-in is read by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-repeats-2.html | EXCLUDED (requires-script-execution: the second template is judged by a script the parser runs between them) | 0 | 0 |
@@ -1088,6 +1156,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | shadow-dom/event-dispatch-order.tentative.html | OK | 1 | 0 |
 | shadow-dom/event-inside-shadow-tree.html | OK | 12 | 0 |
 | shadow-dom/event-inside-slotted-node.html | OK | 20 | 0 |
+| shadow-dom/event-post-dispatch-listenerless.html | OK | 3 | 0 |
 | shadow-dom/event-post-dispatch-no-listeners.html | OK | 5 | 0 |
 | shadow-dom/event-post-dispatch.html | OK | 15 | 1 |
 | shadow-dom/event-with-related-target.html | OK | 18 | 0 |
@@ -1146,7 +1215,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | OK | 0 | 1 |
 | shadow-dom/focus/click-focus-slot-ancestor.html | OK | 2 | 1 |
 | shadow-dom/focus/delegatesFocus-tabindex-change.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-autofocus.html | OK | 5 | 0 |
+| shadow-dom/focus/focus-autofocus.html | OK | 4 | 1 |
 | shadow-dom/focus/focus-click-on-shadow-host.html | OK | 0 | 1 |
 | shadow-dom/focus/focus-method-delegatesFocus-nested-browsing-context.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-method-delegatesFocus.html | OK | 15 | 0 |
@@ -1175,7 +1244,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | shadow-dom/focus/focus-tabindex-order-shadow-zero-host-one.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tabindex-order-shadow-zero-host-scrollable.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tabindex-order-shadow-zero.html | OK | 1 | 0 |
-| shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | OK | 1 | 0 |
+| shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | OK | 0 | 1 |
 | shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html | OK | 0 | 1 |
 | shadow-dom/focus/text-selection-with-delegatesFocus.html | OK | 0 | 2 |
 | shadow-dom/form-control-form-attribute.html | OK | 2 | 1 |
@@ -1304,19 +1373,20 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/CustomElementRegistry-getName.html | OK | 3 | 1 |
 | custom-elements/CustomElementRegistry.html | OK | 46 | 0 |
 | custom-elements/Document-createElement-customized-builtins.html | EXCLUDED (customized built-ins: createElement with an is option) | 0 | 0 |
-| custom-elements/Document-createElement.html | OK | 33 | 3 |
+| custom-elements/Document-createElement.html | OK | 11 | 25 |
 | custom-elements/Document-createElementNS-customized-builtins.html | EXCLUDED (customized built-ins: createElementNS with an is option) | 0 | 0 |
 | custom-elements/Document-createElementNS-prefix-timing.html | OK | 3 | 0 |
 | custom-elements/Document-createElementNS.html | OK | 4 | 0 |
+| custom-elements/ElementInternals-accessibility-values.html | OK | 42 | 7 |
 | custom-elements/ElementInternals-accessibility.html | OK | 50 | 0 |
 | custom-elements/ElementInternals-accessibility.tentative.html | OK | 3 | 0 |
 | custom-elements/ElementInternals-role.html | EXCLUDED (requires-testdriver: every case reads a computed role out of the browser's own accessibility tree through testdriver.js) | 0 | 0 |
 | custom-elements/HTMLElement-attachInternals.html | OK | 3 | 1 |
 | custom-elements/HTMLElement-constructor-customized-builtins.html | EXCLUDED (customized built-ins: a constructor that extends a built-in interface) | 0 | 0 |
-| custom-elements/HTMLElement-constructor.html | OK | 10 | 2 |
+| custom-elements/HTMLElement-constructor.html | OK | 6 | 6 |
 | custom-elements/adopted-callback.html | OK | 61 | 10 |
 | custom-elements/append-children-to-new-parent-cycle.html | OK | 1 | 0 |
-| custom-elements/attribute-changed-callback.html | OK | 13 | 0 |
+| custom-elements/attribute-changed-callback.html | OK | 12 | 1 |
 | custom-elements/builtin-coverage.html | EXCLUDED (customized built-ins: every case defines a customized built-in with an extends option) | 0 | 0 |
 | custom-elements/connected-callbacks-html-fragment-parsing.html | OK | 7 | 1 |
 | custom-elements/connected-callbacks-template.html | EXCLUDED (requires-script-execution: the definition is registered by a script the parser runs inside the template) | 0 | 0 |
@@ -1329,7 +1399,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/element-internals-aria-element-reflection.html | OK | 5 | 4 |
 | custom-elements/element-internals-behaviors.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/element-internals-shadowroot.html | OK | 7 | 0 |
-| custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html | OK | 7 | 1 |
+| custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html | OK | 8 | 0 |
 | custom-elements/form-associated/ElementInternals-NotSupportedError.html | OK | 1 | 0 |
 | custom-elements/form-associated/ElementInternals-behavior-accessibility.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-form.html | OK | 2 | 0 |
@@ -1339,22 +1409,26 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/form-associated/ElementInternals-reportValidity-delegatesFocus-notref.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-reportValidity-delegatesFocus.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-setFormValue-nullish-value.html | OK | 0 | 2 |
-| custom-elements/form-associated/ElementInternals-setFormValue.html | ERROR | 1 | 54 |
+| custom-elements/form-associated/ElementInternals-setFormValue.html | OK | 1 | 54 |
+| custom-elements/form-associated/ElementInternals-setValidity-normalize-newlines.html | OK | 0 | 2 |
 | custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-target-element-is-held-strongly.html | OK | 1 | 0 |
 | custom-elements/form-associated/ElementInternals-validation.html | OK | 13 | 1 |
 | custom-elements/form-associated/disabled-delegatesFocus.html | OK | 1 | 0 |
+| custom-elements/form-associated/fieldset-elements-after-upgrade.html | OK | 0 | 1 |
+| custom-elements/form-associated/fieldset-elements-during-construction.html | OK | 0 | 1 |
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
 | custom-elements/form-associated/form-associated-callback.html | OK | 3 | 2 |
-| custom-elements/form-associated/form-disabled-callback.html | ERROR | 8 | 2 |
+| custom-elements/form-associated/form-disabled-callback.html | OK | 8 | 2 |
+| custom-elements/form-associated/form-disabled-legend.html | OK | 5 | 1 |
 | custom-elements/form-associated/form-elements-namedItem.html | OK | 1 | 2 |
-| custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
-| custom-elements/form-associated/label-delegatesFocus.html | OK | 0 | 2 |
+| custom-elements/form-associated/form-reset-callback.html | OK | 0 | 3 |
+| custom-elements/form-associated/label-delegatesFocus.html | TIMEOUT | 0 | 0 |
 | custom-elements/historical.html | OK | 3 | 0 |
 | custom-elements/htmlconstructor/newtarget-customized-builtins.html | OK | 0 | 10 |
-| custom-elements/htmlconstructor/newtarget.html | OK | 2 | 8 |
+| custom-elements/htmlconstructor/newtarget.html | OK | 1 | 9 |
 | custom-elements/microtasks-and-constructors.html | EXCLUDED (requires-script-execution: the case is which microtasks run while the parser is inside an element) | 0 | 0 |
 | custom-elements/overwritten-customElements-global.html | OK | 4 | 0 |
 | custom-elements/parser/parser-constructs-custom-element-in-document-write.html | ERROR (This document is not a stream) | 0 | 0 |
@@ -1368,26 +1442,26 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/parser/parser-uses-registry-of-owner-document.html | ERROR (This document is not a stream) | 0 | 0 |
 | custom-elements/parser/serializing-html-fragments-customized-builtins.html | EXCLUDED (customized built-ins: serializing an is attribute) | 0 | 0 |
 | custom-elements/perform-microtask-checkpoint-before-construction.html | OK | 0 | 2 |
-| custom-elements/pseudo-class-defined-customized-builtins.html | ERROR | 3 | 1 |
+| custom-elements/pseudo-class-defined-customized-builtins.html | TIMEOUT | 0 | 0 |
 | custom-elements/pseudo-class-defined-print.html | REFTEST | 0 | 0 |
-| custom-elements/pseudo-class-defined.html | ERROR | 11 | 1 |
+| custom-elements/pseudo-class-defined.html | ERROR | 0 | 1 |
 | custom-elements/range-and-constructors.html | OK | 2 | 0 |
 | custom-elements/reaction-timing.html | OK | 3 | 0 |
-| custom-elements/reactions/Animation.html | OK | 0 | 3 |
+| custom-elements/reactions/Animation.html | OK | 1 | 2 |
 | custom-elements/reactions/AriaMixin-element-attributes.html | OK | 16 | 0 |
 | custom-elements/reactions/AriaMixin-string-attributes.html | OK | 80 | 0 |
 | custom-elements/reactions/AriaMixin-string-attributes.tentative.html | OK | 8 | 0 |
 | custom-elements/reactions/Attr.html | OK | 2 | 0 |
-| custom-elements/reactions/CSSStyleDeclaration.html | OK | 22 | 8 |
+| custom-elements/reactions/CSSStyleDeclaration.html | OK | 11 | 19 |
 | custom-elements/reactions/ChildNode.html | OK | 7 | 0 |
 | custom-elements/reactions/DOMStringMap.html | OK | 4 | 4 |
-| custom-elements/reactions/DOMTokenList.html | OK | 19 | 0 |
+| custom-elements/reactions/DOMTokenList.html | OK | 16 | 3 |
 | custom-elements/reactions/Document.html | OK | 3 | 9 |
 | custom-elements/reactions/Element.html | OK | 47 | 0 |
 | custom-elements/reactions/ElementContentEditable.html | OK | 2 | 0 |
 | custom-elements/reactions/HTMLAnchorElement.html | OK | 1 | 0 |
 | custom-elements/reactions/HTMLElement.html | OK | 20 | 2 |
-| custom-elements/reactions/HTMLOptionElement.html | OK | 0 | 1 |
+| custom-elements/reactions/HTMLOptionElement.html | OK | 1 | 0 |
 | custom-elements/reactions/HTMLOptionsCollection.html | OK | 3 | 2 |
 | custom-elements/reactions/HTMLOutputElement.html | OK | 2 | 0 |
 | custom-elements/reactions/HTMLSelectElement.html | OK | 3 | 2 |
@@ -1429,7 +1503,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/reactions/customized-builtins/HTMLTableCellElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM does not implement) | 0 | 0 |
 | custom-elements/reactions/customized-builtins/HTMLTableColElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM does not implement) | 0 | 0 |
 | custom-elements/reactions/customized-builtins/HTMLTimeElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM does not implement) | 0 | 0 |
-| custom-elements/reactions/with-exceptions.html | OK | 0 | 1 |
+| custom-elements/reactions/with-exceptions.html | OK | 1 | 0 |
 | custom-elements/registries/Construct.html | OK | 2 | 1 |
 | custom-elements/registries/CustomElementRegistry-define.html | OK | 3 | 0 |
 | custom-elements/registries/CustomElementRegistry-initialize.html | OK | 13 | 0 |
@@ -1438,20 +1512,20 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/registries/Document-createElement.html | OK | 10 | 0 |
 | custom-elements/registries/Document-createElementNS.html | OK | 10 | 0 |
 | custom-elements/registries/Document-customElementRegistry.html | OK | 4 | 0 |
-| custom-elements/registries/Document-importNode-cross-document.window.js | ERROR | 0 | 15 |
+| custom-elements/registries/Document-importNode-cross-document.window.js | OK | 7 | 8 |
 | custom-elements/registries/Document-importNode.html | OK | 13 | 7 |
 | custom-elements/registries/Element-customElementRegistry-exceptions.html | OK | 2 | 1 |
 | custom-elements/registries/Element-customElementRegistry.html | OK | 10 | 1 |
 | custom-elements/registries/Element-innerHTML.html | OK | 8 | 4 |
-| custom-elements/registries/ShadowRoot-init-customElementRegistry.html | OK | 10 | 2 |
+| custom-elements/registries/ShadowRoot-init-customElementRegistry.html | OK | 11 | 1 |
 | custom-elements/registries/ShadowRoot-init-declarative.html | OK | 3 | 0 |
 | custom-elements/registries/ShadowRoot-innerHTML.html | OK | 0 | 4 |
-| custom-elements/registries/adoption.window.js | ERROR | 0 | 36 |
+| custom-elements/registries/adoption.window.js | OK | 32 | 4 |
 | custom-elements/registries/constructor-direct-call-fallback-registry.window.js | OK | 0 | 2 |
 | custom-elements/registries/constructor-reentry-createElement.window.js | OK | 2 | 2 |
 | custom-elements/registries/constructor-reentry-with-different-definition.html | OK | 0 | 4 |
-| custom-elements/registries/define-customized-builtins.html | ERROR (Cannot read properties of null (reading 'customElements')) | 0 | 0 |
-| custom-elements/registries/define.html | ERROR (Cannot read properties of null (reading 'customElements')) | 0 | 0 |
+| custom-elements/registries/define-customized-builtins.html | OK | 15 | 0 |
+| custom-elements/registries/define.html | OK | 48 | 22 |
 | custom-elements/registries/element-mutation-null-registry-removal.html | OK | 1 | 0 |
 | custom-elements/registries/element-mutation.html | OK | 15 | 0 |
 | custom-elements/registries/global.window.js | OK | 0 | 5 |
@@ -1459,16 +1533,17 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/registries/per-document.html | OK | 1 | 2 |
 | custom-elements/registries/pseudo-class-defined.window.js | OK | 3 | 0 |
 | custom-elements/registries/scoped-custom-element-registry-customelementregistry-attribute.html | OK | 6 | 17 |
-| custom-elements/registries/scoped-registry-append.html | OK | 7 | 9 |
+| custom-elements/registries/scoped-registry-append.html | OK | 9 | 7 |
 | custom-elements/registries/scoped-registry-define-upgrade-criteria.html | ERROR | 3 | 11 |
 | custom-elements/registries/scoped-registry-define-upgrade-order.html | OK | 0 | 7 |
-| custom-elements/registries/scoped-registry-effective-global-registry.html | OK | 13 | 53 |
+| custom-elements/registries/scoped-registry-effective-global-registry.html | OK | 54 | 12 |
 | custom-elements/registries/scoped-registry-initialize-upgrades.html | OK | 10 | 2 |
 | custom-elements/registries/scoped-registry-initialize.html | OK | 27 | 0 |
 | custom-elements/registries/scoped-registry-registry-define-get-etc.html | OK | 7 | 0 |
 | custom-elements/registries/template.window.js | OK | 4 | 6 |
 | custom-elements/registries/upgrade.html | OK | 5 | 0 |
 | custom-elements/registries/valid-custom-element-names.html | OK | 1975 | 0 |
+| custom-elements/shadow-descendant-lifecycle-order.html | OK | 2 | 0 |
 | custom-elements/state/ElementInternals-states.html | OK | 4 | 0 |
 | custom-elements/state/state-css-selector-nth-of.html | OK | 3 | 0 |
 | custom-elements/state/state-css-selector-shadow-dom.html | OK | 3 | 0 |
@@ -1480,16 +1555,16 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/upgrading/Document-importNode-customized-builtins.html | EXCLUDED (customized built-ins: importing an element with an is value) | 0 | 0 |
 | custom-elements/upgrading/Document-importNode.html | OK | 2 | 0 |
 | custom-elements/upgrading/Node-cloneNode-customized-builtins.html | EXCLUDED (customized built-ins: cloning an element with an is value) | 0 | 0 |
-| custom-elements/upgrading/Node-cloneNode.html | OK | 6 | 3 |
+| custom-elements/upgrading/Node-cloneNode.html | OK | 5 | 4 |
 | custom-elements/upgrading/upgrade-custom-element-error-event.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
 | custom-elements/upgrading/upgrading-enqueue-reactions.html | OK | 0 | 5 |
 | custom-elements/upgrading/upgrading-parser-created-element.html | EXCLUDED (requires-script-execution: the element under test is one the parser created around a script it ran) | 0 | 0 |
 
 ## Failing subtests
 
-### dom/nodes/Comment-constructor.html
+### dom/nodes/DOMImplementation-createDocument-no-browsing-context.html
 
-- new Comment() should get the correct ownerDocument across globals: iframe.contentWindow[ctor] is not a constructor
+- createHTMLDocument: iframe should not load in a document without a browsing context: assert_equals: contentWindow should be null before setting src expected null but got object "[object Window]"
 
 ### dom/nodes/Document-createElement-namespace.html
 
@@ -2081,23 +2156,20 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Selectors-API Test Suite: HTML: Cannot read properties of null (reading 'appendChild')
 
-### dom/nodes/Text-constructor.html
+### dom/nodes/ParentNode-querySelector-host-pseudo-class.html
 
-- new Text() should get the correct ownerDocument across globals: iframe.contentWindow[ctor] is not a constructor
+- Using :host pseudo-class selector in shadow DOM: assert_equals: querySelector with :host pseudo-class should find the element expected Element node <article></article> but got null
 
-### dom/nodes/attach-shadow-realm-after-adoption.html
+### dom/nodes/ParentNode-querySelector-hyphen-prefix.html
 
-- attachShadow() invoked via another realm's method uses the node document realm: Cannot read properties of undefined (reading 'prototype')
+- ID selector with hyphen-prefix followed by numbers: assert_throws_dom: function "() => {
 
-### dom/nodes/create-element-realm-after-adoption.html
+### dom/nodes/getElementById-namespaced-id.html
 
-- Built-in element: the created element's realm is independent of the setter's realm: Cannot read properties of undefined (reading 'prototype')
-- Custom element: innerHTML upgrades it using the node document's registry: assert_true: <x-baz> uses the node document's (top-level) registry expected true got false
-- Custom element: the registry used is independent of the setter's realm: Cannot read properties of undefined (reading 'prototype')
-
-### dom/nodes/moveBefore/Node-moveBefore.html
-
-- moveBefore() into a Document throws a HierarchyRequestError: Cannot read properties of undefined (reading 'name')
+- append a namespaced ID preserves ID lookup and form association: FormData constructor: Argument 1 could not be converted to: undefined.
+- change a namespaced ID preserves ID lookup and form association: FormData constructor: Argument 1 could not be converted to: undefined.
+- remove a namespaced ID preserves ID lookup and form association: FormData constructor: Argument 1 could not be converted to: undefined.
+- replace a namespaced ID preserves ID lookup and form association: FormData constructor: Argument 1 could not be converted to: undefined.
 
 ### dom/nodes/moveBefore/continue-css-animation-left.html
 
@@ -2109,7 +2181,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### dom/nodes/moveBefore/continue-css-transition-transform.html
 
-- Node.moveBefore should preserve CSS transition state (transform): assert_equals: expected 200 but got 0
+- Node.moveBefore should preserve CSS transition state (transform): assert_equals: expected 200 but got 400
 
 ### dom/nodes/moveBefore/css-animation-commit-styles.html
 
@@ -2162,47 +2234,33 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - moveBefore focus node moved up to shrink selection and exclude nodes; focus node gets reset: assert_equals: expected Text node "Parent paragraph" but got Text node "Grandparent paragraph"
 - moveBefore selection is not preserved, especially when underlying range gets inverted: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (118, 4) is outside the viewport"
 
-### dom/nodes/node-creation-realm.html
+### dom/nodes/moveBefore/stylesheet-cascade-order.html
 
-- Document.createTextNode() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
-- Document.createComment() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
-- Document.createProcessingInstruction() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
-- Document.createDocumentFragment() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
-- Document.createAttribute() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
-- Document.createCDATASection() creates a node in the target document's realm: Cannot read properties of undefined (reading 'prototype')
-- DOMImplementation.createDocumentType() creates a node in the associated document's realm: Cannot read properties of undefined (reading 'prototype')
-- DOMImplementation.createDocument() creates the document in the target realm: Cannot read properties of undefined (reading 'prototype')
-- DOMImplementation.createHTMLDocument() creates the document and its contents in the target realm: Cannot read properties of undefined (reading 'prototype')
-- cloneNode() clones into the node's node document realm: Cannot read properties of undefined (reading 'prototype')
-- importNode() imports into the target document's realm: Cannot read properties of undefined (reading 'prototype')
-- Range.cloneContents() builds the fragment in the range's node document realm: Cannot read properties of undefined (reading 'prototype')
+- Moving loaded link stylesheets updates their cascade order: Test timed out
 
-### dom/nodes/node-realm-mixed-across-adoption.html
+### dom/nodes/moveBefore/stylesheet-no-refetch.html
 
-- Element parsed into an adopted container takes the node-document realm, not the container's creation realm: Right-hand side of 'instanceof' is not an object
-- Never-wrapped node keeps its creation realm across multiple adoptions: Right-hand side of 'instanceof' is not an object
-- Custom element parsed into an adopted container uses the node-document realm and registry: assert_true: uses the node-document (top-level) realm and registry expected true got false
+- Moving a loaded link stylesheet preserves its resource: Test timed out
 
-### dom/nodes/node-realm-preserved-across-adoption.html
+### dom/nodes/namespaced-attribute-mutations.html
 
-- Built-in element keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
-- Text node keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
-- Comment node keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
-- createElement()d element keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
+- change a namespaced style attribute preserves HTML inline style: assert_equals: expected "green" but got ""
+- replace a namespaced style attribute preserves HTML inline style: assert_equals: expected "green" but got ""
+- change a namespaced style attribute preserves SVG inline style: assert_equals: expected "green" but got ""
+- replace a namespaced style attribute preserves SVG inline style: assert_equals: expected "green" but got ""
+- A namespaced slot attribute does not assign a slot: assert_equals: expected "" but got "target"
+- A namespaced open attribute does not fire a toggle event: assert_false: expected false got true
+- A namespaced src attribute does not navigate an iframe: assert_equals: expected "" but got "data:text/html,namespaced"
+- A namespaced type attribute does not change an input's state: assert_equals: expected "text" but got "file"
+- A namespaced selected attribute does not change an option's selectedness: assert_equals: expected -1 but got 0
+- A namespaced size attribute does not reset a select: assert_equals: expected -1 but got 0
 
-### dom/nodes/node-realm-preserved-across-frameless-adoption.html
+### dom/nodes/post-connection-steps-shadow-tree.html
 
-- Built-in element from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
-- Text node from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
-- Comment node from a frameless document keeps its creation realm after adoption: Right-hand side of 'instanceof' is not an object
-
-### dom/nodes/remove-next-sibling-during-replace-with.html
-
-- remove-next-sibling-during-replace-with: assert_equals: expected "<span>New </span><span>content</span>" but got "<span>New </span><span>content</span><b></b>"
+- Script post-connection steps run in a newly-connected shadow tree: assert_equals: script runs when its shadow-including tree becomes connected expected 1 but got 0
 
 ### dom/collections/HTMLCollection-as-prototype.html
 
-- HTMLCollection as a prototype should not allow getting .length on the base object: assert_throws_js: function "function() {
 - HTMLCollection as a prototype and setting own properties: assert_equals: expected (string) "foo" but got (object) Element node <p id="named"></p>
 
 ### dom/collections/HTMLCollection-delete.html
@@ -2241,13 +2299,38 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - a.relList in http://www.w3.org/2000/svg namespace should be DOMTokenList.: assert_class_string: expected "[object DOMTokenList]" but got "[object Undefined]"
 - a.relList in http://www.w3.org/1998/Math/MathML namespace should be DOMTokenList.: assert_class_string: expected "[object DOMTokenList]" but got "[object Undefined]"
 
+### dom/events/Body-FrameSet-Event-Handlers.html
+
+- Forward HTMLBodyElement.onblur to Window: assert_equals: Convert to function expected "function" but got "object"
+- Set HTMLFrameSetElement.onblur: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
+- Forward HTMLFrameSetElement.onblur to Window: assert_equals: Convert to function expected "function" but got "object"
+- Forward HTMLBodyElement.onerror to Window: assert_equals: Convert to function expected "function" but got "object"
+- Set HTMLFrameSetElement.onerror: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
+- Forward HTMLFrameSetElement.onerror to Window: assert_equals: Convert to function expected "function" but got "object"
+- Forward HTMLBodyElement.onfocus to Window: assert_equals: Convert to function expected "function" but got "object"
+- Set HTMLFrameSetElement.onfocus: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
+- Forward HTMLFrameSetElement.onfocus to Window: assert_equals: Convert to function expected "function" but got "object"
+- Forward HTMLBodyElement.onload to Window: assert_equals: Convert to function expected "function" but got "object"
+- Set HTMLFrameSetElement.onload: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
+- Forward HTMLFrameSetElement.onload to Window: assert_equals: Convert to function expected "function" but got "object"
+- Forward HTMLBodyElement.onscroll to Window: assert_equals: Convert to function expected "function" but got "object"
+- Set HTMLFrameSetElement.onscroll: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
+- Forward HTMLFrameSetElement.onscroll to Window: assert_equals: Convert to function expected "function" but got "object"
+- Forward HTMLBodyElement.onresize to Window: assert_equals: Convert to function expected "function" but got "object"
+- Set HTMLFrameSetElement.onresize: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
+- Forward HTMLFrameSetElement.onresize to Window: assert_equals: Convert to function expected "function" but got "object"
+
+### dom/events/Event-cancelBubble.html
+
+- Initializing an event must set cancelBubble to false.: assert_false: initEvent() must set cancelBubble to false. [bubbles=true] expected false got true
+
 ### dom/events/Event-dispatch-bubbles-false.html
 
-- In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-bubbles-true.html
 
-- In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-click.html
 
@@ -2264,19 +2347,19 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### dom/events/Event-dispatch-handlers-changed.html
 
--  Dispatch additional events inside an event listener : assert_array_equals: actual_targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+-  Dispatch additional events inside an event listener : assert_array_equals: actual_targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-multiple-cancelBubble.html
 
-- Multiple dispatchEvent() and cancelBubble: assert_array_equals: expected property 1 to be object "[object global]" but got object "[object EventTarget]" (expected array [Document node with 2 children, object "[object global]"] got [Document node with 2 children, object "[object EventTarget]"])
+- Multiple dispatchEvent() and cancelBubble: assert_array_equals: expected property 1 to be object "[object global]" but got object "[object Window]" (expected array [Document node with 2 children, object "[object global]"] got [Document node with 2 children, object "[object Window]"])
 
 ### dom/events/Event-dispatch-multiple-stopPropagation.html
 
--  Multiple dispatchEvent() and stopPropagation() : assert_array_equals: expected property 1 to be object "[object global]" but got object "[object EventTarget]" (expected array [Document node with 2 children, object "[object global]"] got [Document node with 2 children, object "[object EventTarget]"])
+-  Multiple dispatchEvent() and stopPropagation() : assert_array_equals: expected property 1 to be object "[object global]" but got object "[object Window]" (expected array [Document node with 2 children, object "[object global]"] got [Document node with 2 children, object "[object Window]"])
 
 ### dom/events/Event-dispatch-omitted-capture.html
 
-- EventTarget.addEventListener with the capture argument omitted: assert_array_equals: targets expected property 7 to be object "[object global]" but got object "[object EventTarget]" (expected array [Element node <td id="target">Over the river, Charlie</td>, Element node <tr id="parent">
+- EventTarget.addEventListener with the capture argument omitted: assert_array_equals: targets expected property 7 to be object "[object global]" but got object "[object Window]" (expected array [Element node <td id="target">Over the river, Charlie</td>, Element node <tr id="parent">
 
 ### dom/events/Event-dispatch-on-disabled-elements.html
 
@@ -2291,7 +2374,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### dom/events/Event-dispatch-reenter.html
 
--  Dispatch additional events inside an event listener : assert_array_equals: actual_targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+-  Dispatch additional events inside an event listener : assert_array_equals: actual_targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-single-activation-behavior.html
 
@@ -2303,18 +2386,49 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - When clicking child <FORM><BUTTON type=submit></BUTTON></FORM> of parent <FORM><INPUT type=submit></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onsubmit="activated(this); return false" class="act...] length 1, got [Element node <form onsubmit="activated(this); return false" class="act..., Element node <form onsubmit="activated(this); return false" class="act...] length 2
 - When clicking child <FORM><BUTTON type=submit></BUTTON></FORM> of parent <FORM><INPUT type=image></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onsubmit="activated(this); return false" class="act...] length 1, got [Element node <form onsubmit="activated(this); return false" class="act..., Element node <form onsubmit="activated(this); return false" class="act...] length 2
 - When clicking child <FORM><BUTTON type=reset></BUTTON></FORM> of parent <FORM><INPUT type=reset></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onreset="activated(this)" class="activates test70">...] length 1, got [Element node <form onreset="activated(this)" class="activates test70">..., Element node <form onreset="activated(this)" class="activates test70">...] length 2
+- When clicking child <A></A> of parent <INPUT type=checkbox></INPUT>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test77_link"] length 1, got [] length 0
+- When clicking child <A></A> of parent <INPUT type=radio></INPUT>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test78_link"] length 1, got [] length 0
+- When clicking child <A></A> of parent <FORM><INPUT type=submit></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test79_link"] length 1, got [] length 0
+- When clicking child <A></A> of parent <FORM><INPUT type=image></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test80_link"] length 1, got [] length 0
+- When clicking child <A></A> of parent <FORM><INPUT type=reset></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test81_link"] length 1, got [] length 0
+- When clicking child <A></A> of parent <FORM><BUTTON type=submit></BUTTON></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test82_link"] length 1, got [] length 0
+- When clicking child <A></A> of parent <FORM><BUTTON type=reset></BUTTON></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test83_link"] length 1, got [] length 0
+- When clicking child <A></A> of parent <AREA></AREA>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test84_link"] length 1, got [] length 0
+- When clicking child <A></A> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test85_link"] length 1, got [] length 0
+- When clicking child <A></A> of parent <LABEL><INPUT type=checkbox></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test86_link"] length 1, got [] length 0
+- When clicking child <A></A> of parent <LABEL><BUTTON type=button></BUTTON></LABEL>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test87_link"] length 1, got [] length 0
+- When clicking child <AREA></AREA> of parent <INPUT type=checkbox></INPUT>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test88_link"] length 1, got [] length 0
+- When clicking child <AREA></AREA> of parent <INPUT type=radio></INPUT>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test89_link"] length 1, got [] length 0
+- When clicking child <AREA></AREA> of parent <FORM><INPUT type=submit></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test90_link"] length 1, got [] length 0
+- When clicking child <AREA></AREA> of parent <FORM><INPUT type=image></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test91_link"] length 1, got [] length 0
+- When clicking child <AREA></AREA> of parent <FORM><INPUT type=reset></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test92_link"] length 1, got [] length 0
+- When clicking child <AREA></AREA> of parent <FORM><BUTTON type=submit></BUTTON></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test93_link"] length 1, got [] length 0
+- When clicking child <AREA></AREA> of parent <FORM><BUTTON type=reset></BUTTON></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test94_link"] length 1, got [] length 0
+- When clicking child <AREA></AREA> of parent <A></A>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test95_link"] length 1, got [] length 0
+- When clicking child <AREA></AREA> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test96_link"] length 1, got [] length 0
+- When clicking child <AREA></AREA> of parent <LABEL><INPUT type=checkbox></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test97_link"] length 1, got [] length 0
+- When clicking child <AREA></AREA> of parent <LABEL><BUTTON type=button></BUTTON></LABEL>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test98_link"] length 1, got [] length 0
 
 ### dom/events/Event-dispatch-target-moved.html
 
-- Event propagation path when an element in it is moved within the DOM: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- Event propagation path when an element in it is moved within the DOM: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-target-removed.html
 
-- Event propagation path when an element in it is removed from the DOM: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object EventTarget]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- Event propagation path when an element in it is removed from the DOM: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
-### dom/events/Event-stopPropagation-cancel-bubbling.html
+### dom/events/Event-dispatch-throwing.html
 
-- Event-stopPropagation-cancel-bubbling: assert_unreached: stopPropagation in the capture handler should have canceled this bubble handler. Reached unreachable code
+- Throwing in event listener with a single listeners: assert_equals: expected 1 but got 0
+- Throwing in event listener with multiple listeners: assert_equals: expected 1 but got 0
+
+### dom/events/Event-init-while-dispatching.html
+
+- Calling initUIEvent while dispatching.: Failed to execute 'initUIEvent' on 'UIEvent': parameter 4 is not of type 'Window'.
+
+### dom/events/Event-initEvent.html
+
+- Calling initEvent must unset the stop propagation flag.: assert_false: cancelBubble must be false expected false got true
 
 ### dom/events/Event-subclasses-constructors.html
 
@@ -2342,13 +2456,22 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Click on pseudo-element that disappears on mousedown: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (50, -26) is outside the viewport"
 
-### dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html
+### dom/events/event-global-event-targets.html
 
-- window.event is still set when 'beforeunload' result is coerced to string: Cannot set properties of undefined (setting 'href')
+- window.event is set when dispatching on EventTarget: assert_equals: window.event is set during dispatch expected (object) object "[object Event]" but got (undefined) undefined
+- window.event is set when dispatching on AbortSignal: assert_equals: window.event is set during dispatch expected (object) object "[object Event]" but got (undefined) undefined
+- window.event is set when dispatching on FileReader: FileReader is not defined
+- window.event is set when dispatching on Performance: assert_equals: window.event is set during dispatch expected (object) object "[object Event]" but got (undefined) undefined
+- An event target's _document property does not affect window.event: assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
 
 ### dom/events/event-global-is-still-set-when-reporting-exception-onerror.html
 
-- window.onerror handler restores window.event after it reports an exception: Cannot read properties of undefined (reading 'Function')
+- window.onerror handler restores window.event after it reports an exception: Test timed out
+
+### dom/events/event-global-replaceable.html
+
+- Setting window.event replaces it: Cannot set property event of #<object> which has only a getter
+- Dispatching does not affect window.event after it's been replaced: assert_equals: Still set before dispatch expected (string) "foo" but got (undefined) undefined
 
 ### dom/events/event-global-set-before-handleEvent-lookup.window.js
 
@@ -2359,15 +2482,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - window.event is only defined during dispatch: assert_equals: window.event set to current event during dispatch expected (object) object "[object Event]" but got (undefined) undefined
 - window.event is undefined if the target is in a shadow tree (event dispatched outside shadow tree): assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
 - window.event is undefined if the target is in a shadow tree (event dispatched inside shadow tree): assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
-- window.event is undefined inside window.onerror if the target is in a shadow tree (ErrorEvent dispatched inside shadow tree): assert_equals: expected "object" but got "undefined"
+- window.event is undefined inside window.onerror if the target is in a shadow tree (ErrorEvent dispatched inside shadow tree): assert_true: expected true got false
 - window.event is set to the current event during dispatch: Cannot read properties of undefined (reading 'type')
 - window.event is set to the current event, which is the event passed to dispatch: assert_equals: expected (undefined) undefined but got (object) object "[object Event]"
 - window.event is set to the current event, which is the event passed to dispatch (2): XMLHttpRequest is not defined
-
-### dom/events/handler-count.html
-
-- Test addEventListener/removeEventListener on the window.: Test timed out
-- Test setting onanimationstart handler on the window.: 
 
 ### dom/events/no-focus-events-at-clicking-editable-content-in-link.html
 
@@ -2473,47 +2591,35 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Wheel scroll in iframe chains to containing element.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
 
-### dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html
-
-- Ensure that the scroll position is not lost when the local iframe is set to display:none and shown again.: Test timed out
-- Ensure that the scroll position is not lost when the remote iframe is set to display:none and shown again.: 
-
 ### dom/events/scrolling/scroll-cross-origin-iframes.html
 
 - Verify sibling cross-origin iframes can wheel-scroll.: Test timed out
 
 ### dom/events/scrolling/scroll-event-fired-to-iframe.html
 
-- scrollX and scrollY should fire scroll event.: assert_equals: expected (number) 0 but got (undefined) undefined
-- scrollX and scrollY being set with the same value.: promise_test: Unhandled rejection with value: object "TypeError: target.addEventListener is not a function"
-- scrollX and scrollY being set with invalid scroll Scroll.: promise_test: Unhandled rejection with value: object "TypeError: target.addEventListener is not a function"
-- scrollX and scrollY when scrolling above maximum Scroll.: assert_equals: expected (number) 0 but got (undefined) undefined
+- scrollX and scrollY should fire scroll event.: promise_test: Unhandled rejection with value: "No scroll event received for target [object Window]"
+- scrollX and scrollY when scrolling above maximum Scroll.: promise_test: Unhandled rejection with value: "No scroll event received for target [object Window]"
 
-### dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html
+### dom/events/scrolling/scroll-events-fired-once-per-frame-across-display-none.html
 
-- scrollIntoView-in-onscroll-to-sticky: Test timed out
+- Only one scrollend event fires when scrolling, toggling display: none, and scrolling again in the same frame: assert_equals: Should get exactly one scrollend event expected 1 but got 0
 
 ### dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html
 
 - scrolling state is false at the end of the test: Test timed out
 
-### dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html
-
-- No scroll via wheel on div shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
-- No scroll via wheel on document shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
-- No scroll via keys on document shouldn't fire scrollend.: assert_unreached: no scroll, so no scrollend expected Reached unreachable code
-
 ### dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html
 
 - snap to fractional offset fires scrollend exactly once.: assert_approx_equals: scroller snaps to the left edge of box 2 expected 701 +/- 1 but got 901
 
+### dom/events/scrolling/visibility-hidden-scrolls.html
+
+- Scrolling should chain to a visibility: hidden element.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+- Scrolling over a visibility: visible child should scroll a visibility: hidden scroller.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+
 ### dom/events/scrolling/wheel-event-composed.html
 
 - wheel event must be composed: Test timed out
-
-### dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html
-
-- When `preventDefault` is called on a WheelEvent, scrolling should be prevented.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
 
 ### dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html
 
@@ -2521,7 +2627,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### dom/events/scrolling/wheel-event-transactions-target-elements.html
 
-- Wheel event transactions target elements: promise_test: Unhandled rejection with value: object "NotSupportedError: Web Animations is not implemented"
+- Wheel event transactions target elements: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
 
 ### dom/events/scrolling/wheel-event-transactions-target-move.html
 
@@ -2530,6 +2636,15 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 ### dom/events/scrolling/wheel-event-transactions-target-removal.html
 
 - Remove the initial wheel event target.: Test timed out
+
+### dom/events/webkit-transition-end-event.html
+
+- onwebkittransitionend event handler should not trigger if an unprefixed listener also exists: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
+- webkitTransitionEnd event listener should trigger for an animation: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
+- webkitTransitionEnd event listener should not trigger if an unprefixed listener also exists: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
+- webkitTransitionEnd event listener should not trigger if an unprefixed event handler also exists: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
+- event types for prefixed and unprefixed transitionend event listeners should be named appropriately: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
+- webkitTransitionEnd event listener is case sensitive: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
 
 ### dom/events/window-event-restored-after-throwing-onerror.html
 
@@ -2544,35 +2659,67 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Selecting the default summary of <details> should report a DOM-visible ancestor: promise_test: Unhandled rejection with value: object "Error: testdriver: the element has no box to point at"
 
-### selection/anonymous/details-mutate.html
-
-- Manipulating selection after clicking <details> shouldn't cause a crash: promise_test: Unhandled rejection with value: object "Error: testdriver: the element has no box to point at"
-
 ### selection/bidi/modify-extend-by-character.html
 
-- RTL text in RTL paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 6
-- RTL text in RTL paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 0
-- RTL text in LTR paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 6
-- RTL text in LTR paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 0
-- LTR-RTL context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 11 but got 7
-- LTR-RTL context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 4 but got 8
-- RTL-LTR context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 14 but got 10
-- RTL-LTR context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 7 but got 11
-- Mixed context in auto-dir paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 5 but got 18
-- Mixed context in auto-dir paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 17 but got 2
+- LTR text in LTR paragraph: extend forward 2 chars: assert_equals: focusOffset after extend expected 5 but got 3
+- LTR text in LTR paragraph: extend backward 2 chars: assert_equals: focusOffset after extend expected 3 but got 5
+- RTL text in RTL paragraph: extend forward 2 chars: assert_equals: focusOffset after extend expected 4 but got 2
+- RTL text in RTL paragraph: extend backward 2 chars: assert_equals: focusOffset after extend expected 2 but got 4
+- RTL text in LTR paragraph: extend forward 2 chars: assert_equals: focusOffset after extend expected 4 but got 2
+- RTL text in LTR paragraph: extend backward 2 chars: assert_equals: focusOffset after extend expected 2 but got 4
+- LTR text in RTL paragraph: extend forward 2 chars: assert_equals: focusOffset after extend expected 5 but got 3
+- LTR text in RTL paragraph: extend backward 2 chars: assert_equals: focusOffset after extend expected 3 but got 5
+- LTR-RTL context in LTR paragraph: extend forward 3 chars: assert_equals: focusOffset after extend expected 7 but got 4
+- LTR-RTL context in LTR paragraph: extend backward 3 chars: assert_equals: focusOffset after extend expected 8 but got 11
+- RTL-LTR context in LTR paragraph: extend forward 3 chars: assert_equals: focusOffset after extend expected 10 but got 7
+- RTL-LTR context in LTR paragraph: extend backward 3 chars: assert_equals: focusOffset after extend expected 11 but got 14
+- Mixed context in auto-dir paragraph: extend forward 3 chars: assert_equals: focusOffset after extend expected 8 but got 5
+- Mixed context in auto-dir paragraph: extend backward 3 chars: assert_equals: focusOffset after extend expected 14 but got 17
+- LTR text in LTR paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 5 but got 3
+- LTR text in LTR paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 3 but got 5
+- RTL text in RTL paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 4
+- RTL text in RTL paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 2
+- RTL text in LTR paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 2 but got 4
+- RTL text in LTR paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 4 but got 2
+- LTR text in RTL paragraph: extend right 2 chars: assert_equals: focusOffset after extend expected 5 but got 3
+- LTR text in RTL paragraph: extend left 2 chars: assert_equals: focusOffset after extend expected 3 but got 5
+- LTR-RTL context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 11 but got 4
+- LTR-RTL context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 4 but got 11
+- RTL-LTR context in LTR paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 14 but got 7
+- RTL-LTR context in LTR paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 7 but got 14
+- Mixed context in auto-dir paragraph: extend right 3 chars: assert_equals: focusOffset after extend expected 5 but got 17
+- Mixed context in auto-dir paragraph: extend left 3 chars: assert_equals: focusOffset after extend expected 17 but got 5
 
 ### selection/bidi/modify-move-by-character.html
 
-- RTL text in RTL paragraph: move right 2 chars: assert_equals: expected 2 but got 6
-- RTL text in RTL paragraph: move left 2 chars: assert_equals: expected 4 but got 0
-- RTL text in LTR paragraph: move right 2 chars: assert_equals: expected 2 but got 6
-- RTL text in LTR paragraph: move left 2 chars: assert_equals: expected 4 but got 0
-- LTR-RTL context in LTR paragraph: move right 3 chars: assert_equals: expected 11 but got 7
-- LTR-RTL context in LTR paragraph: move left 3 chars: assert_equals: expected 4 but got 8
-- RTL-LTR context in LTR paragraph: move right 3 chars: assert_equals: expected 14 but got 10
-- RTL-LTR context in LTR paragraph: move left 3 chars: assert_equals: expected 7 but got 11
-- Mixed context in auto-dir paragraph: move right 3 chars: assert_equals: expected 5 but got 18
-- Mixed context in auto-dir paragraph: move left 3 chars: assert_equals: expected 17 but got 2
+- LTR text in LTR paragraph: move forward 2 chars: assert_equals: expected 5 but got 3
+- LTR text in LTR paragraph: move backward 2 chars: assert_equals: expected 3 but got 5
+- RTL text in RTL paragraph: move forward 2 chars: assert_equals: expected 4 but got 2
+- RTL text in RTL paragraph: move backward 2 chars: assert_equals: expected 2 but got 4
+- RTL text in LTR paragraph: move forward 2 chars: assert_equals: expected 4 but got 2
+- RTL text in LTR paragraph: move backward 2 chars: assert_equals: expected 2 but got 4
+- LTR text in RTL paragraph: move forward 2 chars: assert_equals: expected 5 but got 3
+- LTR text in RTL paragraph: move backward 2 chars: assert_equals: expected 3 but got 5
+- LTR-RTL context in LTR paragraph: move forward 3 chars: assert_equals: expected 7 but got 4
+- LTR-RTL context in LTR paragraph: move backward 3 chars: assert_equals: expected 8 but got 11
+- RTL-LTR context in LTR paragraph: move forward 3 chars: assert_equals: expected 10 but got 7
+- RTL-LTR context in LTR paragraph: move backward 3 chars: assert_equals: expected 11 but got 14
+- Mixed context in auto-dir paragraph: move forward 3 chars: assert_equals: expected 8 but got 5
+- Mixed context in auto-dir paragraph: move backward 3 chars: assert_equals: expected 14 but got 17
+- LTR text in LTR paragraph: move right 2 chars: assert_equals: expected 5 but got 3
+- LTR text in LTR paragraph: move left 2 chars: assert_equals: expected 3 but got 5
+- RTL text in RTL paragraph: move right 2 chars: assert_equals: expected 2 but got 4
+- RTL text in RTL paragraph: move left 2 chars: assert_equals: expected 4 but got 2
+- RTL text in LTR paragraph: move right 2 chars: assert_equals: expected 2 but got 4
+- RTL text in LTR paragraph: move left 2 chars: assert_equals: expected 4 but got 2
+- LTR text in RTL paragraph: move right 2 chars: assert_equals: expected 5 but got 3
+- LTR text in RTL paragraph: move left 2 chars: assert_equals: expected 3 but got 5
+- LTR-RTL context in LTR paragraph: move right 3 chars: assert_equals: expected 11 but got 4
+- LTR-RTL context in LTR paragraph: move left 3 chars: assert_equals: expected 4 but got 11
+- RTL-LTR context in LTR paragraph: move right 3 chars: assert_equals: expected 14 but got 7
+- RTL-LTR context in LTR paragraph: move left 3 chars: assert_equals: expected 7 but got 14
+- Mixed context in auto-dir paragraph: move right 3 chars: assert_equals: expected 5 but got 17
+- Mixed context in auto-dir paragraph: move left 3 chars: assert_equals: expected 17 but got 5
 
 ### selection/bidi/modify.tentative.html
 
@@ -2591,7 +2738,11 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### selection/canvas-click.html
 
-- Clicking on a text-selectable canvas should not select it: promise_test: Unhandled rejection with value: object "Error: element click intercepted error"
+- Clicking on a text-selectable canvas should not select it: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (100, -76) is outside the viewport"
+
+### selection/canvas-drag.html
+
+- Dragging on a text-selectable canvas should not select it: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (198, 3) is outside the viewport"
 
 ### selection/caret-position-should-be-correct-while-moveup-movedown.html
 
@@ -2639,41 +2790,27 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### selection/contenteditable/modify-around-inline-element-boundary.tentative.html
 
-- Selection.modify("move", "right", "character") when "abc[]<span>def</span>": assert_equals: expected "[(#text \"def\", 1)]" but got "[(#text \"abc\", 3)]"
-- Selection.modify("move", "right", "character") when "<b>ab[]c</b><i>def</i>": assert_equals: expected "[(#text \"abc\", 3)]" but got "[(#text \"abc\", 2)]"
-- Selection.modify("move", "right", "character") when "<b>abc[]</b><i>def</i>": assert_equals: expected "[(#text \"def\", 1)]" but got "[(#text \"abc\", 3)]"
-- Selection.modify("move", "left", "character") when "abc<span>d[]ef</span>": assert_equals: expected "[(#text \"def\", 0)]" but got "[(#text \"def\", 1)]"
-- Selection.modify("move", "left", "character") when "abc<span>[]def</span>": assert_equals: expected "[(#text \"abc\", 2)]" but got "[(#text \"def\", 0)]"
-- Selection.modify("move", "left", "character") when "<b>abc</b><i>d[]ef</i>": assert_equals: expected "[(#text \"def\", 0)]" but got "[(#text \"def\", 1)]"
-- Selection.modify("move", "left", "character") when "<b>abc</b><i>[]def</i>": assert_equals: expected "[(#text \"abc\", 2)]" but got "[(#text \"def\", 0)]"
-- Selection.modify("move", "right", "character") when "abc[] <span>def</span>": assert_equals: expected "[(#text \"abc \", 4)]" but got "[(#text \"abc \", 3)]"
-- Selection.modify("move", "right", "character") when "abc[]<span> def</span>": assert_equals: expected "[(#text \" def\", 1)]" but got "[(#text \"abc\", 3)]"
-- Selection.modify("move", "left", "character") when "abc <span>[]def</span>": assert_equals: expected "[(#text \"abc \", 3)]" but got "[(#text \"def\", 0)]"
-- Selection.modify("move", "left", "character") when "abc<span> []def</span>": assert_equals: expected "[(#text \" def\", 0)]" but got "[(#text \" def\", 1)]"
-- Selection.modify("move", "right", "character") when "abc[]  <span>def</span>": assert_equals: expected "[(#text \"abc  \", 4)]" but got "[(#text \"abc  \", 3)]"
-- Selection.modify("move", "right", "character") when "abc[] <span> def</span>": assert_equals: expected "[(#text \"abc \", 4)]" but got "[(#text \"abc \", 3)]"
-- Selection.modify("move", "right", "character") when "abc[]<span>  def</span>": assert_equals: expected "[(#text \"  def\", 1)]" but got "[(#text \"abc\", 3)]"
-- Selection.modify("move", "right", "character") when "<span>abc[]  </span>def": assert_equals: expected "[(#text \"abc  \", 4)]" but got "[(#text \"abc  \", 3)]"
-- Selection.modify("move", "right", "character") when "<span>abc[] </span> def": assert_equals: expected "[(#text \"abc \", 4)]" but got "[(#text \"abc \", 3)]"
-- Selection.modify("move", "right", "character") when "<span>abc[]</span>  def": assert_equals: expected "[(#text \"  def\", 1)]" but got "[(#text \"abc\", 3)]"
-- Selection.modify("move", "left", "character") when "abc  <span>[]def</span>": assert_equals: expected "[(#text \"abc  \", 3)]" but got "[(#text \"def\", 0)]"
-- Selection.modify("move", "left", "character") when "abc <span> []def</span>": assert_equals: expected "[(#text \"abc \", 3)]" but got "[(#text \" def\", 1)]"
-- Selection.modify("move", "left", "character") when "abc<span>  []def</span>": assert_equals: expected "[(#text \"  def\", 0)]" but got "[(#text \"  def\", 2)]"
-- Selection.modify("move", "left", "character") when "<span>abc  </span>[]def": assert_equals: expected "[(#text \"abc  \", 3)]" but got "[(#text \"def\", 0)]"
-- Selection.modify("move", "left", "character") when "<span>abc </span> []def": assert_equals: expected "[(#text \"abc \", 3)]" but got "[(#text \" def\", 1)]"
-- Selection.modify("move", "left", "character") when "<span>abc</span>  []def": assert_equals: expected "[(#text \"  def\", 0)]" but got "[(#text \"  def\", 2)]"
-- Selection.modify("move", "right", "character") (2 times) when "abc[]  <span>def</span>": assert_equals: expected "[(#text \"def\", 1)]" but got "[(#text \"abc  \", 3)]"
-- Selection.modify("move", "right", "character") (2 times) when "abc[] <span> def</span>": assert_equals: expected "[(#text \" def\", 2)]" but got "[(#text \"abc \", 3)]"
-- Selection.modify("move", "right", "character") (2 times) when "abc[]<span>  def</span>": assert_equals: expected "[(#text \"  def\", 3)]" but got "[(#text \"abc\", 3)]"
-- Selection.modify("move", "right", "character") (2 times) when "<span>abc[]  </span>def": assert_equals: expected "[(#text \"def\", 1)]" but got "[(#text \"abc  \", 3)]"
-- Selection.modify("move", "right", "character") (2 times) when "<span>abc[] </span> def": assert_equals: expected "[(#text \" def\", 2)]" but got "[(#text \"abc \", 3)]"
-- Selection.modify("move", "right", "character") (2 times) when "<span>abc[]</span>  def": assert_equals: expected "[(#text \"  def\", 3)]" but got "[(#text \"abc\", 3)]"
-- Selection.modify("move", "left", "character") (2 times) when "abc  <span>[]def</span>": assert_equals: expected "[(#text \"abc  \", 2)]" but got "[(#text \"def\", 0)]"
-- Selection.modify("move", "left", "character") (2 times) when "abc <span> []def</span>": assert_equals: expected "[(#text \"abc \", 2)]" but got "[(#text \" def\", 1)]"
-- Selection.modify("move", "left", "character") (2 times) when "abc<span>  []def</span>": assert_equals: expected "[(#text \"abc\", 2)]" but got "[(#text \"  def\", 2)]"
-- Selection.modify("move", "left", "character") (2 times) when "<span>abc  </span>[]def": assert_equals: expected "[(#text \"abc  \", 2)]" but got "[(#text \"def\", 0)]"
-- Selection.modify("move", "left", "character") (2 times) when "<span>abc </span> []def": assert_equals: expected "[(#text \"abc \", 2)]" but got "[(#text \" def\", 1)]"
-- Selection.modify("move", "left", "character") (2 times) when "<span>abc</span>  []def": assert_equals: expected "[(#text \"abc\", 2)]" but got "[(#text \"  def\", 2)]"
+- Selection.modify("move", "left", "character") when "abc<span>d[]ef</span>": assert_equals: expected "[(#text \"def\", 0)]" but got "[(#text \"abc\", 3)]"
+- Selection.modify("move", "left", "character") when "<b>abc</b><i>d[]ef</i>": assert_equals: expected "[(#text \"def\", 0)]" but got "[(#text \"abc\", 3)]"
+- Selection.modify("move", "left", "character") when "abc<span> []def</span>": assert_equals: expected "[(#text \" def\", 0)]" but got "[(#text \"abc\", 3)]"
+- Selection.modify("move", "left", "character") when "abc  <span>[]def</span>": assert_equals: expected "[(#text \"abc  \", 3)]" but got "[(#text \"abc  \", 4)]"
+- Selection.modify("move", "left", "character") when "abc <span> []def</span>": assert_equals: expected "[(#text \"abc \", 3)]" but got "[(#text \"abc \", 4)]"
+- Selection.modify("move", "left", "character") when "abc<span>  []def</span>": assert_equals: expected "[(#text \"  def\", 0)]" but got "[(#text \"  def\", 1)]"
+- Selection.modify("move", "left", "character") when "<span>abc  </span>[]def": assert_equals: expected "[(#text \"abc  \", 3)]" but got "[(#text \"abc  \", 4)]"
+- Selection.modify("move", "left", "character") when "<span>abc </span> []def": assert_equals: expected "[(#text \"abc \", 3)]" but got "[(#text \"abc \", 4)]"
+- Selection.modify("move", "left", "character") when "<span>abc</span>  []def": assert_equals: expected "[(#text \"  def\", 0)]" but got "[(#text \"  def\", 1)]"
+- Selection.modify("move", "right", "character") (2 times) when "abc[]  <span>def</span>": assert_equals: expected "[(#text \"def\", 1)]" but got "[(#text \"abc  \", 5)]"
+- Selection.modify("move", "right", "character") (2 times) when "abc[] <span> def</span>": assert_equals: expected "[(#text \" def\", 2)]" but got "[(#text \" def\", 1)]"
+- Selection.modify("move", "right", "character") (2 times) when "abc[]<span>  def</span>": assert_equals: expected "[(#text \"  def\", 3)]" but got "[(#text \"  def\", 2)]"
+- Selection.modify("move", "right", "character") (2 times) when "<span>abc[]  </span>def": assert_equals: expected "[(#text \"def\", 1)]" but got "[(#text \"abc  \", 5)]"
+- Selection.modify("move", "right", "character") (2 times) when "<span>abc[] </span> def": assert_equals: expected "[(#text \" def\", 2)]" but got "[(#text \" def\", 1)]"
+- Selection.modify("move", "right", "character") (2 times) when "<span>abc[]</span>  def": assert_equals: expected "[(#text \"  def\", 3)]" but got "[(#text \"  def\", 2)]"
+- Selection.modify("move", "left", "character") (2 times) when "abc  <span>[]def</span>": assert_equals: expected "[(#text \"abc  \", 2)]" but got "[(#text \"abc  \", 3)]"
+- Selection.modify("move", "left", "character") (2 times) when "abc <span> []def</span>": assert_equals: expected "[(#text \"abc \", 2)]" but got "[(#text \"abc \", 3)]"
+- Selection.modify("move", "left", "character") (2 times) when "abc<span>  []def</span>": assert_equals: expected "[(#text \"abc\", 2)]" but got "[(#text \"abc\", 3)]"
+- Selection.modify("move", "left", "character") (2 times) when "<span>abc  </span>[]def": assert_equals: expected "[(#text \"abc  \", 2)]" but got "[(#text \"abc  \", 3)]"
+- Selection.modify("move", "left", "character") (2 times) when "<span>abc </span> []def": assert_equals: expected "[(#text \"abc \", 2)]" but got "[(#text \"abc \", 3)]"
+- Selection.modify("move", "left", "character") (2 times) when "<span>abc</span>  []def": assert_equals: expected "[(#text \"abc\", 2)]" but got "[(#text \"abc\", 3)]"
 
 ### selection/contenteditable/modify-around-non-editable-span.html
 
@@ -2694,22 +2831,18 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when " <span contenteditable=false>...</span>[]editable": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 1)", "(#text \" \", 1)", "(<div contenteditable=\"\">, 0)", "(#text \" \", 0)"]
 - getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": assert_in_array: value "(#text \" \", 0)" not in array ["(<div contenteditable=\"\">, 3)", "(#text \"editable\", 8)"]
 
-### selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html
-
--  click should move caret in an editable element: assert_equals: Selection should be collapsed in the second <span> element which was clicked by  button expected Text node "second span." but got Text node "first span."
-- Shift +  click should extend the selection: assert_equals: Selection#focusNode should be in the second <span> element which was clicked by  button expected Text node "second span." but got Text node "first span."
-- Shift +  click in a link shouldn't extend the selection: assert_equals: Selection#focusNode should be in the <a href> element which was clicked by  button expected Text node "link." but got Text node "first span."
--  mouse button down should move caret, but its button up shouldn't move caret: assert_equals: selection should be collapsed in the second <span> element which was clicked by  button before pointerup event expected Text node "second span." but got Text node "first span."
-
 ### selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html
 
 - Primary click shouldn't move caret in an editable element if the default of pointerdown event is prevented: assert_equals: Selection should keep collapsed selection in the first <span> element expected Text node "first span." but got Text node "second span."
 - Shift + Primary click should extend the selection: assert_equals: Selection#anchorNode should keep in the first <span> element expected Text node "first span." but got Text node "second span."
 - Shift + Primary click in a link shouldn't extend the selection: assert_equals: Selection#focusNode should be in the <a href> element which was clicked by primary button expected Text node "link." but got Text node "first span."
 
-### selection/contenteditable/selection-outside-focused-editing-host.tentative.html
+### selection/document-selectionchange.html
 
-- Modifying selection should do nothing: assert_true: expected true got false
+- triggers selectionchange event on setBaseAndExtent: assert_equals: Should be 1 event because we called setBaseAndExtent with the same arguments expected 1 but got 2
+- triggers selectionchange event on selectAllChildren: assert_equals: Should be 1 event because we called selectAllChildren with the same arguments expected 1 but got 2
+- triggers selectionchange event on collapseToStart: assert_equals: Should be 2 events because we called collapseToStart with the same arguments expected 2 but got 3
+- triggers selectionchange event on collapseToEnd: assert_equals: Should be 2 events because we called collapseToEnd with the same arguments expected 2 but got 3
 
 ### selection/drag-disabled-textarea-shadow-dom.html
 
@@ -2730,31 +2863,15 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - Selection starts with user-select:text content and then extends selection to user-select:none content.: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (44, 25) is outside the viewport"
 - Select user-select:text content and then extend selection to the next user-select:text element by crossing the user-select:none element.: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (44, 25) is outside the viewport"
 
-### selection/extend-selection-backward-on-input.html
-
-- Should not crash if block node is in an inline node and block_flow is a pseudo node: execCommand is not implemented
-
-### selection/extend-selection-in-shadow-tree.html
-
-- Extend selection in shadow tree: promise_test: Unhandled rejection with value: object "InvalidStateError: The selection has no range"
-
 ### selection/fire-selectionchange-event-on-document-if-textcontrol-element-is-in-shadow-tree.html
 
-- selectionchange event fired on the document in case TextControl element is in Shadow Tree: promise_test: Unhandled rejection with value: object "NotSupportedError: execCommand is not implemented"
+- selectionchange event fired on the document in case TextControl element is in Shadow Tree: assert_equals: element.value should be hell expected "hell" but got "hello"
 
 ### selection/getSelection.html
 
 - getSelection() on HTML document with null defaultView must be null: assert_equals: expected null but got object ""
 - getSelection() on XML document with null defaultView must be null: assert_equals: expected null but got object ""
-- window.getSelection() instanceof Selection in an iframe onload: assert_true: Sanity check: window must have Selection property expected true got false
-- document.getSelection() instanceof Selection in an iframe onload: assert_true: Sanity check: window must have Selection property expected true got false
-- window.getSelection() === document.getSelection() in an iframe onload: assert_not_equals: Sanity check: document.defaultView must not be null got disallowed value null
-- getSelection() inside and outside iframe must return different objects onload: iframe.contentWindow.getSelection is not a function
 - getSelection() on HTML document with null defaultView must be null inside an iframe onload: assert_equals: expected null but got object ""
-- window.getSelection() instanceof Selection in an iframe immediately after appendChild: assert_true: Sanity check: window must have Selection property expected true got false
-- document.getSelection() instanceof Selection in an iframe immediately after appendChild: assert_true: Sanity check: window must have Selection property expected true got false
-- window.getSelection() === document.getSelection() in an iframe immediately after appendChild: assert_not_equals: Sanity check: document.defaultView must not be null got disallowed value null
-- getSelection() inside and outside iframe must return different objects immediately after appendChild: iframe.contentWindow.getSelection is not a function
 - getSelection() on HTML document with null defaultView must be null inside an iframe immediately after appendChild: assert_equals: expected null but got object ""
 
 ### selection/modify-line-flex-column.tentative.html
@@ -2796,13 +2913,9 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - cross editing boundary: assert_equals: expected "this " but got " after"
 - Selection.modify(): move by paragraphboundary cross editing boundary: assert_equals: expected "this " but got " after"
 
-### selection/script-and-style-elements.html
-
-- Selection: STYLE and SCRIPT elements should be included in Selection.toString() if they are display!=none: assert_equals: expected "\nstyle { display:block; color: green; } script { color: blue; }\nfunction test_block_script() { let pre = document.createElement(\"pre\"); pre.append(document.createTextNode(\"PASS\")); document.getElementById(\"p1\").append(pre); }\n\nPASS" but got "PASS"
-
 ### selection/select-end-of-line-image.tentative.html
 
-- Select image at the end of the line.: promise_test: Unhandled rejection with value: object "Error: testdriver: the element has no box to point at"
+- Select image at the end of the line.: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (125, 21) is outside the viewport"
 
 ### selection/selection-direction-on-double-click.tentative.html
 
@@ -2844,20 +2957,6 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 ### selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html
 
 - If selection crosses shadow boundaries, getRangeAt(0) should throw an IndexSizeError because the end is not in the document tree.: assert_throws_dom: function "function () { selection.getRangeAt(0) }" did not throw
-
-### selection/stringifier_editable_element.tentative.html
-
-- select the entire input should result all the content: assert_equals: expected Element node <input id="textInput" value="This is a text"></input> but got Element node <input id="dummyInput"></input>
-- toString() works with selectionStart and selectionEnd for input: assert_equals: expected "s is" but got ""
-- select the entire textarea should result all the content: assert_equals: expected Element node <textarea id="textArea" rows="5" cols="40">
-- toString() works with selectionStart and selectionEnd for textarea: assert_equals: expected "Line one\n" but got ""
-- toString() works even if a click just occured on a button: assert_equals: expected "This is a text" but got ""
-- toString() works for programatically calling .click() on anchor (without href): Test timed out
-- toString() doesn't work for actual clicking the anchor (without href): 
-- toString() works for programatically calling .click() on anchor (with href): 
-- toString() also works for actual clicking the anchor (with href): 
-- Click on a text prior to toString() moves the seleciton: 
-- Click on a `user-select:none` text prior to toString() doesn't move the seleciton: 
 
 ### selection/textcontrols/focus.html
 
@@ -2968,8 +3067,8 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### shadow-dom/MouseEvent-prototype-offsetX-offsetY.html
 
-- MouseEvent's offsetX and offsetY attributes must be relative to the target.: assert_equals: The target must be at (45px, 30px) expected 45 but got 40
-- MouseEvent's offsetX and offsetY attributes must be relative to the shadow host when an event is dispatched inside its shadow tree.: assert_equals: The target must be at (45px, 30px) expected 45 but got 40
+- MouseEvent's offsetX and offsetY attributes must be relative to the target.: assert_equals: expected 21 but got 6
+- MouseEvent's offsetX and offsetY attributes must be relative to the shadow host when an event is dispatched inside its shadow tree.: assert_equals: expected 21 but got 6
 
 ### shadow-dom/ShadowRoot-interface.html
 
@@ -2980,10 +3079,6 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - button element with accesskey in the shadow tree of open mode: Test timed out
 - button element with accesskey in the shadow tree of closed mode: 
-
-### shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html
-
-- Declarative Shadow DOM: shadow root should be available to element internals: assert_true: expected true got false
 
 ### shadow-dom/declarative/declarative-shadow-dom-repeats-slot-assignment.html
 
@@ -3051,6 +3146,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Clicking on non-focusable slot inside focusable div will make the flat-tree focusable ancestor get focused: assert_equals: expected Element node <div id="normalDiv" tabindex="0"><span id="normalSpan">Te... but got Element node <body><div id="normalDiv" tabindex="0"><span id="normalSp...
 
+### shadow-dom/focus/focus-autofocus.html
+
+- Focus should not be delegated to the slotted elements: assert_equals: expected Element node <div id="host"><div tabindex="0" autofocus="true"></div><... but got Element node <div tabindex="0" autofocus="true"></div>
+
 ### shadow-dom/focus/focus-click-on-shadow-host.html
 
 - :focus should be applied to the host and the child node when the focus is moved by mouse click: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (40, -476) is outside the viewport"
@@ -3067,6 +3166,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 ### shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex-2.html
 
 - Order with different tabindex on host: assert_equals: expected Element node <div></div> but got Element node <div></div>
+
+### shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html
+
+- select slotted text in shadow root with delegatesFocus.: assert_greater_than: expected a number greater than 0 but got 0
 
 ### shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html
 
@@ -3121,9 +3224,41 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/Document-createElement.html
 
+- document.createElement must report a TypeError when the result of Construct is not a DOM node: Cannot read properties of null (reading 'name')
+- document.createElement must report a TypeError when the result of Construct is a TextNode: Cannot read properties of null (reading 'name')
+- document.createElement must report a NotSupportedError when attribute is added by setAttribute during construction: Cannot read properties of null (reading 'name')
+- document.createElement must report a NotSupportedError when attribute is added by attributes.setNamedItem during construction: Cannot read properties of null (reading 'name')
+- document.createElement must report a NotSupportedError when a Text child is added during construction: Cannot read properties of null (reading 'name')
+- document.createElement must report a NotSupportedError when a Comment child is added during construction: Cannot read properties of null (reading 'name')
+- document.createElement must report a NotSupportedError when an element child is added during construction: Cannot read properties of null (reading 'name')
+- document.createElement must report a NotSupportedError when the element gets inserted into another element during construction: Cannot read properties of null (reading 'name')
+- document.createElement must report a NotSupportedError when the element is adopted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a the document of an iframe during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a the document of an iframe during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
 - document.createElement must report a NotSupportedError when the element is adopted into a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 - document.createElement must report a NotSupportedError when the element is inserted into a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 - document.createElement must not report a NotSupportedError when the element is adopted back from a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+- document.createElement must report a NotSupportedError when the local name of the element does not match that of the custom element: Cannot read properties of null (reading 'name')
+- document.createElement must report an exception thrown by a custom element constructor: Cannot read properties of null (reading 'name')
+
+### custom-elements/ElementInternals-accessibility-values.html
+
+- ariaControlsElements: assert_equals: getter returns the same value expected [Element node <body>
+- ariaDescribedByElements: assert_equals: getter returns the same value expected [Element node <body>
+- ariaDetailsElements: assert_equals: getter returns the same value expected [Element node <body>
+- ariaErrorMessageElements: assert_equals: getter returns the same value expected [Element node <body>
+- ariaFlowToElements: assert_equals: getter returns the same value expected [Element node <body>
+- ariaLabelledByElements: assert_equals: getter returns the same value expected [Element node <body>
+- ariaOwnsElements: assert_equals: getter returns the same value expected [Element node <body>
 
 ### custom-elements/HTMLElement-attachInternals.html
 
@@ -3133,6 +3268,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Custom element constructor must throw TypeError when it does not extend HTMLElement: assert_throws_js: function "function () { new SomeCustomElement(); }" did not throw
 - Custom element constructor must throw TypeError when it does not extend the proper element interface: A customized built-in element is not implemented here
+- HTMLElement constructor must only get .prototype once, calling proxy constructor directly: assert_equals: Should have gotten .prototype once expected 1 but got 3
+- HTMLElement constructor must only get .prototype once, calling proxy constructor via Reflect: assert_equals: Should have gotten .prototype once expected 1 but got 3
+- HTMLElement constructor must only get .prototype once, calling proxy constructor via Reflect with no inheritance: Cannot convert undefined or null to object
+- HTMLElement constructor must not get .prototype until it finishes its registration  sanity checks, calling via Reflect: assert_equals: Should never have gotten .prototype expected 0 but got 1
 
 ### custom-elements/adopted-callback.html
 
@@ -3146,6 +3285,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - Moving the shadow host's shadow of a custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 - Moving the <template>'s content of a custom element from the owner document into an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 - Inserting a custom element into a detached shadow tree that belongs to an HTML document fetched by XHR must enqueue and invoke adoptedCallback: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
+
+### custom-elements/attribute-changed-callback.html
+
+- attributedChangedCallback must be enqueued for style attribute change by mutating inline style declaration: assert_equals: expected 1 but got 0
 
 ### custom-elements/connected-callbacks-html-fragment-parsing.html
 
@@ -3174,10 +3317,6 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - Caching invariant different attributes.: assert_equals: Caching invariant for ariaControlsElements expected [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>] but got [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>]
 - Caching invariant different elements.: assert_equals: Caching invariant for ariaDescribedByElements in one elemnt expected [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>] but got [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>]
 
-### custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html
-
-- Adopting an element with adoptingCallback while it has a connectedCallback in its custom element reaction queue must result in connectedCallback getting invoked before the adoption completes: assert_array_equals: lengths differ, expected array ["begin", "connected", "adopted", "end"] length 4, got ["adopted", "connected", "begin", "adopted", "end"] length 5
-
 ### custom-elements/form-associated/ElementInternals-setFormValue-nullish-value.html
 
 - ElementInternals.setFormValue(null) clears submission value: FormData constructor: Argument 1 could not be converted to: undefined.
@@ -3185,64 +3324,77 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/form-associated/ElementInternals-setFormValue.html
 
-- Single value - name is missing: Test timed out
-- Single value - empty name exists: 
-- Single value - Non-empty name exists: 
-- Null value should submit nothing: 
-- Multiple values - name content attribute is ignored: 
-- setFormValue with an empty FormData should submit nothing: 
-- Newline normalization - \n in name (urlencoded): 
-- Newline normalization - \n in name (formdata): 
-- Newline normalization - \r in name (urlencoded): 
-- Newline normalization - \r in name (formdata): 
-- Newline normalization - \r\n in name (urlencoded): 
-- Newline normalization - \r\n in name (formdata): 
-- Newline normalization - \n\r in name (urlencoded): 
-- Newline normalization - \n\r in name (formdata): 
-- Newline normalization - \n in value (urlencoded): 
-- Newline normalization - \n in value (formdata): 
-- Newline normalization - \r in value (urlencoded): 
-- Newline normalization - \r in value (formdata): 
-- Newline normalization - \r\n in value (urlencoded): 
-- Newline normalization - \r\n in value (formdata): 
-- Newline normalization - \n\r in value (urlencoded): 
-- Newline normalization - \n\r in value (formdata): 
-- Newline normalization - \n in filename (urlencoded): 
-- Newline normalization - \n in filename (formdata): 
-- Newline normalization - \r in filename (urlencoded): 
-- Newline normalization - \r in filename (formdata): 
-- Newline normalization - \r\n in filename (urlencoded): 
-- Newline normalization - \r\n in filename (formdata): 
-- Newline normalization - \n\r in filename (urlencoded): 
-- Newline normalization - \n\r in filename (formdata): 
-- Newline normalization - \n in FormData name (urlencoded): 
-- Newline normalization - \n in FormData name (formdata): 
-- Newline normalization - \r in FormData name (urlencoded): 
-- Newline normalization - \r in FormData name (formdata): 
-- Newline normalization - \r\n in FormData name (urlencoded): 
-- Newline normalization - \r\n in FormData name (formdata): 
-- Newline normalization - \n\r in FormData name (urlencoded): 
-- Newline normalization - \n\r in FormData name (formdata): 
-- Newline normalization - \n in FormData value (urlencoded): 
-- Newline normalization - \n in FormData value (formdata): 
-- Newline normalization - \r in FormData value (urlencoded): 
-- Newline normalization - \r in FormData value (formdata): 
-- Newline normalization - \r\n in FormData value (urlencoded): 
-- Newline normalization - \r\n in FormData value (formdata): 
-- Newline normalization - \n\r in FormData value (urlencoded): 
-- Newline normalization - \n\r in FormData value (formdata): 
-- Newline normalization - \n in FormData filename (urlencoded): 
-- Newline normalization - \n in FormData filename (formdata): 
-- Newline normalization - \r in FormData filename (urlencoded): 
-- Newline normalization - \r in FormData filename (formdata): 
-- Newline normalization - \r\n in FormData filename (urlencoded): 
-- Newline normalization - \r\n in FormData filename (formdata): 
-- Newline normalization - \n\r in FormData filename (urlencoded): 
-- Newline normalization - \n\r in FormData filename (formdata): 
+- Single value - name is missing: assert_equals: expected "?name-pd1=value-pd1" but got ""
+- Single value - empty name exists: assert_equals: expected "?name-pd1=value-pd1&name-pd2=value-pd2" but got ""
+- Single value - Non-empty name exists: assert_equals: expected "?name-pd1=value-pd1&name-usv=abc%EF%BF%BD%EF%BF%BDdef&name-file=test_file.txt" but got ""
+- Null value should submit nothing: assert_equals: expected "?name-pd1=value-pd1" but got ""
+- Multiple values - name content attribute is ignored: assert_equals: expected "?name-pd1=value-pd1&sub1=subvalue1&sub2=subvalue2&sub2=subvalue3" but got ""
+- setFormValue with an empty FormData should submit nothing: assert_equals: expected "?name-pd1=value-pd1" but got ""
+- Newline normalization - \n in name (urlencoded): assert_equals: expected "?a%0D%0Ab=c" but got ""
+- Newline normalization - \n in name (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a%0D%0Ab\"\r\n\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \r in name (urlencoded): assert_equals: expected "?a%0D%0Ab=c" but got ""
+- Newline normalization - \r in name (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a%0D%0Ab\"\r\n\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \r\n in name (urlencoded): assert_equals: expected "?a%0D%0Ab=c" but got ""
+- Newline normalization - \r\n in name (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a%0D%0Ab\"\r\n\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \n\r in name (urlencoded): assert_equals: expected "?a%0D%0A%0D%0Ab=c" but got ""
+- Newline normalization - \n\r in name (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a%0D%0A%0D%0Ab\"\r\n\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \n in value (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \n in value (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nb\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \r in value (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \r in value (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nb\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \r\n in value (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \r\n in value (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nb\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \n\r in value (urlencoded): assert_equals: expected "?a=b%0D%0A%0D%0Ac" but got ""
+- Newline normalization - \n\r in value (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nb\r\n\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \n in filename (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \n in filename (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"; filename=\"b%0Ac\"\r\nContent-Type: text/plain\r\n\r\n\r\n--\r\n" but got ""
+- Newline normalization - \r in filename (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \r in filename (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"; filename=\"b%0Dc\"\r\nContent-Type: text/plain\r\n\r\n\r\n--\r\n" but got ""
+- Newline normalization - \r\n in filename (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \r\n in filename (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"; filename=\"b%0D%0Ac\"\r\nContent-Type: text/plain\r\n\r\n\r\n--\r\n" but got ""
+- Newline normalization - \n\r in filename (urlencoded): assert_equals: expected "?a=b%0D%0A%0D%0Ac" but got ""
+- Newline normalization - \n\r in filename (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"; filename=\"b%0A%0Dc\"\r\nContent-Type: text/plain\r\n\r\n\r\n--\r\n" but got ""
+- Newline normalization - \n in FormData name (urlencoded): assert_equals: expected "?a%0D%0Ab=c" but got ""
+- Newline normalization - \n in FormData name (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a%0D%0Ab\"\r\n\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \r in FormData name (urlencoded): assert_equals: expected "?a%0D%0Ab=c" but got ""
+- Newline normalization - \r in FormData name (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a%0D%0Ab\"\r\n\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \r\n in FormData name (urlencoded): assert_equals: expected "?a%0D%0Ab=c" but got ""
+- Newline normalization - \r\n in FormData name (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a%0D%0Ab\"\r\n\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \n\r in FormData name (urlencoded): assert_equals: expected "?a%0D%0A%0D%0Ab=c" but got ""
+- Newline normalization - \n\r in FormData name (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a%0D%0A%0D%0Ab\"\r\n\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \n in FormData value (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \n in FormData value (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nb\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \r in FormData value (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \r in FormData value (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nb\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \r\n in FormData value (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \r\n in FormData value (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nb\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \n\r in FormData value (urlencoded): assert_equals: expected "?a=b%0D%0A%0D%0Ac" but got ""
+- Newline normalization - \n\r in FormData value (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nb\r\n\r\nc\r\n--\r\n" but got ""
+- Newline normalization - \n in FormData filename (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \n in FormData filename (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"; filename=\"b%0Ac\"\r\nContent-Type: text/plain\r\n\r\n\r\n--\r\n" but got ""
+- Newline normalization - \r in FormData filename (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \r in FormData filename (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"; filename=\"b%0Dc\"\r\nContent-Type: text/plain\r\n\r\n\r\n--\r\n" but got ""
+- Newline normalization - \r\n in FormData filename (urlencoded): assert_equals: expected "?a=b%0D%0Ac" but got ""
+- Newline normalization - \r\n in FormData filename (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"; filename=\"b%0D%0Ac\"\r\nContent-Type: text/plain\r\n\r\n\r\n--\r\n" but got ""
+- Newline normalization - \n\r in FormData filename (urlencoded): assert_equals: expected "?a=b%0D%0A%0D%0Ac" but got ""
+- Newline normalization - \n\r in FormData filename (formdata): assert_equals: expected "\r\nContent-Disposition: form-data; name=\"a\"; filename=\"b%0A%0Dc\"\r\nContent-Type: text/plain\r\n\r\n\r\n--\r\n" but got ""
+
+### custom-elements/form-associated/ElementInternals-setValidity-normalize-newlines.html
+
+- setValidity() should normalize newlines with the customError flag set: assert_equals: expected "First line\nSecond line\nThird line\nFourth line" but got "First line\rSecond line\r\nThird line\nFourth line"
+- setValidity() should normalize newlines with another validity flag set: assert_equals: expected "First line\nSecond line\nThird line\nFourth line" but got "First line\rSecond line\r\nThird line\nFourth line"
 
 ### custom-elements/form-associated/ElementInternals-validation.html
 
 - "anchor" argument of setValidity(): assert_throws_dom: Not a descendant function "() => {
+
+### custom-elements/form-associated/fieldset-elements-after-upgrade.html
+
+- Upgrading form-associated custom elements updates all ancestor fieldsets, including inside legend: assert_equals: outer after upgrade expected 3 but got 1
+
+### custom-elements/form-associated/fieldset-elements-during-construction.html
+
+- Form associated custom element isn't a fieldset listed element until fully custom: assert_equals: Length in pre-customized state expected 0 but got 1
 
 ### custom-elements/form-associated/fieldset-elements.html
 
@@ -3260,7 +3412,11 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 ### custom-elements/form-associated/form-disabled-callback.html
 
 - A disabled form-associated custom element should not provide an entry for it: FormData constructor: Argument 1 could not be converted to: undefined.
-- A disabled form-associated custom element should not submit an entry for it: Test timed out
+- A disabled form-associated custom element should not submit an entry for it: assert_not_equals: got disallowed value -1
+
+### custom-elements/form-associated/form-disabled-legend.html
+
+- Changing the first legend updates the disabled state of a custom element: assert_true: after inserting a new first legend expected true got false
 
 ### custom-elements/form-associated/form-elements-namedItem.html
 
@@ -3269,45 +3425,39 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/form-associated/form-reset-callback.html
 
-- Clicking a reset button invokes formResetCallback in a microtask: assert_false: expected false got true
-
-### custom-elements/form-associated/label-delegatesFocus.html
-
-- Clicking on a label for a form associated custom element with delegatesFocus should focus the custom element's focus delegate.: assert_true: should have received focus expected true got false
-- Clicking on a span in a label for a form associated custom element with delegatesFocus should focus the custom element's focus delegate.: assert_true: should have received focus expected true got false
+- form.reset() should trigger formResetCallback: assert_true: expected true got false
+- form.reset(): formResetCallback is called synchronously at the end of form reset, with custom element reaction timing, *after* built-in form control reset algorithms run.: assert_true: formResetCallback is called synchronously after the form is reset expected true got false
+- Clicking a reset button invokes formResetCallback in a microtask: assert_true: expected true got false
 
 ### custom-elements/htmlconstructor/newtarget-customized-builtins.html
 
 - If prototype is not object (null), derives the fallback from NewTarget's realm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
-- If prototype is not object (null), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- If prototype is not object (null), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
 - If prototype is not object (undefined), derives the fallback from NewTarget's realm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
-- If prototype is not object (undefined), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- If prototype is not object (undefined), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
 - If prototype is not object (5), derives the fallback from NewTarget's realm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
-- If prototype is not object (5), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- If prototype is not object (5), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
 - If prototype is not object (string), derives the fallback from NewTarget's realm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
-- If prototype is not object (string), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- If prototype is not object (string), derives the fallback from NewTarget's GetFunctionRealm (customized built-in elements): promise_test: Unhandled rejection with value: object "NotSupportedError: A customized built-in element is not implemented here"
 - HTMLParagraphElement constructor must not get .prototype until it finishes its extends sanity checks, calling proxy constructor directly: assert_throws_js: Should not be able to construct an HTMLParagraphElement not named 'p' function "function () { new countingProxy() }" did not throw
 - HTMLParagraphElement constructor must not get .prototype until it finishes its extends sanity checks, calling via Reflect: assert_throws_js: Should not be able to construct an HTMLParagraphElement not named 'p' function "function () { Reflect.construct(HTMLParagraphElement, [], countingProxy) }" did not throw
 
 ### custom-elements/htmlconstructor/newtarget.html
 
-- If prototype is not object (null), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Invalid value used in weak set"
-- If prototype is not object (null), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
-- If prototype is not object (undefined), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Invalid value used in weak set"
-- If prototype is not object (undefined), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
-- If prototype is not object (5), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Invalid value used in weak set"
-- If prototype is not object (5), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
-- If prototype is not object (string), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Invalid value used in weak set"
-- If prototype is not object (string), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: w.Proxy is not a constructor"
+- Use NewTarget's prototype, not the one stored at definition time: promise_test: Unhandled rejection with value: object "TypeError: Cannot convert undefined or null to object"
+- If prototype is not object (null), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot convert undefined or null to object"
+- If prototype is not object (null), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot convert undefined or null to object"
+- If prototype is not object (undefined), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot convert undefined or null to object"
+- If prototype is not object (undefined), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot convert undefined or null to object"
+- If prototype is not object (5), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot convert undefined or null to object"
+- If prototype is not object (5), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot convert undefined or null to object"
+- If prototype is not object (string), derives the fallback from NewTarget's realm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot convert undefined or null to object"
+- If prototype is not object (string), derives the fallback from NewTarget's GetFunctionRealm (autonomous custom elements): promise_test: Unhandled rejection with value: object "TypeError: Cannot convert undefined or null to object"
 
 ### custom-elements/perform-microtask-checkpoint-before-construction.html
 
 - HTML parser must perform a microtask checkpoint before constructing a custom element: assert_true: expected true got false
 - HTML parser must perform a microtask checkpoint before constructing a custom element during the adoption agency algorithm: assert_true: expected true got false
-
-### custom-elements/pseudo-class-defined-customized-builtins.html
-
-- <abbr is="my-abbr"> should not be :defined: assert_equals: matches(":defined") expected false but got true
 
 ### custom-elements/pseudo-class-defined.html
 
@@ -3315,12 +3465,22 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/reactions/Animation.html
 
-- Animation.animate must enqueue an attributeChanged reaction when it adds the observed style attribute: Web Animations is not implemented
-- Animation.animate must enqueue an attributeChanged reaction when it mutates the observed style attribute: Web Animations is not implemented
-- Animation.animate must not enqueue an attributeChanged reaction when it mutates the style attribute but the style attribute is not observed: Web Animations is not implemented
+- Animation.animate must enqueue an attributeChanged reaction when it adds the observed style attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- Animation.animate must enqueue an attributeChanged reaction when it mutates the observed style attribute: assert_array_equals: lengths differ, expected array ["constructed", "connected", "attributeChanged"] length 3, got ["constructed", "connected"] length 2
 
 ### custom-elements/reactions/CSSStyleDeclaration.html
 
+- cssText on CSSStyleDeclaration must enqueue an attributeChanged reaction when it adds the observed style attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- cssText on CSSStyleDeclaration must enqueue an attributeChanged reaction when it mutates the observed style attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- setProperty on CSSStyleDeclaration must enqueue an attributeChanged reaction when it adds the observed style attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- setProperty on CSSStyleDeclaration must enqueue an attributeChanged reaction when it mutates the observed style attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- setProperty on CSSStyleDeclaration must enqueue an attributeChanged reaction when it makes a property important and the style attribute is observed: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- removeProperty on CSSStyleDeclaration must enqueue an attributeChanged reaction when it removes a property from the observed style attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- cssFloat on CSSStyleDeclaration must enqueue an attributeChanged reaction when it adds the observed style attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- A camel case attribute (borderWidth) on CSSStyleDeclaration must enqueue an attributeChanged reaction when it adds the observed style attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- A camel case attribute (borderWidth) on CSSStyleDeclaration must enqueue an attributeChanged reaction when it mutates the observed style attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- A dashed property (border-width) on CSSStyleDeclaration must enqueue an attributeChanged reaction when it adds the observed style attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- A dashed property (border-width) on CSSStyleDeclaration must enqueue an attributeChanged reaction when it mutates the observed style attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
 - A webkit prefixed camel case attribute (webkitFilter) on CSSStyleDeclaration must enqueue an attributeChanged reaction when it adds the observed style attribute: assert_equals: expected (string) "filter: grayscale(20%);" but got (object) null
 - A webkit prefixed camel case attribute (webkitFilter) on CSSStyleDeclaration must not enqueue an attributeChanged reaction when it adds the style attribute but the style attribute is not observed: assert_equals: expected (string) "filter: grayscale(20%);" but got (object) null
 - A webkit prefixed camel case attribute (webkitFilter) on CSSStyleDeclaration must enqueue an attributeChanged reaction when it mutates the observed style attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
@@ -3337,10 +3497,16 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - setter on DOMStringMap must enqueue an attributeChanged reaction when mutating the value of an observed data attribute to the same value: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
 - deleter on DOMStringMap must enqueue an attributeChanged reaction when removing an observed data attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
 
+### custom-elements/reactions/DOMTokenList.html
+
+- the stringifier of DOMTokenList must enqueue an attributeChanged reaction when adding an observed attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- the stringifier of DOMTokenList must enqueue an attributeChanged reaction when mutating the value of an observed attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- the stringifier of DOMTokenList must enqueue an attributeChanged reaction when the setter is called with the original value of the attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+
 ### custom-elements/reactions/Document.html
 
 - importNode on Document must construct a new custom element when importing a custom element from a template: assert_array_equals: lengths differ, expected array [] length 0, got ["constructed"] length 1
-- execCommand on Document must enqueue a disconnected reaction when deleting a custom element from a contenteditable element: promise_test: Unhandled rejection with value: object "NotSupportedError: execCommand is not implemented"
+- execCommand on Document must enqueue a disconnected reaction when deleting a custom element from a contenteditable element: assert_array_equals: lengths differ, expected array ["disconnected"] length 1, got [] length 0
 - body on Document must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["disconnected"] length 1, got [] length 0
 - body on Document must enqueue connectedCallback when inserting a custom element: assert_array_equals: lengths differ, expected array ["connected"] length 1, got [] length 0
 - open on Document must enqueue disconnectedCallback when removing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
@@ -3354,10 +3520,6 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - innerText on HTMLElement must enqueue a disconnected reaction: assert_array_equals: lengths differ, expected array ["disconnected"] length 1, got [] length 0
 - outerText on HTMLElement must enqueue a disconnected reaction: assert_array_equals: lengths differ, expected array ["disconnected"] length 1, got [] length 0
 
-### custom-elements/reactions/HTMLOptionElement.html
-
-- text on HTMLOptionElement must enqueue disconnectedCallback when removing a custom element: assert_array_equals: lengths differ, expected array ["constructed", "connected"] length 2, got [] length 0
-
 ### custom-elements/reactions/HTMLOptionsCollection.html
 
 - The indexed setter on HTMLOptionsCollection must enqueue connectedCallback when inserting a custom element: assert_equals: expected 1 but got 0
@@ -3370,11 +3532,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/reactions/Range.html
 
-- createContextualFragment on Range must construct a custom element: Invalid value used in weak set
-
-### custom-elements/reactions/with-exceptions.html
-
-- Reaction must run even after the exception is thrown: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'name')"
+- createContextualFragment on Range must construct a custom element: assert_equals: expected object "[object HTMLElement]" but got object "[object HTMLElement]"
 
 ### custom-elements/registries/Construct.html
 
@@ -3382,27 +3540,20 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/registries/CustomElementRegistry-upgrade.html
 
-- upgrade is a no-op when called on a shadow root with no association: That is not a node
-- upgrade should upgrade a candidate element when called on a shadow root with an association: That is not a node
-- upgrade should not upgrade a candidate element not associated with a registry: That is not a node
+- upgrade is a no-op when called on a shadow root with no association: Failed to execute 'upgrade' on 'CustomElementRegistry': parameter 1 is not of type 'Node'.
+- upgrade should upgrade a candidate element when called on a shadow root with an association: Failed to execute 'initialize' on 'CustomElementRegistry': parameter 1 is not of type 'Node'.
+- upgrade should not upgrade a candidate element not associated with a registry: Failed to execute 'initialize' on 'CustomElementRegistry': parameter 1 is not of type 'Node'.
 
 ### custom-elements/registries/Document-importNode-cross-document.window.js
 
-- Cloning with global registry: Cannot read properties of null (reading 'customElements')
-- Cloning with explicit global registry: 
-- Cloning with scoped registry: 
-- Cloning including shadow tree with global registry: 
-- Cloning including shadow tree with explicit global registry: 
-- Cloning including shadow tree with scoped registry: 
-- Cloning with global registry (null registry target): 
-- Cloning with explicit global registry (null registry target): 
-- Cloning with scoped registry (null registry target): 
-- Cloning including shadow tree with global registry (null registry target): 
-- Cloning including shadow tree with explicit global registry (null registry target): 
-- Cloning including shadow tree with scoped registry (null registry target): 
-- Cloning with global registry (scoped registry target): 
-- Cloning including shadow tree with global registry (scoped registry target): 
-- Cloning including shadow tree with scoped registry (scoped registry target): 
+- Cloning with scoped registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Cloning including shadow tree with global registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Cloning including shadow tree with explicit global registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Cloning with scoped registry (null registry target): assert_equals: expected object "[object CustomElementRegistry]" but got null
+- Cloning including shadow tree with global registry (null registry target): assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Cloning including shadow tree with explicit global registry (null registry target): assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Cloning with global registry (scoped registry target): assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Cloning including shadow tree with global registry (scoped registry target): assert_equals: expected null but got object "[object CustomElementRegistry]"
 
 ### custom-elements/registries/Document-importNode.html
 
@@ -3432,7 +3583,6 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 ### custom-elements/registries/ShadowRoot-init-customElementRegistry.html
 
 - A newly attached ShadowRoot should use the global registry by default even if the host is within another shadow tree that uses a custom registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- attachShadow() should use the null registry when the shadow host uses null registry and customElementRegistry is null: assert_equals: expected null but got object "[object CustomElementRegistry]"
 
 ### custom-elements/registries/ShadowRoot-innerHTML.html
 
@@ -3443,42 +3593,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/registries/adoption.window.js
 
-- Adoption with global registry: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Adoption with explicit global registry: 
-- Adoption with scoped registry: 
-- Adoption with global registry into a scoped registry: 
-- Adoption with explicit global registry into a scoped registry: 
-- Adoption with scoped registry into a scoped registry: 
-- Adoption including shadow root with global registry: 
-- Adoption including shadow root with explicit global registry: 
-- Adoption including shadow root with scoped registry: 
-- Adoption including shadow root with global registry into a scoped registry: 
-- Adoption including shadow root with explicit global registry into a scoped registry: 
-- Adoption including shadow root with scoped registry into a scoped registry: 
-- Adoption with global registry (null registry target): 
-- Adoption with explicit global registry (null registry target): 
-- Adoption with scoped registry (null registry target): 
-- Adoption with global registry into a scoped registry (null registry target): 
-- Adoption with explicit global registry into a scoped registry (null registry target): 
-- Adoption with scoped registry into a scoped registry (null registry target): 
-- Adoption including shadow root with global registry (null registry target): 
-- Adoption including shadow root with explicit global registry (null registry target): 
-- Adoption including shadow root with scoped registry (null registry target): 
-- Adoption including shadow root with global registry into a scoped registry (null registry target): 
-- Adoption including shadow root with explicit global registry into a scoped registry (null registry target): 
-- Adoption including shadow root with scoped registry into a scoped registry (null registry target): 
-- Adoption with global registry (scoped registry target): 
-- Adoption with explicit global registry (scoped registry target): 
-- Adoption with scoped registry (scoped registry target): 
-- Adoption with global registry into a scoped registry (scoped registry target): 
-- Adoption with explicit global registry into a scoped registry (scoped registry target): 
-- Adoption with scoped registry into a scoped registry (scoped registry target): 
-- Adoption including shadow root with global registry (scoped registry target): 
-- Adoption including shadow root with explicit global registry (scoped registry target): 
-- Adoption including shadow root with scoped registry (scoped registry target): 
-- Adoption including shadow root with global registry into a scoped registry (scoped registry target): 
-- Adoption including shadow root with explicit global registry into a scoped registry (scoped registry target): 
-- Adoption including shadow root with scoped registry into a scoped registry (scoped registry target): 
+- Adoption with global registry (scoped registry target): assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Adoption with explicit global registry (scoped registry target): assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Adoption with global registry into a scoped registry (scoped registry target): assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Adoption with explicit global registry into a scoped registry (scoped registry target): assert_equals: expected null but got object "[object CustomElementRegistry]"
 
 ### custom-elements/registries/constructor-direct-call-fallback-registry.window.js
 
@@ -3497,6 +3615,31 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - Re-entry via direct constructor call before calling super(): assert_true: expected true got false
 - Re-entry via direct constructor call after calling super(): assert_true: expected true got false
 
+### custom-elements/registries/define.html
+
+- If no arguments, should throw a TypeError: assert_throws_js: function "() =>  {
+- If one argument, should throw a TypeError: assert_throws_js: function "() =>  {
+- If constructor is undefined, should throw a TypeError: assert_throws_js: function "() =>  {
+- If constructor is null, should throw a TypeError: assert_throws_js: function "() =>  {
+- If constructor is object, should throw a TypeError: assert_throws_js: function "() =>  {
+- If constructor is string, should throw a TypeError: assert_throws_js: function "() =>  {
+- If constructor is arrow function, should throw a TypeError: assert_throws_js: function "() =>  {
+- If constructor is method, should throw a TypeError: assert_throws_js: function "() =>  {
+- If Type(constructor.prototype) is undefined, should throw a TypeError: assert_throws_js: function "() =>  {
+- If Type(constructor.prototype) is string, should throw a TypeError: assert_throws_js: function "() =>  {
+- If constructor.prototype.connectedCallback is null, should throw a TypeError: assert_throws_js: function "() => {
+- If constructor.prototype.connectedCallback is object, should throw a TypeError: assert_throws_js: function "() => {
+- If constructor.prototype.connectedCallback is integer, should throw a TypeError: assert_throws_js: function "() => {
+- If constructor.prototype.disconnectedCallback is null, should throw a TypeError: assert_throws_js: function "() => {
+- If constructor.prototype.disconnectedCallback is object, should throw a TypeError: assert_throws_js: function "() => {
+- If constructor.prototype.disconnectedCallback is integer, should throw a TypeError: assert_throws_js: function "() => {
+- If constructor.prototype.adoptedCallback is null, should throw a TypeError: assert_throws_js: function "() => {
+- If constructor.prototype.adoptedCallback is object, should throw a TypeError: assert_throws_js: function "() => {
+- If constructor.prototype.adoptedCallback is integer, should throw a TypeError: assert_throws_js: function "() => {
+- If constructor.prototype.attributeChangedCallback is null, should throw a TypeError: assert_throws_js: function "() => {
+- If constructor.prototype.attributeChangedCallback is object, should throw a TypeError: assert_throws_js: function "() => {
+- If constructor.prototype.attributeChangedCallback is integer, should throw a TypeError: assert_throws_js: function "() => {
+
 ### custom-elements/registries/global.window.js
 
 - initialize() of global registry should throw for nodes from another document: assert_throws_dom: function "() => customElements.initialize(contentDocument.createElement("x"))" did not throw
@@ -3507,7 +3650,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/registries/initial-about-blank.window.js
 
-- Each navigable document has its own registry: frame.contentWindow.eval is not a function
+- Each navigable document has its own registry: 'has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable
 
 ### custom-elements/registries/per-document.html
 
@@ -3532,19 +3675,17 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - Initial parse: child of element with customelementregistry inherits null registry: assert_equals: Child of element with customelementregistry should have null registry expected null but got object "[object CustomElementRegistry]"
 - Initial parse: custom element candidate child inherits null registry from parent: assert_equals: Custom element candidate child of element with customelementregistry should have null registry expected null but got object "[object CustomElementRegistry]"
 - Initial parse: deeply nested descendant inherits null registry: assert_equals: Deeply nested custom element candidate should have null registry expected null but got object "[object CustomElementRegistry]"
-- Initial parse: global registry define only upgrades elements without customelementregistry: assert_equals: Custom element candidate with null registry should still not be upgraded after defining in global registry expected function "class HTMLElement extends Element {
+- Initial parse: global registry define only upgrades elements without customelementregistry: assert_equals: Custom element candidate with null registry should still not be upgraded after defining in global registry expected function "function (               ...args           )          {
 
 ### custom-elements/registries/scoped-registry-append.html
 
 - Connecting a custom element candiate with null registry does not set the registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - Inserting a custom element candiate with null registry does not change the registry: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Inserting a node from another document with global registry results in the custom element registry to be set and upgraded.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Inserting a node cloned from a template with null registry into a scoped shadow root should set global registry: win.CustomElementRegistry is not a constructor
-- adoptNode then inserting into a scoped shadow root should preserve global registry: win.CustomElementRegistry is not a constructor
-- Declarative shadow DOM without shadowrootcustomelementregistry attribute without registry initialized should gain effective global registry after adoption.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element should gain effective global registry of global registry from its parent upon adoption.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Inserting a node cloned from a template with null registry into a scoped shadow root should set global registry: assert_equals: Cloned element from template should have null registry expected null but got object "[object CustomElementRegistry]"
+- adoptNode then inserting into a scoped shadow root should preserve global registry: assert_equals: Cloned element from template should have null registry expected null but got object "[object CustomElementRegistry]"
+- Declarative shadow DOM with shadowrootcustomelementregistry attribute without registry initialized should remain null registry after adoption.: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Null registry element should gain effective global registry of null from its parent upon adoption.: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - Null registry element should gain effective global registry of scoped registry from its parent upon adoption.: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Global registry element should gain effective global registry of scoped registry from its parent upon adoption.: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 
 ### custom-elements/registries/scoped-registry-define-upgrade-criteria.html
 
@@ -3572,59 +3713,18 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/registries/scoped-registry-effective-global-registry.html
 
-- Null registry element with element parent without custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with element parent without custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 - Null registry element with element parent without custom element registry attribute (scoped registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Null registry element with declarative shadow root parent without custom element registry attribute appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Null registry element with imperative shadow root parent (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- Null registry element with imperative shadow root parent (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 - Null registry element with imperative shadow root parent (scoped registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (scoped registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent without custom element registry attribute appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (scoped registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with element parent without custom element registry attribute (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with element parent without custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with declarative shadow root parent without custom element registry attribute appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with imperative shadow root parent (null registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- Scoped registry element with imperative shadow root parent (global registry) appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with element parent without custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with element parent without custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - Null registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Null registry element with declarative shadow root parent without custom element registry attribute adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Null registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
 - Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Null registry element with imperative shadow root parent (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- Null registry element with imperative shadow root parent (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
 - Null registry element with imperative shadow root parent (scoped registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent without custom element registry attribute adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with imperative shadow root parent (scoped registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with element parent without custom element registry attribute (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with element parent without custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with declarative shadow root parent without custom element registry attribute adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Scoped registry element with imperative shadow root parent (null registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- Scoped registry element with imperative shadow root parent (global registry) adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Global registry element with exclusive DocumentFragment parent appended to new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- Null registry element with exclusive DocumentFragment parent adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got null
-- Global registry element with exclusive DocumentFragment parent adopted by new document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
+- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: assert_equals: expected null but got object "[object CustomElementRegistry]"
 
 ### custom-elements/registries/scoped-registry-initialize-upgrades.html
 
@@ -3670,9 +3770,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/upgrading/Node-cloneNode.html
 
-- Node.prototype.cloneNode(true) must be able to clone a descendent custom element: promise_test: Unhandled rejection with value: object "TypeError: Right-hand side of 'instanceof' is not an object"
-- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: assert_equals: expected "TypeError" but got "InvalidStateError"
-- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: assert_equals: expected "TypeError" but got "InvalidStateError"
+- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: Cannot read properties of undefined (reading 'name')
+- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: Cannot read properties of undefined (reading 'name')
+- Upgrading a custom element must throw TypeError when the custom element's constructor returns another element: Cannot read properties of undefined (reading 'name')
+- Inserting an element must not try to upgrade a custom element when it had already failed to upgrade once: assert_equals: expected (string) "bad" but got (undefined) undefined
 
 ### custom-elements/upgrading/upgrading-enqueue-reactions.html
 
