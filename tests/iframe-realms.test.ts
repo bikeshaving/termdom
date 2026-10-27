@@ -413,3 +413,20 @@ withRealms("a frame's own eval keeps the scope it is called in", () => {
 	expect(frame.eval("globalThis")).toBe(frame);
 	dom.dispose();
 });
+
+withRealms("a frame's own functions and clones are the frame's", () => {
+	const {dom, frame} = setup();
+	expect(
+		frame.eval(
+			"[setTimeout, queueMicrotask, structuredClone, fetch, atob, Image]" +
+				".every((value) => value instanceof Function)",
+		),
+	).toBe(true);
+	expect(frame.eval("structuredClone({list: [1]}).list instanceof Array"))
+		.toBe(true);
+	expect(frame.eval("structuredClone(new DOMRect(1, 2)) instanceof DOMRect"))
+		.toBe(true);
+	expect(() => frame.eval("fetch.call({}, 'x')")).toThrow();
+	dom.dispose();
+});
+
