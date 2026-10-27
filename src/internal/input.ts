@@ -1149,6 +1149,10 @@ function getScreenPoint(
 // so the wheel goes to the terminal's scrollback. Fullscreen has no
 // document scroll to move, so a tick past every scroller does nothing.
 function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
+	// A wheel over something that scrolls, at its end, is still meant for
+	// it: the last notches of a gesture that reached the top would
+	// otherwise hand the mouse to the terminal.
+	let overScroller = false;
 	// Out through the frames the target is in: a box in the frame that can
 	// scroll, then the frame's own document, then on from the iframe in the
 	// document it is in, as a scroll chains past what cannot take it.
@@ -1162,12 +1166,16 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 			scroller.scrollTop += pxFromCells(deltaY, true, target.ownerDocument);
 			return false;
 		}
-		const framebuffer = _(getAttachedDocument(target)!).extra.framebuffer;
+		const attached = _(getAttachedDocument(target)!).extra;
+		const framebuffer = attached.framebuffer;
 		const before = framebuffer.scrollTop;
 		scrollDocumentTo(target.ownerDocument, before + deltaY);
 		if (framebuffer.scrollTop !== before) {
 			return false;
 		}
+		overScroller ||=
+			getWheelScroller(input, target, -deltaY, "top") !== null ||
+			attached.layout.documentPaintHeight() > framebuffer.rows;
 		target = owner;
 	}
 	const scroller = getWheelScroller(input, target, deltaY, "top");
@@ -1179,7 +1187,9 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 		return false;
 	}
 	if (deltaY < 0 && input.framebuffer.scrollTop === 0) {
-		return input.layout.documentPaintHeight() <= input.framebuffer.rows;
+		return !overScroller &&
+			getWheelScroller(input, target, -deltaY, "top") === null &&
+			input.layout.documentPaintHeight() <= input.framebuffer.rows;
 	}
 	scrollDocumentTo(input.document, input.framebuffer.scrollTop + deltaY);
 	return false;
