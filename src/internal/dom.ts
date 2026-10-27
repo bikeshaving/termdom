@@ -6035,13 +6035,26 @@ export function setSystemFocus(
 		return;
 	}
 	_(attached).extra.systemFocused = focused;
-	const window = attached.defaultView;
-	const active = getInnermostActive(attached);
-	cssom.handleFocusChange(_(attached).extra.cascade, active);
-	invalidate(_(attached).extra.framebuffer);
-	const element = active !== null && active !== (attached.body as unknown)
-		? active
-		: null;
+	const chain: EventTarget[] = [];
+	let level: Document | null = attached;
+	while (level !== null) {
+		const active = getInnermostActive(level);
+		const levelAttached = getAttachedDocument(level as unknown as Node);
+		if (levelAttached !== undefined) {
+			cssom.handleFocusChange(_(levelAttached).extra.cascade, active);
+			invalidate(_(levelAttached).extra.framebuffer);
+		}
+		const window = level.defaultView;
+		if (window !== null) {
+			chain.unshift(window as unknown as EventTarget);
+		}
+		if (active !== null && active !== (level.body as unknown)) {
+			chain.unshift(active as unknown as EventTarget);
+		}
+		level = getDrawnFrameDocument(active);
+	}
+	const isWindow = (target: EventTarget) =>
+		!implementsInterface(target, Node);
 	const fire = (target: EventTarget, type: string, bubbles: boolean) =>
 		dispatchAsUserAgent(
 			target,
@@ -6050,21 +6063,19 @@ export function setSystemFocus(
 			),
 		);
 	if (!focused) {
-		if (element !== null) {
-			fire(element, "blur", false);
-			fire(element, "focusout", true);
-		}
-		if (window !== null) {
-			fire(window as unknown as EventTarget, "blur", false);
+		for (const target of chain) {
+			fire(target, "blur", false);
+			if (!isWindow(target)) {
+				fire(target, "focusout", true);
+			}
 		}
 		return;
 	}
-	if (window !== null) {
-		fire(window as unknown as EventTarget, "focus", false);
-	}
-	if (element !== null) {
-		fire(element, "focus", false);
-		fire(element, "focusin", true);
+	for (const target of chain.reverse()) {
+		fire(target, "focus", false);
+		if (!isWindow(target)) {
+			fire(target, "focusin", true);
+		}
 	}
 }
 
@@ -28355,8 +28366,7 @@ export class Document extends Node implements globalThis.Document {
 
 	/** Whether the terminal has the system focus, as far as it reports. */
 	hasFocus(): boolean {
-		const attached = getAttachedDocument(this);
-		return attached === undefined || _(attached).extra.systemFocused;
+		return hasSystemFocus(this);
 	}
 
 	exitFullscreen(): Promise<void> {
@@ -34572,11 +34582,20 @@ export function setDocumentFocusVisible(
 // :focus-visible match nothing then.
 function getFocusChainStart(element: Element): Element | null {
 	const document = _(element).document;
-	const attached = getAttachedDocument(document as unknown as Node);
-	if (attached !== undefined && !_(attached).extra.systemFocused) {
-		return null;
+	return hasSystemFocus(document) ? _(document).extra.activeElement : null;
+}
+
+// Whether the terminal has the system focus, as the document's top-level
+// document records it: a frame's document has it with the page it is in.
+function hasSystemFocus(document: Document): boolean {
+	let top = document;
+	for (let owner = getFrameOwner(top);
+		owner !== null;
+		owner = getFrameOwner(top)) {
+		top = _(owner).document;
 	}
-	return _(document).extra.activeElement;
+	const attached = getAttachedDocument(top as unknown as Node);
+	return attached === undefined || _(attached).extra.systemFocused;
 }
 
 export function hasFocus(element: Element): boolean {

@@ -7,6 +7,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {transportFromProcess} from "../src/internal/exchange.ts";
+import {canCreateRealms} from "../src/internal/realms.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 async function send(terminal: MockProcess, data: string): Promise<void> {
@@ -161,5 +162,60 @@ test("a paste takes the mouse back too, though the terminal's own replies do not
 	await send(terminal, "\x1b[200~pasted\x1b[201~");
 	expect(dom.document.visibilityState).toBe("visible");
 	expect(dom.document.hasFocus()).toBe(true);
+	await dom.dispose();
+});
+
+const withRealms = canCreateRealms() ? test : test.skip;
+
+withRealms("the terminal's focus reaches a field focused inside a frame", async () => {
+	const terminal = new MockProcess();
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<iframe srcdoc=\"<input id=field>\" style=\"display: block; width: 20ch; height: 3px\"></iframe>";
+	await dom.attach();
+	await nextFrame(dom);
+	await nextFrame(dom);
+	const frame = document.querySelector("iframe")!;
+	const inner = frame.contentDocument!;
+	const field = inner.getElementById("field") as HTMLInputElement;
+	field.focus();
+	const heard: string[] = [];
+	for (const type of ["blur", "focus"]) {
+		field.addEventListener(type, () => heard.push(`field ${type}`));
+		frame.addEventListener(type, () => heard.push(`iframe ${type}`));
+		frame.contentWindow!.addEventListener(type, (event) => {
+			if (event.target === frame.contentWindow) {
+				heard.push(`frame window ${type}`);
+			}
+		});
+		window.addEventListener(type, (event) => {
+			if (event.target === window) {
+				heard.push(`window ${type}`);
+			}
+		});
+	}
+	expect(field.matches(":focus")).toBe(true);
+
+	await send(terminal, "\x1b[O");
+	expect(heard).toEqual([
+		"field blur",
+		"frame window blur",
+		"iframe blur",
+		"window blur",
+	]);
+	expect(inner.hasFocus()).toBe(false);
+	expect(field.matches(":focus")).toBe(false);
+
+	heard.length = 0;
+	await send(terminal, "\x1b[I");
+	expect(heard).toEqual([
+		"window focus",
+		"iframe focus",
+		"frame window focus",
+		"field focus",
+	]);
+	expect(inner.hasFocus()).toBe(true);
+	expect(field.matches(":focus")).toBe(true);
 	await dom.dispose();
 });
