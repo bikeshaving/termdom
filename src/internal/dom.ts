@@ -18383,19 +18383,25 @@ export function elementAtPointThroughFrames(
 		inner !== null;
 		inner = getDrawnFrameDocument(element)
 	) {
-		const box = _(current).extra.layout.contentRect(element!);
+		const {layout, framebuffer} = _(current).extra;
+		const box = layout.contentRect(element!);
+		if (box === null) {
+			break;
+		}
+		const boxTop = layout.isInFixedSpace(element!)
+			? box.top + framebuffer.scrollTop
+			: box.top;
 		if (
-			box === null ||
 			x - left < box.left ||
 			x - left >= box.right ||
-			y - top < box.top ||
-			y - top >= box.bottom
+			y - top < boxTop ||
+			y - top >= boxTop + box.height
 		) {
 			break;
 		}
 		const scrollTop = _(inner).extra.framebuffer.scrollTop;
 		left += box.left;
-		top += box.top - scrollTop;
+		top += boxTop - scrollTop;
 		current = inner;
 		element = (elementAtDocumentPoint(
 			inner as unknown as globalThis.Document,
