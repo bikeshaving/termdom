@@ -426,6 +426,12 @@ withRealms("a frame's own functions and clones are the frame's", () => {
 		.toBe(true);
 	expect(frame.eval("structuredClone(new DOMRect(1, 2)) instanceof DOMRect"))
 		.toBe(true);
+	expect(
+		frame.eval(
+			"const buffer = new ArrayBuffer(4);" +
+				"[structuredClone(buffer, {transfer: [buffer]}) instanceof ArrayBuffer, buffer.byteLength]",
+		),
+	).toEqual([true, 0]);
 	expect(() => frame.eval("fetch.call({}, 'x')")).toThrow();
 	dom.dispose();
 });
