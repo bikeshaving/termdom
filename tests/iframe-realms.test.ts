@@ -430,3 +430,18 @@ withRealms("a frame's own functions and clones are the frame's", () => {
 	dom.dispose();
 });
 
+withRealms(
+	"a message to a frame removed before it lands is dropped",
+	async () => {
+		const {dom, frame, iframe} = setup();
+		let heard = false;
+		frame.addEventListener("message", () => {
+			heard = true;
+		});
+		frame.postMessage("late", "*");
+		iframe.remove();
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(heard).toBe(false);
+		dom.dispose();
+	},
+);
