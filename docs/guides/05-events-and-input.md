@@ -146,6 +146,24 @@ Tab from the last focusable element leaves nothing focused. The next
 Tab then focuses the first element. A browser behaves the same way when
 focus leaves the page for its toolbar and comes back.
 
+The terminal reports when it gains and loses focus: when you switch to
+another window or app, or to another tmux pane or window, and back.
+The page sees this the way a browser's page sees its tab left and
+returned to:
+- On leaving, the focused element gets `blur` and `focusout`, then the
+  window gets `blur`. The element stays `document.activeElement`.
+- On returning, the window gets `focus`, then the element gets `focus`
+  and `focusin`.
+- While away, `document.hasFocus()` is false, and `:focus`,
+  `:focus-within` and `:focus-visible` match nothing, as HTML says.
+
+A terminal that does not report focus never fires these, and
+`hasFocus()` stays true. tmux passes the reports on with its
+`focus-events` option set.
+
+Returning also gives the mouse back to the page if the terminal's
+scrollback had it, and repaints the screen whole.
+
 ## Dialogs, popovers, and details
 
 `<dialog>` opens with `show()` or `showModal()`. A modal dialog sits in
