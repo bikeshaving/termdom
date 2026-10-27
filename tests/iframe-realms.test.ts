@@ -341,15 +341,75 @@ withRealms("disposing stops the timers of the frames shown", async () => {
 	expect(counter.ticks).toBe(ticks);
 });
 
-withRealms("an ImageData posted to a frame has the frame's pixels", async () => {
-	const {dom, top, frame} = setup();
-	const heard = new Promise<any>((resolve) => {
-		frame.addEventListener("message", resolve, {once: true});
-	});
-	frame.postMessage(new top.ImageData(new Uint8ClampedArray(4), 1, 1), "*");
-	const event = await heard;
-	expect(event.data instanceof frame.ImageData).toBe(true);
-	expect(event.data.data instanceof frame.Uint8ClampedArray).toBe(true);
-	expect(event.data.data.buffer instanceof frame.ArrayBuffer).toBe(true);
+withRealms(
+	"an ImageData posted to a frame has the frame's pixels",
+	async () => {
+		const {dom, top, frame} = setup();
+		const heard = new Promise<any>((resolve) => {
+			frame.addEventListener("message", resolve, {once: true});
+		});
+		frame.postMessage(new top.ImageData(new Uint8ClampedArray(4), 1, 1), "*");
+		const event = await heard;
+		expect(event.data instanceof frame.ImageData).toBe(true);
+		expect(event.data.data instanceof frame.Uint8ClampedArray).toBe(true);
+		expect(event.data.data.buffer instanceof frame.ArrayBuffer).toBe(true);
+		dom.dispose();
+	},
+);
+
+withRealms(
+	"a frame's code posts as the frame from eval, a promise job and an await",
+	async () => {
+		const {dom, top, frame} = setup();
+		const heard: string[] = [];
+		top.addEventListener("message", (event: any) => {
+			heard.push(`${event.data} ${event.source === frame ? "frame" : "top"}`);
+		});
+		frame.eval("parent.postMessage('eval', '*')");
+		frame.eval("Promise.resolve().then(() => parent.postMessage('then', '*'))");
+		frame.eval(
+			"(async () => { await null; parent.postMessage('await', '*') })()",
+		);
+		frame.eval("setTimeout(() => postMessage('own', '*'))");
+		frame.eval(
+			"addEventListener('ping', async () => { await null; parent.postMessage('listener', '*') })",
+		);
+		frame.dispatchEvent(new frame.Event("ping"));
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		expect(heard.sort()).toEqual([
+			"await frame",
+			"eval frame",
+			"listener frame",
+			"then frame",
+		]);
+		dom.dispose();
+	},
+);
+
+withRealms(
+	"the parent's listener, run from a frame's async code, posts as the parent",
+	async () => {
+		const {dom, top, frame} = setup();
+		const heard: string[] = [];
+		frame.addEventListener("message", (event: any) => {
+			heard.push(event.source === top ? "top" : "frame");
+		});
+		top.document.body.addEventListener("click", () => {
+			frame.postMessage("from the parent", "*");
+		});
+		frame.eval("(async () => { await null; parent.document.body.click() })()");
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		expect(heard).toEqual(["top"]);
+		dom.dispose();
+	},
+);
+
+withRealms("a frame's own eval keeps the scope it is called in", () => {
+	const {dom, frame} = setup();
+	expect(
+		frame.eval("(function () { const local = 42; return eval('local'); })()"),
+	).toBe(42);
+	expect(frame.eval("[]") instanceof frame.Array).toBe(true);
+	expect(frame.eval("globalThis")).toBe(frame);
 	dom.dispose();
 });
