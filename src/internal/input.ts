@@ -800,14 +800,20 @@ function deliverMouseReport(input: Input, {
 				}),
 			),
 		);
-		if (notCanceled && scrollByWheel(input, hit, wheelDeltaY)) {
-			// Scroll chaining. The parent scroller is the terminal's own
-			// scrollback, so the mouse is yielded to it. preventDefault on
-			// the wheel event opts out, as in a browser.
+		if (!notCanceled) {
+			return;
+		}
+		// A wheel up over the shell's rows above the page is for the
+		// terminal's scrollback, so the mouse is yielded to it. Over the
+		// page the wheel is the page's, whatever it scrolls. preventDefault
+		// on the wheel event opts out, as in a browser.
+		if (!isInDocument && wheelDeltaY < 0) {
 			input.captureYielded = true;
 			setDocumentVisible(input.document, false);
 			requestRender(input.document);
+			return;
 		}
+		scrollByWheel(input, hit, wheelDeltaY);
 		return;
 	}
 
@@ -1148,11 +1154,7 @@ function getScreenPoint(
 // top is a stop, as an editor's is; one that fits has nothing to scroll,
 // so the wheel goes to the terminal's scrollback. Fullscreen has no
 // document scroll to move, so a tick past every scroller does nothing.
-function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
-	// A wheel over something that scrolls, at its end, is still meant for
-	// it: the last notches of a gesture that reached the top would
-	// otherwise hand the mouse to the terminal.
-	let overScroller = false;
+function scrollByWheel(input: Input, target: Element, deltaY: number): void {
 	// Out through the frames the target is in: a box in the frame that can
 	// scroll, then the frame's own document, then on from the iframe in the
 	// document it is in, as a scroll chains past what cannot take it.
@@ -1164,35 +1166,24 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): boolean {
 		const scroller = getWheelScroller(input, target, deltaY, "top");
 		if (scroller) {
 			scroller.scrollTop += pxFromCells(deltaY, true, target.ownerDocument);
-			return false;
+			return;
 		}
-		const attached = _(getAttachedDocument(target)!).extra;
-		const framebuffer = attached.framebuffer;
+		const framebuffer = _(getAttachedDocument(target)!).extra.framebuffer;
 		const before = framebuffer.scrollTop;
 		scrollDocumentTo(target.ownerDocument, before + deltaY);
 		if (framebuffer.scrollTop !== before) {
-			return false;
+			return;
 		}
-		overScroller ||=
-			getWheelScroller(input, target, -deltaY, "top") !== null ||
-			attached.layout.documentPaintHeight() > framebuffer.rows;
 		target = owner;
 	}
 	const scroller = getWheelScroller(input, target, deltaY, "top");
 	if (scroller) {
 		scroller.scrollTop += pxFromCells(deltaY, true, input.document);
-		return false;
+		return;
 	}
-	if (input.document.fullscreenElement !== null) {
-		return false;
+	if (input.document.fullscreenElement === null) {
+		scrollDocumentTo(input.document, input.framebuffer.scrollTop + deltaY);
 	}
-	if (deltaY < 0 && input.framebuffer.scrollTop === 0) {
-		return !overScroller &&
-			getWheelScroller(input, target, -deltaY, "top") === null &&
-			input.layout.documentPaintHeight() <= input.framebuffer.rows;
-	}
-	scrollDocumentTo(input.document, input.framebuffer.scrollTop + deltaY);
-	return false;
 }
 
 const KEYLESS_INPUTS = new Set([

@@ -35,9 +35,11 @@ window's worth of it. The program can scroll this window with
 the mouse wheel. `window.scrollY` reports the current position. The
 window cannot scroll above the document's first row.
 
-When the document fits in the terminal, there is nothing to scroll, so
-the mouse wheel scrolls the terminal's own scrollback instead. No
-terminal reports when the user has scrolled back down. For that reason
+When the document fits in the terminal, the rows above it hold the
+shell's earlier output. Turning the wheel up over those rows scrolls
+the terminal's own scrollback instead. Over the document, the wheel
+always belongs to the document, even where nothing there can scroll.
+No terminal reports when the user has scrolled back down. For that reason
 the engine takes the mouse back for the document on the next keystroke,
 and that keystroke is also delivered to the document. While the wheel
 belongs to the terminal, `document.visibilityState` is `"hidden"`.
