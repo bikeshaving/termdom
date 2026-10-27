@@ -96,7 +96,7 @@ import {
 	type MathCell,
 } from "./mathml.ts";
 import {isReplacedBox, renderReplaced} from "./replaced.ts";
-import {isPlatformObject} from "./slots.ts";
+import {implementsInterface} from "./slots.ts";
 import {getStringWidth} from "./text.ts";
 import {getLocalName, getNodeType, nodeContains} from "./tree.ts";
 import {getCellSize} from "./units.ts";
@@ -1219,7 +1219,7 @@ function paintNodes(
 			paintRun(painter, run, childOrigin, ctx);
 		} else if (
 			getNodeType(owner) === owner.ELEMENT_NODE &&
-			(isPlatformObject(owner, HTMLElement) || isMathRoot(owner)) &&
+			(implementsInterface(owner, HTMLElement) || isMathRoot(owner)) &&
 			!hoistedToLayer(layout, owner as Element)
 		) {
 			paintBlock(painter, owner as Element, child, childOrigin, ctx);

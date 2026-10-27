@@ -78,8 +78,8 @@ import {
 	getOwner,
 	getSlotClass,
 	getSlots,
+	implementsInterface,
 	type internals,
-	isPlatformObject,
 	isSealed,
 	rememberObject,
 	seal,
@@ -2756,7 +2756,7 @@ function toEventTarget(value: unknown): EventTarget | null {
 	if (value == null) {
 		return null;
 	}
-	if (!(isPlatformObject(value, EventTarget))) {
+	if (!(implementsInterface(value, EventTarget))) {
 		throw new TypeError("That is not an event target");
 	}
 	return value;
@@ -3880,7 +3880,7 @@ export function lockDataTransfer(transfer: DataTransfer): void {
 // dispatching, as in a browser. This is for conformance, not security: an
 // app can still read the clipboard through navigator.clipboard.
 function protectClipboardData(event: Event): void {
-	if (!(isPlatformObject(event, ClipboardEvent))) {
+	if (!(implementsInterface(event, ClipboardEvent))) {
 		return;
 	}
 	const transfer = event.clipboardData;
@@ -4394,13 +4394,15 @@ function getListenerHoverCount(
 	if (!HOVER_EVENT_TYPES.has(type)) {
 		return null;
 	}
-	if (isPlatformObject(target, Node)) {
+	if (implementsInterface(target, Node)) {
 		return getHoverCount(_(target).document);
 	}
 	// A window is an EventTarget with a document. Anything else is not
 	// counted.
 	const document = (target as {document?: unknown}).document;
-	return isPlatformObject(document, Document) ? getHoverCount(document) : null;
+	return implementsInterface(document, Document)
+		? getHoverCount(document)
+		: null;
 }
 
 function countHoverListener(target: EventTarget, listener: Listener): void {
@@ -4890,10 +4892,10 @@ function getDefaultPassiveValue(type: string, target: EventTarget): boolean {
 	) {
 		return false;
 	}
-	if (isPlatformObject(target, Window)) {
+	if (implementsInterface(target, Window)) {
 		return true;
 	}
-	if (!(isPlatformObject(target, Node))) {
+	if (!(implementsInterface(target, Node))) {
 		return false;
 	}
 	const document = _(target).document;
@@ -5040,7 +5042,7 @@ function registerHandlerListener(
 // same shape.
 function isErrorEvent(event: Event): boolean {
 	return (
-		isPlatformObject(event, ErrorEvent) ||
+		implementsInterface(event, ErrorEvent) ||
 		("message" in event &&
 			"filename" in event &&
 			"lineno" in event &&
@@ -5066,7 +5068,7 @@ function invokeEventHandler(
 	// handler. A document's or element's error handler is an ordinary one.
 	const errorHandling =
 		type === "error" &&
-		!(isPlatformObject(target, Node)) &&
+		!(implementsInterface(target, Node)) &&
 		isErrorEvent(event);
 	let result: unknown;
 	try {
@@ -5272,7 +5274,7 @@ function retarget(
 ): EventTarget | null {
 	let current = object;
 	for (;;) {
-		if (!(isPlatformObject(current, Node))) {
+		if (!(implementsInterface(current, Node))) {
 			return current;
 		}
 		const root = getRoot(current);
@@ -5284,7 +5286,7 @@ function retarget(
 		// inside a nested shadow tree is not retargeted for a listener in the
 		// tree above.
 		if (
-			isPlatformObject(against, Node) &&
+			implementsInterface(against, Node) &&
 			isShadowIncludingInclusiveAncestor(root, against)
 		) {
 			return current;
@@ -5295,7 +5297,7 @@ function retarget(
 
 /** Whether a root is a shadow root, meaning a fragment with a host. */
 export function isShadowRoot(root: unknown): root is ShadowRoot {
-	return isPlatformObject(root, ShadowRoot);
+	return implementsInterface(root, ShadowRoot);
 }
 
 function appendToPath(
@@ -5306,10 +5308,10 @@ function appendToPath(
 	slotInClosedTree: boolean,
 ): void {
 	const inShadowTree =
-		isPlatformObject(invocationTarget, Node) &&
+		implementsInterface(invocationTarget, Node) &&
 		isShadowRoot(getRoot(invocationTarget));
 	const rootOfClosedTree =
-		isPlatformObject(invocationTarget, ShadowRoot) &&
+		implementsInterface(invocationTarget, ShadowRoot) &&
 		_(invocationTarget).extra.shadowMode === "closed";
 	state.path.push({
 		invocationTarget,
@@ -5526,7 +5528,7 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 				slottable = null;
 				const slotRoot = getRoot(parent as Node);
 				if (
-					isPlatformObject(slotRoot, ShadowRoot) &&
+					implementsInterface(slotRoot, ShadowRoot) &&
 					_(slotRoot).extra.shadowMode === "closed"
 				) {
 					slotInClosedTree = true;
@@ -5539,8 +5541,8 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 			// A window, or a node in the target's own tree, joins the path as
 			// it is. Only a parent past a shadow boundary becomes the target.
 			if (
-				!(isPlatformObject(parent, Node)) ||
-				(isPlatformObject(eventTarget, Node) &&
+				!(implementsInterface(parent, Node)) ||
+				(implementsInterface(eventTarget, Node) &&
 					isShadowIncludingInclusiveAncestor(getRoot(eventTarget), parent))
 			) {
 				if (
@@ -5588,7 +5590,7 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 				break;
 			}
 		}
-		if (isPlatformObject(activationTarget, HTMLInputElement)) {
+		if (implementsInterface(activationTarget, HTMLInputElement)) {
 			legacyPreActivationBehavior(activationTarget);
 		}
 		for (let index = state.path.length - 1; index >= 0; index--) {
@@ -5620,7 +5622,7 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 	if (activationTarget !== null) {
 		if (!state.canceled) {
 			runActivationBehavior(activationTarget, event);
-		} else if (isPlatformObject(activationTarget, HTMLInputElement)) {
+		} else if (implementsInterface(activationTarget, HTMLInputElement)) {
 			legacyCanceledActivationBehavior(activationTarget);
 		}
 	}
@@ -5645,18 +5647,18 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 
 /** Whether a target is a node inside a shadow tree. */
 function isShadowRootTarget(target: EventTarget | null): boolean {
-	return isPlatformObject(target, Node) && isShadowRoot(getRoot(target));
+	return implementsInterface(target, Node) && isShadowRoot(getRoot(target));
 }
 
 // Dispatch walks the path looking for a target with activation
 // behavior, then runs it after the walk.
 function hasActivationBehavior(target: EventTarget): boolean {
 	return (
-		isPlatformObject(target, HTMLAnchorElement) ||
-		isPlatformObject(target, HTMLAreaElement) ||
-		isPlatformObject(target, HTMLButtonElement) ||
-		isPlatformObject(target, HTMLInputElement) ||
-		isPlatformObject(target, HTMLLabelElement) ||
+		implementsInterface(target, HTMLAnchorElement) ||
+		implementsInterface(target, HTMLAreaElement) ||
+		implementsInterface(target, HTMLButtonElement) ||
+		implementsInterface(target, HTMLInputElement) ||
+		implementsInterface(target, HTMLLabelElement) ||
 		isDetailsSummary(target)
 	);
 }
@@ -5666,19 +5668,19 @@ function hasActivationBehavior(target: EventTarget): boolean {
 // activation target that does nothing.
 function runActivationBehavior(target: EventTarget, event: Event): void {
 	if (
-		(isPlatformObject(target, HTMLAnchorElement) ||
-			isPlatformObject(target, HTMLAreaElement)) &&
+		(implementsInterface(target, HTMLAnchorElement) ||
+			implementsInterface(target, HTMLAreaElement)) &&
 		hasAttributeByName(target, "href")
 	) {
 		const url = (target as unknown as {href: string}).href;
 		if (isFragmentNavigation(_(target).document, url)) {
 			navigateToFragment(_(target).document, url);
 		}
-	} else if (isPlatformObject(target, HTMLButtonElement)) {
+	} else if (implementsInterface(target, HTMLButtonElement)) {
 		activateButton(target, event);
-	} else if (isPlatformObject(target, HTMLInputElement)) {
+	} else if (implementsInterface(target, HTMLInputElement)) {
 		activateInput(target, event);
-	} else if (isPlatformObject(target, HTMLLabelElement)) {
+	} else if (implementsInterface(target, HTMLLabelElement)) {
 		activateLabel(target, event);
 	} else if (isDetailsSummary(target)) {
 		toggleTheDetails(target);
@@ -5733,7 +5735,7 @@ export function getKeyboardActivation(
 // HTML gives summary no interface of its own, and only the first summary
 // of a details toggles that details.
 function isDetailsSummary(target: EventTarget): target is HTMLElement {
-	if (!(isPlatformObject(target, HTMLElement))) {
+	if (!(implementsInterface(target, HTMLElement))) {
 		return false;
 	}
 	if (
@@ -5743,7 +5745,7 @@ function isDetailsSummary(target: EventTarget): target is HTMLElement {
 	}
 	const parent = getObject(_(target).parent);
 	return (
-		isPlatformObject(parent, HTMLDetailsElement) &&
+		implementsInterface(parent, HTMLDetailsElement) &&
 		getFirstChildElement(parent, "summary") === target
 	);
 }
@@ -5788,7 +5790,7 @@ function runCommand(button: HTMLButtonElement, target: Element): void {
 	if (
 		!isPopover &&
 		!custom &&
-		!(isPlatformObject(target, HTMLDialogElement) &&
+		!(implementsInterface(target, HTMLDialogElement) &&
 			DIALOG_COMMANDS.has(command))
 	) {
 		return;
@@ -6096,10 +6098,10 @@ export function reportError(
 
 // The document whose window an exception raised on this target reaches.
 function getEventTargetDocument(target: EventTarget): Document | null {
-	if (isPlatformObject(target, Node)) {
+	if (implementsInterface(target, Node)) {
 		return _(target).document;
 	}
-	if (isPlatformObject(target, Window)) {
+	if (implementsInterface(target, Window)) {
 		return target.document as unknown as Document;
 	}
 	return null;
@@ -6763,7 +6765,7 @@ function canBeAncestor(node: Node): boolean {
 		_(node).firstChild !== null ||
 		(getNodeType(node) === ELEMENT_NODE &&
 			(_((node as Element)).shadowRoot !== null ||
-				isPlatformObject(node, HTMLTemplateElement)))
+				implementsInterface(node, HTMLTemplateElement)))
 	);
 }
 
@@ -6996,10 +6998,10 @@ function ensurePreInsertionValidity(
 }
 
 function preInsert(node: Node, parent: Node, child: Node | null): Node {
-	if (!(isPlatformObject(node, Node))) {
+	if (!(implementsInterface(node, Node))) {
 		throw new TypeError("That is not a node");
 	}
-	if (child != null && !(isPlatformObject(child, Node))) {
+	if (child != null && !(implementsInterface(child, Node))) {
 		throw new TypeError("That is not a node");
 	}
 	const reference = child ?? null;
@@ -7070,7 +7072,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	}
 	if (
 		isShadowRoot(getRoot(oldParent)) &&
-		isPlatformObject(oldParent, HTMLSlotElement) &&
+		implementsInterface(oldParent, HTMLSlotElement) &&
 		_(oldParent).extra.assignedNodes.length === 0
 	) {
 		signalASlotChange(oldParent);
@@ -7118,7 +7120,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	}
 	if (
 		isShadowRoot(getRoot(newParent)) &&
-		isPlatformObject(newParent, HTMLSlotElement) &&
+		implementsInterface(newParent, HTMLSlotElement) &&
 		_(newParent).extra.assignedNodes.length === 0
 	) {
 		signalASlotChange(newParent);
@@ -7243,7 +7245,7 @@ function insertNode(
 			}
 		}
 		if (
-			isPlatformObject(parent, HTMLSlotElement) &&
+			implementsInterface(parent, HTMLSlotElement) &&
 			_(parent).extra.assignedNodes.length === 0 &&
 			isShadowRoot(getRoot(parent))
 		) {
@@ -7347,7 +7349,9 @@ function appendNode(node: Node, parent: Node): Node {
 }
 
 function replaceChild(child: Node, node: Node, parent: Node): Node {
-	if (!(isPlatformObject(node, Node)) || !(isPlatformObject(child, Node))) {
+	if (
+		!(implementsInterface(node, Node)) || !(implementsInterface(child, Node))
+	) {
 		throw new TypeError("That is not a node");
 	}
 	validateInsertion(
@@ -7459,7 +7463,7 @@ function replaceAll(node: Node | null, parent: Node): void {
 }
 
 function preRemove(child: Node, parent: Node): Node {
-	if (!(isPlatformObject(child, Node))) {
+	if (!(implementsInterface(child, Node))) {
 		throw new TypeError("That is not a node");
 	}
 	if (getObject(_(child).parent) !== parent) {
@@ -7512,7 +7516,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 	}
 	if (
 		isShadowRoot(getRoot(parent)) &&
-		isPlatformObject(parent, HTMLSlotElement) &&
+		implementsInterface(parent, HTMLSlotElement) &&
 		_(parent).extra.assignedNodes.length === 0
 	) {
 		signalASlotChange(parent);
@@ -7538,7 +7542,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 					next: oldNextSibling,
 				});
 				// The ancestors it left were :focus-within, and no longer are.
-				const left = isPlatformObject(parent, ShadowRoot)
+				const left = implementsInterface(parent, ShadowRoot)
 					? (_(parent).extra.host as Element)
 					: getNodeType(parent) === ELEMENT_NODE ? (parent as Element) : null;
 				const attached = getAttachedDocument(document);
@@ -7602,7 +7606,7 @@ function adoptNode(node: Node, document: Document): void {
 		const descendantSlots = _(descendant);
 		descendantSlots.document = document;
 		const registry = descendantSlots.registry;
-		if (isPlatformObject(descendant, ShadowRoot)) {
+		if (implementsInterface(descendant, ShadowRoot)) {
 			// A shadow root moves to the new document's registry, unless it has
 			// a scoped one, or none that it is keeping.
 			if (
@@ -7625,7 +7629,7 @@ function adoptNode(node: Node, document: Document): void {
 					registry !== null ||
 					parent === null ||
 					(parent.nodeType === DOCUMENT_FRAGMENT_NODE &&
-						!isPlatformObject(getOwner(parent), ShadowRoot))
+						!implementsInterface(getOwner(parent), ShadowRoot))
 						? documentRegistry
 						: getEffectiveGlobalRegistry(parent.registry);
 			}
@@ -7978,7 +7982,7 @@ export class MutationObserver implements globalThis.MutationObserver {
 		if (arguments.length < 1) {
 			throw new TypeError("observe needs a target");
 		}
-		if (!(isPlatformObject(target, Node))) {
+		if (!(implementsInterface(target, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		const normalized = normalizeObserverOptions(options);
@@ -10942,21 +10946,21 @@ export class Element extends Node implements globalThis.Element {
 	}
 
 	setAttributeNode(attr: globalThis.Attr): globalThis.Attr | null {
-		if (!(isPlatformObject(attr, Attr))) {
+		if (!(implementsInterface(attr, Attr))) {
 			throw new TypeError("That is not an Attr");
 		}
 		return setAttributeNode(this, attr) as unknown as globalThis.Attr | null;
 	}
 
 	setAttributeNodeNS(attr: globalThis.Attr): globalThis.Attr | null {
-		if (!(isPlatformObject(attr, Attr))) {
+		if (!(implementsInterface(attr, Attr))) {
 			throw new TypeError("That is not an Attr");
 		}
 		return setAttributeNode(this, attr) as unknown as globalThis.Attr | null;
 	}
 
 	removeAttributeNode(attr: globalThis.Attr): globalThis.Attr {
-		if (!(isPlatformObject(attr, Attr))) {
+		if (!(implementsInterface(attr, Attr))) {
 			throw new TypeError("That is not an Attr");
 		}
 		if (!_(this).attributeList.includes(getSlots(attr))) {
@@ -11213,8 +11217,8 @@ export class Element extends Node implements globalThis.Element {
 		// the tree that names it, and a fieldset applies its disabling to what
 		// it contains.
 		if (
-			isPlatformObject(getOwner(this), HTMLFormElement) ||
-			isPlatformObject(getOwner(this), HTMLFieldSetElement)
+			implementsInterface(getOwner(this), HTMLFormElement) ||
+			implementsInterface(getOwner(this), HTMLFieldSetElement)
 		) {
 			resetFormOwners(root);
 		}
@@ -11231,8 +11235,8 @@ export class Element extends Node implements globalThis.Element {
 		resetTheFormOwner(getOwner(this));
 		syncFormDisabled(getOwner(this));
 		if (
-			isPlatformObject(getOwner(this), HTMLFormElement) ||
-			isPlatformObject(getOwner(this), HTMLFieldSetElement)
+			implementsInterface(getOwner(this), HTMLFormElement) ||
+			implementsInterface(getOwner(this), HTMLFieldSetElement)
 		) {
 			resetFormOwners(root);
 		}
@@ -11301,7 +11305,7 @@ export class Element extends Node implements globalThis.Element {
 		if (
 			namespace === null &&
 			localName === "name" &&
-			isPlatformObject(owner, HTMLSlotElement)
+			implementsInterface(owner, HTMLSlotElement)
 		) {
 			updateSlotName(owner, oldValue, value);
 		}
@@ -11310,7 +11314,7 @@ export class Element extends Node implements globalThis.Element {
 		}
 		if (namespace === null && localName === "disabled") {
 			syncFormDisabled(getOwner(this));
-			if (isPlatformObject(getOwner(this), HTMLFieldSetElement)) {
+			if (implementsInterface(getOwner(this), HTMLFieldSetElement)) {
 				for (const node of descendants(getOwner(this))) {
 					if (getNodeType(node) === ELEMENT_NODE) {
 						syncFormDisabled(node as Element);
@@ -13117,7 +13121,7 @@ export class SVGElement extends Element {
 			nodeSlots = nodeSlots.parent) {
 			const node = getObject(nodeSlots);
 			if (
-				isPlatformObject(node, Element) &&
+				implementsInterface(node, Element) &&
 				getNamespace(node) === SVG_NAMESPACE &&
 				getLocalName(node) === "svg"
 			) {
@@ -13346,7 +13350,7 @@ Object.defineProperty(MathMLElement.prototype, Symbol.toStringTag, {
 });
 
 function getMarkupHost(element: Element): Node {
-	return isPlatformObject(element, HTMLTemplateElement)
+	return implementsInterface(element, HTMLTemplateElement)
 		? element.content
 		: element;
 }
@@ -13481,7 +13485,7 @@ function createElementInternal(
 			} finally {
 				currentDocumentForConstruction = previousDocument;
 			}
-			if (!(isPlatformObject(result, HTMLElement))) {
+			if (!(implementsInterface(result, HTMLElement))) {
 				throw new TypeError("That constructor did not build an HTML element");
 			}
 			if (_(result).attributeList.length > 0) {
@@ -13991,7 +13995,7 @@ class CustomElementRegistry {
 	}
 
 	upgrade(root: Node): void {
-		if (!(isPlatformObject(root, Node))) {
+		if (!(implementsInterface(root, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		for (const candidate of shadowIncludingInclusiveDescendants(root)) {
@@ -14010,7 +14014,7 @@ class CustomElementRegistry {
 	// The realm's document registry cannot claim a document, because a
 	// document holds that registry from the moment it exists.
 	initialize(root: globalThis.Node): void {
-		if (!(isPlatformObject(root, Node))) {
+		if (!(implementsInterface(root, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (!_(this).scoped && getNodeType(root) === DOCUMENT_NODE) {
@@ -14266,7 +14270,7 @@ function getUpgradeDefinition(
 		const root = getRoot(element);
 		if (
 			getNodeType(root) === DOCUMENT_FRAGMENT_NODE &&
-			isPlatformObject(
+			implementsInterface(
 				_((root as DocumentFragment)).extra.host,
 				HTMLTemplateElement,
 			)
@@ -14413,7 +14417,7 @@ export class ShadowRoot
 			if (root === (this as unknown as Node)) {
 				return current as unknown as globalThis.Element;
 			}
-			current = isPlatformObject(root, ShadowRoot)
+			current = implementsInterface(root, ShadowRoot)
 				? ((root.host ?? null) as Node | null)
 				: null;
 		}
@@ -14574,7 +14578,7 @@ export class ShadowRoot
 		if (
 			!event.composed &&
 			path.length > 0 &&
-			isPlatformObject(path[0].invocationTarget, Node) &&
+			implementsInterface(path[0].invocationTarget, Node) &&
 			getRoot(path[0].invocationTarget) === getOwner(this)
 		) {
 			return null;
@@ -14698,7 +14702,7 @@ function attachUAShadowTree<T>(target: Element): T {
  * UA rule, which every author rule outranks whatever its specificity.
  */
 export function isUAShadowTree(node: globalThis.Node): boolean {
-	return isPlatformObject(node, ShadowRoot) && _(node).extra.uaShadowTree;
+	return implementsInterface(node, ShadowRoot) && _(node).extra.uaShadowTree;
 }
 
 /**
@@ -14723,7 +14727,7 @@ function isSlottable(node: Node): boolean {
 
 function isAssigned(target: EventTarget | null): boolean {
 	return (
-		isPlatformObject(target, Node) &&
+		implementsInterface(target, Node) &&
 		isSlottable(target) &&
 		_((target as Slottable)).assignedSlot !== null
 	);
@@ -14732,7 +14736,7 @@ function isAssigned(target: EventTarget | null): boolean {
 function hasInclusiveDescendantSlot(node: Node): boolean {
 	let current: Node | null = node;
 	while (current !== null) {
-		if (isPlatformObject(current, HTMLSlotElement)) {
+		if (implementsInterface(current, HTMLSlotElement)) {
 			return true;
 		}
 		current = nextInTree(current, node);
@@ -14755,7 +14759,7 @@ function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
 	if (_(shadow).extra.slotAssignment === "manual") {
 		for (const descendant of descendants(shadow)) {
 			if (
-				isPlatformObject(descendant, HTMLSlotElement) &&
+				implementsInterface(descendant, HTMLSlotElement) &&
 				_(descendant).extra.manualAssignment.includes(slottable)
 			) {
 				return descendant;
@@ -14766,7 +14770,7 @@ function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
 	const name = isElement(slottable) ? _(slottable).slottableName : "";
 	for (const descendant of descendants(shadow)) {
 		if (
-			isPlatformObject(descendant, HTMLSlotElement) &&
+			implementsInterface(descendant, HTMLSlotElement) &&
 			_(descendant).extra.slotName === name
 		) {
 			return descendant;
@@ -14837,7 +14841,7 @@ function assignSlottables(slot: HTMLSlotElement): void {
 
 function assignSlottablesForTree(root: Node): void {
 	for (const node of inclusiveDescendants(root)) {
-		if (isPlatformObject(node, HTMLSlotElement)) {
+		if (implementsInterface(node, HTMLSlotElement)) {
 			assignSlottables(node);
 		}
 	}
@@ -14960,7 +14964,7 @@ class HTMLSlotElement extends HTMLElement {
 	// slots are recomputed too.
 	assign(...nodes: Array<globalThis.Element | globalThis.Text>): void {
 		for (const node of nodes) {
-			if (!(isPlatformObject(node, Node)) || !isSlottable(node)) {
+			if (!(implementsInterface(node, Node)) || !isSlottable(node)) {
 				throw new TypeError("Only an element or a text node can be assigned");
 			}
 		}
@@ -15017,7 +15021,7 @@ function findFlattenedSlottables(slot: HTMLSlotElement): Slottable[] {
 	}
 	for (const node of slottables) {
 		if (
-			isPlatformObject(node, HTMLSlotElement) && isShadowRoot(getRoot(node))
+			implementsInterface(node, HTMLSlotElement) && isShadowRoot(getRoot(node))
 		) {
 			result.push(...findFlattenedSlottables(node));
 		} else {
@@ -16070,7 +16074,7 @@ class HTMLCanvasElement extends HTMLElement {
 			slots.extra.canvasBitmap = null;
 			slots.extra.canvasGrid = null;
 			const context = slots.extra.canvasContext;
-			if (isPlatformObject(context, CanvasRenderingContext2D)) {
+			if (implementsInterface(context, CanvasRenderingContext2D)) {
 				clearCanvasText(context);
 				// A resize resets the context to its default state (HTML
 				// §4.12.5.1.1).
@@ -16164,9 +16168,9 @@ export function relayoutReplacedElements(
 	const visit = (scope: globalThis.Document | globalThis.ShadowRoot) => {
 		for (const element of scope.querySelectorAll("*")) {
 			if (
-				isPlatformObject(element, HTMLImageElement) ||
-				isPlatformObject(element, HTMLCanvasElement) ||
-				isPlatformObject(element, HTMLIFrameElement)
+				implementsInterface(element, HTMLImageElement) ||
+				implementsInterface(element, HTMLCanvasElement) ||
+				implementsInterface(element, HTMLIFrameElement)
 			) {
 				_(attached).extra.layout.invalidate(element as unknown as Node);
 			}
@@ -16187,7 +16191,7 @@ export function getCanvasTextRuns(
 ): ReturnType<typeof getCanvasText> {
 	const context =
 		_((element as unknown as HTMLCanvasElement)).extra.canvasContext;
-	return isPlatformObject(context, CanvasRenderingContext2D)
+	return implementsInterface(context, CanvasRenderingContext2D)
 		? getCanvasText(context)
 		: [];
 }
@@ -16222,7 +16226,7 @@ class HTMLDataListElement extends HTMLElement {
 				new HTMLCollection(() => {
 					const found: Element[] = [];
 					for (const node of descendants(this)) {
-						if (isPlatformObject(node, HTMLOptionElement)) {
+						if (implementsInterface(node, HTMLOptionElement)) {
 							found.push(node);
 						}
 					}
@@ -16717,7 +16721,7 @@ export function renderedTopLayer(
  */
 export function isModalDialog(node: globalThis.Node): boolean {
 	return (
-		isPlatformObject(node, HTMLDialogElement) &&
+		implementsInterface(node, HTMLDialogElement) &&
 		getTopLayer(_(node).document).has(node as Element)
 	);
 }
@@ -16911,7 +16915,7 @@ class HTMLFormElement extends HTMLElement {
 	requestSubmit(submitter: HTMLElement | null = null): void {
 		if (submitter != null) {
 			if (
-				!(isPlatformObject(submitter, Element)) || !isSubmitButton(submitter)
+				!(implementsInterface(submitter, Element)) || !isSubmitButton(submitter)
 			) {
 				throw new TypeError("That element is not a submit button");
 			}
@@ -16990,7 +16994,7 @@ function countListedChange(): void {
 }
 
 function noteListedChange(element: Element): void {
-	if (isListed(element) || isPlatformObject(element, HTMLFormElement)) {
+	if (isListed(element) || implementsInterface(element, HTMLFormElement)) {
 		countListedChange();
 	}
 }
@@ -17020,7 +17024,7 @@ function findListedElements(form: HTMLFormElement): Element[] {
 			continue;
 		}
 		if (
-			isPlatformObject(element, HTMLInputElement) && element.type === "image"
+			implementsInterface(element, HTMLInputElement) && element.type === "image"
 		) {
 			continue;
 		}
@@ -17030,10 +17034,10 @@ function findListedElements(form: HTMLFormElement): Element[] {
 }
 
 function isSubmitButton(element: Element): boolean {
-	if (isPlatformObject(element, HTMLButtonElement)) {
+	if (implementsInterface(element, HTMLButtonElement)) {
 		return element.type === "submit";
 	}
-	if (isPlatformObject(element, HTMLInputElement)) {
+	if (implementsInterface(element, HTMLInputElement)) {
 		const type = element.type;
 		return type === "submit" || type === "image";
 	}
@@ -17094,7 +17098,9 @@ function submitForm(
 			: form.method;
 	if (method === "dialog") {
 		let dialog = form.parentElement;
-		while (dialog !== null && !(isPlatformObject(dialog, HTMLDialogElement))) {
+		while (
+			dialog !== null && !(implementsInterface(dialog, HTMLDialogElement))
+		) {
 			dialog = dialog.parentElement;
 		}
 		if (dialog !== null) {
@@ -17140,7 +17146,7 @@ function implicitlySubmit(input: HTMLInputElement): void {
 	}
 	const blockers = listed.filter(
 		(element) =>
-			isPlatformObject(element, HTMLInputElement) &&
+			implementsInterface(element, HTMLInputElement) &&
 			IMPLICIT_SUBMISSION_BLOCKERS.has(element.type),
 	);
 	if (blockers.length <= 1) {
@@ -17292,12 +17298,12 @@ class FormData extends globalThis.FormData {
 		if (form == null) {
 			return;
 		}
-		if (!(isPlatformObject(form, HTMLFormElement))) {
+		if (!(implementsInterface(form, HTMLFormElement))) {
 			throw new TypeError("A FormData takes a form element");
 		}
 		if (submitter != null) {
 			if (
-				!(isPlatformObject(submitter, Element)) || !isSubmitButton(submitter)
+				!(implementsInterface(submitter, Element)) || !isSubmitButton(submitter)
 			) {
 				throw new TypeError("That element is not a submit button");
 			}
@@ -17513,7 +17519,7 @@ class FormDataEvent extends Event {
 			"An event init",
 		);
 		const slots = _(this);
-		if (isPlatformObject(init.formData, FormData)) {
+		if (implementsInterface(init.formData, FormData)) {
 			slots.eventFormData = init.formData;
 		} else {
 			const entries = readFormDataEntries(init.formData);
@@ -17553,10 +17559,10 @@ function isSubmittable(element: Element): boolean {
 // a plain button are skipped for the same reason a submit button that did
 // not submit is.
 function isButtonControl(element: Element): boolean {
-	if (isPlatformObject(element, HTMLButtonElement)) {
+	if (implementsInterface(element, HTMLButtonElement)) {
 		return true;
 	}
-	if (isPlatformObject(element, HTMLInputElement)) {
+	if (implementsInterface(element, HTMLInputElement)) {
 		const type = element.type;
 		return (
 			type === "submit" ||
@@ -17575,7 +17581,7 @@ function hasDataListAncestor(element: Element): boolean {
 		nodeSlots = nodeSlots.parent
 	) {
 		const node = getObject(nodeSlots);
-		if (isPlatformObject(node, HTMLDataListElement)) {
+		if (implementsInterface(node, HTMLDataListElement)) {
 			return true;
 		}
 	}
@@ -17643,7 +17649,7 @@ function appendFieldEntries(
 	if (isButtonControl(field) && field !== submitter) {
 		return;
 	}
-	if (isPlatformObject(field, HTMLInputElement)) {
+	if (implementsInterface(field, HTMLInputElement)) {
 		const type = field.type;
 		if ((type === "checkbox" || type === "radio") && !field.checked) {
 			return;
@@ -17664,7 +17670,7 @@ function appendFieldEntries(
 	if (name === null || name === "") {
 		return;
 	}
-	if (isPlatformObject(field, HTMLSelectElement)) {
+	if (implementsInterface(field, HTMLSelectElement)) {
 		for (const option of field.selectedOptions) {
 			if (!isActuallyDisabled(option)) {
 				entries.push(createEntry(name, option.value));
@@ -17672,7 +17678,7 @@ function appendFieldEntries(
 		}
 		return;
 	}
-	if (isPlatformObject(field, HTMLInputElement)) {
+	if (implementsInterface(field, HTMLInputElement)) {
 		const type = field.type;
 		if (type === "checkbox" || type === "radio") {
 			entries.push(
@@ -17694,18 +17700,18 @@ function appendFieldEntries(
 			return;
 		}
 	}
-	if (isPlatformObject(field, HTMLObjectElement)) {
+	if (implementsInterface(field, HTMLObjectElement)) {
 		return;
 	}
 	if (
-		isPlatformObject(field, HTMLInputElement) &&
+		implementsInterface(field, HTMLInputElement) &&
 		field.type === "hidden" &&
 		toASCIILowercase(name) === "_charset_"
 	) {
 		entries.push(createEntry(name, "UTF-8"));
 		return;
 	}
-	if (isPlatformObject(field, HTMLTextAreaElement)) {
+	if (implementsInterface(field, HTMLTextAreaElement)) {
 		entries.push(createEntry(name, normalizeToCRLF(field.value)));
 		appendDirectionEntry(entries, field);
 		return;
@@ -17714,7 +17720,7 @@ function appendFieldEntries(
 		createEntry(name, (field as HTMLInputElement | HTMLButtonElement).value),
 	);
 	if (
-		isPlatformObject(field, HTMLInputElement) &&
+		implementsInterface(field, HTMLInputElement) &&
 		DIRNAME_INPUT_TYPES.has(field.type)
 	) {
 		appendDirectionEntry(entries, field);
@@ -17872,7 +17878,7 @@ class RadioNodeList extends NodeList {
 
 	get value(): string {
 		for (const node of ensureList(this)) {
-			if (!(isPlatformObject(node, HTMLInputElement))) {
+			if (!(implementsInterface(node, HTMLInputElement))) {
 				continue;
 			}
 			if (node.type !== "radio" || !node.checked) {
@@ -17886,7 +17892,7 @@ class RadioNodeList extends NodeList {
 	set value(value: string) {
 		const wanted = String(value);
 		for (const node of ensureList(this)) {
-			if (!(isPlatformObject(node, HTMLInputElement))) {
+			if (!(implementsInterface(node, HTMLInputElement))) {
 				continue;
 			}
 			if (node.type !== "radio") {
@@ -18086,7 +18092,7 @@ function getDocumentFrames(document: Document): HTMLIFrameElement[] {
 			if (getNodeType(child) !== ELEMENT_NODE) {
 				continue;
 			}
-			if (isPlatformObject(child, HTMLIFrameElement)) {
+			if (implementsInterface(child, HTMLIFrameElement)) {
 				frames.push(child);
 			}
 			visit(child);
@@ -18264,7 +18270,7 @@ declareExtraSlots(HTMLIFrameElement);
 function discardFrame(frame: HTMLIFrameElement): void {
 	const slots = _(frame);
 	const window = slots.extra.contentWindow;
-	if (isPlatformObject(window, Window)) {
+	if (implementsInterface(window, Window)) {
 		_(window).parentWindow = null;
 		_(window).frameOwner = null;
 		forgetClasses();
@@ -18307,7 +18313,7 @@ export function getFrameOwner(
 export function getDrawnFrameDocument(
 	element: globalThis.Element | Element | null,
 ): Document | null {
-	return isPlatformObject(element, HTMLIFrameElement) &&
+	return implementsInterface(element, HTMLIFrameElement) &&
 		_(element).extra.frameRenderer !== null
 		? _(element).extra.contentDocument
 		: null;
@@ -18428,7 +18434,7 @@ function fitFrame(
 			frameEngineFactory !== null &&
 			parent !== undefined &&
 			document !== null &&
-			isPlatformObject(window, Window)
+			implementsInterface(window, Window)
 		) {
 			renderer = frameEngineFactory(document, window, parent, () =>
 				frameChanged(frame),
@@ -19268,7 +19274,7 @@ export class HTMLInputElement extends HTMLElement {
 			if (getAttributeValue(element, "id") !== id) {
 				continue;
 			}
-			return isPlatformObject(element, HTMLDataListElement) ? element : null;
+			return implementsInterface(element, HTMLDataListElement) ? element : null;
 		}
 		return null;
 	}
@@ -19459,7 +19465,7 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	set files(value: FileList | null) {
-		if (this.type === "file" && isPlatformObject(value, FileList)) {
+		if (this.type === "file" && implementsInterface(value, FileList)) {
 			_(this).extra.files = value;
 		}
 	}
@@ -20321,7 +20327,7 @@ export function moveRangeThumb(
 	press: boolean,
 ): boolean {
 	if (
-		!(isPlatformObject(element, HTMLInputElement)) ||
+		!(implementsInterface(element, HTMLInputElement)) ||
 		_(element).extra.kind !== "slider" ||
 		isActuallyDisabled(element)
 	) {
@@ -20359,7 +20365,7 @@ export function moveRangeThumb(
 
 /** The release that ends a press on a slider fires change if it moved. */
 export function commitRangeThumb(element: globalThis.Element): void {
-	if (!(isPlatformObject(element, HTMLInputElement))) {
+	if (!(implementsInterface(element, HTMLInputElement))) {
 		return;
 	}
 	const before = rangeDragStarts.get(element);
@@ -20379,7 +20385,7 @@ function getRadioGroup(input: HTMLInputElement): HTMLInputElement[] {
 	const root = getRoot(input);
 	const group: HTMLInputElement[] = [];
 	for (const node of descendants(root)) {
-		if (!(isPlatformObject(node, HTMLInputElement))) {
+		if (!(implementsInterface(node, HTMLInputElement))) {
 			continue;
 		}
 		if (node.type !== "radio") {
@@ -20446,7 +20452,9 @@ class HTMLLegendElement extends HTMLElement {
 	declare align: globalThis.HTMLLegendElement["align"];
 	get form(): HTMLFormElement | null {
 		const parent = getObject(_(this).parent);
-		if (parent === null || !(isPlatformObject(parent, HTMLFieldSetElement))) {
+		if (
+			parent === null || !(implementsInterface(parent, HTMLFieldSetElement))
+		) {
 			return null;
 		}
 		return getFormOwner(parent);
@@ -20510,7 +20518,7 @@ class HTMLMapElement extends HTMLElement {
 				new HTMLCollection(() => {
 					const found: Element[] = [];
 					for (const node of descendants(this)) {
-						if (isPlatformObject(node, HTMLAreaElement)) {
+						if (implementsInterface(node, HTMLAreaElement)) {
 							found.push(node);
 						}
 					}
@@ -21225,7 +21233,7 @@ declareExtraSlots(HTMLMeterElement);
 // region is optimum, one region away is suboptimum, and two away is even
 // less good.
 export function getMeterLevel(element: Element): string | null {
-	if (!(isPlatformObject(element, HTMLMeterElement))) {
+	if (!(implementsInterface(element, HTMLMeterElement))) {
 		return null;
 	}
 	const {low, high, optimum, value} = element;
@@ -21249,7 +21257,7 @@ export function isMeterValue(
 	element: Element,
 	threshold: "low" | "high",
 ): boolean {
-	if (!(isPlatformObject(element, HTMLMeterElement))) {
+	if (!(implementsInterface(element, HTMLMeterElement))) {
 		return false;
 	}
 	return threshold === "low"
@@ -21492,12 +21500,12 @@ function getSelect(option: Element): HTMLSelectElement | null {
 	if (parent === null) {
 		return null;
 	}
-	if (isPlatformObject(parent, HTMLSelectElement)) {
+	if (implementsInterface(parent, HTMLSelectElement)) {
 		return parent;
 	}
-	if (isPlatformObject(parent, HTMLOptGroupElement)) {
+	if (implementsInterface(parent, HTMLOptGroupElement)) {
 		const grandparent = getObject(_(parent).parent);
-		if (isPlatformObject(grandparent, HTMLSelectElement)) {
+		if (implementsInterface(grandparent, HTMLSelectElement)) {
 			return grandparent;
 		}
 	}
@@ -21567,8 +21575,8 @@ class HTMLOptionsCollection extends HTMLCollection {
 		before?: HTMLElement | number | null,
 	): void {
 		if (
-			!(isPlatformObject(element, HTMLOptionElement)) &&
-			!(isPlatformObject(element, HTMLOptGroupElement))
+			!(implementsInterface(element, HTMLOptionElement)) &&
+			!(implementsInterface(element, HTMLOptGroupElement))
 		) {
 			throw new TypeError("Only an option or an option group can be added");
 		}
@@ -21587,7 +21595,7 @@ class HTMLOptionsCollection extends HTMLCollection {
 					? options[index]
 					: null;
 			} else {
-				if (!(isPlatformObject(before, Element))) {
+				if (!(implementsInterface(before, Element))) {
 					throw new TypeError("That is not an element");
 				}
 				if (!getOptions(slots.select).includes(before as HTMLOptionElement)) {
@@ -22379,9 +22387,9 @@ function getPickerRows(select: HTMLSelectElement): PickerRow[] {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = getObject(nodeSlots);
-		if (isPlatformObject(node, HTMLOptionElement)) {
+		if (implementsInterface(node, HTMLOptionElement)) {
 			addOption(node, false);
-		} else if (isPlatformObject(node, HTMLOptGroupElement)) {
+		} else if (implementsInterface(node, HTMLOptGroupElement)) {
 			rows.push({
 				part: "optgroup",
 				label: node.label,
@@ -22395,7 +22403,7 @@ function getPickerRows(select: HTMLSelectElement): PickerRow[] {
 				childSlots = childSlots.next
 			) {
 				const child = getObject(childSlots);
-				if (isPlatformObject(child, HTMLOptionElement)) {
+				if (implementsInterface(child, HTMLOptionElement)) {
 					addOption(child, true);
 				}
 			}
@@ -22497,7 +22505,7 @@ function optionIsDisabled(option: HTMLOptionElement): boolean {
 		return true;
 	}
 	const parent = getObject(_(option).parent);
-	return isPlatformObject(parent, HTMLOptGroupElement) && parent.disabled;
+	return implementsInterface(parent, HTMLOptGroupElement) && parent.disabled;
 }
 
 function rectContains(rect: globalThis.DOMRect, x: number, y: number): boolean {
@@ -22535,16 +22543,16 @@ function getOptions(select: Element): HTMLOptionElement[] {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = getObject(nodeSlots);
-		if (isPlatformObject(node, HTMLOptionElement)) {
+		if (implementsInterface(node, HTMLOptionElement)) {
 			options.push(node);
-		} else if (isPlatformObject(node, HTMLOptGroupElement)) {
+		} else if (implementsInterface(node, HTMLOptGroupElement)) {
 			for (
 				let childSlots = nodeSlots.firstChild;
 				childSlots !== null;
 				childSlots = childSlots.next
 			) {
 				const child = getObject(childSlots);
-				if (isPlatformObject(child, HTMLOptionElement)) {
+				if (implementsInterface(child, HTMLOptionElement)) {
 					options.push(child);
 				}
 			}
@@ -22679,7 +22687,7 @@ class HTMLTableCellElement extends HTMLElement {
 	declare scope: globalThis.HTMLTableCellElement["scope"];
 	get cellIndex(): number {
 		const parent = getObject(_(this).parent);
-		if (!(isPlatformObject(parent, HTMLTableRowElement))) {
+		if (!(implementsInterface(parent, HTMLTableRowElement))) {
 			return -1;
 		}
 		return getRowCells(parent).indexOf(this);
@@ -22731,7 +22739,9 @@ class HTMLTableElement extends HTMLElement {
 	}
 
 	set caption(value: Element | null) {
-		if (value !== null && !(isPlatformObject(value, HTMLTableCaptionElement))) {
+		if (
+			value !== null && !(implementsInterface(value, HTMLTableCaptionElement))
+		) {
 			throw new TypeError("That is not a caption");
 		}
 		this.deleteCaption();
@@ -22748,7 +22758,7 @@ class HTMLTableElement extends HTMLElement {
 	set tHead(value: Element | null) {
 		if (
 			value !== null &&
-			!(isPlatformObject(value, HTMLTableSectionElement) &&
+			!(implementsInterface(value, HTMLTableSectionElement) &&
 				getLocalName(value) === "thead")
 		) {
 			throw new TypeError("That is not a table head");
@@ -22782,7 +22792,7 @@ class HTMLTableElement extends HTMLElement {
 	set tFoot(value: Element | null) {
 		if (
 			value !== null &&
-			!(isPlatformObject(value, HTMLTableSectionElement) &&
+			!(implementsInterface(value, HTMLTableSectionElement) &&
 				getLocalName(value) === "tfoot")
 		) {
 			throw new TypeError("That is not a table foot");
@@ -23045,7 +23055,7 @@ class HTMLTableRowElement extends HTMLElement {
 				new HTMLCollection(
 					() => getRowCells(this),
 					this,
-					(node) => isPlatformObject(node, HTMLTableCellElement),
+					(node) => implementsInterface(node, HTMLTableCellElement),
 				),
 			);
 			slots.extra.cells = cells;
@@ -23102,7 +23112,7 @@ function getRowCells(row: Element): Element[] {
 		nodeSlots !== null;
 		nodeSlots = nodeSlots.next) {
 		const node = getObject(nodeSlots);
-		if (isPlatformObject(node, HTMLTableCellElement)) {
+		if (implementsInterface(node, HTMLTableCellElement)) {
 			cells.push(node);
 		}
 	}
@@ -23893,7 +23903,7 @@ function getPopoverValueState(value: string | null): "auto" | "manual" | null {
 /** Whether `:popover-open` matches. */
 export function isShowingPopover(node: globalThis.Node): boolean {
 	return (
-		isPlatformObject(node, HTMLElement) &&
+		implementsInterface(node, HTMLElement) &&
 		popoverStates.get(node)?.visibility === "showing"
 	);
 }
@@ -24292,7 +24302,7 @@ function getTopmostClickedPopover(
 // Unlike a dialog, a popover does not take focus from the page when it
 // opens. Focus moves only if the content asks for it with autofocus.
 function popoverFocusingSteps(element: Element): void {
-	if (isPlatformObject(element, HTMLDialogElement)) {
+	if (implementsInterface(element, HTMLDialogElement)) {
 		// A dialog shown as a popover focuses like a dialog, not like a popover.
 		focusDialog(element);
 		return;
@@ -24415,10 +24425,10 @@ function setAttributeElement(
 // A BUTTON as the popover target attributes define it: the button
 // element, and the input types that render as buttons.
 function isPopoverInvokerButton(node: Node): boolean {
-	if (isPlatformObject(node, HTMLButtonElement)) {
+	if (implementsInterface(node, HTMLButtonElement)) {
 		return true;
 	}
-	if (!(isPlatformObject(node, HTMLInputElement))) {
+	if (!(implementsInterface(node, HTMLInputElement))) {
 		return false;
 	}
 	const type = node.type;
@@ -24459,7 +24469,7 @@ function popoverTargetActivationBehavior(node: Element, target: unknown): void {
 		return;
 	}
 	if (
-		isPlatformObject(target, Node) &&
+		implementsInterface(target, Node) &&
 		isFlatInclusiveAncestor(popover, target) &&
 		isFlatInclusiveAncestor(node, popover) &&
 		popover !== node
@@ -25081,7 +25091,7 @@ function getFormOwner(element: Element): HTMLFormElement | null {
 			if (getAttributeValue(candidate, "id") !== id) {
 				continue;
 			}
-			return isPlatformObject(candidate, HTMLFormElement) ? candidate : null;
+			return implementsInterface(candidate, HTMLFormElement) ? candidate : null;
 		}
 		return null;
 	}
@@ -25091,7 +25101,7 @@ function getFormOwner(element: Element): HTMLFormElement | null {
 		nodeSlots = nodeSlots.parent
 	) {
 		const node = getObject(nodeSlots);
-		if (isPlatformObject(node, HTMLFormElement)) {
+		if (implementsInterface(node, HTMLFormElement)) {
 			return node;
 		}
 	}
@@ -25515,7 +25525,7 @@ class ElementInternals {
 		const slots = _(this);
 		if (anchor != null) {
 			if (
-				!(isPlatformObject(anchor, HTMLElement)) ||
+				!(implementsInterface(anchor, HTMLElement)) ||
 				!isShadowIncludingInclusiveAncestor(
 					slots.elementInternalsTarget,
 					anchor,
@@ -25680,7 +25690,7 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 			if (many) {
 				const list: Element[] = [];
 				for (const entry of value as Iterable<unknown>) {
-					if (!(isPlatformObject(entry, Element))) {
+					if (!(implementsInterface(entry, Element))) {
 						throw new TypeError("That is not an element");
 					}
 					list.push(entry);
@@ -25688,7 +25698,7 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 				setARIATargets(this, property, attribute, list);
 				return;
 			}
-			if (!(isPlatformObject(value, Element))) {
+			if (!(implementsInterface(value, Element))) {
 				throw new TypeError("That is not an element");
 			}
 			setARIATargets(this, property, attribute, [value]);
@@ -25763,7 +25773,7 @@ function getLabels(element: Element): NodeListOf<HTMLLabelElement> {
 	const labels: Node[] = [];
 	const root = getRoot(element);
 	for (const node of descendants(root)) {
-		if (!(isPlatformObject(node, HTMLLabelElement))) {
+		if (!(implementsInterface(node, HTMLLabelElement))) {
 			continue;
 		}
 		if (node.control === element) {
@@ -25802,17 +25812,17 @@ function willValidate(element: Element): boolean {
 	if (isActuallyDisabled(element)) {
 		return false;
 	}
-	if (isPlatformObject(element, HTMLObjectElement)) {
+	if (implementsInterface(element, HTMLObjectElement)) {
 		return false;
 	}
-	if (isPlatformObject(element, HTMLFieldSetElement)) {
+	if (implementsInterface(element, HTMLFieldSetElement)) {
 		return false;
 	}
 	const elementSlots = _(element);
 	if (elementSlots.localName === "output") {
 		return false;
 	}
-	if (isPlatformObject(element, HTMLInputElement)) {
+	if (implementsInterface(element, HTMLInputElement)) {
 		const type = element.type;
 		if (UNSUBMITTABLE_INPUT_TYPES.has(type)) {
 			return false;
@@ -25822,12 +25832,12 @@ function willValidate(element: Element): boolean {
 		) {
 			return false;
 		}
-	} else if (isPlatformObject(element, HTMLButtonElement)) {
+	} else if (implementsInterface(element, HTMLButtonElement)) {
 		if (element.type !== "submit") {
 			return false;
 		}
 	} else if (
-		(isPlatformObject(element, HTMLTextAreaElement) ||
+		(implementsInterface(element, HTMLTextAreaElement) ||
 			elementSlots.internals !== null) &&
 		hasAttributeByName(element, "readonly")
 	) {
@@ -25885,11 +25895,11 @@ function getValidityFlags(element: Element): ValidityFlags {
 	}
 	const flags = noValidityFlags();
 	flags.customError = (customValidityMessages.get(element) ?? "") !== "";
-	if (isPlatformObject(element, HTMLInputElement)) {
+	if (implementsInterface(element, HTMLInputElement)) {
 		collectInputValidity(element, flags);
-	} else if (isPlatformObject(element, HTMLSelectElement)) {
+	} else if (implementsInterface(element, HTMLSelectElement)) {
 		collectSelectValidity(element, flags);
-	} else if (isPlatformObject(element, HTMLTextAreaElement)) {
+	} else if (implementsInterface(element, HTMLTextAreaElement)) {
 		collectTextAreaValidity(element, flags);
 	}
 	return flags;
@@ -25974,7 +25984,7 @@ function isRadioGroupChecked(input: HTMLInputElement): boolean {
 	const form = getFormOwner(input);
 	for (const node of descendants(getRoot(input))) {
 		if (
-			isPlatformObject(node, HTMLInputElement) &&
+			implementsInterface(node, HTMLInputElement) &&
 			node.type === "radio" &&
 			getAttributeValue(node, "name") === name &&
 			getFormOwner(node) === form &&
@@ -26162,10 +26172,10 @@ function getValidationMessage(element: Element): string {
 		return customValidityMessages.get(element) ?? "";
 	}
 	if (flags.valueMissing) {
-		if (isPlatformObject(element, HTMLSelectElement)) {
+		if (implementsInterface(element, HTMLSelectElement)) {
 			return "Please select an item in the list.";
 		}
-		const type = isPlatformObject(element, HTMLInputElement)
+		const type = implementsInterface(element, HTMLInputElement)
 			? element.type
 			: "";
 		if (type === "checkbox") {
@@ -26180,7 +26190,8 @@ function getValidationMessage(element: Element): string {
 		return "Please fill out this field.";
 	}
 	if (flags.typeMismatch) {
-		return isPlatformObject(element, HTMLInputElement) && element.type === "url"
+		return implementsInterface(element, HTMLInputElement) &&
+			element.type === "url"
 			? "Please enter a URL."
 			: "Please enter an email address.";
 	}
@@ -26567,7 +26578,7 @@ function flatContentFirstChild(element: Element): Node | null {
 	if (shadow !== null) {
 		return getObject(_(shadow).firstChild);
 	}
-	if (isPlatformObject(element, HTMLSlotElement)) {
+	if (implementsInterface(element, HTMLSlotElement)) {
 		const assigned = _(element).extra.assignedNodes;
 		if (assigned.length > 0) {
 			return assigned[0];
@@ -27730,7 +27741,7 @@ export class Document extends Node implements globalThis.Document {
 			if (root === (this as Node)) {
 				return current as unknown as globalThis.Element;
 			}
-			if (isPlatformObject(root, ShadowRoot) && root.host !== null) {
+			if (implementsInterface(root, ShadowRoot) && root.host !== null) {
 				current = root.host as unknown as Node;
 				continue;
 			}
@@ -27952,7 +27963,7 @@ export class Document extends Node implements globalThis.Document {
 		return getDocumentCollection(
 			this,
 			"anchors",
-			(e) => isPlatformObject(e, HTMLAnchorElement) &&
+			(e) => implementsInterface(e, HTMLAnchorElement) &&
 				hasAttributeByName(e, "name"),
 			"name",
 		) as unknown as HTMLCollectionOf<globalThis.HTMLAnchorElement>;
@@ -27960,25 +27971,25 @@ export class Document extends Node implements globalThis.Document {
 
 	get forms(): HTMLCollectionOf<globalThis.HTMLFormElement> {
 		return getDocumentCollection(this, "forms", (e) =>
-			isPlatformObject(e, HTMLFormElement),
+			implementsInterface(e, HTMLFormElement),
 		) as unknown as HTMLCollectionOf<globalThis.HTMLFormElement>;
 	}
 
 	get images(): HTMLCollectionOf<globalThis.HTMLImageElement> {
 		return getDocumentCollection(this, "images", (e) =>
-			isPlatformObject(e, HTMLImageElement),
+			implementsInterface(e, HTMLImageElement),
 		) as unknown as HTMLCollectionOf<globalThis.HTMLImageElement>;
 	}
 
 	get scripts(): HTMLCollectionOf<globalThis.HTMLScriptElement> {
 		return getDocumentCollection(this, "scripts", (e) =>
-			isPlatformObject(e, HTMLScriptElement),
+			implementsInterface(e, HTMLScriptElement),
 		) as unknown as HTMLCollectionOf<globalThis.HTMLScriptElement>;
 	}
 
 	get embeds(): HTMLCollectionOf<globalThis.HTMLEmbedElement> {
 		return getDocumentCollection(this, "embeds", (e) =>
-			isPlatformObject(e, HTMLEmbedElement),
+			implementsInterface(e, HTMLEmbedElement),
 		) as unknown as HTMLCollectionOf<globalThis.HTMLEmbedElement>;
 	}
 
@@ -27994,8 +28005,8 @@ export class Document extends Node implements globalThis.Document {
 			this,
 			"links",
 			(e) =>
-				(isPlatformObject(e, HTMLAnchorElement) ||
-					isPlatformObject(e, HTMLAreaElement)) &&
+				(implementsInterface(e, HTMLAnchorElement) ||
+					implementsInterface(e, HTMLAreaElement)) &&
 				hasAttributeByName(e, "href"),
 			"href",
 		) as unknown as HTMLCollectionOf<
@@ -28555,7 +28566,7 @@ export class Document extends Node implements globalThis.Document {
 		if (typeof options === "object" && options.customElementRegistry === null) {
 			throw new TypeError("customElementRegistry cannot be null");
 		}
-		if (!(isPlatformObject(node, Node))) {
+		if (!(implementsInterface(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (getNodeType(node) === DOCUMENT_NODE) {
@@ -28572,7 +28583,7 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	adoptNode<T extends globalThis.Node>(node: T): T {
-		if (!(isPlatformObject(node, Node))) {
+		if (!(implementsInterface(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (getNodeType(node) === DOCUMENT_NODE) {
@@ -28743,7 +28754,7 @@ export class Document extends Node implements globalThis.Document {
 		whatToShow = 0xffffffff,
 		filter: globalThis.NodeFilter | null = null,
 	): globalThis.NodeIterator {
-		if (!(isPlatformObject(root, Node))) {
+		if (!(implementsInterface(root, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		const iterator = new NodeIterator(
@@ -28762,7 +28773,7 @@ export class Document extends Node implements globalThis.Document {
 		whatToShow = 0xffffffff,
 		filter: globalThis.NodeFilter | null = null,
 	): globalThis.TreeWalker {
-		if (!(isPlatformObject(root, Node))) {
+		if (!(implementsInterface(root, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		return new TreeWalker(
@@ -29276,7 +29287,9 @@ function getOutsideUAShadowTrees(
 ): globalThis.Element | null {
 	while (element !== null) {
 		const root = getRoot(element);
-		if (!(isPlatformObject(root, ShadowRoot)) || !_(root).extra.uaShadowTree) {
+		if (
+			!(implementsInterface(root, ShadowRoot)) || !_(root).extra.uaShadowTree
+		) {
 			break;
 		}
 		element = _(root).extra.host as Element;
@@ -29389,7 +29402,7 @@ function extractRegistry(
 	if (value == null) {
 		return null;
 	}
-	if (!(isPlatformObject(value, CustomElementRegistry))) {
+	if (!(implementsInterface(value, CustomElementRegistry))) {
 		throw new TypeError("That is not a custom element registry");
 	}
 	return value;
@@ -29660,11 +29673,11 @@ function buildHTMLSkeleton(document: Document, title?: string): void {
 type Insertable = Node | string;
 
 function convertNodesIntoNode(nodes: Insertable[], document: Document): Node {
-	if (nodes.length === 1 && isPlatformObject(nodes[0], Node)) {
+	if (nodes.length === 1 && implementsInterface(nodes[0], Node)) {
 		return nodes[0];
 	}
 	const converted = nodes.map((node) => {
-		if (isPlatformObject(node, Node)) {
+		if (implementsInterface(node, Node)) {
 			return node;
 		}
 		const text = new Text(String(node));
@@ -29760,10 +29773,10 @@ const parentNodeMembers = {
 			if (arguments.length < 2) {
 				throw new TypeError("moveBefore needs a node and a child");
 			}
-			if (!(isPlatformObject(node, Node))) {
+			if (!(implementsInterface(node, Node))) {
 				throw new TypeError("That is not a node");
 			}
-			if (child != null && !(isPlatformObject(child, Node))) {
+			if (child != null && !(implementsInterface(child, Node))) {
 				throw new TypeError("That is not a node");
 			}
 			let reference = child ?? null;
@@ -30875,7 +30888,7 @@ function getStaticRangePoints(init: unknown): [Node, number, Node, number] {
 	const startContainer = dictionary.startContainer as Node;
 	const endContainer = dictionary.endContainer as Node;
 	for (const container of [startContainer, endContainer]) {
-		if (!(isPlatformObject(container, Node))) {
+		if (!(implementsInterface(container, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (
@@ -30972,7 +30985,7 @@ function moveRange(
 
 /** Any node except a doctype. */
 function assertBoundaryNode(node: unknown): asserts node is Node {
-	if (!(isPlatformObject(node, Node))) {
+	if (!(implementsInterface(node, Node))) {
 		throw new TypeError("That is not a node");
 	}
 	if (getNodeType(node) === DOCUMENT_TYPE_NODE) {
@@ -31030,7 +31043,7 @@ function setRangeBoundary(
 }
 
 function getBoundaryParent(node: unknown): Node {
-	if (!(isPlatformObject(node, Node))) {
+	if (!(implementsInterface(node, Node))) {
 		throw new TypeError("That is not a node");
 	}
 	const parent = getObject(_(node).parent);
@@ -31265,7 +31278,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (arguments.length < 2) {
 			throw new TypeError("compareBoundaryPoints needs a how and a range");
 		}
-		if (!(isPlatformObject(sourceRange, Range))) {
+		if (!(implementsInterface(sourceRange, Range))) {
 			throw new TypeError("That is not a range");
 		}
 		const which = toUnsignedShort(how);
@@ -31362,13 +31375,13 @@ class Range extends AbstractRange implements globalThis.Range {
 	createContextualFragment(markup: string): DocumentFragment {
 		const start = _(this).startNode;
 		const startSlots = _(start);
-		let context: Element | null = isPlatformObject(start, Element)
+		let context: Element | null = implementsInterface(start, Element)
 			? start
-			: isPlatformObject(getObject(startSlots.parent), Element)
+			: implementsInterface(getObject(startSlots.parent), Element)
 			? (getObject(startSlots.parent) as Element)
 			: null;
 		if (context === null) {
-			const document = isPlatformObject(start, Document)
+			const document = implementsInterface(start, Document)
 				? start
 				: (getOwnerDocument(start) as Document | null);
 			context = (document?.body ?? document?.documentElement ?? null) as
@@ -31384,7 +31397,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (arguments.length < 1) {
 			throw new TypeError("surroundContents needs a node");
 		}
-		if (!(isPlatformObject(newParent, Node))) {
+		if (!(implementsInterface(newParent, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		const slots = _(this);
@@ -31393,7 +31406,7 @@ class Range extends AbstractRange implements globalThis.Range {
 			while (current !== null) {
 				if (
 					isPartiallyContained(current, this) &&
-					!(isPlatformObject(current, Text))
+					!(implementsInterface(current, Text))
 				) {
 					throw domError(
 						"InvalidStateError",
@@ -31444,7 +31457,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (arguments.length < 2) {
 			throw new TypeError("isPointInRange needs a node and an offset");
 		}
-		if (!(isPlatformObject(node, Node))) {
+		if (!(implementsInterface(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (getRoot(node) !== rangeRoot(this)) {
@@ -31471,7 +31484,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (arguments.length < 2) {
 			throw new TypeError("comparePoint needs a node and an offset");
 		}
-		if (!(isPlatformObject(node, Node))) {
+		if (!(implementsInterface(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (getRoot(node) !== rangeRoot(this)) {
@@ -31506,7 +31519,7 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (arguments.length < 1) {
 			throw new TypeError("intersectsNode needs a node");
 		}
-		if (!(isPlatformObject(node, Node))) {
+		if (!(implementsInterface(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		if (getRoot(node) !== rangeRoot(this)) {
@@ -31530,22 +31543,22 @@ class Range extends AbstractRange implements globalThis.Range {
 		const slots = _(this);
 		const startNode = slots.startNode;
 		const endNode = slots.endNode;
-		if (startNode === endNode && isPlatformObject(startNode, Text)) {
+		if (startNode === endNode && implementsInterface(startNode, Text)) {
 			return _(startNode).data.slice(slots.startOffset, slots.endOffset);
 		}
 		let string = "";
-		if (isPlatformObject(startNode, Text)) {
+		if (implementsInterface(startNode, Text)) {
 			string += _(startNode).data.slice(slots.startOffset);
 		}
 		for (const node of descendants(getCommonAncestor(this))) {
-			if (!(isPlatformObject(node, Text))) {
+			if (!(implementsInterface(node, Text))) {
 				continue;
 			}
 			if (isContained(node, this)) {
 				string += _(node).data;
 			}
 		}
-		if (isPlatformObject(endNode, Text)) {
+		if (implementsInterface(endNode, Text)) {
 			string += _(endNode).data.slice(0, slots.endOffset);
 		}
 		return string;
@@ -31693,7 +31706,7 @@ function cloneRangeContents(range: Range): DocumentFragment {
 }
 
 function insertIntoRange(range: Range, node: Node): void {
-	if (!(isPlatformObject(node, Node))) {
+	if (!(implementsInterface(node, Node))) {
 		throw new TypeError("That is not a node");
 	}
 	const rangeSlots = _(range);
@@ -31702,13 +31715,13 @@ function insertIntoRange(range: Range, node: Node): void {
 	if (
 		type === PROCESSING_INSTRUCTION_NODE ||
 		type === COMMENT_NODE ||
-		(isPlatformObject(startNode, Text) && _(startNode).parent === null) ||
+		(implementsInterface(startNode, Text) && _(startNode).parent === null) ||
 		startNode === node
 	) {
 		throw hierarchyRequestError("That range cannot take an inserted node");
 	}
 	let referenceNode: Node | null;
-	if (isPlatformObject(startNode, Text)) {
+	if (implementsInterface(startNode, Text)) {
 		referenceNode = startNode;
 	} else {
 		let child = getObject(_(startNode).firstChild);
@@ -31723,7 +31736,7 @@ function insertIntoRange(range: Range, node: Node): void {
 		? startNode
 		: (getObject(_(referenceNode).parent) as Node);
 	ensurePreInsertionValidity(node, parent, referenceNode);
-	if (isPlatformObject(startNode, Text)) {
+	if (implementsInterface(startNode, Text)) {
 		referenceNode = startNode.splitText(rangeSlots.startOffset);
 	}
 	const nodeSlots = _(node);
@@ -32113,7 +32126,7 @@ class Selection implements globalThis.Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("addRange needs a range");
 		}
-		if (!(isPlatformObject(range, Range))) {
+		if (!(implementsInterface(range, Range))) {
 			throw new TypeError("That is not a range");
 		}
 		const rangeSlots = _(range);
@@ -32136,7 +32149,7 @@ class Selection implements globalThis.Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("removeRange needs a range");
 		}
-		if (!(isPlatformObject(range, Range))) {
+		if (!(implementsInterface(range, Range))) {
 			throw new TypeError("That is not a range");
 		}
 		if (range !== _(this).range) {
@@ -32174,7 +32187,7 @@ class Selection implements globalThis.Selection {
 		const roots: ShadowRoot[] = [];
 		if (dictionary.shadowRoots != null) {
 			for (const root of dictionary.shadowRoots as Iterable<unknown>) {
-				if (!(isPlatformObject(root, ShadowRoot))) {
+				if (!(implementsInterface(root, ShadowRoot))) {
 					throw new TypeError("That is not a shadow root");
 				}
 				roots.push(root);
@@ -32281,7 +32294,7 @@ class Selection implements globalThis.Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("extend needs a node");
 		}
-		if (!(isPlatformObject(node, Node))) {
+		if (!(implementsInterface(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		const slots = _(this);
@@ -32317,8 +32330,8 @@ class Selection implements globalThis.Selection {
 			throw new TypeError("setBaseAndExtent needs two boundary points");
 		}
 		if (
-			!(isPlatformObject(anchorNode, Node)) ||
-			!(isPlatformObject(focusNode, Node))
+			!(implementsInterface(anchorNode, Node)) ||
+			!(implementsInterface(focusNode, Node))
 		) {
 			throw new TypeError("That is not a node");
 		}
@@ -32389,7 +32402,7 @@ class Selection implements globalThis.Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("containsNode needs a node");
 		}
-		if (!(isPlatformObject(node, Node))) {
+		if (!(implementsInterface(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		const slots = _(this);
@@ -32640,7 +32653,7 @@ function getSelectionTextNodes(
 			? shadow
 			: node;
 		if (
-			isPlatformObject(source, HTMLSlotElement) &&
+			implementsInterface(source, HTMLSlotElement) &&
 			_(source).extra.assignedNodes.length > 0
 		) {
 			return [..._(source).extra.assignedNodes] as Node[];
@@ -33422,7 +33435,7 @@ class Highlight {
 	}
 
 	add(range: AbstractRange): Highlight {
-		if (!(isPlatformObject(range, AbstractRange))) {
+		if (!(implementsInterface(range, AbstractRange))) {
 			throw new TypeError("That is not a range");
 		}
 		_(this).highlightRanges.add(range);
@@ -33537,7 +33550,7 @@ class HighlightRegistry {
 		if (arguments.length < 2) {
 			throw new TypeError("set needs a name and a highlight");
 		}
-		if (!(isPlatformObject(highlight, Highlight))) {
+		if (!(implementsInterface(highlight, Highlight))) {
 			throw new TypeError("That is not a highlight");
 		}
 		const key = String(name);
@@ -33794,7 +33807,7 @@ export function getHighlightedTextNodes(
 		node !== null;
 		node = nextInTree(node, container)
 	) {
-		if (!(isPlatformObject(node, Text))) {
+		if (!(implementsInterface(node, Text))) {
 			continue;
 		}
 		const offsets = getHighlightedOffsets(range, node);
@@ -34096,7 +34109,7 @@ export class TreeWalker implements globalThis.TreeWalker {
 	}
 
 	set currentNode(node: globalThis.Node) {
-		if (!(isPlatformObject(node, Node))) {
+		if (!(implementsInterface(node, Node))) {
 			throw new TypeError("That is not a node");
 		}
 		_(this).current = node as Node;
@@ -34398,7 +34411,7 @@ function movePointerStatesOffRemoval(
 	node: Node,
 	parent: Node,
 ): void {
-	const heir = isPlatformObject(parent, ShadowRoot)
+	const heir = implementsInterface(parent, ShadowRoot)
 		? (_(parent).extra.host as Element)
 		: getNodeType(parent) === ELEMENT_NODE ? (parent as Element) : null;
 	for (const states of [activeElements, hoveredElements]) {
@@ -34926,7 +34939,7 @@ export function getUserValidityMatch(
 // validated and has range limitations, or null for any other element.
 export function getRangeMatch(element: Element): "in" | "out" | null {
 	if (
-		!(isPlatformObject(element, HTMLInputElement)) || !willValidate(element)
+		!(implementsInterface(element, HTMLInputElement)) || !willValidate(element)
 	) {
 		return null;
 	}
@@ -36725,9 +36738,9 @@ type TextControlOrSelect =
 function onTextControlEditEvent(event: globalThis.Event): void {
 	const target = event.target;
 	if (!(
-		isPlatformObject(target, HTMLInputElement) ||
-		isPlatformObject(target, HTMLTextAreaElement) ||
-		isPlatformObject(target, HTMLSelectElement)
+		implementsInterface(target, HTMLInputElement) ||
+		implementsInterface(target, HTMLTextAreaElement) ||
+		implementsInterface(target, HTMLSelectElement)
 	)) {
 		return;
 	}
@@ -36897,7 +36910,7 @@ export function revealPendingCaret(document: globalThis.Document): void {
 		return;
 	}
 	flushLayout(element);
-	if (isPlatformObject(element, HTMLTextAreaElement)) {
+	if (implementsInterface(element, HTMLTextAreaElement)) {
 		revealCaretInTextArea(attached, element);
 	}
 	const rect = attachedSlots.extra.layout.getRect(element);
@@ -36994,7 +37007,7 @@ function handleMutationRecords(
 			? record.target
 			: record.type === "characterData" ? record.target.parentNode : null;
 		if (
-			isPlatformObject(textarea, HTMLTextAreaElement) &&
+			implementsInterface(textarea, HTMLTextAreaElement) &&
 			!_(textarea).extra.dirty
 		) {
 			syncUAShadowTree(textarea);
@@ -39491,7 +39504,7 @@ export class Window extends EventTarget {
 				.then((buffer) => decodeImageOffThread(new Uint8Array(buffer)))
 				.then((bitmap) => settle(new ImageBitmap(bitmap)));
 		}
-		if (isPlatformObject(image, HTMLImageElement) && !image.complete) {
+		if (implementsInterface(image, HTMLImageElement) && !image.complete) {
 			return image.decode().then(() => settle(image));
 		}
 		try {
@@ -39882,8 +39895,8 @@ function containsPlatformObject(
 	seen.add(value);
 	if (getSlotClass(value) !== null) {
 		if (
-			!(isPlatformObject(value, DOMRectReadOnly) ||
-				isPlatformObject(value, ImageData))
+			!(implementsInterface(value, DOMRectReadOnly) ||
+				implementsInterface(value, ImageData))
 		) {
 			throw domError(
 				"DataCloneError",
@@ -39919,10 +39932,12 @@ function cloneWithPlatformObjects(
 		return copies.get(value);
 	}
 	let copy: unknown;
-	if (isPlatformObject(value, DOMRectReadOnly)) {
-		const Type = isPlatformObject(value, DOMRect) ? DOMRect : DOMRectReadOnly;
+	if (implementsInterface(value, DOMRectReadOnly)) {
+		const Type = implementsInterface(value, DOMRect)
+			? DOMRect
+			: DOMRectReadOnly;
 		copy = new Type(value.x, value.y, value.width, value.height);
-	} else if (isPlatformObject(value, ImageData)) {
+	} else if (implementsInterface(value, ImageData)) {
 		copy = new ImageData(
 			new Uint8ClampedArray(value.data),
 			value.width,
@@ -40006,7 +40021,7 @@ export function startPendingImages(
 ): void {
 	for (const element of root.querySelectorAll("*")) {
 		if (
-			isPlatformObject(element, HTMLImageElement) &&
+			implementsInterface(element, HTMLImageElement) &&
 			_(element).extra.imageState.pending
 		) {
 			updateImageData(element);

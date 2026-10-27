@@ -56,7 +56,7 @@ import {requestEditingInsert} from "./editing.ts";
 import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import {type Framebuffer, repaintAll, requestFrame} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";
-import {_, isPlatformObject} from "./slots.ts";
+import {_, implementsInterface} from "./slots.ts";
 import {
 	getAttachedDocument,
 	getAttributeValue,
@@ -1274,7 +1274,7 @@ function getControlUnitBounds(
 ): [number, number] {
 	const text = getTextControlValueText(element)?.data ?? "";
 	if (
-		isPlatformObject(element, HTMLInputElement) &&
+		implementsInterface(element, HTMLInputElement) &&
 		(unit === "paragraph" || element.type === "password")
 	) {
 		return [0, text.length];
@@ -1561,11 +1561,11 @@ function dispatchRelease(
 		// which activation alone does not do), and a .checked flip is a
 		// property change no mutation record repaints.
 		const isCheckable = (el: unknown): el is HTMLInputElement =>
-			isPlatformObject(el, HTMLInputElement) &&
+			implementsInterface(el, HTMLInputElement) &&
 			(el.type === "checkbox" || el.type === "radio");
 		const control = isCheckable(target)
 			? target
-			: isPlatformObject(target, HTMLLabelElement) &&
+			: implementsInterface(target, HTMLLabelElement) &&
 				isCheckable(target.control)
 				? target.control
 				: null;
@@ -1971,8 +1971,8 @@ function getTextPosition(
 	const element = elementAtDocumentPoint(input.document, x, y, null);
 	if (
 		!element ||
-		isPlatformObject(element, HTMLInputElement) ||
-		isPlatformObject(element, HTMLTextAreaElement)
+		implementsInterface(element, HTMLInputElement) ||
+		implementsInterface(element, HTMLTextAreaElement)
 	) {
 		return null;
 	}

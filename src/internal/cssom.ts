@@ -67,8 +67,8 @@ import {
 	adopt as adoptSlots,
 	declareSealedRoot,
 	getOwner,
+	implementsInterface,
 	type internals,
-	isPlatformObject,
 	seal,
 	type Slots,
 	type Step,
@@ -1719,8 +1719,8 @@ abstract class CSSGroupingRule extends CSSRule {
 		}
 		const inserted = parseRuleText(text, this.parentStyleSheet, this);
 		if (
-			isPlatformObject(inserted, CSSImportRule) ||
-			isPlatformObject(inserted, CSSNamespaceRule)
+			implementsInterface(inserted, CSSImportRule) ||
+			implementsInterface(inserted, CSSNamespaceRule)
 		) {
 			throw domException(
 				"Only a stylesheet may hold that rule",
@@ -1873,13 +1873,13 @@ const PRELUDE_NAMESPACES = 2;
 const PRELUDE_OVER = 3;
 
 function getPreludeStage(rule: CSSRule): number {
-	if (isPlatformObject(rule, CSSLayerStatementRule)) {
+	if (implementsInterface(rule, CSSLayerStatementRule)) {
 		return PRELUDE_LAYERS;
 	}
-	if (isPlatformObject(rule, CSSImportRule)) {
+	if (implementsInterface(rule, CSSImportRule)) {
 		return PRELUDE_IMPORTS;
 	}
-	if (isPlatformObject(rule, CSSNamespaceRule)) {
+	if (implementsInterface(rule, CSSNamespaceRule)) {
 		return PRELUDE_NAMESPACES;
 	}
 	return PRELUDE_OVER;
@@ -1896,7 +1896,7 @@ function getSheetNamespaces(
 		if (getPreludeStage(rule) === PRELUDE_OVER) {
 			break;
 		}
-		if (!(isPlatformObject(rule, CSSNamespaceRule))) {
+		if (!(implementsInterface(rule, CSSNamespaceRule))) {
 			continue;
 		}
 		if (rule.prefix === "") {
@@ -1974,7 +1974,7 @@ function initDeclarationBlock(
 		// A descriptor block declares descriptors, not CSS properties, so
 		// the property index does not restrict what it may hold.
 		descriptors: atRule,
-		keyframe: isPlatformObject(rule, CSSKeyframeRule),
+		keyframe: implementsInterface(rule, CSSKeyframeRule),
 	});
 	if (typeof block === "string") {
 		ruleSlots.style.cssText = block;
@@ -2869,7 +2869,7 @@ class CSSKeyframesRule extends CSSRule {
 			this,
 		);
 		const slots = _(this);
-		if (isPlatformObject(rule, CSSKeyframesRule)) {
+		if (implementsInterface(rule, CSSKeyframesRule)) {
 			slots.rules.push(...Array.from(rule.cssRules));
 			syncIndexed(slots.ruleList);
 			syncIndexed(this, slots.rules);
@@ -3099,7 +3099,7 @@ class CSSStyleSheet {
 		const inserted = parseRuleText(text, this, null);
 		// A constructed sheet cannot import another. `@import` is not a rule it
 		// accepts.
-		if (isPlatformObject(inserted, CSSImportRule) && slots.constructed) {
+		if (implementsInterface(inserted, CSSImportRule) && slots.constructed) {
 			throw domException(
 				"A constructed stylesheet holds no @import rule",
 				"SyntaxError",
@@ -3131,10 +3131,11 @@ class CSSStyleSheet {
 		// selectors already parsed against it, so a sheet holding any other
 		// rule keeps it.
 		if (
-			isPlatformObject(removed, CSSNamespaceRule) && slots.rules.some((other) =>
+			implementsInterface(removed, CSSNamespaceRule) &&
+			slots.rules.some((other) =>
 				!(
-					isPlatformObject(other, CSSImportRule) ||
-					isPlatformObject(other, CSSNamespaceRule)
+					implementsInterface(other, CSSImportRule) ||
+					implementsInterface(other, CSSNamespaceRule)
 				))
 		) {
 			throw domException(
@@ -3181,7 +3182,7 @@ class CSSStyleSheet {
 		slots.rules.length = 0;
 		slots.rules.push(
 			...parseRules(String(text ?? ""), this, null).filter(
-				(rule) => !(isPlatformObject(rule, CSSImportRule)),
+				(rule) => !(implementsInterface(rule, CSSImportRule)),
 			),
 		);
 		syncIndexed(slots.ruleList);
@@ -3234,22 +3235,22 @@ function checkRuleOrder(
 		);
 	};
 	const prelude = (other: CSSRule): boolean =>
-		isPlatformObject(other, CSSImportRule) ||
-		isPlatformObject(other, CSSNamespaceRule);
+		implementsInterface(other, CSSImportRule) ||
+		implementsInterface(other, CSSNamespaceRule);
 	const sheetSlots = _(sheet);
 	const before = sheetSlots.rules.slice(0, index);
 	const after = sheetSlots.rules.slice(index);
-	if (isPlatformObject(rule, CSSImportRule)) {
-		if (before.some((other) => !(isPlatformObject(other, CSSImportRule)))) {
+	if (implementsInterface(rule, CSSImportRule)) {
+		if (before.some((other) => !(implementsInterface(other, CSSImportRule)))) {
 			hierarchy();
 		}
 		return;
 	}
-	if (isPlatformObject(rule, CSSNamespaceRule)) {
+	if (implementsInterface(rule, CSSNamespaceRule)) {
 		if (before.some((other) => !prelude(other))) {
 			hierarchy();
 		}
-		if (after.some((other) => isPlatformObject(other, CSSImportRule))) {
+		if (after.some((other) => implementsInterface(other, CSSImportRule))) {
 			hierarchy();
 		}
 		if (sheetSlots.rules.some((other) => !prelude(other))) {
@@ -3501,7 +3502,7 @@ function convertRules(
 		} else if (stage !== PRELUDE_LAYERS || ruleStage === PRELUDE_OVER) {
 			stage = PRELUDE_OVER;
 		}
-		if (isPlatformObject(rule, CSSNamespaceRule)) {
+		if (implementsInterface(rule, CSSNamespaceRule)) {
 			if (rule.prefix === "") {
 				namespaces.default = rule.namespaceURI;
 			} else {
@@ -3519,7 +3520,7 @@ function convertRules(
 
 function isInStyleRule(rule: CSSRule | null): boolean {
 	for (let current = rule; current !== null; current = current.parentRule) {
-		if (isPlatformObject(current, CSSStyleRule)) {
+		if (implementsInterface(current, CSSStyleRule)) {
 			return true;
 		}
 	}
@@ -3918,7 +3919,7 @@ function getTreeCascade(tree: Node): Cascade | undefined {
 }
 
 function checkAdoptable(tree: Node, sheet: unknown): CSSStyleSheet {
-	if (!(isPlatformObject(sheet, CSSStyleSheet))) {
+	if (!(implementsInterface(sheet, CSSStyleSheet))) {
 		throw typeError("adoptedStyleSheets takes CSSStyleSheet objects");
 	}
 	if (!constructedSheets.has(sheet)) {
@@ -10208,7 +10209,7 @@ function parseStyleSheet(
 	uaOrigin?: boolean,
 	context: CSSValues.RuleContext = UNCONDITIONAL,
 ): void {
-	if (isPlatformObject(container, CSSStyleSheet)) {
+	if (implementsInterface(container, CSSStyleSheet)) {
 		if (container.disabled) {
 			return;
 		}
@@ -10217,20 +10218,20 @@ function parseStyleSheet(
 		}
 	}
 	for (const rule of container.cssRules) {
-		if (isPlatformObject(rule, CSSStyleRule)) {
+		if (implementsInterface(rule, CSSStyleRule)) {
 			parseStyleRule(cascade, rule, scope, uaOrigin, context);
-		} else if (isPlatformObject(rule, CSSMediaRule)) {
+		} else if (implementsInterface(rule, CSSMediaRule)) {
 			if (mediaQueryMatches(cascade, rule.conditionText)) {
 				parseStyleSheet(cascade, rule, scope, uaOrigin, context);
 			}
-		} else if (isPlatformObject(rule, CSSSupportsRule)) {
+		} else if (implementsInterface(rule, CSSSupportsRule)) {
 			parseStyleSheet(cascade, rule, scope, uaOrigin, context);
-		} else if (isPlatformObject(rule, CSSLayerStatementRule)) {
+		} else if (implementsInterface(rule, CSSLayerStatementRule)) {
 			// `@layer a, b;` declares layer order and nothing else.
 			for (const name of rule.nameList) {
 				declareLayer(cascade, context.layer, name);
 			}
-		} else if (isPlatformObject(rule, CSSLayerBlockRule)) {
+		} else if (implementsInterface(rule, CSSLayerBlockRule)) {
 			// An unnamed block opens a layer nothing else can name or reach.
 			const layer = rule.name
 				? declareLayer(cascade, context.layer, rule.name)
@@ -10240,18 +10241,18 @@ function parseStyleSheet(
 					`\0${cascade.anonymousLayers++}`,
 				);
 			parseStyleSheet(cascade, rule, scope, uaOrigin, {...context, layer});
-		} else if (isPlatformObject(rule, CSSScopeRule)) {
+		} else if (implementsInterface(rule, CSSScopeRule)) {
 			parseStyleSheet(cascade, rule, scope, uaOrigin, {
 				...context,
 				scopes: [...context.scopes, readScopeCondition(rule)],
 			});
-		} else if (isPlatformObject(rule, CSSStartingStyleRule)) {
+		} else if (implementsInterface(rule, CSSStartingStyleRule)) {
 			// `@starting-style` declares the style a box starts a transition
 			// FROM, a moment nothing here gives a rule. A rule inside it would
 			// have no moment to stop applying and would style the box
 			// permanently, so it never reaches the cascade.
 			continue;
-		} else if (isPlatformObject(rule, CSSGroupingRule)) {
+		} else if (implementsInterface(rule, CSSGroupingRule)) {
 			parseStyleSheet(cascade, rule, scope, uaOrigin, context);
 		}
 	}
@@ -10779,15 +10780,15 @@ function parseNestedRules(
 					context,
 				);
 			}
-		} else if (isPlatformObject(rule, CSSStyleRule)) {
+		} else if (implementsInterface(rule, CSSStyleRule)) {
 			parseStyleRule(cascade, rule, scope, uaOriginSheet, context, parent);
-		} else if (isPlatformObject(rule, CSSMediaRule)) {
+		} else if (implementsInterface(rule, CSSMediaRule)) {
 			if (mediaQueryMatches(cascade, rule.conditionText)) {
 				parseNestedRules(cascade, rule, parent, scope, uaOriginSheet, context);
 			}
-		} else if (isPlatformObject(rule, CSSSupportsRule)) {
+		} else if (implementsInterface(rule, CSSSupportsRule)) {
 			parseNestedRules(cascade, rule, parent, scope, uaOriginSheet, context);
-		} else if (isPlatformObject(rule, CSSLayerBlockRule)) {
+		} else if (implementsInterface(rule, CSSLayerBlockRule)) {
 			const layer = rule.name
 				? declareLayer(cascade, context.layer, rule.name)
 				: declareLayer(

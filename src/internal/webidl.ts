@@ -17,7 +17,7 @@ import {
 	forgetRecentClasses,
 	getParentClass,
 	getSlotClass,
-	implementsInterface,
+	inheritsInterface,
 	isInterfaceObject,
 	isSealedClass,
 	onSeal,
@@ -139,7 +139,7 @@ function isInstance(value: unknown, check: Check): boolean {
 			return true;
 		}
 		for (const t of check.types) {
-			if (implementsInterface(type, t)) {
+			if (inheritsInterface(type, t)) {
 				check.acceptedBefore = check.accepted;
 				check.accepted = type;
 				return true;
@@ -274,7 +274,7 @@ function wrapOperation(
 			throw new TypeError("Illegal invocation");
 		}
 		if (type !== accepted && type !== acceptedBefore) {
-			if (!implementsInterface(type, owner)) {
+			if (!inheritsInterface(type, owner)) {
 				throw new TypeError("Illegal invocation");
 			}
 			acceptedBefore = accepted;
@@ -384,7 +384,7 @@ function wrapAttribute(
 			return null;
 		}
 		if (type !== accepted && type !== acceptedBefore) {
-			if (!implementsInterface(type, owner)) {
+			if (!inheritsInterface(type, owner)) {
 				return null;
 			}
 			acceptedBefore = accepted;
@@ -892,7 +892,7 @@ export function installInterfaces(
 	}
 
 	const related = (a: Constructor, b: Constructor): boolean =>
-		implementsInterface(a, b) || implementsInterface(b, a);
+		inheritsInterface(a, b) || inheritsInterface(b, a);
 
 	// What each prototype defined, before any of it moves: the members its
 	// interface has, and the ones the specs put on a relative of it, which
@@ -955,7 +955,7 @@ export function installInterfaces(
 		}
 		const overrides = new Map<Constructor, PropertyDescriptor>();
 		for (const type of misplacedTypes.get(key) ?? []) {
-			if (type !== owner && implementsInterface(type, owner)) {
+			if (type !== owner && inheritsInterface(type, owner)) {
 				overrides.set(type, originals.get(type.prototype)!.get(key)!);
 			}
 		}
@@ -1115,7 +1115,7 @@ export function installInterfaces(
 		let replacement: PropertyDescriptor | undefined;
 		let reachable = false;
 		for (const owner of owners.get(key)!) {
-			if (!implementsInterface(type, owner)) {
+			if (!inheritsInterface(type, owner)) {
 				continue;
 			}
 			replacement ??= wrapped.get(owner)?.get(key);
@@ -1315,7 +1315,7 @@ export function forgetClasses(): void {
 
 function defineInstanceMembers(target: object, type: Constructor): void {
 	if (activeRealm !== null || documentRealmOverride !== undefined) {
-		if (documentClass !== null && implementsInterface(type, documentClass)) {
+		if (documentClass !== null && inheritsInterface(type, documentClass)) {
 			const realm = documentRealmOverride !== undefined
 				? documentRealmOverride
 				: activeRealm;
@@ -1326,7 +1326,7 @@ function defineInstanceMembers(target: object, type: Constructor): void {
 			}
 		} else if (
 			activeRealm !== null &&
-			(nodeClass === null || !implementsInterface(type, nodeClass))
+			(nodeClass === null || !inheritsInterface(type, nodeClass))
 		) {
 			defineRealmMembers(activeRealm, target, type);
 			return;
