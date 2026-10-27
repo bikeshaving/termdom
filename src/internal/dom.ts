@@ -6021,6 +6021,51 @@ function dispatchVisibilityChange(document: Document): void {
 	}
 }
 
+/**
+ * The terminal gained or lost the system focus. As when a browser's tab
+ * is left and returned to, the focused element keeps its place as the
+ * active element, and blur and focus fire on it and on the window.
+ */
+export function setSystemFocus(
+	document: globalThis.Document,
+	focused: boolean,
+): void {
+	const attached = getAttachedDocument(document as unknown as Node);
+	if (attached === undefined || _(attached).extra.systemFocused === focused) {
+		return;
+	}
+	_(attached).extra.systemFocused = focused;
+	const window = attached.defaultView;
+	const active = getInnermostActive(attached);
+	const element = active !== null && active !== (attached.body as unknown)
+		? active
+		: null;
+	const fire = (target: EventTarget, type: string, bubbles: boolean) =>
+		dispatchAsUserAgent(
+			target,
+			constructInternal(() =>
+				new FocusEvent(type, {relatedTarget: null, bubbles, composed: true}),
+			),
+		);
+	if (!focused) {
+		if (element !== null) {
+			fire(element, "blur", false);
+			fire(element, "focusout", true);
+		}
+		if (window !== null) {
+			fire(window as unknown as EventTarget, "blur", false);
+		}
+		return;
+	}
+	if (window !== null) {
+		fire(window as unknown as EventTarget, "focus", false);
+	}
+	if (element !== null) {
+		fire(element, "focus", false);
+		fire(element, "focusin", true);
+	}
+}
+
 // A frame's document is as visible as the page it is in, as HTML takes
 // a document's visibility from its top-level traversable.
 function isDocumentVisible(document: Document): boolean {
@@ -27494,6 +27539,9 @@ export interface DocumentExtra extends NodeExtra {
 	// context.
 	render: () => Promise<void>;
 	visible: boolean;
+	// Whether the terminal has the system focus, as mode 1004 reports it.
+	// A terminal that never reports is taken as focused.
+	systemFocused: boolean;
 	layout: Layout;
 	cascade: Cascade;
 	exchange: Exchange;
@@ -28303,9 +28351,10 @@ export class Document extends Node implements globalThis.Document {
 		super.removeEventListener(type, listener, options);
 	}
 
-	/** The window always has the system focus. */
+	/** Whether the terminal has the system focus, as far as it reports. */
 	hasFocus(): boolean {
-		return true;
+		const attached = getAttachedDocument(this);
+		return attached === undefined || _(attached).extra.systemFocused;
 	}
 
 	exitFullscreen(): Promise<void> {
@@ -36738,6 +36787,7 @@ export function attachDocument(
 		engine.allowsInlineHandler(element);
 	attachedSlots.extra.loadSignal = engine.loadSignal;
 	attachedSlots.extra.visible = false;
+	attachedSlots.extra.systemFocused = true;
 	attachedSlots.extra.layout = layout;
 	attachedSlots.extra.cascade = cascade;
 	attachedSlots.extra.exchange = exchange;

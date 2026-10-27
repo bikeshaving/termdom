@@ -205,6 +205,7 @@ const MODE_SPELLINGS = {
 	},
 	cursorHidden: {set: "\x1b[?25l", reset: "\x1b[?25h", panic: true},
 	bracketedPaste: {set: "\x1b[?2004h", reset: "\x1b[?2004l", panic: true},
+	focusReporting: {set: "\x1b[?1004h", reset: "\x1b[?1004l", panic: true},
 	// XTWINOPS 22 and 23: push the title onto the terminal's stack and pop
 	// it back.
 	titleStack: {set: "\x1b[22;0t", reset: "\x1b[23;0t", panic: true},
@@ -284,12 +285,20 @@ export interface WirePaste {
 	text: string;
 }
 
+// Mode 1004's report that the terminal, or the tmux pane, gained or lost
+// focus.
+export interface WireFocus {
+	kind: "focus";
+	focused: boolean;
+}
+
 // A clipboard reply's text is null when it outgrew the held-reply
 // limit.
 type WireItem =
 	WireKey |
 	WireMouse |
 	WirePaste |
+	WireFocus |
 	{kind: "cursor-report"; row: number; col: number} |
 	{kind: "mode-report"; mode: string; value: number} |
 	{kind: "cell-size"; width: number; height: number} |
@@ -817,6 +826,9 @@ function decodeControlToken(token: string): WireItem {
 	const mouse = decodeMouseEscape(token);
 	if (mouse) {
 		return {kind: "mouse", ...mouse, ticks: 1};
+	}
+	if (token === "\x1b[I" || token === "\x1b[O") {
+		return {kind: "focus", focused: token === "\x1b[I"};
 	}
 	if (/^\x1b\[\?[\d;]*c$/.test(token)) {
 		return {kind: "device-attributes"};
@@ -2257,6 +2269,7 @@ function routeItems(session: Exchange, items: WireItem[]): void {
 				break;
 			}
 			case "paste":
+			case "focus":
 				flushKeys();
 				dispatchInput(input, item);
 				break;

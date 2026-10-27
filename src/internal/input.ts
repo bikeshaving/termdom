@@ -47,13 +47,14 @@ import {
 	setDocumentFocusVisible,
 	setDocumentVisible,
 	setHoveredElement,
+	setSystemFocus,
 	setUASelection,
 	takeFocusStartingPoint,
 	topmostModalDialog,
 	type Window,
 } from "./dom.ts";
 import {requestEditingInsert} from "./editing.ts";
-import type {WireKey, WireMouse, WirePaste} from "./exchange.ts";
+import type {WireFocus, WireKey, WireMouse, WirePaste} from "./exchange.ts";
 import {type Framebuffer, repaintAll, requestFrame} from "./framebuffer.ts";
 import type {Layout} from "./layout.ts";
 import {_, implementsInterface} from "./slots.ts";
@@ -477,7 +478,7 @@ export class Input {
 
 export function dispatchInput(
 	input: Input,
-	item: WireKey[] | WireMouse | WirePaste,
+	item: WireKey[] | WireMouse | WirePaste | WireFocus,
 ): void {
 	// Pseudo-state and the selection move with no mutation record. Each
 	// names the rows it changes.
@@ -490,7 +491,32 @@ export function dispatchInput(
 		deliverMouseReport(input, item);
 		return;
 	}
+	if (item.kind === "focus") {
+		deliverFocus(input, item.focused);
+		return;
+	}
 	deliverPaste(input, item.text);
+}
+
+// The terminal, or the tmux pane, gaining focus means the user is back,
+// so the mouse is taken back as a keystroke takes it, and the screen is
+// painted whole, mending whatever came over it meanwhile: a width guessed
+// before its probe answered, or another program's output.
+function deliverFocus(input: Input, focused: boolean): void {
+	if (focused) {
+		takeMouseBack(input);
+		repaintAll(input.framebuffer);
+	}
+	setSystemFocus(input.document, focused);
+	requestRender(input.document);
+}
+
+function takeMouseBack(input: Input): void {
+	if (input.captureYielded) {
+		input.captureYielded = false;
+		setDocumentVisible(input.document, true);
+		requestRender(input.document);
+	}
 }
 
 /**
@@ -1033,11 +1059,7 @@ function deliverPaste(input: Input, text: string): void {
 // A keystroke also means the terminal has snapped back to the live
 // screen, so the mouse is taken back before the key is delivered.
 function deliverKeys(input: Input, keys: WireKey[]): void {
-	if (input.captureYielded) {
-		input.captureYielded = false;
-		setDocumentVisible(input.document, true);
-		requestRender(input.document);
-	}
+	takeMouseBack(input);
 	for (const key of keys) {
 		dispatchKey(input, key);
 	}
