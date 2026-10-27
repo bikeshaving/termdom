@@ -153,12 +153,11 @@ export function buildWindow(
 				value: unknown,
 				options: StructuredSerializeOptions = {},
 			) => {
-				if ((options.transfer ?? []).length > 0) {
-					return runtime.structuredClone(value, options);
-				}
-				const clone = runInRealm(realm, () =>
-					cloneStructured(value, "execute 'structuredClone' on 'Window'"),
-				);
+				const clone = (options.transfer ?? []).length > 0
+					? runtime.structuredClone(value, options)
+					: runInRealm(realm, () =>
+						cloneStructured(value, "execute 'structuredClone' on 'Window'"),
+					);
 				return realm === null ? clone : rehomeClone(clone, realm);
 			},
 		});
