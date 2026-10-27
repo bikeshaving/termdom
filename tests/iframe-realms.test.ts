@@ -340,3 +340,16 @@ withRealms("disposing stops the timers of the frames shown", async () => {
 	await new Promise((resolve) => setTimeout(resolve, 20));
 	expect(counter.ticks).toBe(ticks);
 });
+
+withRealms("an ImageData posted to a frame has the frame's pixels", async () => {
+	const {dom, top, frame} = setup();
+	const heard = new Promise<any>((resolve) => {
+		frame.addEventListener("message", resolve, {once: true});
+	});
+	frame.postMessage(new top.ImageData(new Uint8ClampedArray(4), 1, 1), "*");
+	const event = await heard;
+	expect(event.data instanceof frame.ImageData).toBe(true);
+	expect(event.data.data instanceof frame.Uint8ClampedArray).toBe(true);
+	expect(event.data.data.buffer instanceof frame.ArrayBuffer).toBe(true);
+	dom.dispose();
+});

@@ -39957,11 +39957,9 @@ function cloneWithPlatformObjects(
 			: DOMRectReadOnly;
 		copy = new Type(value.x, value.y, value.width, value.height);
 	} else if (implementsInterface(value, ImageData)) {
-		copy = new ImageData(
-			new Uint8ClampedArray(value.data),
-			value.width,
-			value.height,
-		);
+		const Pixels = (getActiveRealm()?.intrinsics.Uint8ClampedArray ??
+			Uint8ClampedArray) as Uint8ClampedArrayConstructor;
+		copy = new ImageData(new Pixels(value.data), value.width, value.height);
 	} else if (Array.isArray(value)) {
 		const array: unknown[] = [];
 		copies.set(value, array);
