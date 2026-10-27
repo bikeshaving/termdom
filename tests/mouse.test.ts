@@ -24,7 +24,10 @@ async function send(proc: MockProcess, data: string): Promise<void> {
 	await new Promise((resolve) => setTimeout(() => setTimeout(resolve, 0), 0));
 }
 
-function makeDocumentModeApp(lines = 30): {
+function makeDocumentModeApp(
+	lines = 30,
+	prior = 0,
+): {
 	proc: MockProcess;
 	written: () => string;
 	chunks: () => string[];
@@ -35,7 +38,12 @@ function makeDocumentModeApp(lines = 30): {
 	const seen: string[] = [];
 	const written =
 		captureRawOutput(proc, {onChunk: (chunk) => seen.push(chunk)});
-	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
+	for (let i = 0; i < prior; i++) {
+		proc.stdout.write(`prior ${i}\r\n`);
+	}
+	const termdom = new TermDOM({
+		transport: transportFromProcess(proc as any, {sharesScreen: prior > 0}),
+	});
 	const {document} = termdom;
 	for (let i = 0; i < lines; i++) {
 		const div = document.createElement("div");
@@ -143,8 +151,8 @@ test("a tall document keeps the wheel: its top is a stop", async () => {
 	termdom.dispose();
 });
 
-test("a document that fits hands the wheel to the terminal until a keystroke", async () => {
-	const {proc, chunks, termdom, document} = makeDocumentModeApp(3);
+test("a wheel up over the shell's rows hands the wheel to the terminal until a keystroke", async () => {
+	const {proc, chunks, termdom, document} = makeDocumentModeApp(3, 4);
 	await nextFrame(termdom);
 
 	const disables = () =>
@@ -157,9 +165,15 @@ test("a document that fits hands the wheel to the terminal until a keystroke", a
 	});
 	expect(enables()).toBe(1);
 
-	// The first wheel up escapes to the terminal's scrollback, so the
-	// mouse is handed back and the document is hidden meanwhile.
-	await send(proc, "\x1b[<64;5;3M");
+	// A wheel up over the page stays with the page.
+	await send(proc, "\x1b[<64;5;6M");
+	await nextFrame(termdom);
+	expect(disables()).toBe(0);
+
+	// One over the earlier output above it is for the terminal's
+	// scrollback, so the mouse is handed back and the document is hidden
+	// meanwhile.
+	await send(proc, "\x1b[<64;5;2M");
 	await nextFrame(termdom);
 	expect(disables()).toBe(1);
 	expect(document.visibilityState).toBe("hidden");
@@ -182,24 +196,22 @@ test("a document that fits hands the wheel to the terminal until a keystroke", a
 	termdom.dispose();
 });
 
-test("the wheel over a scrolling box keeps the mouse, though the box is at its top", async () => {
-	const {proc, termdom, document} = makeDocumentModeApp(0);
+test("the wheel over a scrolling box at its top, or the page around it, keeps the mouse", async () => {
+	const {proc, termdom, document} = makeDocumentModeApp(0, 4);
 	document.body.innerHTML =
 		"<div style=\"height: 3px; overflow: auto\">" +
 		Array.from({length: 10}, (_, i) => `<div>row ${i}</div>`).join("") +
 		"</div><p>below</p>";
 	await nextFrame(termdom);
-	await send(proc, "\x1b[<64;2;2M");
+	await send(proc, "\x1b[<64;2;6M");
+	await send(proc, "\x1b[<64;2;8M");
 	await nextFrame(termdom);
 	expect(document.visibilityState).toBe("visible");
-	await send(proc, "\x1b[<64;2;5M");
-	await nextFrame(termdom);
-	expect(document.visibilityState).toBe("hidden");
 	termdom.dispose();
 });
 
 test("preventDefault on wheel opts out of the handoff", async () => {
-	const {proc, chunks, termdom, document} = makeDocumentModeApp();
+	const {proc, chunks, termdom, document} = makeDocumentModeApp(3, 4);
 	await nextFrame(termdom);
 
 	document.body.addEventListener(
@@ -210,7 +222,7 @@ test("preventDefault on wheel opts out of the handoff", async () => {
 		{passive: false},
 	);
 
-	await send(proc, "\x1b[<64;5;3M"); // wheel up at the top
+	await send(proc, "\x1b[<64;5;2M"); // wheel up over the shell's rows
 	expect(chunks().filter((c) => c.includes(DISABLE)).length).toBe(0);
 	expect(document.visibilityState).toBe("visible");
 	termdom.dispose();
