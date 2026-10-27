@@ -10,10 +10,18 @@ import {Cascade, dispose} from "./cssom.ts";
 import {
 	applyMutations,
 	attachDocument,
+	clampScrollOffsets,
 	constructInternal,
 	dispatchAsUserAgent,
+	flushObservers,
+	revealPendingCaret,
+	revealPendingEditingCaret,
+	revealTextControlCaret,
+	runFocusFixup,
 	runFrameCallbacks,
+	runScrollSteps,
 	setFrameEngineFactory,
+	syncFormControls,
 	syncMediaQueries,
 	type Window,
 } from "./dom.ts";
@@ -26,7 +34,7 @@ import {
 	Framebuffer,
 	resize,
 } from "./framebuffer.ts";
-import {Layout} from "./layout.ts";
+import {framePainted, Layout} from "./layout.ts";
 import {paint, Painter} from "./painter.ts";
 import {getDocumentLoader} from "./resources.ts";
 import {_} from "./slots.ts";
@@ -43,6 +51,36 @@ setFrameEngineFactory((document, window, parent, changed) => {
 	// Painted again only once something in the frame asked for a frame:
 	// its own mutations, an animation frame, a load, a resize.
 	let stale = true;
+	// What the frame asks for while the parent paints it waits until that
+	// frame is written, as the parent's own requests do, and so do the
+	// frame's scroll events and observers, which run the page's code.
+	let fitting = false;
+	let changedWhileFitting = false;
+	let painted = 0;
+	let disposed = false;
+	const settle = () => {
+		if (disposed) {
+			return;
+		}
+		runScrollSteps(document as unknown as globalThis.Document);
+		if (document.visibilityState === "visible") {
+			flushObservers(
+				document as unknown as globalThis.Document,
+				layout,
+				new window.DOMRect(
+					0,
+					framebuffer.scrollTop,
+					framebuffer.cols,
+					framebuffer.rows,
+				),
+				painted,
+			);
+		}
+		if (changedWhileFitting) {
+			changedWhileFitting = false;
+			changed();
+		}
+	};
 	const loader = getDocumentLoader(window);
 	attachDocument(document, {
 		layout,
@@ -60,7 +98,11 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		loadSignal: parentSlots.loadSignal,
 		render: () => {
 			stale = true;
-			changed();
+			if (fitting) {
+				changedWhileFitting = true;
+			} else {
+				changed();
+			}
 			return Promise.resolve();
 		},
 		reportUncaught: (error) => parentSlots.reportUncaught(error),
@@ -76,42 +118,62 @@ setFrameEngineFactory((document, window, parent, changed) => {
 			return caret;
 		},
 		fit(cols, rows) {
-			const cell = parentSlots.framebuffer.cellPixels;
-			if (
-				framebuffer.cellPixels.width !== cell.width ||
-				framebuffer.cellPixels.height !== cell.height
-			) {
-				adoptCellPixels(framebuffer, cell.width, cell.height);
-				stale = true;
+			fitting = true;
+			try {
+				return fitFrame(cols, rows);
+			} finally {
+				fitting = false;
+				queueMicrotask(settle);
 			}
-			if (cols !== grid.cols || rows !== grid.rows) {
-				resizeFrame(framebuffer, layout, cascade, window, cols, rows);
-				grid = new CellGrid(rows, cols);
-				stale = true;
-			}
-			runFrameCallbacks(document as unknown as globalThis.Document);
-			if (!stale) {
-				return grid;
-			}
-			stale = false;
-			applyMutations(document as unknown as globalThis.Document);
-			layout.performLayout();
-			clearGrid(grid);
-			const context = new CellContext(grid, rows, cols, -framebuffer.scrollTop);
-			paint(painter, context);
-			// The painter puts the caret in document rows. The grid's rows are
-			// the viewport's.
-			caret = context.caret === null
-				? null
-				: {...context.caret, row: context.caret.row + context.viewportOffset};
-			return grid;
 		},
 		dispose() {
 			stale = false;
+			disposed = true;
 			dispose(cascade);
 			layout.dispose();
 		},
 	};
+
+	function fitFrame(cols: number, rows: number): CellGrid {
+		const cell = parentSlots.framebuffer.cellPixels;
+		if (
+			framebuffer.cellPixels.width !== cell.width ||
+			framebuffer.cellPixels.height !== cell.height
+		) {
+			adoptCellPixels(framebuffer, cell.width, cell.height);
+			stale = true;
+		}
+		if (cols !== grid.cols || rows !== grid.rows) {
+			resizeFrame(framebuffer, layout, cascade, window, cols, rows);
+			grid = new CellGrid(rows, cols);
+			stale = true;
+		}
+		runFrameCallbacks(document as unknown as globalThis.Document);
+		if (!stale) {
+			return grid;
+		}
+		stale = false;
+		const page = document as unknown as globalThis.Document;
+		syncFormControls(page);
+		applyMutations(page);
+		runFocusFixup(page);
+		layout.performLayout();
+		clampScrollOffsets(page);
+		revealPendingCaret(page);
+		revealPendingEditingCaret(page);
+		revealTextControlCaret(page);
+		clearGrid(grid);
+		const context = new CellContext(grid, rows, cols, -framebuffer.scrollTop);
+		paint(painter, context);
+		framePainted(layout);
+		painted++;
+		// The painter puts the caret in document rows. The grid's rows are
+		// the viewport's.
+		caret = context.caret === null
+			? null
+			: {...context.caret, row: context.caret.row + context.viewportOffset};
+		return grid;
+	}
 });
 
 // A frame resized with its iframe's box, as the document a TermDOM shows

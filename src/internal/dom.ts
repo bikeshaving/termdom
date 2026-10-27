@@ -6002,14 +6002,35 @@ export function setDocumentVisible(
 		return;
 	}
 	_(attached).extra.visible = visible;
-	dispatch(
-		attached,
-		constructInternal(() => new Event("visibilitychange", {bubbles: true})),
-	);
+	dispatchVisibilityChange(attached);
 }
 
+// Every document a page shows, its frames' too, hears that the page was
+// shown or hidden.
+function dispatchVisibilityChange(document: Document): void {
+	dispatch(
+		document,
+		constructInternal(() => new Event("visibilitychange", {bubbles: true})),
+	);
+	for (const frame of document.querySelectorAll("iframe")) {
+		const inner = _(frame as unknown as HTMLIFrameElement).extra
+			.contentDocument;
+		if (inner !== null) {
+			dispatchVisibilityChange(inner);
+		}
+	}
+}
+
+// A frame's document is as visible as the page it is in, as HTML takes
+// a document's visibility from its top-level traversable.
 function isDocumentVisible(document: Document): boolean {
-	const attached = getAttachedDocument(document);
+	let top = document;
+	for (let owner = getFrameOwner(top);
+		owner !== null;
+		owner = getFrameOwner(top)) {
+		top = _(owner).document;
+	}
+	const attached = getAttachedDocument(top);
 	return attached === undefined || _(attached).extra.visible;
 }
 

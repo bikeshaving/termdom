@@ -389,3 +389,55 @@ withRealms(
 		dom.dispose();
 	},
 );
+
+withRealms(
+	"a frame's animation frames chain, one frame after another",
+	async () => {
+		const terminal = new MockProcess({cols: 40, rows: 8});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML =
+			"<iframe srcdoc=\"<p>x</p>\" style=\"display: block; width: 20ch; height: 3px\"></iframe>";
+		await dom.attach();
+		await settle(dom);
+		const frame = dom.document.querySelector("iframe")!.contentWindow as any;
+		frame.eval(
+			"globalThis.ticks = 0; const step = () => { ticks++; if (ticks < 5) requestAnimationFrame(step); }; requestAnimationFrame(step);",
+		);
+		await new Promise((resolve) => setTimeout(resolve, 400));
+		expect(frame.ticks).toBe(5);
+		dom.dispose();
+	},
+);
+
+withRealms(
+	"a frame's observers report, and its scroll events fire, as a page's do",
+	async () => {
+		const terminal = new MockProcess({cols: 40, rows: 8});
+		const dom = new TermDOM({transport: terminal.transport});
+		const lines = Array.from({length: 10}, (_, i) => `<div>line ${i}</div>`)
+			.join("");
+		dom.document.body.innerHTML =
+			`<iframe srcdoc="${lines}" style="display: block; border: 0; width: 20ch; height: 3px"></iframe>`;
+		await dom.attach();
+		await settle(dom);
+		const frame = dom.document.querySelector("iframe")!.contentWindow as any;
+		frame.eval(
+			`
+			globalThis.heard = [];
+			new ResizeObserver(() => heard.push("resize")).observe(document.body);
+			addEventListener("scroll", () => heard.push("scroll"));
+		`,
+		);
+		await settle(dom);
+		frame.scrollTo(0, 2);
+		await settle(dom);
+		await settle(dom);
+		expect([frame.document.visibilityState, ...frame.heard]).toEqual([
+			"visible",
+			"resize",
+			"scroll",
+		]);
+		dom.dispose();
+	},
+);
+
