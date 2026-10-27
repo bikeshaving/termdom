@@ -58,6 +58,32 @@ test("losing and regaining focus blurs and refocuses the page, as leaving a tab 
 	await dom.dispose();
 });
 
+test(":focus matches nothing while the terminal is away, and returns with it", async () => {
+	const terminal = new MockProcess();
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.head.innerHTML = "<style>input:focus { color: red }</style>";
+	document.body.innerHTML = "<form><input id=field></form>";
+	await dom.attach();
+	const field = document.getElementById("field")!;
+	const form = document.querySelector("form")!;
+	field.focus();
+	await nextFrame(dom);
+	expect(field.matches(":focus")).toBe(true);
+	expect(window.getComputedStyle(field).color).toBe("rgb(255, 0, 0)");
+
+	await send(terminal, "\x1b[O");
+	expect(field.matches(":focus")).toBe(false);
+	expect(form.matches(":focus-within")).toBe(false);
+	expect(window.getComputedStyle(field).color).not.toBe("rgb(255, 0, 0)");
+
+	await send(terminal, "\x1b[I");
+	expect(field.matches(":focus")).toBe(true);
+	expect(form.matches(":focus-within")).toBe(true);
+	expect(window.getComputedStyle(field).color).toBe("rgb(255, 0, 0)");
+	await dom.dispose();
+});
+
 test("regaining focus takes the mouse back from the terminal's scrollback", async () => {
 	const terminal = new MockProcess();
 	captureRawOutput(terminal);

@@ -6037,6 +6037,8 @@ export function setSystemFocus(
 	_(attached).extra.systemFocused = focused;
 	const window = attached.defaultView;
 	const active = getInnermostActive(attached);
+	cssom.handleFocusChange(_(attached).extra.cascade, active);
+	invalidate(_(attached).extra.framebuffer);
 	const element = active !== null && active !== (attached.body as unknown)
 		? active
 		: null;
@@ -34564,8 +34566,21 @@ export function setDocumentFocusVisible(
 }
 
 /** Also true for a host above the focused element. */
+// The element at the start of the current focus chain, which is empty
+// while the terminal does not have the system focus (HTML's currently
+// focused area of a top-level traversable), so :focus, :focus-within and
+// :focus-visible match nothing then.
+function getFocusChainStart(element: Element): Element | null {
+	const document = _(element).document;
+	const attached = getAttachedDocument(document as unknown as Node);
+	if (attached !== undefined && !_(attached).extra.systemFocused) {
+		return null;
+	}
+	return _(document).extra.activeElement;
+}
+
 export function hasFocus(element: Element): boolean {
-	const active = _(_(element).document).extra.activeElement;
+	const active = getFocusChainStart(element);
 	if (active === null) {
 		return false;
 	}
@@ -34872,7 +34887,7 @@ export function isFocusVisible(element: Element): boolean {
 // The climb continues past every shadow host above the focused element,
 // which is where the node tree's parent chain ends.
 export function hasFocusWithin(element: Element): boolean {
-	let node: Element | null = _(_(element).document).extra.activeElement;
+	let node: Element | null = getFocusChainStart(element);
 	while (node !== null) {
 		if (node === element) {
 			return true;
