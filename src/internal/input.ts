@@ -488,6 +488,9 @@ export function dispatchInput(
 	// Pseudo-state and the selection move with no mutation record. Each
 	// names the rows it changes.
 	requestFrame(input.framebuffer);
+	if (Array.isArray(item) || item.kind !== "focus" || item.focused) {
+		takeMouseBack(input);
+	}
 	if (Array.isArray(item)) {
 		deliverKeys(input, item);
 		return;
@@ -510,7 +513,6 @@ export function dispatchInput(
 function deliverFocus(input: Input, focused: boolean): void {
 	input.terminalFocused = focused;
 	if (focused) {
-		takeMouseBack(input);
 		repaintAll(input.framebuffer);
 	}
 	syncSystemFocus(input);
@@ -527,13 +529,19 @@ function syncSystemFocus(input: Input): void {
 	);
 }
 
+// Whatever the user does that reaches the page, a key, a paste or a
+// return of focus, means the user is back with it: the terminal snaps to
+// the live screen on input, and input reaches only a focused terminal.
+// Only the terminal's replies to the engine's own questions say nothing
+// of the user, and they never come here.
 function takeMouseBack(input: Input): void {
+	input.terminalFocused = true;
 	if (input.captureYielded) {
 		input.captureYielded = false;
 		setDocumentVisible(input.document, true);
-		syncSystemFocus(input);
 		requestRender(input.document);
 	}
+	syncSystemFocus(input);
 }
 
 /**
@@ -1074,14 +1082,7 @@ function deliverPaste(input: Input, text: string): void {
 	requestRender(input.document);
 }
 
-// A keystroke also means the terminal has snapped back to the live
-// screen, so the mouse is taken back before the key is delivered.
 function deliverKeys(input: Input, keys: WireKey[]): void {
-	takeMouseBack(input);
-	if (!input.terminalFocused) {
-		input.terminalFocused = true;
-		syncSystemFocus(input);
-	}
 	for (const key of keys) {
 		dispatchKey(input, key);
 	}
