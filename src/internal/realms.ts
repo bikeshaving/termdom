@@ -10,6 +10,7 @@ import {
 	installRealmInterfaces,
 	type Realm,
 	registerRealm,
+	runInRealm,
 } from "./webidl.ts";
 
 // The constructors a structured clone can make values of.
@@ -109,7 +110,31 @@ export function createRealm(): Realm | null {
 		document: null,
 	};
 	installRealmInterfaces(realm);
-	registerRealm(realm);
+	registerRealm(
+		realm,
+		vm.runInContext(
+			"[async function () {}, function* () {}, async function* () {}]" +
+				".map(Object.getPrototypeOf)",
+			context,
+		) as object[],
+	);
+	// The realm's own code reaches its eval through a global let, so a direct
+	// eval keeps its scope. Code passed to the window's eval from outside
+	// runs as the realm's, as HTML's incumbent would have it.
+	vm.runInContext("let eval = globalThis.eval;", context);
+	const evaluate = global.eval as (code: unknown) => unknown;
+	const evalInRealm = {
+		eval(code: unknown): unknown {
+			return runInRealm(realm, () => evaluate(code));
+		},
+	}.eval;
+	Object.setPrototypeOf(evalInRealm, realm.functionPrototype);
+	Object.defineProperty(global, "eval", {
+		value: evalInRealm,
+		writable: true,
+		enumerable: false,
+		configurable: true,
+	});
 	return realm;
 }
 

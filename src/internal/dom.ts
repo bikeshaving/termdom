@@ -148,6 +148,7 @@ import {
 	getCallerRealm,
 	getDocumentRealm,
 	getFunctionRealm,
+	getIncumbentRealm,
 	getInterfaceName,
 	hasRealms,
 	placeInRealm,
@@ -6030,17 +6031,14 @@ function callListener(
 	callInRealm(handleEvent as (event: Event) => void, callback, event);
 }
 
-function callInRealm(
-	listener: (event: Event) => void,
+// A callback runs in the realm it was made in, a frame's or the engine's,
+// and so does the work it starts, as HTML prepares to run a callback.
+function callInRealm<Args extends unknown[]>(
+	callback: (...args: Args) => unknown,
 	thisArg: unknown,
-	event: Event,
+	...args: Args
 ): void {
-	const realm = getFunctionRealm(listener);
-	if (realm === getActiveRealm()) {
-		listener.call(thisArg, event);
-	} else {
-		runInRealm(realm, () => listener.call(thisArg, event));
-	}
+	runInRealm(getFunctionRealm(callback), () => callback.apply(thisArg, args));
 }
 
 // HTML's "report an exception": the document's window hears an error
@@ -8146,7 +8144,7 @@ function notifyObserver(observer: MutationObserver): void {
 		return;
 	}
 	try {
-		observerSlots.callback.call(observer, records, observer);
+		callInRealm(observerSlots.callback, observer, records, observer);
 	} catch (error) {
 		reportError(error, _((records[0].target as Node)).document);
 	}
@@ -27003,7 +27001,12 @@ function checkObserver<TState, TEntry, TOptions>(
 		entries.push(result.entry);
 	}
 	if (entries.length > 0) {
-		_(observer).observerCallback(entries, observer as never);
+		callInRealm(
+			_(observer).observerCallback,
+			observer,
+			entries,
+			observer as never,
+		);
 	}
 }
 
@@ -37888,7 +37891,7 @@ export function runFrameCallbacks(document: globalThis.Document): boolean {
 	const now = performance.now();
 	for (const callback of callbacks) {
 		try {
-			callback(now);
+			callInRealm(callback, undefined, now);
 		} catch (error) {
 			reportError(error, document as Document);
 		}
@@ -39562,7 +39565,7 @@ export class Window extends EventTarget {
 		const slots = _(this);
 		const callerRealm = slots.realm !== null
 			? getCallerRealm()
-			: getActiveRealm();
+			: getIncumbentRealm();
 		const source = callerRealm !== null
 			? callerRealm.global as unknown as Window
 			: getTopWindow(this);

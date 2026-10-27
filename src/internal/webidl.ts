@@ -545,7 +545,31 @@ export interface Realm {
 	document: object | null;
 }
 
-let activeRealm: Realm | null = null;
+// The realm the engine last entered on this stack, null for its own, and
+// undefined once the stack has unwound, as a promise job or an await
+// resumes on an empty one.
+let activeRealm: Realm | null | undefined;
+
+interface RealmStorage {
+	run<T>(realm: Realm | null, run: () => T): T;
+	getStore(): Realm | null | undefined;
+}
+
+// The realm entered last, carried into the promise jobs and timers its code
+// starts, where the stack no longer says whose code is running.
+let enteredRealms: RealmStorage | null = null;
+
+function createRealmStorage(): RealmStorage | null {
+	const {process} =
+		globalThis as {process?: {getBuiltinModule?: (id: string) => unknown}};
+	const hooks = typeof process?.getBuiltinModule === "function"
+		? process.getBuiltinModule("node:async_hooks") as
+			{AsyncLocalStorage?: new () => RealmStorage} | undefined
+		: undefined;
+	return hooks?.AsyncLocalStorage === undefined
+		? null
+		: new hooks.AsyncLocalStorage();
+}
 
 // A node's realm is its node document's, which the DOM settles after the
 // node is made; a document's is the realm it is made in, or the one its
@@ -603,7 +627,20 @@ export function placeInRealm(realm: Realm | null, node: object): void {
  * the top window's.
  */
 export function getActiveRealm(): Realm | null {
-	return activeRealm;
+	return activeRealm ?? null;
+}
+
+/**
+ * The realm whose code is running, HTML's incumbent: the one the engine
+ * last entered, or in a promise job or after an await, the one whose code
+ * started it.
+ */
+export function getIncumbentRealm(): Realm | null {
+	return resolveRealm(activeRealm);
+}
+
+function resolveRealm(realm: Realm | null | undefined): Realm | null {
+	return realm !== undefined ? realm : enteredRealms?.getStore() ?? null;
 }
 
 // Each realm by its Function.prototype, which a function made in the realm
@@ -612,9 +649,21 @@ const realmsByFunctionPrototype = new WeakMap<object, Realm>();
 
 let realmsMade = false;
 
-/** Makes `realm` known as the realm of the functions it makes. */
-export function registerRealm(realm: Realm): void {
+/**
+ * Makes `realm` known as the realm of the functions it makes, plain or
+ * async or generator, whose prototypes are its `functionPrototypes`.
+ */
+export function registerRealm(
+	realm: Realm,
+	functionPrototypes: Iterable<object>,
+): void {
 	realmsByFunctionPrototype.set(realm.functionPrototype, realm);
+	for (const prototype of functionPrototypes) {
+		realmsByFunctionPrototype.set(prototype, realm);
+	}
+	if (!realmsMade) {
+		enteredRealms = createRealmStorage();
+	}
 	realmsMade = true;
 }
 
@@ -636,14 +685,14 @@ export function getFunctionRealm(value: unknown): Realm | null {
 
 // The realm that was active when the innermost of a realm's bindings was
 // called: the one its caller ran in, HTML's incumbent.
-let callerRealm: Realm | null = null;
+let callerRealm: Realm | null | undefined = null;
 
 /**
  * The realm the running binding of a realm was called from, which the
  * engine's own window's bindings, which do not enter a realm, leave active.
  */
 export function getCallerRealm(): Realm | null {
-	return callerRealm;
+	return resolveRealm(callerRealm);
 }
 
 /** Runs `run` with `realm` active, as its bindings do. */
@@ -651,7 +700,10 @@ export function runInRealm<T>(realm: Realm | null, run: () => T): T {
 	const outer = activeRealm;
 	activeRealm = realm;
 	try {
-		return run();
+		return enteredRealms === null ||
+				(enteredRealms.getStore() ?? null) === realm
+			? run()
+			: enteredRealms.run(realm, run);
 	} finally {
 		activeRealm = outer;
 	}
@@ -1314,6 +1366,7 @@ export function forgetClasses(): void {
 }
 
 function defineInstanceMembers(target: object, type: Constructor): void {
+	const activeRealm = getActiveRealm();
 	if (activeRealm !== null || documentRealmOverride !== undefined) {
 		if (documentClass !== null && inheritsInterface(type, documentClass)) {
 			const realm = documentRealmOverride !== undefined
