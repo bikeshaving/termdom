@@ -554,15 +554,20 @@ export function renderReplaced(
 			);
 			// The cursor goes where the grid's own caret is, as a frame's
 			// focused field puts it.
+			// Only where the frame shows it: a field scrolled out of the frame, or
+			// a frame clipped by a box it is in, keeps the cursor off its cells.
 			const caret = content.caret?.() ?? null;
-			if (caret !== null && caret.col < cols && caret.row < rows) {
-				setCaret(
-					ctx,
-					left + caret.col,
-					top + caret.row,
-					caret.shape,
-					caret.color,
-				);
+			const clip = ctx.clipRect;
+			const col = left + (caret?.col ?? 0);
+			const row = top + (caret?.row ?? 0);
+			if (
+				caret !== null &&
+				col >= clip.left &&
+				col < clip.right &&
+				row >= clip.top &&
+				row < clip.bottom
+			) {
+				setCaret(ctx, col, row, caret.shape, caret.color);
 			}
 		} else if (cols * rows * 2 <= MAX_IMAGE_PIXELS) {
 			// Past the limit the pixels a box samples are more than an image

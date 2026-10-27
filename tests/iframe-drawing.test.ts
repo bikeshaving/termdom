@@ -12,7 +12,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {canCreateRealms} from "../src/internal/realms.ts";
-import {MockProcess, nextFrame} from "./test-utils.ts";
+import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.ts";
 
 const withRealms = canCreateRealms() ? test : test.skip;
 
@@ -441,3 +441,26 @@ withRealms(
 	},
 );
 
+withRealms(
+	"the cursor hides when the box a frame is in clips its focused field",
+	async () => {
+		const terminal = new MockProcess({cols: 40, rows: 8});
+		const written = captureRawOutput(terminal);
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML =
+			"<div style=\"height: 2px; overflow: hidden\">" +
+			"<iframe srcdoc=\"<div>a</div><div>b</div><input id=field>\" style=\"display: block; border: 0; width: 20ch; height: 3px\"></iframe>" +
+			"</div>";
+		await dom.attach();
+		await settle(dom);
+		const frame = dom.document.querySelector("iframe")!;
+		(frame.contentDocument!.getElementById("field") as HTMLInputElement)
+			.focus();
+		await settle(dom);
+		const output = written();
+		expect(output.lastIndexOf("\x1b[?25l")).toBeGreaterThan(
+			output.lastIndexOf("\x1b[?25h"),
+		);
+		dom.dispose();
+	},
+);
