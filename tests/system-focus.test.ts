@@ -104,3 +104,40 @@ test("regaining focus takes the mouse back from the terminal's scrollback", asyn
 	expect(dom.document.visibilityState).toBe("visible");
 	await dom.dispose();
 });
+
+test("the scrollback taking the mouse blurs the page, and a keystroke focuses it first", async () => {
+	const terminal = new MockProcess();
+	captureRawOutput(terminal);
+	for (let i = 0; i < 4; i++) {
+		terminal.stdout.write(`prior ${i}\r\n`);
+	}
+	const dom = new TermDOM({
+		transport: transportFromProcess(terminal as any, {sharesScreen: true}),
+	});
+	const {document, window} = dom;
+	document.body.innerHTML = "<input id=field>";
+	await dom.attach();
+	const field = document.getElementById("field") as HTMLInputElement;
+	field.focus();
+	await nextFrame(dom);
+	const heard: string[] = [];
+	window.addEventListener("blur", () => heard.push("window blur"));
+	window.addEventListener("focus", () => heard.push("window focus"));
+	field.addEventListener("keydown", () =>
+		heard.push(`keydown, focused ${field.matches(":focus")}`),
+	);
+
+	await send(terminal, "\x1b[<64;5;2M");
+	expect(heard).toEqual(["window blur"]);
+	expect(document.hasFocus()).toBe(false);
+	expect(field.matches(":focus")).toBe(false);
+
+	await send(terminal, "a");
+	expect(heard).toEqual([
+		"window blur",
+		"window focus",
+		"keydown, focused true",
+	]);
+	expect(document.hasFocus()).toBe(true);
+	await dom.dispose();
+});
