@@ -361,3 +361,28 @@ withRealms(
 		dom.dispose();
 	},
 );
+
+withRealms(
+	"the wheel at a frame's top keeps the mouse, though the page fits the screen",
+	async () => {
+		const terminal = new MockProcess({cols: 30, rows: 8});
+		const dom = new TermDOM({transport: terminal.transport});
+		const lines = Array.from({length: 10}, (_, i) => `<div>line ${i}</div>`)
+			.join("");
+		dom.document.body.innerHTML =
+			`<iframe srcdoc="${lines}" style="display: block; border: 0; width: 20ch; height: 3px"></iframe>` +
+			"<p>page</p>";
+		await dom.attach();
+		await settle(dom);
+		const wheel = async (row: number) => {
+			terminal.stdin.simulateResponse(`\x1b[<64;2;${row}M`);
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			await settle(dom);
+		};
+		await wheel(2);
+		expect(dom.document.visibilityState).toBe("visible");
+		await wheel(5);
+		expect(dom.document.visibilityState).toBe("hidden");
+		dom.dispose();
+	},
+);
