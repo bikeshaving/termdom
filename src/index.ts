@@ -792,6 +792,7 @@ export class TermDOM extends EventTarget {
 			startExchange(slots.exchange, slots.input);
 			if (slots.transport.interactive) {
 				setDisplayType(slots.exchange, "bracketedPaste", true);
+				setDisplayType(slots.exchange, "focusReporting", true);
 				// So dispose can restore the title.
 				setDisplayType(slots.exchange, "titleStack", true);
 				if (this.document.title) {
