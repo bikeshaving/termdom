@@ -18270,7 +18270,13 @@ declareExtraSlots(HTMLIFrameElement);
 function discardFrame(frame: HTMLIFrameElement): void {
 	const slots = _(frame);
 	const window = slots.extra.contentWindow;
+	const document = slots.extra.contentDocument;
+	if (document !== null) {
+		discardFrames(document);
+		disconnectObservers(document as unknown as globalThis.Document);
+	}
 	if (implementsInterface(window, Window)) {
+		clearWindowTimers(window);
 		_(window).parentWindow = null;
 		_(window).frameOwner = null;
 		forgetClasses();
@@ -18281,6 +18287,13 @@ function discardFrame(frame: HTMLIFrameElement): void {
 	slots.extra.contentDocument = null;
 	slots.extra.contentWindow = null;
 	slots.extra.frameDocumentRun = {};
+}
+
+/** Discards the document of every frame in `document`, as unloading it does. */
+export function discardFrames(document: globalThis.Document | Document): void {
+	for (const frame of document.querySelectorAll("iframe")) {
+		discardFrame(frame as unknown as HTMLIFrameElement);
+	}
 }
 
 // load fires from a task, after the insertion or navigation has finished

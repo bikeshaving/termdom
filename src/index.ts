@@ -20,6 +20,7 @@ import {
 	clearWindowTimers,
 	constructInternal,
 	controlCheck,
+	discardFrames,
 	disconnectObservers,
 	dispatchAsUserAgent,
 	DOMException,
@@ -1114,6 +1115,7 @@ export class TermDOM extends EventTarget {
 		clearHighlights(this.document);
 		disconnectObservers(this.document);
 		clearWindowTimers(slots.window);
+		discardFrames(this.document);
 		slots.disposal = Promise.all([
 			flushExchange(slots.exchange),
 			drained,
