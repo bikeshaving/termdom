@@ -647,6 +647,9 @@ function resolveRealm(realm: Realm | null | undefined): Realm | null {
 // inherits from, so a callback's realm is known when the engine calls it.
 const realmsByFunctionPrototype = new WeakMap<object, Realm>();
 
+// Each realm by its global, which a frame's window is built onto.
+const realmsByGlobal = new WeakMap<object, Realm>();
+
 let realmsMade = false;
 
 /**
@@ -658,6 +661,7 @@ export function registerRealm(
 	functionPrototypes: Iterable<object>,
 ): void {
 	realmsByFunctionPrototype.set(realm.functionPrototype, realm);
+	realmsByGlobal.set(realm.global, realm);
 	for (const prototype of functionPrototypes) {
 		realmsByFunctionPrototype.set(prototype, realm);
 	}
@@ -1265,9 +1269,19 @@ export function windowMember(
 	name: string,
 	implementation: (...args: never[]) => unknown,
 ): (...args: unknown[]) => unknown {
+	// A frame's window gives its own functions, which run in its realm. One
+	// its realm already binds is bound once, so its caller stays the caller.
+	const found = realmsByGlobal.get(window);
+	const realm =
+		found !== undefined &&
+		getFunctionRealm(implementation) !== found
+			? found
+			: undefined;
 	const member = getWindowOperation(name);
 	if (member === null) {
-		return implementation as (...args: unknown[]) => unknown;
+		return realm === undefined
+			? implementation as (...args: unknown[]) => unknown
+			: bindToRealm(realm, implementation as (...args: unknown[]) => unknown);
 	}
 	const wrapper = {
 		[name](this: unknown, ...args: unknown[]): unknown {
@@ -1283,7 +1297,10 @@ export function windowMember(
 		},
 	}[name];
 	Object.defineProperty(wrapper, "length", {value: member.required});
-	return wrapper;
+	if (found !== undefined && realm === undefined) {
+		Object.setPrototypeOf(wrapper, found.functionPrototype);
+	}
+	return realm === undefined ? wrapper : bindToRealm(realm, wrapper);
 }
 
 function supportsIndexedProperties(name: string): boolean {

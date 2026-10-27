@@ -14,6 +14,7 @@ import {
 	setRequestDestination,
 } from "./dom.ts";
 import {splitOnASCIIWhitespace} from "./text.ts";
+import {runInRealm} from "./webidl.ts";
 
 // A load goes to the global fetch, so a program that replaces it to mock
 // the network is heard, except where installGlobals() has put a window's
@@ -318,9 +319,12 @@ async function dispatchFetchEvent(
 		rejectHandled = reject;
 	});
 	handled.catch(() => {});
-	const event = createFetchEvent(request, handled, (promise) => {
-		policy.extend(promise);
-	});
+	// The engine's own event, on the TermDOM, whatever frame asked.
+	const event = runInRealm(null, () =>
+		createFetchEvent(request, handled, (promise) => {
+			policy.extend(promise);
+		}),
+	);
 	offered.add(request);
 	offering++;
 	try {

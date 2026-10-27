@@ -33,7 +33,7 @@ import {
 	Window,
 	windowTimers,
 } from "./dom.ts";
-import {createRealm} from "./realms.ts";
+import {createRealm, rehomeClone} from "./realms.ts";
 import {
 	createWindowFetch,
 	getDocumentLoader,
@@ -152,10 +152,15 @@ export function buildWindow(
 			structuredClone: (
 				value: unknown,
 				options: StructuredSerializeOptions = {},
-			) =>
-				(options.transfer ?? []).length > 0
-					? runtime.structuredClone(value, options)
-					: cloneStructured(value, "execute 'structuredClone' on 'Window'"),
+			) => {
+				if ((options.transfer ?? []).length > 0) {
+					return runtime.structuredClone(value, options);
+				}
+				const clone = runInRealm(realm, () =>
+					cloneStructured(value, "execute 'structuredClone' on 'Window'"),
+				);
+				return realm === null ? clone : rehomeClone(clone, realm);
+			},
 		});
 	// HTML's legacy factory: new Image(width, height) is an <img> in this
 	// window's document.
@@ -176,6 +181,9 @@ export function buildWindow(
 		value:
 			realm?.prototypes.get(HTMLImageElement) ?? HTMLImageElement.prototype,
 	});
+	if (realm !== null) {
+		Object.setPrototypeOf(Image, realm.functionPrototype);
+	}
 	window.Image = Image;
 	window.window = window;
 	window.self = window;
@@ -241,9 +249,10 @@ setFrameWindowFactory((source, url, registry, parent, frame) => {
 		const loader = parent === null ? null : getDocumentLoader(parent);
 		if (loader !== null) {
 			setDocumentLoader(window, loader);
-			(window as unknown as Record<string, unknown>).fetch = createWindowFetch(
-				document,
-				loader,
+			(window as unknown as Record<string, unknown>).fetch = windowMember(
+				window,
+				"fetch",
+				createWindowFetch(document, loader),
 			);
 		}
 		return {document, window};
