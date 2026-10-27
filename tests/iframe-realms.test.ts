@@ -306,3 +306,37 @@ withRealms(
 		dom.dispose();
 	},
 );
+
+withRealms(
+	"a removed frame's timers stop, and so do the timers of a frame inside it",
+	async () => {
+		const {dom, frame, iframe} = setup("<iframe></iframe>");
+		const inner = frame.document.querySelector("iframe").contentWindow;
+		const outer = {ticks: 0};
+		const nested = {ticks: 0};
+		frame.counter = outer;
+		inner.counter = nested;
+		frame.eval("setInterval(() => counter.ticks++, 1)");
+		inner.eval("setInterval(() => counter.ticks++, 1)");
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(outer.ticks).toBeGreaterThan(0);
+		expect(nested.ticks).toBeGreaterThan(0);
+		iframe.remove();
+		const ticks = [outer.ticks, nested.ticks];
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect([outer.ticks, nested.ticks]).toEqual(ticks);
+		dom.dispose();
+	},
+);
+
+withRealms("disposing stops the timers of the frames shown", async () => {
+	const {dom, frame} = setup();
+	const counter = {ticks: 0};
+	frame.counter = counter;
+	frame.eval("setInterval(() => counter.ticks++, 1)");
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	await dom.dispose();
+	const ticks = counter.ticks;
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(counter.ticks).toBe(ticks);
+});

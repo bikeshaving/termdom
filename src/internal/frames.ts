@@ -6,7 +6,7 @@
  * by itself. It shares the terminal and the cell size of the document the
  * iframe is in, and asks that one for a frame when it changes.
  */
-import {Cascade} from "./cssom.ts";
+import {Cascade, dispose} from "./cssom.ts";
 import {
 	applyMutations,
 	attachDocument,
@@ -108,6 +108,8 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		},
 		dispose() {
 			stale = false;
+			dispose(cascade);
+			layout.dispose();
 		},
 	};
 });
