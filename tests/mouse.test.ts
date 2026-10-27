@@ -182,6 +182,22 @@ test("a document that fits hands the wheel to the terminal until a keystroke", a
 	termdom.dispose();
 });
 
+test("the wheel over a scrolling box keeps the mouse, though the box is at its top", async () => {
+	const {proc, termdom, document} = makeDocumentModeApp(0);
+	document.body.innerHTML =
+		"<div style=\"height: 3px; overflow: auto\">" +
+		Array.from({length: 10}, (_, i) => `<div>row ${i}</div>`).join("") +
+		"</div><p>below</p>";
+	await nextFrame(termdom);
+	await send(proc, "\x1b[<64;2;2M");
+	await nextFrame(termdom);
+	expect(document.visibilityState).toBe("visible");
+	await send(proc, "\x1b[<64;2;5M");
+	await nextFrame(termdom);
+	expect(document.visibilityState).toBe("hidden");
+	termdom.dispose();
+});
+
 test("preventDefault on wheel opts out of the handoff", async () => {
 	const {proc, chunks, termdom, document} = makeDocumentModeApp();
 	await nextFrame(termdom);
