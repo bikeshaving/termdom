@@ -161,6 +161,11 @@ A terminal that does not report focus never fires these, and
 `hasFocus()` stays true. tmux passes the reports on with its
 `focus-events` option set.
 
+The page is also blurred while the terminal's scrollback has the
+mouse, since the user is reading the terminal then, and its keys may
+not reach the page at all, as in tmux's copy mode. The next keystroke
+focuses the page again before the key reaches it.
+
 Returning also gives the mouse back to the page if the terminal's
 scrollback had it, and repaints the screen whole.
 

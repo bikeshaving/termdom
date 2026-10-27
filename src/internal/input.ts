@@ -407,6 +407,10 @@ export class Input {
 	// says when the user has scrolled back down by hand. The document is
 	// hidden meanwhile, as a page in a background tab is.
 	captureYielded: boolean;
+	// Whether the terminal, or the tmux pane, has focus, as mode 1004
+	// last reported. The page has the system focus while this is true
+	// and the mouse is not yielded to the scrollback.
+	terminalFocused: boolean;
 	// A mouseup on the same element is a click.
 	mouseDownTarget: Element | null;
 	popoverPressTarget: Element | null;
@@ -462,6 +466,7 @@ export class Input {
 		this.rangeDrag = null;
 		this.selectionUnit = null;
 		this.captureYielded = false;
+		this.terminalFocused = true;
 		this.lastClickPoint = null;
 		this.lastClickTime = 0;
 		this.clickCount = 0;
@@ -503,18 +508,30 @@ export function dispatchInput(
 // painted whole, mending whatever came over it meanwhile: a width guessed
 // before its probe answered, or another program's output.
 function deliverFocus(input: Input, focused: boolean): void {
+	input.terminalFocused = focused;
 	if (focused) {
 		takeMouseBack(input);
 		repaintAll(input.framebuffer);
 	}
-	setSystemFocus(input.document, focused);
+	syncSystemFocus(input);
 	requestRender(input.document);
+}
+
+// While the scrollback has the mouse, the user is reading the terminal,
+// whose keys may not reach the page at all (tmux's copy mode), so the
+// page is blurred as when the terminal loses focus.
+function syncSystemFocus(input: Input): void {
+	setSystemFocus(
+		input.document,
+		input.terminalFocused && !input.captureYielded,
+	);
 }
 
 function takeMouseBack(input: Input): void {
 	if (input.captureYielded) {
 		input.captureYielded = false;
 		setDocumentVisible(input.document, true);
+		syncSystemFocus(input);
 		requestRender(input.document);
 	}
 }
@@ -836,6 +853,7 @@ function deliverMouseReport(input: Input, {
 		if (!isInDocument && wheelDeltaY < 0) {
 			input.captureYielded = true;
 			setDocumentVisible(input.document, false);
+			syncSystemFocus(input);
 			requestRender(input.document);
 			return;
 		}
@@ -1060,6 +1078,10 @@ function deliverPaste(input: Input, text: string): void {
 // screen, so the mouse is taken back before the key is delivered.
 function deliverKeys(input: Input, keys: WireKey[]): void {
 	takeMouseBack(input);
+	if (!input.terminalFocused) {
+		input.terminalFocused = true;
+		syncSystemFocus(input);
+	}
 	for (const key of keys) {
 		dispatchKey(input, key);
 	}
