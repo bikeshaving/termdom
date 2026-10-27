@@ -141,3 +141,25 @@ test("the scrollback taking the mouse blurs the page, and a keystroke focuses it
 	expect(document.hasFocus()).toBe(true);
 	await dom.dispose();
 });
+
+test("a paste takes the mouse back too, though the terminal's own replies do not", async () => {
+	const terminal = new MockProcess();
+	captureRawOutput(terminal);
+	for (let i = 0; i < 4; i++) {
+		terminal.stdout.write(`prior ${i}\r\n`);
+	}
+	const dom = new TermDOM({
+		transport: transportFromProcess(terminal as any, {sharesScreen: true}),
+	});
+	dom.document.body.innerHTML = "<textarea></textarea>";
+	await dom.attach();
+	await nextFrame(dom);
+	await send(terminal, "\x1b[<64;5;2M");
+	expect(dom.document.visibilityState).toBe("hidden");
+	await send(terminal, "\x1b[3;7R\x1b[?1;2c");
+	expect(dom.document.visibilityState).toBe("hidden");
+	await send(terminal, "\x1b[200~pasted\x1b[201~");
+	expect(dom.document.visibilityState).toBe("visible");
+	expect(dom.document.hasFocus()).toBe(true);
+	await dom.dispose();
+});
