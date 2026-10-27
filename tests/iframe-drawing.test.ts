@@ -361,3 +361,31 @@ withRealms(
 		dom.dispose();
 	},
 );
+
+withRealms(
+	"a click lands inside a fixed frame while the page is scrolled",
+	async () => {
+		const terminal = new MockProcess({cols: 40, rows: 8});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML =
+			"<iframe srcdoc=\"<input id=field>\" style=\"position: fixed; top: 0; left: 0; border: 0; width: 20ch; height: 2px\"></iframe>" +
+			Array.from({length: 30}, (_, i) => `<div>page ${i}</div>`).join("");
+		await dom.attach();
+		await settle(dom);
+		dom.window.scrollTo(0, 10);
+		await settle(dom);
+		const frame = dom.document.querySelector("iframe")!;
+		const field =
+			frame.contentDocument!.getElementById("field") as HTMLInputElement;
+		let pressed = false;
+		field.addEventListener("mousedown", () => {
+			pressed = true;
+		});
+		terminal.stdin.simulateResponse("\x1b[<0;2;1M\x1b[<0;2;1m");
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		await settle(dom);
+		expect(pressed).toBe(true);
+		expect(frame.contentDocument!.activeElement).toBe(field);
+		dom.dispose();
+	},
+);
