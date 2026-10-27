@@ -39614,7 +39614,7 @@ export class Window extends EventTarget {
 			return realm === null ? clone : rehomeClone(clone, realm);
 		});
 		const origin = source.origin;
-		setTimeout(() => {
+		queueWindowTask(this, () => {
 			if (targetOrigin !== "*" && targetOrigin !== this.origin) {
 				return;
 			}
@@ -39626,7 +39626,7 @@ export class Window extends EventTarget {
 						source: source as unknown as globalThis.MessageEventSource,
 					})));
 			dispatch(this, event);
-		}, 0);
+		});
 	}
 
 	print(): void {}
@@ -40038,6 +40038,26 @@ export function getProcessTimers(window: Window): Record<string, unknown> {
 	return processTimers.get(window)!;
 }
 
+// The tasks the engine queued for a window, such as a message on its way,
+// which go with the window as its timers do.
+const windowTasks = new WeakMap<
+	Window,
+	Set<ReturnType<typeof runtime.setTimeout>>
+>();
+
+function queueWindowTask(window: Window, task: () => void): void {
+	let tasks = windowTasks.get(window);
+	if (tasks === undefined) {
+		tasks = new Set();
+		windowTasks.set(window, tasks);
+	}
+	const handle = runtime.setTimeout(() => {
+		tasks.delete(handle);
+		task();
+	}, 0);
+	tasks.add(handle);
+}
+
 /**
  * Stop the window's timers and idle callbacks, as a browser stops an
  * unloaded document's.
@@ -40048,6 +40068,11 @@ export function clearWindowTimers(window: Window): void {
 		runtime.clearTimeout(handle);
 	}
 	timers?.clear();
+	const tasks = windowTasks.get(window);
+	for (const handle of tasks ?? []) {
+		runtime.clearTimeout(handle);
+	}
+	tasks?.clear();
 	const idle = _(window).idleTimers;
 	for (const timer of idle?.values() ?? []) {
 		clearTimeout(timer);
