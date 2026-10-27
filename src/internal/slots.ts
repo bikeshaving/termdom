@@ -344,8 +344,8 @@ function getLineage(type: Constructor): Set<Constructor> {
 	return lineage;
 }
 
-/** Whether objects `type` makes implement `owner`'s interface. */
-export function implementsInterface(
+/** Whether `type`'s interface is `owner`'s or inherits from it. */
+export function inheritsInterface(
 	type: Constructor,
 	owner: Constructor,
 ): boolean {
@@ -357,7 +357,7 @@ export function implementsInterface(
  * rather than its prototype, which can be another realm's. A Proxy
  * around one is not, nor is an object a page gave its prototype.
  */
-export function isPlatformObject<T extends object>(
+export function implementsInterface<T extends object>(
 	value: unknown,
 	type: Constructor & {prototype: T},
 ): value is T {

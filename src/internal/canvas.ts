@@ -45,8 +45,8 @@ import {
 import {
 	_,
 	declareSealedRoot,
+	implementsInterface,
 	type internals,
-	isPlatformObject,
 	seal,
 	type Slots,
 } from "./slots.ts";
@@ -85,7 +85,7 @@ function readDrawable(source: unknown): Bitmap | null {
 }
 
 function readDrawableKept(source: unknown): Bitmap | null {
-	if (isPlatformObject(source, ImageData)) {
+	if (implementsInterface(source, ImageData)) {
 		return {width: source.width, height: source.height, data: source.data};
 	}
 	const read = typeof source === "object" && source !== null
@@ -791,7 +791,7 @@ export class Path2D {
 		seal(this, new.target, Path2D);
 		const slots = _(this);
 		slots.builder = new PathBuilder();
-		if (isPlatformObject(path, Path2D)) {
+		if (implementsInterface(path, Path2D)) {
 			slots.builder.append(_(path).builder.subpaths, [1, 0, 0, 1, 0, 0]);
 		} else if (typeof path === "string") {
 			parseSVGPath(path, this);
@@ -1588,7 +1588,7 @@ function getPaintColor(
 	x: number,
 	y: number,
 ): RGBA | null {
-	return isPlatformObject(paint, CanvasGradient)
+	return implementsInterface(paint, CanvasGradient)
 		? getGradientColor(_(paint), x, y)
 		: getPatternColor(_(paint), x, y);
 }
@@ -2380,7 +2380,7 @@ export class CanvasRenderingContext2D {
 		let x: number;
 		let y: number;
 		let rule: FillRule;
-		if (isPlatformObject(pathOrX, Path2D)) {
+		if (implementsInterface(pathOrX, Path2D)) {
 			path = pathOrX;
 			x = xOrY;
 			y = yOrRule as number;
@@ -2420,7 +2420,7 @@ export class CanvasRenderingContext2D {
 		xOrY: number,
 		maybeY?: number,
 	): boolean {
-		const path = isPlatformObject(pathOrX, Path2D) ? pathOrX : undefined;
+		const path = implementsInterface(pathOrX, Path2D) ? pathOrX : undefined;
 		const x = path ? xOrY : (pathOrX as number);
 		const y = path ? maybeY! : xOrY;
 		if (!isFiniteAll(x, y)) {
@@ -2701,7 +2701,7 @@ export class CanvasRenderingContext2D {
 	}
 
 	createImageData(widthOrData: number | ImageData, height?: number): ImageData {
-		if (isPlatformObject(widthOrData, ImageData)) {
+		if (implementsInterface(widthOrData, ImageData)) {
 			return new ImageData(widthOrData.width, widthOrData.height);
 		}
 		return new ImageData(Math.abs(widthOrData), Math.abs(height ?? 0));
@@ -2745,7 +2745,7 @@ export class CanvasRenderingContext2D {
 		dirtyWidth = image.width,
 		dirtyHeight = image.height,
 	): void {
-		if (!(isPlatformObject(image, ImageData))) {
+		if (!(implementsInterface(image, ImageData))) {
 			throw new TypeError("putImageData takes an ImageData");
 		}
 		if (!isFiniteAll(dx, dy, dirtyX, dirtyY, dirtyWidth, dirtyHeight)) {
@@ -2851,7 +2851,7 @@ function readPathArgs(
 	pathOrRule?: Path2D | FillRule,
 	maybeRule?: FillRule,
 ): {path: Path2D | undefined; rule: FillRule} {
-	if (isPlatformObject(pathOrRule, Path2D)) {
+	if (implementsInterface(pathOrRule, Path2D)) {
 		return {
 			path: pathOrRule,
 			rule: maybeRule === "evenodd" ? "evenodd" : "nonzero",
@@ -3100,8 +3100,8 @@ declareSealedRoot(CanvasRenderingContext2D);
 
 function readPaint(value: Paint, previous: Paint): Paint {
 	if (
-		isPlatformObject(value, CanvasGradient) ||
-		isPlatformObject(value, CanvasPattern)
+		implementsInterface(value, CanvasGradient) ||
+		implementsInterface(value, CanvasPattern)
 	) {
 		return value;
 	}
