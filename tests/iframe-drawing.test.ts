@@ -464,3 +464,21 @@ withRealms(
 		dom.dispose();
 	},
 );
+
+withRealms("what a frame's last animation frame changes is drawn", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<iframe srcdoc=\"<p>start</p>\" style=\"display: block; border: 0; width: 20ch; height: 3px\"></iframe>";
+	await dom.attach();
+	await settle(dom);
+	const frame = dom.document.querySelector("iframe")!.contentWindow as any;
+	frame.eval(
+		"globalThis.ticks = 0; const step = () => { ticks++; document.body.textContent = `tick ${ticks}`; if (ticks < 3) requestAnimationFrame(step); }; requestAnimationFrame(step);",
+	);
+	await new Promise((resolve) => setTimeout(resolve, 300));
+	await settle(dom);
+	expect(frame.ticks).toBe(3);
+	expect(rows(terminal, 1)).toEqual(["tick 3"]);
+	dom.dispose();
+});
