@@ -305,7 +305,8 @@ alive until `dispose()` or `window.close()`.
 `document.visibilityState` is `"hidden"` before `attach()`, `"visible"`
 until `dispose()`, and `"hidden"` after that. It is also `"hidden"`
 while the terminal's scrollback has control of the mouse wheel, until
-the next keystroke. `visibilitychange` fires on each change.
+the next keystroke, paste or return of focus. `visibilitychange` fires
+on each change.
 
 ### `term.renderANSI(html?)`
 
