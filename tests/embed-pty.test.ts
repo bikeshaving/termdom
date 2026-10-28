@@ -777,3 +777,140 @@ test("the pty option takes none or auto, and throws on anything else", () => {
 		TypeError,
 	);
 });
+
+test("nothing a program writes reaches the terminal but its screen", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<embed type="application/x-pty" src="sh" width="20" height="3">`,
+		spawn,
+	);
+	await dom.attach();
+	document.querySelector("embed")!.focus();
+	await settle(dom);
+	const written = captureRawOutput(terminal);
+	children[0].options.onData(
+		"\x1b]0;TITLE\x07\x1b]2;TITLE\x1b\\" +
+			"\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h\x1b[?1004h" +
+			"\x1b[?2004h\x1b[?1h\x1b=\x1b[?6h\x1b[?7l\x1b[4h\x1b[?47h" +
+			"\x1b]52;c;Y2xpcA==\x07\x1b]8;;http://example.com\x1b\\link\x1b]8;;\x1b\\" +
+			"\x1bPtmux;\x1b\x1b]0;PASS\x07\x1b\\\x1b_Gf=100;AAAA\x1b\\" +
+			"\x1b[c\x1b[>c\x1b[6n\x1b[18t\x1b[2J\x1b[3J\x1bc\x1b[!p" +
+			"\x1b[8;50;200t\x1b[3;1;1t\x07\x1b#8\x1b(0lqk\x1b(B shown",
+	);
+	await settle(dom);
+	const output = written();
+	expect(rowText(terminal, 0)).toContain("shown");
+	for (const leak of [
+		"\x1b]",
+		"\x1bP",
+		"\x1b_",
+		"\x1bc",
+		"\x1b=",
+		"\x1b#",
+		"\x1b(0",
+		"\x1b[?1049",
+		"\x1b[?47",
+		"\x1b[?1000",
+		"\x1b[?1002",
+		"\x1b[?1003",
+		"\x1b[?1006",
+		"\x1b[?1004",
+		"\x1b[?2004",
+		"\x1b[?1h",
+		"\x1b[?6h",
+		"\x1b[?7l",
+		"\x1b[4h",
+		"\x1b[3J",
+		"\x1b[!p",
+		"t",
+		"TITLE",
+		"PASS",
+		"\x07",
+	]) {
+		expect(
+			leak === "t" ? /\x1b\[[\d;]*t/.test(output) : output.includes(leak),
+		).toBe(false);
+	}
+	await dom.dispose();
+});
+
+test("a drag that leaves the box is held to its edges, and the border is not the program's", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<div style="height: 2px"></div><embed type="application/x-pty" src="sh" width="10" height="3" style="display: block; margin-left: 4px; border: 1px solid; padding: 1px 2px">`,
+		spawn,
+	);
+	children[0].options.onData("\x1b[?1002h\x1b[?1006h");
+	await settle(dom);
+	const box = document.querySelector("embed")!.getBoundingClientRect();
+	const left = Math.round(box.left) + 1 + 2 + 1;
+	const top = Math.round(box.top) + 1 + 1 + 1;
+	await send(terminal, `\x1b[<0;${left - 3};${top - 2}M`);
+	await send(terminal, `\x1b[<0;${left - 3};${top - 2}m`);
+	await send(terminal, `\x1b[<0;${left - 1};${top}M`);
+	await send(terminal, `\x1b[<0;${left - 1};${top}m`);
+	expect(children[0].written).toEqual([]);
+	await send(terminal, `\x1b[<0;${left};${top}M`);
+	await send(terminal, "\x1b[<32;1;1M");
+	await send(terminal, `\x1b[<32;${left + 40};${top + 20}M`);
+	await send(terminal, `\x1b[<0;${left + 40};${top + 20}m`);
+	expect(children[0].written).toEqual([
+		"\x1b[<0;1;1M",
+		"\x1b[<32;1;1M",
+		"\x1b[<32;10;3M",
+		"\x1b[<0;10;3m",
+	]);
+	await dom.dispose();
+});
+
+test("an embed the terminal's width sizes follows the terminal, and a box too small still gives one cell", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<embed type="application/x-pty" src="sh" style="display: block; width: 100%; height: 3px">`,
+		spawn,
+	);
+	await settle(dom);
+	expect(children[0].sizes.at(-1)).toEqual([40, 3]);
+	terminal.resize(25, 12);
+	(terminal as unknown as {emit(event: string): void}).emit("SIGWINCH");
+	await until(() => dom.window.innerWidth === 25);
+	await settle(dom);
+	expect(children[0].sizes.at(-1)).toEqual([25, 3]);
+	const embed = document.querySelector("embed")!;
+	embed.style.width = "0";
+	embed.style.height = "0";
+	await settle(dom);
+	for (const [cols, rows] of children[0].sizes) {
+		expect(cols).toBeGreaterThan(0);
+		expect(rows).toBeGreaterThan(0);
+	}
+	await dom.dispose();
+});
+
+test("keys go to the focused embed alone, a click moves them, and an ended program lets Tab go", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<embed id=one type="application/x-pty" src="one" width="10" height="2" style="display: block">` +
+			`<embed id=two type="application/x-pty" src="two" width="10" height="2" style="display: block">` +
+			"<button>after</button>",
+		spawn,
+	);
+	await settle(dom);
+	const one = document.getElementById("one")!;
+	const two = document.getElementById("two")!;
+	one.focus();
+	await send(terminal, "a");
+	const top = Math.round(two.getBoundingClientRect().top);
+	await send(terminal, `\x1b[<0;2;${top + 1}M`);
+	await send(terminal, `\x1b[<0;2;${top + 1}m`);
+	expect(document.activeElement).toBe(two);
+	await send(terminal, "b");
+	expect(children[0].written).toEqual(["a"]);
+	expect(children[1].written).toEqual(["b"]);
+	children[1].options.onExit(0);
+	await settle(dom);
+	await send(terminal, "\t");
+	expect(children[1].written).toEqual(["b"]);
+	expect(document.activeElement).toBe(document.querySelector("button"));
+	await dom.dispose();
+});
