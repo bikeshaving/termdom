@@ -34595,8 +34595,8 @@ function getFocusChainStart(element: Element): Element | null {
 
 // Whether the terminal has the system focus, as the document's top-level
 // document records it: a frame's document has it with the page it is in.
-function hasSystemFocus(document: Document): boolean {
-	let top = document;
+export function hasSystemFocus(document: globalThis.Document): boolean {
+	let top = document as unknown as Document;
 	for (let owner = getFrameOwner(top);
 		owner !== null;
 		owner = getFrameOwner(top)) {
