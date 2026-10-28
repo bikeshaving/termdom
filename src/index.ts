@@ -1584,9 +1584,12 @@ async function render(termDOM: TermDOM): Promise<void> {
 			} while (termDOMSlots.renderQueued || framesAwaiting);
 		} catch (error) {
 			// The page's own exceptions were reported where they happened,
-			// so this is the engine failing. Hand the terminal back first, so
-			// the crash reads as one: the last frame in the scrollback, the
-			// shell restored, the stack below.
+			// so this is the engine failing. A transport that logs errors is
+			// told first, as an embedder that catches nothing out of here
+			// would otherwise see only a page gone blank. Then the terminal
+			// is handed back, so the crash reads as one: the last frame in
+			// the scrollback, the shell restored, the stack below.
+			termDOMSlots.transport.logError?.(formatError(error));
 			try {
 				await termDOM.dispose();
 			} catch (_err) {
