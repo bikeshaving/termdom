@@ -30,6 +30,7 @@ import {
 	getTextControlValueText,
 	getTopLayer,
 	hasPaintedHighlights,
+	hasSystemFocus,
 	HTMLElement,
 	isDocumentElement,
 	renderedTopLayer,
@@ -1386,7 +1387,11 @@ function paintCaret(
 	style: PaintStyle,
 	ctx: CellContext,
 ): void {
-	if (!style.visible || element !== getFocusedElement(painter.document)) {
+	if (
+		!style.visible ||
+		element !== getFocusedElement(painter.document) ||
+		!hasSystemFocus(painter.document)
+	) {
 		return;
 	}
 	const record = getSelectionRecord(element);

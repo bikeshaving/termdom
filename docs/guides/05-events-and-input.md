@@ -156,6 +156,8 @@ returned to:
   and `focusin`.
 - While away, `document.hasFocus()` is false, and `:focus`,
   `:focus-within` and `:focus-visible` match nothing, as HTML says.
+  A focused field shows no cursor, as a browser's field shows no caret
+  in a window that is not in front.
 
 A terminal that does not report focus never fires these, and
 `hasFocus()` stays true. tmux passes the reports on with its

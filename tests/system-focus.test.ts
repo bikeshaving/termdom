@@ -287,3 +287,28 @@ withRealms(
 		await dom.dispose();
 	},
 );
+
+test("a focused field shows no cursor while the terminal is away", async () => {
+	const terminal = new MockProcess();
+	const written = captureRawOutput(terminal);
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = "<input id=field>";
+	await dom.attach();
+	document.getElementById("field")!.focus();
+	await nextFrame(dom);
+	const showing = () => {
+		const output = written();
+		return output.lastIndexOf("\x1b[?25h") > output.lastIndexOf("\x1b[?25l");
+	};
+	expect(showing()).toBe(true);
+
+	await send(terminal, "\x1b[O");
+	await nextFrame(dom);
+	expect(showing()).toBe(false);
+
+	await send(terminal, "\x1b[I");
+	await nextFrame(dom);
+	expect(showing()).toBe(true);
+	await dom.dispose();
+});
