@@ -43,7 +43,9 @@ export interface PtySpawnOptions {
 	cols: number;
 	rows: number;
 	onData(data: Uint8Array | string): void;
-	onExit(code: number | null): void;
+	// The exit code, and for a program a signal ended, the signal's name,
+	// with the code a shell gives it: 128 and its number.
+	onExit(code: number, signal: string | null): void;
 }
 
 /** Starts `command` in a pseudo-terminal. */
@@ -61,6 +63,7 @@ interface BunTerminal {
 interface BunSubprocess {
 	terminal?: BunTerminal;
 	exited: Promise<number | null>;
+	signalCode: string | null;
 	kill(signal?: string): void;
 }
 
@@ -80,7 +83,7 @@ interface BunLike {
 
 interface NodePtyChild {
 	onData(listener: (data: string) => void): void;
-	onExit(listener: (event: {exitCode: number}) => void): void;
+	onExit(listener: (event: {exitCode: number; signal?: number}) => void): void;
 	write(data: string): void;
 	resize(cols: number, rows: number): void;
 	kill(signal?: string): void;
@@ -141,7 +144,7 @@ function createBunSpawner(bun: BunLike): PtySpawner {
 		}
 		void child.exited.then((code) => {
 			terminal.close();
-			onExit(code);
+			onExit(code ?? 0, child.signalCode);
 		});
 		return {
 			write: (data) => terminal.write(data),
@@ -178,6 +181,17 @@ function loadNodePty(): NodePty | null {
 	}
 }
 
+function getSignalName(number: number): string | null {
+	const {process} =
+		globalThis as {process: {getBuiltinModule(id: string): unknown}};
+	const os = process.getBuiltinModule("node:os") as {
+		constants: {signals: Record<string, number>};
+	};
+	const entry = Object.entries(os.constants.signals)
+		.find(([, value]) => value === number);
+	return entry === undefined ? null : entry[0];
+}
+
 function createNodePtySpawner(nodePty: NodePty): PtySpawner {
 	return (command, {cols, rows, onData, onExit}) => {
 		const child = nodePty.spawn(
@@ -191,7 +205,13 @@ function createNodePtySpawner(nodePty: NodePty): PtySpawner {
 			},
 		);
 		child.onData(onData);
-		child.onExit(({exitCode}) => onExit(exitCode));
+		child.onExit(({exitCode, signal}) => {
+			if (signal) {
+				onExit(128 + signal, getSignalName(signal));
+			} else {
+				onExit(exitCode, null);
+			}
+		});
 		return {
 			write: (data) => child.write(data),
 			resize: (newCols, newRows) => child.resize(newCols, newRows),
@@ -373,7 +393,7 @@ export function encodeKey(
 /** What a session tells its embed about the program. */
 export interface PtySessionListeners {
 	change(): void;
-	exit(code: number | null): void;
+	exit(code: number, signal: string | null): void;
 	titlechange(title: string): void;
 	bell(): void;
 }
@@ -468,7 +488,7 @@ export class PtySession {
 					listeners.bell();
 				}
 			},
-			onExit: (code) => {
+			onExit: (code, signal) => {
 				if (this.disposed) {
 					return;
 				}
@@ -476,7 +496,7 @@ export class PtySession {
 				this.process = null;
 				this.release();
 				this.version++;
-				listeners.exit(code);
+				listeners.exit(code, signal);
 			},
 		});
 		const pending = this.pending!;
@@ -532,9 +552,14 @@ export class PtySession {
 	 * composing send nothing.
 	 */
 	receive(message: unknown): void {
-		if (typeof message !== "object" || message === null) {
-			this.input(String(message));
+		if (typeof message === "string") {
+			this.input(message);
 			return;
+		}
+		if (typeof message !== "object" || message === null) {
+			throw new TypeError(
+				"A message is text, or a keydown, keyup or paste event",
+			);
 		}
 		const event = message as Record<string, unknown>;
 		switch (event.type) {

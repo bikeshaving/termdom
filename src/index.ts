@@ -124,6 +124,7 @@ import {findSpawner, type PtySpawner} from "./internal/pty.ts";
 import {
 	answerRequest,
 	checkInlineHandler,
+	checkPlugin,
 	createWindowFetch,
 	type DocumentLoader,
 	type FetchEvent,
@@ -182,13 +183,13 @@ declare global {
 		 * Sends `message` to the program of an `<embed
 		 * type="application/x-pty">`: text, typed as is, or a keydown,
 		 * keyup or paste event, or an object shaped like one, forwarded as
-		 * the user's own input would be. It is there only while the embed
-		 * runs a program, as a Native Client module's embed had it.
+		 * the user's own input would be. Throws an InvalidStateError when
+		 * the embed runs no program.
 		 *
 		 * @experimental The element and its events may change in a minor
 		 * release.
 		 */
-		postMessage?(
+		postMessage(
 			message:
 				string |
 				KeyboardEvent |
@@ -423,12 +424,14 @@ function toReducedMotion(option: TermDOMOptions["reducedMotion"]): boolean {
 	throw new TypeError('reducedMotion must be "no-preference" or "reduce"');
 }
 
-function toPtySpawner(option: TermDOMOptions["pty"]): PtySpawner | null {
+function toPtySpawner(
+	option: TermDOMOptions["pty"],
+): PtySpawner | "none" | "unavailable" {
 	if (option === undefined || option === "none") {
-		return null;
+		return "none";
 	}
 	if (option === "auto") {
-		return findSpawner();
+		return findSpawner() ?? "unavailable";
 	}
 	throw new TypeError('pty must be "none" or "auto"');
 }
@@ -719,6 +722,7 @@ export class TermDOM extends EventTarget {
 				),
 			allowsInlineHandler: (element) =>
 				checkInlineHandler(document, element, requestPolicy),
+			allowsPlugin: (element) => checkPlugin(element, requestPolicy),
 			loadSignal: slots.loads.signal,
 			render: () => render(this),
 			reportUncaught: (error) => {

@@ -29,7 +29,7 @@ document.body.innerHTML = `
     .bot .who { color: #87d787; }
     .pending { color: gray; }
     .hint { padding: 0 1ch; color: gray; border-top: 1px solid #585858; }
-    embed { width: 100%; height: 8px; }
+    embed { width: 100%; height: 8lh; }
   </style>
   <div class="log"></div>
   <div class="hint">:wq sends · :q! discards · Ctrl+Q quits</div>
@@ -74,7 +74,7 @@ function compose(): void {
   writeFileSync(file, "");
   const embed = document.createElement("embed");
   embed.type = "application/x-pty";
-  embed.src = `${editor} '${file}'`;
+  embed.src = `${editor} '${file.replaceAll("'", "'\\''")}'`;
   embed.addEventListener("close", () => {
     embed.remove();
     const text = readFileSync(file, "utf8").trim();

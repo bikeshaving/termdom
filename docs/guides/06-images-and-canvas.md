@@ -360,10 +360,11 @@ the page's borders.
 Experimental. It may change in a minor release.
 
 The embed runs `src` with `/bin/sh -c` and draws the program's screen
-in its box.
+in its box. `src` is a shell command, so quote what you put in it.
+Removing the embed or its `src` stops the program.
 
 ```html
-<embed type="application/x-pty" src="htop" width="80" height="24">
+<embed type="application/x-pty" src="htop" style="width: 80ch; height: 24lh">
 ```
 
 Nothing runs unless the `pty` option allows it:
@@ -373,13 +374,21 @@ new TermDOM({pty: "auto"});
 ```
 
 Under `"auto"`, Bun uses its own pseudo-terminal and Node uses
-`node-pty` if it is installed. Elsewhere, and under `"none"` (the
-default), the embed fires `error`.
+`node-pty` if it is installed. The program gets the process's
+environment and working directory, with `TERM` set to `xterm-256color`.
+It needs `/bin/sh`, so nothing runs on Windows.
+
+A document whose Content-Security-Policy has `object-src 'none'`, or
+`default-src 'none'` and no `object-src`, runs nothing, as a browser
+runs no plugin.
 
 ### Size
 
-`width` and `height` are CSS pixels, so columns and rows under the unit
-cell. The default is 80 by 24. The program is resized to the box.
+The program gets the embed's content box. Size it with CSS: `ch` and
+`lh` count cells at any cell size. The `width` and `height` attributes
+are CSS pixels, which are cells only under the unit cell. Without
+either, the embed is 80 by 24 cells. As for every element, a border and
+padding come out of the size, not on top of it.
 
 The embed keeps 2000 lines of scrollback. `scrollback` sets another
 number, and `0` keeps none.
@@ -387,7 +396,9 @@ number, and `0` keeps none.
 ### Input
 
 A focused embed sends every key to the program, Tab, Escape and Ctrl+C
-included, and pastes too. To keep a key, cancel its `keydown`:
+included, and pastes too. Embeds are in the Tab order, so the keyboard
+can't leave one by itself. Give the page a key that does, by cancelling
+its `keydown`:
 
 ```ts
 document.addEventListener("keydown", (event) => {
@@ -395,7 +406,7 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     leave();
   }
-}, true);
+});
 ```
 
 A program that asks for the mouse gets clicks, drags and the wheel in
@@ -405,10 +416,10 @@ Otherwise the wheel scrolls the scrollback, then the page.
 A program that asks for focus reports is told when the embed gains and
 loses focus.
 
-`postMessage()` sends input while the program runs. A string goes as
-is, so `\r` is Enter. A `keydown` or `paste` event, or an object with
-its fields, goes as the user's would. After the program ends it throws
-`InvalidStateError`.
+`postMessage()` sends input. A string goes as is, so `\r` is Enter. A
+`keydown` or `paste` event, or an object with its fields, goes as the
+user's would. With no program running it throws `InvalidStateError`,
+and anything else throws `TypeError`.
 
 ```ts
 embed.postMessage("make\r");
@@ -418,10 +429,11 @@ embed.postMessage({type: "keydown", key: "c", ctrlKey: true});
 ### Events
 
 - `load`: the program started.
-- `error`: it could not start.
-- `close`: it ended. A `CloseEvent` whose `code` is the exit code, and
-  whose `wasClean` is false if a signal killed it. The last screen
-  stays.
+- `error`: it didn't. An `ErrorEvent` whose `message` says why.
+- `close`: it ended. A `CloseEvent` whose `code` is the exit code. When
+  a signal ended it, `wasClean` is false, `reason` is the signal's name,
+  such as `"SIGKILL"`, and `code` is 128 plus its number. The last
+  screen stays.
 - `titlechange`: a `CustomEvent` with the new title in `detail`.
 - `bell`: the program rang the bell.
 

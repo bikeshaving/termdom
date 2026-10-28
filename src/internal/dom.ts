@@ -143,7 +143,6 @@ import {
 	UNIT_CELL,
 } from "./units.ts";
 import {
-	bindToRealm,
 	createDocumentIn,
 	declareNodeClasses,
 	forgetClasses,
@@ -16933,6 +16932,19 @@ class HTMLEmbedElement extends HTMLElement {
 		return null;
 	}
 
+	// As a Native Client module's embed did, the embed takes messages for
+	// the program it runs.
+	postMessage(message: unknown): void {
+		if (arguments.length < 1) {
+			throw new TypeError("postMessage needs a message");
+		}
+		const program = _(this).extra.program;
+		if (program === null || program.exited) {
+			throw domError("InvalidStateError", "The program is not running");
+		}
+		program.receive(message);
+	}
+
 	override _insertionSteps(this: Slots<HTMLEmbedElement>): void {
 		superStep(HTMLEmbedElement, "_insertionSteps").call(this);
 		startProgram(getOwner(this));
@@ -17043,7 +17055,6 @@ function stopProgram(embed: HTMLEmbedElement): void {
 	const program = slots.extra.program;
 	if (program !== null) {
 		slots.extra.program = null;
-		delete (embed as {postMessage?: unknown}).postMessage;
 		program.dispose();
 		invalidateReplaced(embed, true);
 		unregisterReplacedContent(embed);
@@ -17066,19 +17077,30 @@ function startProgram(embed: HTMLEmbedElement): void {
 	const slots = _(embed);
 	const run = (slots.extra.programRun = new AbortController()).signal;
 	const attachedSlots = _(attached);
+	const deliver = (build: () => Event) =>
+		embed.dispatchEvent(
+			runInRealm(getDocumentRealm(embed.ownerDocument), () =>
+				constructInternal(build),
+			),
+		);
+	const dispatch = (build: () => Event) => {
+		if (!run.aborted && !attachedSlots.extra.loadSignal.aborted) {
+			deliver(build);
+		}
+	};
 	const fire = (type: string, build = (): Event => new Event(type)) =>
-		setTimeout(() => {
-			if (!run.aborted && !attachedSlots.extra.loadSignal.aborted) {
-				embed.dispatchEvent(
-					runInRealm(getDocumentRealm(embed.ownerDocument), () =>
-						constructInternal(build),
-					),
-				);
-			}
-		}, 0);
+		setTimeout(() => dispatch(build), 0);
+	const fail = (message: string) => new ErrorEvent("error", {message});
 	const spawn = attachedSlots.extra.pty;
-	if (spawn === null || attachedSlots.extra.loadSignal.aborted) {
-		fire("error");
+	if (spawn === "none") {
+		fire("error", () => fail('The pty option is "none"'));
+		return;
+	}
+	if (spawn === "unavailable") {
+		fire("error", () => fail("This runtime has no pseudo-terminal"));
+		return;
+	}
+	if (attachedSlots.extra.loadSignal.aborted) {
 		return;
 	}
 	const {width, height} = getProgramNaturalSize(embed);
@@ -17088,10 +17110,14 @@ function startProgram(embed: HTMLEmbedElement): void {
 		Math.round(height / cell.height),
 		{
 			change: () => invalidateReplaced(embed, false),
-			exit: (code) => {
+			exit: (code, signal) => {
 				invalidateReplaced(embed, false);
 				fire("close", () =>
-					new CloseEvent("close", {wasClean: code !== null, code: code ?? 0}),
+					new CloseEvent("close", {
+						wasClean: signal === null,
+						code,
+						reason: signal ?? "",
+					}),
 				);
 			},
 			titlechange: (title) =>
@@ -17112,25 +17138,6 @@ function startProgram(embed: HTMLEmbedElement): void {
 	program.sendFocus(
 		getKeyTarget(top) === (embed as unknown) && hasSystemFocus(top),
 	);
-	// As a Native Client module's embed did, the embed takes messages for
-	// its program while it runs one.
-	const realm = getDocumentRealm(embed.ownerDocument);
-	const postMessage = {
-		postMessage(message: unknown): void {
-			if (arguments.length < 1) {
-				throw new TypeError("postMessage needs a message");
-			}
-			if (program.exited || slots.extra.program !== program) {
-				throw domError("InvalidStateError", "The program is not running");
-			}
-			program.receive(message);
-		},
-	}.postMessage;
-	Object.defineProperty(embed, "postMessage", {
-		value: realm === null ? postMessage : bindToRealm(realm, postMessage),
-		configurable: true,
-		writable: true,
-	});
 	// While its program runs, the embed is replaced by the program's
 	// screen, drawn as an iframe draws its document.
 	registerReplacedContent(embed, () => ({
@@ -17151,9 +17158,15 @@ function startProgram(embed: HTMLEmbedElement): void {
 	);
 	invalidateReplaced(embed, true);
 	// The program starts at the size its box was laid out at, so what it
-	// prints first is not drawn for another.
+	// prints first is not drawn for another. load fires in the same task,
+	// before anything the program does.
 	setTimeout(() => {
 		if (run.aborted || attachedSlots.extra.loadSignal.aborted) {
+			return;
+		}
+		if (attachedSlots.extra.allowsPlugin?.(embed) === false) {
+			stopProgram(embed);
+			deliver(() => fail("The Content-Security-Policy forbids it"));
 			return;
 		}
 		flushLayout(embed as unknown as Node);
@@ -17180,12 +17193,13 @@ function startProgram(embed: HTMLEmbedElement): void {
 		try {
 			program.start(command, spawn);
 		} catch (error) {
-			attachedSlots.extra.reportUncaught(error);
 			stopProgram(embed);
-			fire("error");
+			deliver(() =>
+				fail(error instanceof Error ? error.message : String(error)),
+			);
 			return;
 		}
-		fire("load");
+		dispatch(() => new Event("load"));
 	}, 0);
 }
 
@@ -25057,6 +25071,20 @@ for (const [name, constructor] of Object.entries(HTML_INTERFACE_CLASSES)) {
 	});
 }
 
+// A pty embed's src is a command, not a URL, so it reads back as written.
+const embedSource = Object.getOwnPropertyDescriptor(
+	HTMLEmbedElement.prototype,
+	"src",
+)!;
+Object.defineProperty(HTMLEmbedElement.prototype, "src", {
+	...embedSource,
+	get(this: HTMLEmbedElement): string {
+		return isPtyEmbed(this)
+			? getAttributeValue(this, "src") ?? ""
+			: embedSource.get!.call(this);
+	},
+});
+
 for (const reflection of getReflections("HTMLElement")) {
 	installReflection(HTMLElement.prototype, reflection);
 }
@@ -27923,13 +27951,16 @@ export interface DocumentExtra extends NodeExtra {
 	// "none" when it draws none.
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
-	// Starts an <embed type="application/x-pty">'s program, or null when
-	// the program the document is shown by allows none.
-	pty: PtySpawner | null;
+	// Starts an <embed type="application/x-pty">'s program, or says why
+	// none may run: the pty option is "none", or the runtime has no
+	// pseudo-terminal.
+	pty: PtySpawner | "none" | "unavailable";
 	load: ResourceLoader;
 	loadSignal: globalThis.AbortSignal;
 	// Whether the document's policies let an element's inline handler run.
 	allowsInlineHandler?: (element: globalThis.Element) => boolean;
+	// Whether the document's policies let an <embed> run its program.
+	allowsPlugin?: (element: globalThis.Element) => boolean;
 	// Where an exception the page let escape goes once the window's error
 	// event has not handled it. The engine owns the terminal, so it decides.
 	reportUncaught: (error: unknown) => void;
@@ -37142,10 +37173,11 @@ export interface DocumentEngine {
 	cellSize: CellSizeSetting;
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
-	pty: PtySpawner | null;
+	pty: PtySpawner | "none" | "unavailable";
 	// Answers the loads the document's markup asks for.
 	load: ResourceLoader;
 	allowsInlineHandler(element: globalThis.Element): boolean;
+	allowsPlugin(element: globalThis.Element): boolean;
 	// Aborts when the TermDOM is disposed, and the document's loads with it.
 	loadSignal: globalThis.AbortSignal;
 	render(): Promise<void>;
@@ -37181,6 +37213,7 @@ export function attachDocument(
 	attachedSlots.extra.load = engine.load;
 	attachedSlots.extra.allowsInlineHandler = (element) =>
 		engine.allowsInlineHandler(element);
+	attachedSlots.extra.allowsPlugin = (element) => engine.allowsPlugin(element);
 	attachedSlots.extra.loadSignal = engine.loadSignal;
 	attachedSlots.extra.visible = false;
 	attachedSlots.extra.systemFocused = true;
