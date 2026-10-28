@@ -6035,7 +6035,7 @@ export function setSystemFocus(
 		return;
 	}
 	_(attached).extra.systemFocused = focused;
-	const chain: EventTarget[] = [];
+	const chain: Array<{target: EventTarget; realm: Realm | null}> = [];
 	let level: Document | null = attached;
 	while (level !== null) {
 		const active = getInnermostActive(level);
@@ -6043,38 +6043,46 @@ export function setSystemFocus(
 		if (levelAttached !== undefined) {
 			cssom.handleFocusChange(_(levelAttached).extra.cascade, active);
 			invalidate(_(levelAttached).extra.framebuffer);
+			void _(levelAttached).extra.render();
 		}
+		const realm = getDocumentRealm(level);
 		const window = level.defaultView;
 		if (window !== null) {
-			chain.unshift(window as unknown as EventTarget);
+			chain.unshift({target: window as unknown as EventTarget, realm});
 		}
 		if (active !== null && active !== (level.body as unknown)) {
-			chain.unshift(active as unknown as EventTarget);
+			chain.unshift({target: active as unknown as EventTarget, realm});
 		}
 		level = getDrawnFrameDocument(active);
 	}
 	const isWindow = (target: EventTarget) =>
 		!implementsInterface(target, Node);
-	const fire = (target: EventTarget, type: string, bubbles: boolean) =>
+	const fire = (
+		{target, realm}: {target: EventTarget; realm: Realm | null},
+		type: string,
+		bubbles: boolean,
+	) =>
 		dispatchAsUserAgent(
 			target,
-			constructInternal(() =>
-				new FocusEvent(type, {relatedTarget: null, bubbles, composed: true}),
+			runInRealm(realm, () =>
+				constructInternal(() =>
+					new FocusEvent(type, {relatedTarget: null, bubbles, composed: true}),
+				),
 			),
 		);
 	if (!focused) {
-		for (const target of chain) {
-			fire(target, "blur", false);
-			if (!isWindow(target)) {
-				fire(target, "focusout", true);
+		for (const entry of chain) {
+			fire(entry, "blur", false);
+			if (!isWindow(entry.target)) {
+				fire(entry, "focusout", true);
 			}
 		}
 		return;
 	}
-	for (const target of chain.reverse()) {
-		fire(target, "focus", false);
-		if (!isWindow(target)) {
-			fire(target, "focusin", true);
+	for (const entry of chain.reverse()) {
+		fire(entry, "focus", false);
+		if (!isWindow(entry.target)) {
+			fire(entry, "focusin", true);
 		}
 	}
 }

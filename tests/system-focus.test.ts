@@ -242,3 +242,48 @@ withRealms(
 		await dom.dispose();
 	},
 );
+
+withRealms(
+	"a frame repaints its :focus styles and fires its own FocusEvents when the terminal leaves",
+	async () => {
+		const terminal = new MockProcess({cols: 30, rows: 6});
+		const dom = new TermDOM({transport: terminal.transport});
+		const {document} = dom;
+		document.body.innerHTML =
+			"<iframe srcdoc=\"<style>body:focus-within p::after { content: ' focused' }</style><input id=field><p>field</p>\" style=\"display: block; width: 25ch; height: 4px\"></iframe>";
+		await dom.attach();
+		await nextFrame(dom);
+		await nextFrame(dom);
+		const frame = document.querySelector("iframe")!;
+		const field = frame.contentDocument!.getElementById("field")!;
+		field.focus();
+		await nextFrame(dom);
+		await nextFrame(dom);
+		const screen = () => {
+			const buffer = (terminal as any).terminal.buffer.active;
+			return Array.from(
+				{length: 6},
+				(_, row) => buffer.getLine(row).translateToString(true).trimEnd(),
+			).join("\n");
+		};
+		expect(screen()).toContain("field focused");
+		const events: Event[] = [];
+		field.addEventListener("blur", (event) => events.push(event));
+
+		await send(terminal, "\x1b[O");
+		await nextFrame(dom);
+		await nextFrame(dom);
+		expect(screen()).not.toContain("field focused");
+		expect(screen()).toContain("field");
+		expect(events.length).toBe(1);
+		expect(events[0] instanceof (frame.contentWindow as any).FocusEvent).toBe(
+			true,
+		);
+
+		await send(terminal, "\x1b[I");
+		await nextFrame(dom);
+		await nextFrame(dom);
+		expect(screen()).toContain("field focused");
+		await dom.dispose();
+	},
+);
