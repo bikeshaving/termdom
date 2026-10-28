@@ -26,9 +26,11 @@ stay where they are.</p><p>When the document is taller than the terminal, the re
 window&#039;s worth of it. The program can scroll this window with
 <code>window.scrollTo()</code> and <code>scrollBy()</code>, and the user can scroll it with
 the mouse wheel. <code>window.scrollY</code> reports the current position. The
-window cannot scroll above the document&#039;s first row.</p><p>When the document fits in the terminal, there is nothing to scroll, so
-the mouse wheel scrolls the terminal&#039;s own scrollback instead. No
-terminal reports when the user has scrolled back down. For that reason
+window cannot scroll above the document&#039;s first row.</p><p>When the document fits in the terminal, the rows above it hold the
+shell&#039;s earlier output. Turning the wheel up over those rows scrolls
+the terminal&#039;s own scrollback instead. Over the document, the wheel
+always belongs to the document, even where nothing there can scroll.
+No terminal reports when the user has scrolled back down. For that reason
 the engine takes the mouse back for the document on the next keystroke,
 and that keystroke is also delivered to the document. While the wheel
 belongs to the terminal, <code>document.visibilityState</code> is <code>&quot;hidden&quot;</code>.</p><p>Each frame repaints the region in place. The program can end with
