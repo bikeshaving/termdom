@@ -155,6 +155,54 @@ test("a policy whose object-src is 'none' keeps an embed's program from running"
 	await dom.dispose();
 });
 
+test("an embed a policy forbids has no program to post to, and reports the violation once", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, document} = await mount("", spawn);
+	const meta = document.createElement("meta");
+	meta.httpEquiv = "Content-Security-Policy";
+	meta.content = "object-src 'none'";
+	document.head.append(meta);
+	const heard: string[] = [];
+	document.addEventListener("securitypolicyviolation", (event) =>
+		heard.push((event as SecurityPolicyViolationEvent).effectiveDirective),
+	);
+	const embed = document.createElement("embed");
+	embed.type = "application/x-pty";
+	embed.src = "top";
+	embed.addEventListener("error", (event) =>
+		heard.push((event as ErrorEvent).message),
+	);
+	document.body.append(embed);
+	let thrown = "nothing thrown";
+	try {
+		embed.postMessage("x");
+	} catch (error) {
+		thrown = (error as DOMException).name;
+	}
+	expect(thrown).toBe("InvalidStateError");
+	await until(() => heard.length > 1);
+	await settle(dom);
+	expect(heard).toEqual([
+		"object-src",
+		"The Content-Security-Policy forbids it",
+	]);
+	expect(children).toEqual([]);
+	await dom.dispose();
+});
+
+test("postMessage is an enumerable member of every embed", async () => {
+	const {dom} = await mount("", "none");
+	const descriptor = Object.getOwnPropertyDescriptor(
+		dom.window.HTMLEmbedElement.prototype,
+		"postMessage",
+	)!;
+	expect([descriptor.enumerable, typeof descriptor.value]).toEqual([
+		true,
+		"function",
+	]);
+	await dom.dispose();
+});
+
 test("a program that cannot start fires error on its embed and nothing on the window", async () => {
 	replaceSpawner(() => {
 		throw new Error("no such shell");

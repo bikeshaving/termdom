@@ -723,7 +723,8 @@ export class TermDOM extends EventTarget {
 				),
 			allowsInlineHandler: (element) =>
 				checkInlineHandler(document, element, requestPolicy),
-			allowsPlugin: (element) => checkPlugin(element, requestPolicy),
+			allowsPlugin: (element, violations) =>
+				checkPlugin(element, requestPolicy, violations),
 			loadSignal: slots.loads.signal,
 			render: () => render(this),
 			reportUncaught: (error) => {

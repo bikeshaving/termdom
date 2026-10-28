@@ -17097,6 +17097,17 @@ function startProgram(embed: HTMLEmbedElement): void {
 		fire("error", () => fail("A frame runs no program"));
 		return;
 	}
+	// The violation is reported with the error, once the insertion is
+	// done, but no program is made, so postMessage already throws.
+	if (attachedSlots.extra.allowsPlugin?.(embed, "silent") === false) {
+		setTimeout(() => {
+			if (!run.aborted && !attachedSlots.extra.loadSignal.aborted) {
+				attachedSlots.extra.allowsPlugin?.(embed, "report");
+				deliver(() => fail("The Content-Security-Policy forbids it"));
+			}
+		}, 0);
+		return;
+	}
 	if (attachedSlots.extra.loadSignal.aborted) {
 		return;
 	}
@@ -17154,11 +17165,6 @@ function startProgram(embed: HTMLEmbedElement): void {
 	// before anything the program does.
 	setTimeout(() => {
 		if (run.aborted || attachedSlots.extra.loadSignal.aborted) {
-			return;
-		}
-		if (attachedSlots.extra.allowsPlugin?.(embed) === false) {
-			stopProgram(embed);
-			deliver(() => fail("The Content-Security-Policy forbids it"));
 			return;
 		}
 		flushLayout(embed as unknown as Node);
@@ -25063,6 +25069,11 @@ for (const [name, constructor] of Object.entries(HTML_INTERFACE_CLASSES)) {
 	});
 }
 
+// postMessage is enumerable, as an operation Web IDL defines would be.
+Object.defineProperty(HTMLEmbedElement.prototype, "postMessage", {
+	enumerable: true,
+});
+
 // A pty embed's src is a command, not a URL, so it reads back as written.
 const embedSource = Object.getOwnPropertyDescriptor(
 	HTMLEmbedElement.prototype,
@@ -27951,8 +27962,12 @@ export interface DocumentExtra extends NodeExtra {
 	loadSignal: globalThis.AbortSignal;
 	// Whether the document's policies let an element's inline handler run.
 	allowsInlineHandler?: (element: globalThis.Element) => boolean;
-	// Whether the document's policies let an <embed> run its program.
-	allowsPlugin?: (element: globalThis.Element) => boolean;
+	// Whether the document's policies let an <embed> run its program, and
+	// whether a forbidding one reports it.
+	allowsPlugin?: (
+		element: globalThis.Element,
+		violations: "report" | "silent",
+	) => boolean;
 	// Where an exception the page let escape goes once the window's error
 	// event has not handled it. The engine owns the terminal, so it decides.
 	reportUncaught: (error: unknown) => void;
@@ -37169,7 +37184,10 @@ export interface DocumentEngine {
 	// Answers the loads the document's markup asks for.
 	load: ResourceLoader;
 	allowsInlineHandler(element: globalThis.Element): boolean;
-	allowsPlugin(element: globalThis.Element): boolean;
+	allowsPlugin(
+		element: globalThis.Element,
+		violations: "report" | "silent",
+	): boolean;
 	// Aborts when the TermDOM is disposed, and the document's loads with it.
 	loadSignal: globalThis.AbortSignal;
 	render(): Promise<void>;
@@ -37205,7 +37223,8 @@ export function attachDocument(
 	attachedSlots.extra.load = engine.load;
 	attachedSlots.extra.allowsInlineHandler = (element) =>
 		engine.allowsInlineHandler(element);
-	attachedSlots.extra.allowsPlugin = (element) => engine.allowsPlugin(element);
+	attachedSlots.extra.allowsPlugin = (element, violations) =>
+		engine.allowsPlugin(element, violations);
 	attachedSlots.extra.loadSignal = engine.loadSignal;
 	attachedSlots.extra.visible = false;
 	attachedSlots.extra.systemFocused = true;
