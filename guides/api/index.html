@@ -39,7 +39,9 @@ your program&#039;s full access, so enable it only for trusted markup. A
 blocks, and <code>&quot;none&quot;</code> loads nothing and shows <code>alt</code> text.</p></li><li><p><code>canvas?: &quot;auto&quot; | &quot;cells&quot; | &quot;none&quot;</code>: the same for the <code>&quot;2d&quot;</code>
 context. With <code>&quot;none&quot;</code>, <code>getContext(&quot;2d&quot;)</code> returns <code>null</code>. The
 <code>&quot;termdom-cellgrid&quot;</code> context always works, but its <code>drawImage()</code>
-draws nothing under <code>&quot;none&quot;</code>.</p></li><li><p><code>colorDepth?: &quot;auto&quot; | ColorDepth</code>: <code>24</code>, <code>8</code>, or <code>4</code> bits, or
+draws nothing under <code>&quot;none&quot;</code>.</p></li><li><p><code>ptyEmbeds?: &quot;none&quot; | &quot;auto&quot;</code>: whether <code>&lt;embed type=&quot;application/x-pty&quot;&gt;</code>
+runs its command. <code>&quot;none&quot;</code> (default) runs nothing. Experimental; see
+the images and canvas guide.</p></li><li><p><code>colorDepth?: &quot;auto&quot; | ColorDepth</code>: <code>24</code>, <code>8</code>, or <code>4</code> bits, or
 <code>&quot;rgb&quot;</code>, <code>&quot;256&quot;</code>, or <code>&quot;ansi&quot;</code>. <code>&quot;auto&quot;</code> (default) asks the terminal.
 See &quot;Color depth&quot; in the styling guide.</p></li><li><p><code>colorScheme?: &quot;auto&quot; | &quot;light&quot; | &quot;dark&quot;</code>: whether the terminal&#039;s
 background is light or dark, as <code>prefers-color-scheme</code> reports it.
