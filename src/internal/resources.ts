@@ -295,9 +295,14 @@ export function checkInlineHandler(
  * Whether the policies let an <embed> run its program. An object-src, or
  * a default-src without one, of 'none' forbids it, as it forbids plugins
  * in a browser. A program is not loaded from a URL, so no other source
- * list says anything about it.
+ * list says anything about it. With "report", a forbidding policy also
+ * reports the violation.
  */
-export function checkPlugin(element: Element, policy: RequestPolicy): boolean {
+export function checkPlugin(
+	element: Element,
+	policy: RequestPolicy,
+	violations: "report" | "silent",
+): boolean {
 	const document = element.ownerDocument;
 	for (const stated of [...policy.policies, ...getDocumentPolicies(document)]) {
 		const sources =
@@ -309,6 +314,9 @@ export function checkPlugin(element: Element, policy: RequestPolicy): boolean {
 			sources[0].toLowerCase() !== "'none'"
 		) {
 			continue;
+		}
+		if (violations === "silent") {
+			return false;
 		}
 		policy.violate(element.isConnected ? element : document, {
 			documentURI: stripURLForReport(new URL(document.URL)),

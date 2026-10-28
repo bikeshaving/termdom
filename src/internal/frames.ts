@@ -97,7 +97,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 			: (request, context) => loader(document, request, context),
 		// A frame's handler attributes stay inert.
 		allowsInlineHandler: () => false,
-		allowsPlugin: (element) => parentSlots.allowsPlugin?.(element) ?? true,
+		allowsPlugin: () => false,
 		loadSignal: AbortSignal.any([parentSlots.loadSignal, unloaded.signal]),
 		render: () => {
 			stale = true;
