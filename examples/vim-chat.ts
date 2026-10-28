@@ -87,15 +87,11 @@ function compose(): void {
   embed.focus();
 }
 
-document.addEventListener(
-  "keydown",
-  (event) => {
-    if (event.ctrlKey && event.key === "q") {
-      event.preventDefault();
-      void term.dispose();
-    }
-  },
-  true,
-);
+document.addEventListener("keydown", (event) => {
+  if (event.ctrlKey && event.key === "q") {
+    event.preventDefault();
+    void term.dispose();
+  }
+});
 
 compose();

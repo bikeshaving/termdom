@@ -33,18 +33,14 @@ function status(text: string): void {
 
 embed.addEventListener("load", () => status("running"));
 embed.addEventListener("close", () => status("exited"));
-embed.addEventListener("error", () =>
-  status("this runtime has no pseudo-terminal; try bun"),
+embed.addEventListener("error", (event) =>
+  status((event as ErrorEvent).message),
 );
-document.addEventListener(
-  "keydown",
-  (event) => {
-    if (event.ctrlKey && event.key === "q") {
-      event.preventDefault();
-      void term.dispose();
-    }
-  },
-  true,
-);
+document.addEventListener("keydown", (event) => {
+  if (event.ctrlKey && event.key === "q") {
+    event.preventDefault();
+    void term.dispose();
+  }
+});
 embed.setAttribute("src", command);
 embed.focus();

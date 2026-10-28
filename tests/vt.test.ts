@@ -297,3 +297,20 @@ test("a resize on the alternate screen keeps the shell's last rows", () => {
 	expect(historyText(term)).toEqual(["a", "b"]);
 	expect(screen(term)).toEqual(["c", "$"]);
 });
+
+test("a character that would grow past a one-column screen joins nothing", () => {
+	const {term} = create(1, 3);
+	term.write("a‍😀b");
+	for (const line of term.lines) {
+		expect([line.chars.length, line.widths.length]).toEqual([1, 1]);
+	}
+	expect(screen(term)).toEqual(["a\u200d", "b", ""]);
+});
+
+test("a resize forgets the character REP and joining marks would use", () => {
+	const {term} = create(10, 2);
+	term.write("\x1b[9Gx");
+	term.resize(4, 2);
+	expect(() => term.write("\x1b[b́")).not.toThrow();
+	expect(term.lines[0].chars.length).toBe(4);
+});
