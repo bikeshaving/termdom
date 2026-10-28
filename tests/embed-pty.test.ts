@@ -258,6 +258,24 @@ test("close is a CloseEvent with the program's exit code", async () => {
 	await dom.dispose();
 });
 
+test("while a program has synchronized output on, the embed keeps its last whole screen", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="2">`,
+		spawn,
+	);
+	children[0].options.onData("one");
+	await settle(dom);
+	expect(rowText(terminal, 0)).toBe("one");
+	children[0].options.onData("\x1b[?2026h\rtwo");
+	await settle(dom);
+	expect(rowText(terminal, 0)).toBe("one");
+	children[0].options.onData("\x1b[?2026l");
+	await settle(dom);
+	expect(rowText(terminal, 0)).toBe("two");
+	await dom.dispose();
+});
+
 test("titlechange and bell fire when the program sets its title and rings", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, document} = await mount(

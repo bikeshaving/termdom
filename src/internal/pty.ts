@@ -12,6 +12,7 @@ import {
 	clearGrid,
 	drawText,
 } from "./framebuffer.ts";
+import {clearTimeout, setTimeout} from "./timers.ts";
 import {
 	BLINK,
 	BOLD,
@@ -400,6 +401,9 @@ export class PtySession {
 	focused: boolean;
 	// What was sent before the program started, written once it has.
 	pending: string[] | null;
+	// While the program has synchronized output on, the timer that draws
+	// what it wrote anyway, should it never turn it off.
+	held: ReturnType<typeof setTimeout> | null;
 
 	constructor(cols: number, rows: number, listeners: PtySessionListeners) {
 		this.cols = Math.max(1, cols);
@@ -413,6 +417,7 @@ export class PtySession {
 		this.scrolled = 0;
 		this.focused = false;
 		this.pending = [];
+		this.held = null;
 		this.process = null;
 		this.terminal = new Terminal(this.cols, this.rows, (data) =>
 			this.write(data),
@@ -455,8 +460,7 @@ export class PtySession {
 							: this.scrolled + terminal.historyAdded - added,
 						terminal.history.length,
 					);
-				this.version++;
-				listeners.change();
+				this.show();
 				if (terminal.title !== title) {
 					listeners.titlechange(terminal.title);
 				}
@@ -470,6 +474,7 @@ export class PtySession {
 				}
 				this.exited = true;
 				this.process = null;
+				this.release();
 				this.version++;
 				listeners.exit(code);
 			},
@@ -478,6 +483,30 @@ export class PtySession {
 		this.pending = null;
 		for (const data of pending) {
 			this.process.write(data);
+		}
+	}
+
+	// What the program writes is drawn at once, except while it has
+	// synchronized output on: then the last whole screen stays until it
+	// turns it off, or for a second at most.
+	show(): void {
+		if (this.terminal.synchronizedOutput) {
+			this.held ??= setTimeout(() => {
+				this.held = null;
+				this.version++;
+				this.listeners.change();
+			}, 1000);
+			return;
+		}
+		this.release();
+		this.version++;
+		this.listeners.change();
+	}
+
+	release(): void {
+		if (this.held !== null) {
+			clearTimeout(this.held);
+			this.held = null;
 		}
 	}
 
@@ -674,6 +703,7 @@ export class PtySession {
 	dispose(): void {
 		this.process?.kill();
 		this.process = null;
+		this.release();
 		this.disposed = true;
 	}
 }
