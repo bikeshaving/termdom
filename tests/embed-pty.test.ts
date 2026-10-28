@@ -33,7 +33,7 @@ function fakeSpawner(): {spawn: PtySpawner; children: FakeChild[]} {
 			command,
 			options,
 			written: [],
-			sizes: [],
+			sizes: [[options.cols, options.rows]],
 			killed: false,
 		};
 		children.push(child);
@@ -152,6 +152,21 @@ test("the program is resized to the embed's box", async () => {
 	document.querySelector("embed")!.style.width = "20px";
 	await settle(dom);
 	expect(children[0].sizes.at(-1)).toEqual([20, 5]);
+	await dom.dispose();
+});
+
+test("a program starts at the size its box is laid out at, and hears what was posted before", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, document} = await mount("<p>above</p>", spawn);
+	const embed = document.createElement("embed");
+	embed.type = "application/x-pty";
+	embed.style.cssText = "display: block; width: 30px; height: 5px";
+	embed.src = "vim";
+	document.body.append(embed);
+	embed.postMessage!("i");
+	await settle(dom);
+	expect(children[0].sizes).toEqual([[30, 5]]);
+	expect(children[0].written).toEqual(["i"]);
 	await dom.dispose();
 });
 
@@ -324,12 +339,18 @@ test("removing the embed or changing its src stops the program", async () => {
 	);
 	const embed = document.querySelector("embed")!;
 	embed.setAttribute("src", "two");
+	await settle(dom);
 	expect(children.map((child) => [child.command, child.killed])).toEqual([
 		["one", true],
 		["two", false],
 	]);
 	embed.remove();
 	expect(children[1].killed).toBe(true);
+	embed.setAttribute("src", "three");
+	document.body.append(embed);
+	embed.remove();
+	await settle(dom);
+	expect(children.map((child) => child.command)).toEqual(["one", "two"]);
 	await dom.dispose();
 });
 
@@ -639,6 +660,7 @@ test("an embed in the starting markup starts once the page is attached", async (
 		pty: "auto",
 		html: `<embed type="application/x-pty" src="top" width="10" height="2">`,
 	});
+	await settle(dom);
 	expect(children.map((child) => child.command)).toEqual(["top"]);
 	await dom.dispose();
 	expect(children[0].killed).toBe(true);
@@ -837,7 +859,7 @@ test("nothing a program writes reaches the terminal but its screen", async () =>
 test("a drag that leaves the box is held to its edges, and the border is not the program's", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, terminal, document} = await mount(
-		`<div style="height: 2px"></div><embed type="application/x-pty" src="sh" width="10" height="3" style="display: block; margin-left: 4px; border: 1px solid; padding: 1px 2px">`,
+		`<div style="height: 2px"></div><embed type="application/x-pty" src="sh" width="10" height="3" style="display: block; margin-left: 4px; border: 1px solid; padding: 1px 2px; box-sizing: content-box">`,
 		spawn,
 	);
 	children[0].options.onData("\x1b[?1002h\x1b[?1006h");
