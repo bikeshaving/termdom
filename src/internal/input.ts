@@ -1032,9 +1032,12 @@ function deliverMouseReport(input: Input, {
 			detail,
 		);
 		if (before === 0) {
-			input.programPress = pressed && sendToProgram()
-				? found!.levels.at(-1)!
-				: null;
+			input.programPress =
+				pressed &&
+				!input.mouseEventsSuppressed &&
+				sendToProgram()
+					? found!.levels.at(-1)!
+					: null;
 		} else if (pressed && input.programPress !== null) {
 			sendToProgram(input.programPress);
 		}

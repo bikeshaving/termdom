@@ -430,7 +430,7 @@ test("a program that asks for the mouse hears it in its box, wheel included", as
 	await dom.dispose();
 });
 
-test("a page that cancels the press or the wheel keeps it from the program", async () => {
+test("a page that cancels the pointer, the press or the wheel keeps it from the program", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, terminal, document} = await mount(
 		`<embed type="application/x-pty" src="sh" width="10" height="3" style="display: block">`,
@@ -449,6 +449,11 @@ test("a page that cancels the press or the wheel keeps it from the program", asy
 	expect(children[0].written).toEqual([]);
 	embed.removeEventListener("mousedown", cancel);
 	embed.removeEventListener("wheel", cancel);
+	embed.addEventListener("pointerdown", cancel);
+	await send(terminal, `\x1b[<0;2;${top + 1}M`);
+	await send(terminal, `\x1b[<0;2;${top + 1}m`);
+	expect(children[0].written).toEqual([]);
+	embed.removeEventListener("pointerdown", cancel);
 	await send(terminal, `\x1b[<0;2;${top + 1}M`);
 	await send(terminal, `\x1b[<0;2;${top + 1}m`);
 	expect(children[0].written).toEqual(["\x1b[<0;2;1M", "\x1b[<0;2;1m"]);
