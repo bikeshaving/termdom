@@ -2958,10 +2958,13 @@ function syncIndependentFormattingContext(
 	}
 
 	for (const child of flowContent(element)) {
-		if (
-			getNodeType(child) === child.ELEMENT_NODE ||
-			getNodeType(child) === child.TEXT_NODE
-		) {
+		if (getNodeType(child) === child.ELEMENT_NODE) {
+			// The box's children have it as their parent, as a container's
+			// enumeration gives them: a blockified inline among them paints
+			// its own lines from it.
+			getPrincipalBox(layout, child, box);
+			addNode(layout, child, root);
+		} else if (getNodeType(child) === child.TEXT_NODE) {
 			addNode(layout, child, root);
 		}
 	}
