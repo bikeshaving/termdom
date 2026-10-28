@@ -6083,6 +6083,10 @@ export function setSystemFocus(
 		return;
 	}
 	_(attached).extra.systemFocused = focused;
+	reportProgramFocus(
+		getKeyTarget(attached as unknown as globalThis.Document) as Element | null,
+		focused,
+	);
 	const chain: Array<{target: EventTarget; realm: Realm | null}> = [];
 	let level: Document | null = attached;
 	while (level !== null) {
@@ -17003,7 +17007,10 @@ function reportProgramFocus(element: Element | null, focused: boolean): void {
 			getFocusedElement(inner as unknown as globalThis.Document) as Element |
 			null;
 	}
-	getRunningProgram(element)?.sendFocus(focused);
+	getRunningProgram(element)?.sendFocus(
+		focused &&
+		hasSystemFocus(element!.ownerDocument as unknown as globalThis.Document),
+	);
 }
 
 // The size the embed asks for, in CSS pixels, from its width and height
@@ -17111,7 +17118,9 @@ function startProgram(embed: HTMLEmbedElement): void {
 		owner = getFrameOwner(top)) {
 		top = _(owner).document;
 	}
-	program.sendFocus(getKeyTarget(top) === (embed as unknown));
+	program.sendFocus(
+		getKeyTarget(top) === (embed as unknown) && hasSystemFocus(top),
+	);
 	// As a Native Client module's embed did, the embed takes messages for
 	// its program while it runs one.
 	const realm = getDocumentRealm(embed.ownerDocument);
@@ -17139,7 +17148,10 @@ function startProgram(embed: HTMLEmbedElement): void {
 		fit: (cols: number, rows: number) => program.fit(cols, rows),
 		version: program.version,
 		caret: () =>
-			getFocusedElement(slots.document) === embed ? program.caret : null,
+			getFocusedElement(slots.document) === embed &&
+			hasSystemFocus(slots.document)
+				? program.caret
+				: null,
 	}));
 	attachedSlots.extra.loadSignal.addEventListener(
 		"abort",

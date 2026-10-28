@@ -551,6 +551,51 @@ test("a program that asks hears when its embed gains and loses focus", async () 
 	await dom.dispose();
 });
 
+test("a program in a focused embed hears the terminal lose and regain focus", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="2"><button>b</button>`,
+		spawn,
+	);
+	await dom.attach();
+	children[0].options.onData("\x1b[?1004h");
+	await settle(dom);
+	document.querySelector("embed")!.focus();
+	await send(terminal, "\x1b[O");
+	await send(terminal, "\x1b[I");
+	await send(terminal, "\x1b[O");
+	document.querySelector("button")!.focus();
+	document.querySelector("embed")!.focus();
+	expect(children[0].written).toEqual(["\x1b[I", "\x1b[O", "\x1b[I", "\x1b[O"]);
+	await dom.dispose();
+});
+
+test("a program's cursor hides while the terminal is away", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="2">`,
+		spawn,
+	);
+	await dom.attach();
+	const written = captureRawOutput(terminal);
+	const showing = () => {
+		const output = written();
+		return output.lastIndexOf("\x1b[?25h") > output.lastIndexOf("\x1b[?25l");
+	};
+	children[0].options.onData("ab");
+	document.querySelector("embed")!.focus();
+	await settle(dom);
+	expect(showing()).toBe(true);
+	await send(terminal, "\x1b[O");
+	children[0].options.onData("c");
+	await settle(dom);
+	expect(showing()).toBe(false);
+	await send(terminal, "\x1b[I");
+	await settle(dom);
+	expect(showing()).toBe(true);
+	await dom.dispose();
+});
+
 test("a program started in a focused embed hears focus leave", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, document} = await mount(
