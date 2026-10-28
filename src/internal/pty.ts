@@ -145,7 +145,10 @@ function createBunSpawner(bun: BunLike): PtySpawner {
 		return {
 			write: (data) => terminal.write(data),
 			resize: (newCols, newRows) => terminal.resize(newCols, newRows),
-			kill: () => child.kill("SIGHUP"),
+			kill: () => {
+				child.kill("SIGHUP");
+				terminal.close();
+			},
 		};
 	};
 }
@@ -442,6 +445,9 @@ export class PtySession {
 				}
 			},
 			onExit: (code) => {
+				if (this.disposed) {
+					return;
+				}
 				this.exited = true;
 				this.process = null;
 				this.version++;
