@@ -5,7 +5,11 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {type ScriptEvent, TermDOM} from "../src/index.ts";
+import {canRunModules} from "../src/internal/realms.ts";
 import {MockProcess, until} from "./test-utils.js";
+
+const withModules = canRunModules() ? test : test.skip;
+const withoutModules = canRunModules() ? test.skip : test;
 
 interface Page {
 	dom: TermDOM;
@@ -305,7 +309,7 @@ test("the first script runs after the constructor, so a listener added then hear
 	await p.dom.dispose();
 });
 
-test("a module needs a script listener until modules run on their own", async () => {
+test("a script listener gets modules, with the import maps that count", async () => {
 	const requests: Array<[string | null, string | null, string]> = [];
 	const p =
 		page(`<script type="importmap">{"imports": {"lib": "./lib.js"}}</script>
@@ -348,3 +352,95 @@ test("a document disposed while a listener runs a script hears nothing after", a
 	await p.dom.dispose();
 	expect(p.log()).toEqual([]);
 });
+
+withModules(
+	"modules run after the parse, with their imports, import maps and import.meta",
+	async () => {
+		const p = page(`<script type="importmap">{"imports": {"lib": "./lib/index.js", "lib/": "./lib/"}}</script>
+		<script type="module" src="main.js" onload="log.push('load')"></script>
+		<script>log.push("classic first");</script>
+		<script type="module">
+			import {name} from "lib/name.js";
+			log.push("inline " + name + " " + import.meta.url);
+		</script>`, {
+			files: {
+				"app/main.js": `
+					import {value} from "lib";
+					import {name} from "./lib/name.js";
+					log.push("main " + value + " " + name + " " + import.meta.url);
+					const {late} = await import("./late.js");
+					log.push(late);
+				`,
+				"app/lib/index.js": `export const value = "from lib";`,
+				"app/lib/name.js": `log.push("name.js runs once"); export const name = "name";`,
+				"app/late.js": `export const late = "imported later";`,
+			},
+		});
+		await loaded(p);
+		expect(p.log()).toEqual([
+			"classic first",
+			"name.js runs once",
+			"main from lib name https://example.com/app/main.js",
+			"imported later",
+			"load",
+			"inline name https://example.com/app/page.html",
+		]);
+		await p.dom.dispose();
+	},
+);
+
+withModules("a classic script can import() a module", async () => {
+	const p = page(
+		`<script>import("./mod.js").then((m) => log.push(m.answer));</script>`,
+		{files: {"app/mod.js": "export const answer = 42;"}},
+	);
+	await until(() => p.log().length > 0);
+	expect(p.log()).toEqual([42]);
+	await p.dom.dispose();
+});
+
+withModules(
+	"a module that cannot load fails its element; one that throws reports it and loads",
+	async () => {
+		const p = page(
+			`<script type="module" src="missing.js" onerror="log.push('missing')"></script>
+		<script type="module" src="text.js" onerror="log.push('not JavaScript')"></script>
+		<script type="module" src="bare.js" onerror="log.push('unmapped')"></script>
+		<script type="module" src="throws.js" onload="log.push('load')"></script>`,
+			{
+				files: {
+					"app/bare.js": `import "nowhere";`,
+					"app/throws.js": `throw new Error("in the module");`,
+				},
+			},
+		);
+		p.dom.addEventListener("fetch", (event) => {
+			if (event.request.url.endsWith("text.js")) {
+				event.respondWith(
+					new Response("export {}", {headers: {"content-type": "text/plain"}}),
+				);
+			}
+		});
+		await loaded(p);
+		expect(p.log()).toEqual(["missing", "not JavaScript", "unmapped", "load"]);
+		expect(p.errors).toEqual(["in the module"]);
+		await p.dom.dispose();
+	},
+);
+
+withoutModules(
+	"without SourceTextModule a module fails, and says what it needs",
+	async () => {
+		const messages: string[] = [];
+		const p = page(`<script type="module">log.push("ran")</script>`);
+		p.dom.document.addEventListener(
+			"error",
+			(event) => messages.push((event as ErrorEvent).message),
+			true,
+		);
+		await loaded(p);
+		expect(p.log()).toEqual([]);
+		expect(messages[0]).toContain("--experimental-vm-modules");
+		await p.dom.dispose();
+	},
+);

@@ -220,9 +220,14 @@ event.
 The first script runs in a task after the constructor returns, so a
 program can add listeners before any script runs.
 
-Without `node:vm`, as in a browser, a classic script fires `error`. A
-module (`type="module"`) fires `error` unless a `"script"` listener
-runs it.
+Modules (`type="module"`) run through `node:vm`'s `SourceTextModule`,
+which Bun and Deno have and Node has only with
+`--experimental-vm-modules`. Each file in a module's graph is fetched
+through `csp` and the `"fetch"` listeners, and must be served as
+JavaScript. `<script type="importmap">` maps bare specifiers, and
+`import()` works in modules and classic scripts. Where a runtime lacks
+what a script needs, the script fires `error` with a message that says
+so, unless a `"script"` listener runs it.
 
 ### `term.addEventListener("script", listener)`
 

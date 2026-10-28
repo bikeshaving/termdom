@@ -68,9 +68,45 @@ interface VM {
 	runInContext(
 		code: string,
 		context: object,
-		options?: {filename?: string},
+		options?: {
+			filename?: string;
+			importModuleDynamically?: (specifier: string) => Promise<object>;
+		},
 	): unknown;
+	// Node has it only with --experimental-vm-modules.
+	SourceTextModule?: new (
+		source: string,
+		options: {
+			context: object;
+			identifier: string;
+			initializeImportMeta(meta: {url?: string}): void;
+			importModuleDynamically(specifier: string): Promise<VMModule>;
+		},
+	) => VMModule;
 }
+
+interface VMModule {
+	identifier: string;
+	status: string;
+	namespace: object;
+	link(
+		linker: (specifier: string, referencing: VMModule) => Promise<VMModule>,
+	): Promise<void>;
+	evaluate(): Promise<unknown>;
+}
+
+/** Where a page's modules come from, and what their specifiers name. */
+export interface ModuleHost {
+	// The text of the module at `url`.
+	fetch(url: string): Promise<string>;
+	// The URL `specifier` names in the module at `referrer`. Throws a
+	// TypeError for a specifier nothing maps.
+	resolve(specifier: string, referrer: string): string;
+}
+
+// Each window's modules by URL, as HTML's module map keeps them, so one
+// imported twice is fetched and run once.
+const moduleMaps = new WeakMap<object, Map<string, Promise<VMModule>>>();
 
 let vm: VM | null | undefined;
 
@@ -97,14 +133,137 @@ export function runInWindow(
 	window: object,
 	source: string,
 	filename: string,
+	host: ModuleHost,
 ): boolean {
 	const vm = getVM();
 	if (vm === null) {
 		return false;
 	}
 	makeContext(vm, window);
-	vm.runInContext(source, window, {filename});
+	vm.runInContext(source, window, {
+		filename,
+		...(vm.SourceTextModule === undefined
+			? {}
+			: {
+				// The namespace, not the module: Bun gives a classic script
+				// an empty object for a module.
+				importModuleDynamically: async (specifier: string) =>
+					(await importInWindow(
+						vm,
+						window,
+						host,
+						host.resolve(specifier, filename),
+					)).namespace,
+			}),
+	});
 	return true;
+}
+
+/**
+ * Whether a page's modules can run here: node:vm's SourceTextModule,
+ * which Node has only with --experimental-vm-modules.
+ */
+export function canRunModules(): boolean {
+	return getVM()?.SourceTextModule !== undefined;
+}
+
+/**
+ * Fetches and links a module script's graph in `window`: the module at
+ * `url`, or for an inline one, `source` with `url` its base. Rejects when
+ * a module fails to load, parse or link. The function it resolves to runs
+ * the graph, and rejects with what it threw.
+ */
+export async function linkInWindow(
+	window: object,
+	host: ModuleHost,
+	url: string,
+	source: string | null,
+): Promise<() => Promise<unknown>> {
+	const vm = getVM()!;
+	makeContext(vm, window);
+	const module = source === null
+		? await getModule(vm, window, host, url)
+		: createModule(vm, window, host, url, source);
+	await linkModule(vm, window, host, module);
+	return () => module.evaluate();
+}
+
+// A module shared by several graphs links once.
+const links = new WeakMap<VMModule, Promise<void>>();
+
+function linkModule(
+	vm: VM,
+	window: object,
+	host: ModuleHost,
+	module: VMModule,
+): Promise<void> {
+	let linked = links.get(module);
+	if (linked === undefined) {
+		linked = module.status === "unlinked"
+			? module.link((specifier, referencing) =>
+				getModule(
+					vm,
+					window,
+					host,
+					host.resolve(specifier, referencing.identifier),
+				),
+			)
+			: Promise.resolve();
+		links.set(module, linked);
+	}
+	return linked;
+}
+
+function createModule(
+	vm: VM,
+	window: object,
+	host: ModuleHost,
+	url: string,
+	source: string,
+): VMModule {
+	return new vm.SourceTextModule!(source, {
+		context: window,
+		identifier: url,
+		initializeImportMeta(meta) {
+			meta.url = url;
+		},
+		importModuleDynamically: (specifier) =>
+			importInWindow(vm, window, host, host.resolve(specifier, url)),
+	});
+}
+
+function getModule(
+	vm: VM,
+	window: object,
+	host: ModuleHost,
+	url: string,
+): Promise<VMModule> {
+	let modules = moduleMaps.get(window);
+	if (modules === undefined) {
+		modules = new Map();
+		moduleMaps.set(window, modules);
+	}
+	let module = modules.get(url);
+	if (module === undefined) {
+		module = host
+			.fetch(url)
+			.then((source) => createModule(vm, window, host, url, source));
+		modules.set(url, module);
+	}
+	return module;
+}
+
+// What import() resolves to: the module, linked and run.
+async function importInWindow(
+	vm: VM,
+	window: object,
+	host: ModuleHost,
+	url: string,
+): Promise<VMModule> {
+	const module = await getModule(vm, window, host, url);
+	await linkModule(vm, window, host, module);
+	await module.evaluate();
+	return module;
 }
 
 /**

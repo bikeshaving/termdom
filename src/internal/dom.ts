@@ -66,7 +66,14 @@ import {
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
 import {PTYSession, type PTYSpawner} from "./pty.ts";
-import {compileInWindow, rehomeClone, runInWindow} from "./realms.ts";
+import {
+	canRunModules,
+	compileInWindow,
+	linkInWindow,
+	type ModuleHost,
+	rehomeClone,
+	runInWindow,
+} from "./realms.ts";
 import type {ResourceLoader} from "./resources.ts";
 import {
 	_,
@@ -22594,6 +22601,8 @@ interface DocumentScripts {
 	waiting: number;
 	parsed: boolean;
 	importMaps: string[];
+	// The maps, parsed the first time a module resolves a specifier.
+	importMap: ImportMap | null;
 	moduleStarted: boolean;
 	currentScript: HTMLScriptElement | null;
 }
@@ -22675,6 +22684,7 @@ function scheduleDocumentScripts(document: Document): void {
 		waiting: 0,
 		parsed: false,
 		importMaps: [],
+		importMap: null,
 		moduleStarted: false,
 		currentScript: null,
 	};
@@ -22848,7 +22858,7 @@ function prepareScript(
 		scripts.moduleStarted = true;
 		return {element, kind: type, external: true, url, source: null};
 	}
-	const source = fetchClassicScript(element, url);
+	const source = fetchScript(element, url, "classic");
 	source.catch(() => {});
 	return {element, kind: type, external: true, url, source};
 }
@@ -22872,11 +22882,13 @@ function fireScriptError(element: HTMLScriptElement, message: string): void {
 	);
 }
 
-// A classic script's text, fetched as the engine fetches anything the
-// markup names: through the policy and the TermDOM's fetch listeners.
-async function fetchClassicScript(
+// A script's text, fetched as the engine fetches anything the markup
+// names: through the policy and the TermDOM's fetch listeners. A module
+// must say it is JavaScript, as a browser requires.
+async function fetchScript(
 	element: HTMLScriptElement,
 	url: string,
+	kind: ScriptKind,
 ): Promise<string> {
 	const document = _(element).document;
 	const attached = getAttachedDocument(document as unknown as Node);
@@ -22891,9 +22903,14 @@ async function fetchClassicScript(
 	if (!response.ok) {
 		throw new TypeError(`The script's server answered ${response.status}`);
 	}
-	const charset = /;\s*charset=("?)([^";]+)\1/i.exec(
-		response.headers.get("content-type") ?? "",
-	)?.[2];
+	const contentType = response.headers.get("content-type") ?? "";
+	const essence = toASCIILowercase(
+		trimASCIIWhitespace(contentType.split(";")[0]),
+	);
+	if (kind === "module" && !JAVASCRIPT_TYPES.has(essence)) {
+		throw new TypeError(`A module's type must be JavaScript, not "${essence}"`);
+	}
+	const charset = /;\s*charset=("?)([^";]+)\1/i.exec(contentType)?.[2];
 	const bytes = await response.arrayBuffer();
 	let decoder: TextDecoder;
 	try {
@@ -23034,7 +23051,7 @@ async function executeScript(
 	scripts.currentScript = element;
 	try {
 		if (answer === null) {
-			if (!runClassicScript(document, source, run.url ?? "")) {
+			if (!runClassicScript(element, scripts, source, run.url ?? "")) {
 				fireScriptError(
 					element,
 					"A classic script needs node:vm, or a \"script\" listener " +
@@ -23064,20 +23081,253 @@ async function executeScript(
 	}
 }
 
+// The default for a module no listener answered: its graph fetched,
+// linked and run in the document's window with node:vm. A module that
+// fails to load fails the element; one that throws reports it, and loads.
+async function runModuleScript(
+	run: ScriptRun,
+	scripts: DocumentScripts,
+): Promise<void> {
+	const {element} = run;
+	const document = _(element).document;
+	const view = _(document).extra.defaultView;
+	if (
+		!canRunModules() || view === null || getDocumentRealm(document) !== null
+	) {
+		fireScriptError(
+			element,
+			"A module needs node:vm's SourceTextModule, which Node has with " +
+				"--experimental-vm-modules, or a \"script\" listener on the TermDOM",
+		);
+		return;
+	}
+	let evaluate: () => Promise<unknown>;
+	try {
+		evaluate = await linkInWindow(
+			view as unknown as object,
+			createModuleHost(element, scripts),
+			run.url ?? getDocumentBaseURL(document),
+			run.external ? null : run.source as string,
+		);
+	} catch (error) {
+		if (isDocumentLive(document)) {
+			fireScriptError(
+				element,
+				Object.prototype.toString.call(error) === "[object Error]"
+					? String((error as Error).message)
+					: String(error),
+			);
+		}
+		return;
+	}
+	if (!isDocumentLive(document)) {
+		return;
+	}
+	try {
+		await evaluate();
+	} catch (error) {
+		if (isDocumentLive(document)) {
+			reportError(error, document);
+		}
+	}
+	if (run.external && isDocumentLive(document)) {
+		fireDocumentEvent(element as unknown as EventTarget, "load");
+	}
+}
+
 // The default for a classic script no listener answered: node:vm, in the
 // document's window.
 function runClassicScript(
-	document: Document,
+	element: HTMLScriptElement,
+	scripts: DocumentScripts,
 	source: string,
 	filename: string,
 ): boolean {
+	const document = _(element).document;
 	const view = _(document).extra.defaultView;
 	if (view === null) {
 		return false;
 	}
 	return runInRealm(getDocumentRealm(document), () =>
-		runInWindow(view as unknown as object, source, filename),
+		runInWindow(
+			view as unknown as object,
+			source,
+			filename,
+			createModuleHost(element, scripts),
+		),
 	);
+}
+
+// The modules a script's graph imports come through the loader, as its
+// own src does, and its specifiers resolve with the document's maps.
+function createModuleHost(
+	element: HTMLScriptElement,
+	scripts: DocumentScripts,
+): ModuleHost {
+	const document = _(element).document;
+	return {
+		fetch: (url) => fetchScript(element, url, "module"),
+		resolve: (specifier, referrer) => {
+			scripts.importMap ??= parseImportMaps(
+				scripts.importMaps,
+				getDocumentBaseURL(document),
+			);
+			return resolveModuleSpecifier(scripts.importMap, specifier, referrer);
+		},
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Import maps (HTML §8.1.5).
+
+type SpecifierMap = Map<string, string | null>;
+
+interface ImportMap {
+	imports: SpecifierMap;
+	scopes: Map<string, SpecifierMap>;
+}
+
+// The maps a document's scripts gave, merged in order: a key the first
+// gave keeps its address, and a map that is not JSON is skipped.
+function parseImportMaps(texts: readonly string[], base: string): ImportMap {
+	const merged: ImportMap = {imports: new Map(), scopes: new Map()};
+	for (const text of texts) {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(text);
+		} catch (error) {
+			if (error instanceof SyntaxError) {
+				continue;
+			}
+			throw error;
+		}
+		if (typeof parsed !== "object" || parsed === null) {
+			continue;
+		}
+		const {imports, scopes} = parsed as {imports?: unknown; scopes?: unknown};
+		mergeSpecifierMap(merged.imports, imports, base);
+		if (typeof scopes === "object" && scopes !== null) {
+			for (const [prefix, map] of Object.entries(scopes)) {
+				const scope = parseURL(prefix, base);
+				if (scope === null) {
+					continue;
+				}
+				let target = merged.scopes.get(scope);
+				if (target === undefined) {
+					target = new Map();
+					merged.scopes.set(scope, target);
+				}
+				mergeSpecifierMap(target, map, base);
+			}
+		}
+	}
+	return merged;
+}
+
+function mergeSpecifierMap(
+	target: SpecifierMap,
+	map: unknown,
+	base: string,
+): void {
+	if (typeof map !== "object" || map === null) {
+		return;
+	}
+	for (const [key, value] of Object.entries(map)) {
+		if (key === "") {
+			continue;
+		}
+		const normalized = resolveURLLikeSpecifier(key, base) ?? key;
+		if (target.has(normalized)) {
+			continue;
+		}
+		const address = typeof value === "string" ? parseURL(value, base) : null;
+		target.set(
+			normalized,
+			address !== null && normalized.endsWith("/") && !address.endsWith("/")
+				? null
+				: address,
+		);
+	}
+}
+
+// A specifier that is a URL, or one that starts with /, ./ or ../, which
+// resolve against `base`. Null for a bare one.
+function resolveURLLikeSpecifier(
+	specifier: string,
+	base: string,
+): string | null {
+	if (
+		specifier.startsWith("/") ||
+		specifier.startsWith("./") ||
+		specifier.startsWith("../")
+	) {
+		return parseURL(specifier, base);
+	}
+	return URL.canParse(specifier) ? new URL(specifier).href : null;
+}
+
+function resolveModuleSpecifier(
+	map: ImportMap,
+	specifier: string,
+	referrer: string,
+): string {
+	const asURL = resolveURLLikeSpecifier(specifier, referrer);
+	const normalized = asURL ?? specifier;
+	const scopes = [...map.scopes.keys()].sort((a, b) => b.length - a.length);
+	for (const scope of scopes) {
+		if (
+			scope === referrer || (scope.endsWith("/") && referrer.startsWith(scope))
+		) {
+			const resolved = matchSpecifierMap(
+				map.scopes.get(scope)!,
+				normalized,
+				asURL,
+			);
+			if (resolved !== null) {
+				return resolved;
+			}
+		}
+	}
+	const resolved = matchSpecifierMap(map.imports, normalized, asURL);
+	if (resolved !== null) {
+		return resolved;
+	}
+	if (asURL !== null) {
+		return asURL;
+	}
+	throw new TypeError(`No import map names "${specifier}"`);
+}
+
+function matchSpecifierMap(
+	map: SpecifierMap,
+	normalized: string,
+	asURL: string | null,
+): string | null {
+	const keys = [...map.keys()].sort((a, b) => b.length - a.length);
+	for (const key of keys) {
+		const address = map.get(key)!;
+		if (key === normalized) {
+			if (address === null) {
+				throw new TypeError(`The import map blocks "${normalized}"`);
+			}
+			return address;
+		}
+		if (
+			key.endsWith("/") &&
+			normalized.startsWith(key) &&
+			(asURL === null || /^(https?|file|ftp|wss?):/.test(asURL))
+		) {
+			if (address === null) {
+				throw new TypeError(`The import map blocks "${normalized}"`);
+			}
+			const url = parseURL(normalized.slice(key.length), address);
+			if (url === null || !url.startsWith(address)) {
+				throw new TypeError(`The import map cannot resolve "${normalized}"`);
+			}
+			return url;
+		}
+	}
+	return null;
 }
 
 async function executeModule(
@@ -23099,10 +23349,7 @@ async function executeModule(
 			importMaps: scripts.importMaps,
 		}) ?? null;
 	if (answer === null) {
-		fireScriptError(
-			element,
-			"A module needs a \"script\" listener on the TermDOM to run it",
-		);
+		await runModuleScript(run, scripts);
 		return;
 	}
 	scripts.running++;
