@@ -146,31 +146,18 @@ Tab from the last focusable element leaves nothing focused. The next
 Tab then focuses the first element. A browser behaves the same way when
 focus leaves the page for its toolbar and comes back.
 
-The terminal reports when it gains and loses focus: when you switch to
-another window or app, or to another tmux pane or window, and back.
-The page sees this the way a browser's page sees its tab left and
-returned to:
-- On leaving, the focused element gets `blur` and `focusout`, then the
-  window gets `blur`. The element stays `document.activeElement`.
-- On returning, the window gets `focus`, then the element gets `focus`
-  and `focusin`.
-- While away, `document.hasFocus()` is false, and `:focus`,
-  `:focus-within` and `:focus-visible` match nothing, as HTML says.
-  A focused field shows no cursor, as a browser's field shows no caret
-  in a window that is not in front.
+When the terminal loses focus, because you switched to another window
+or tmux pane, the focused element gets `blur` and `focusout`, then the
+window gets `blur`. The element stays `document.activeElement`. When
+focus returns, the window gets `focus`, then the element gets `focus`
+and `focusin`.
 
-A terminal that does not report focus never fires these, and
-`hasFocus()` stays true. tmux passes the reports on with its
-`focus-events` option set.
+While the terminal is away, `document.hasFocus()` is false, `:focus`
+matches nothing, and no cursor shows. The page is also blurred while
+the wheel is scrolling the terminal's scrollback.
 
-The page is also blurred while the terminal's scrollback has the
-mouse, since the user is reading the terminal then, and its keys may
-not reach the page at all, as in tmux's copy mode. The next thing the
-user does that reaches the page, a key, a paste or a return of focus,
-focuses the page again before it is delivered.
-
-Returning also gives the mouse back to the page if the terminal's
-scrollback had it, and repaints the screen whole.
+A terminal that doesn't report focus never fires these. In tmux, turn
+on `focus-events`.
 
 ## Dialogs, popovers, and details
 
