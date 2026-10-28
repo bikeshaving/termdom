@@ -155,6 +155,22 @@ test("the program is resized to the embed's box", async () => {
 	await dom.dispose();
 });
 
+test("a height alone leaves the embed its natural width, in a flex column too", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom} = await mount(
+		`<div style="display: flex; flex-direction: column; height: 6px">` +
+		`<embed type="application/x-pty" src="vim" style="height: 4px"></div>` +
+		`<embed type="application/x-pty" src="top" style="display: block; height: 4px">`,
+		spawn,
+	);
+	await settle(dom);
+	expect(children.map((child) => child.sizes.at(-1))).toEqual([
+		[80, 4],
+		[80, 4],
+	]);
+	await dom.dispose();
+});
+
 test("a focused embed sends keys to the program, unless the page takes them", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, terminal, document} = await mount(

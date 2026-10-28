@@ -1568,7 +1568,7 @@ function styleLayoutNodeProperties(
 			style.margin[edge] = toValue(0);
 			style.padding[edge] = toValue(0);
 		}
-	} else if (isAtomicInline(display)) {
+	} else if (isAtomicInline(display) && !parentIsFlex) {
 		applyMinMax(style, element);
 	} else {
 		const widthValue = getComputedValue(element, "width");

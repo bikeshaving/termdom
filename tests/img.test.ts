@@ -247,6 +247,19 @@ test("width or height alone takes the other from the image's ratio", async () =>
 	dom.dispose();
 });
 
+test("an image in a flex container keeps the size it is given", async () => {
+	const {dom, document} = await mount(
+		`<div style="display: flex"><img id=attributes width="6" height="2"></div>` +
+		`<div style="display: flex; flex-direction: column"><img id=css style="width: 6px; height: 2px"></div>`,
+	);
+	await nextFrame(dom);
+	for (const id of ["attributes", "css"]) {
+		const rect = document.getElementById(id)!.getBoundingClientRect();
+		expect([rect.width, rect.height]).toEqual([6, 2]);
+	}
+	dom.dispose();
+});
+
 test("max-width: 100% keeps an image inside its container, at its ratio", async () => {
 	const wide = png(320, 64, () => BLUE); // 40 by 4 cells
 	const {dom, document} = await mount(
