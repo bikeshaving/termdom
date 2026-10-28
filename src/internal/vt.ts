@@ -320,7 +320,10 @@ export class Terminal {
 				// Rows below the cursor go first, then rows off the top, so
 				// the cursor's row stays on screen.
 				let excess = lines.length - rows;
-				const below = active ? lines.length - 1 - this.y : excess;
+				const cursor = active
+					? this.y
+					: buffer === this.normal ? (buffer.saved?.y ?? this.y) : null;
+				const below = cursor === null ? excess : lines.length - 1 - cursor;
 				const fromBottom = Math.min(excess, Math.max(0, below));
 				lines = lines.slice(0, lines.length - fromBottom);
 				excess -= fromBottom;
