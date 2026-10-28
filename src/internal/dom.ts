@@ -17105,6 +17105,13 @@ function startProgram(embed: HTMLEmbedElement): void {
 	}
 	program.setScrollback(getScrollbackLimit(embed));
 	slots.extra.program = program;
+	let top = _(embed).document;
+	for (let owner = getFrameOwner(top);
+		owner !== null;
+		owner = getFrameOwner(top)) {
+		top = _(owner).document;
+	}
+	program.sendFocus(getKeyTarget(top) === (embed as unknown));
 	// As a Native Client module's embed did, the embed takes messages for
 	// its program while it runs one.
 	const realm = getDocumentRealm(embed.ownerDocument);
