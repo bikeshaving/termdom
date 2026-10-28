@@ -429,6 +429,7 @@ embed.postMessage({type: "keydown", key: "c", ctrlKey: true});
 
 - The 16 basic colors are xterm's, not the outer terminal's.
 - Images the program draws don't show.
+- Links (OSC 8) show underlined, but can't be followed.
 
 ## Pixels as text
 

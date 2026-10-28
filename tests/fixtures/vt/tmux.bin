@@ -1,0 +1,350 @@
+[?1049h[22;0;0t[?1h=[H[2J[?12l[?25h[?1000l[?1002l[?1003l[?1006l[?1005l[?2004h[?2031h[?996n(B[m[?12l[?25h[?1006l[?1000l[?1002l[?1003l[1;1H[1;24r[c[>c[>q]10;?\]11;?\[1;1H[?25l[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[?12l[?25h[H(B[m[?12l[?25h[?1006l[?1000l[?1002l[?1003l[1;1H[1;24r[1;1H[?7727h(B[m[?12l[?25h[?1006l[?1000l[?1002l[?1003l[1;1H[1;24r[?7727h(B[m[?12l[?25h[?1006l[?1000l[?1002l[?1003l[1;1H[1;24r[?7727h(B[m[?12l[?25h[?1006l[?1000l[?1002l[?1003l[1;1H[1;24r]10;?\]11;?\]10;?\]11;?\[1;1H[?25l[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[?12l[?25h[Hbash-5.3$ cat notes.txt
+  1 epsilon nu phi beta gamma sigma delta
+  2 tau beta rho eta beta gamma xi
+  3 gamma theta gamma sigma xi beta tau delta
+  4 phi phi tau beta tau
+  5 nu beta theta beta sigma epsilon kappa xi epsilon sigma delta
+  6 kappa sigma chi zeta delta tau tau phi eta mu delta
+  7 psi gamma tau beta upsilon eta pi chi sigma xi
+  8 lambda omicron tau omicron mu kappa theta zeta psi theta gamma tau kappa rho[10;1H  9 lambda omega omicron kappa upsilon gamma delta rho xi
+ 10 lambda epsilon pi xi
+ 11 chi gamma
+ 12 sigma tau lambda lambda psi mu upsilon pi tau omicron gamma gamma iota pi
+ 13 chi gamma beta omega psi kappa phi tau chi omicron kappa psi nu
+ 14 mu alpha omicron mu zeta upsilon delta pi beta eta kappa epsilon
+ 15 theta nu nu pi gamma zeta omicron nu sigma iota epsilon xi sigma
+ 16 psi xi mu chi nu theta
+ 17 gamma zeta epsilon theta
+ 18 theta alpha pi tau zeta iota kappa alpha epsilon xi sigma mu
+ 19 tau lambda epsilon psi rho upsilon phi chi omega beta omicron
+ 20 chi sigma nu nu nu nu delta pi [16S[5;36Hphi nu beta eta gamma eta
+ 21 zeta delta lambda upsilon beta delta alpha tau epsilon
+ 22 delta mu upsilon alpha gamma eta upsilon nu epsilon phi
+ 23 mu upsilon mu pi delta delta
+ 24 omicron pi pi kappa gamma epsilon delta omega lambda[K
+ 25 iota pi psi zeta rho alpha eta rho mu epsilon psi sigma alpha[K
+ 26 rho kappa phi gamma psi iota rho mu zeta mu theta sigma sigma rho[K
+ 27 phi theta upsilon eta theta nu omega[K
+ 28 theta eta rho pi mu omega alpha alpha iota pi iota eta psi upsilon[K
+ 29 omicron omega mu mu gamma theta delta[K
+ 30 pi eta lambda eta pi[K
+ 31 upsilon alpha pi phi mu phi gamma chi delta nu psi[K
+ 32 eta pi zeta xi phi lambda gamma omega nu omicron nu omega gamma omega[K
+ 33 zeta epsilon alpha epsilon[K
+ 34 omicron phi epsilon upsilon upsilon pi chi mu epsilon sigma sigma[K
+ 35 alpha alpha omega phi[K
+ 36 rho omega epsilon[K
+ 37 eta eta alpha iota eta kappa rho theta[K
+ 38 tau lambda iota sigma xi epsilon beta omega mu omicron chi tau rho xi[K
+ 39 epsilon sigma epsilon rho rho alpha omicron zeta upsilon[K[24S[H 40 epsilon zeta epsilon pi upsilon omega delta sigma beta lambda chi rho rho sigma[K
+ 41 delta sigma beta theta eta iota beta delta rho[K
+ 42 sigma alpha gamma omicron lambda upsilon rho upsilon rho[K
+ 43 psi iota omicron rho sigma[K
+ 44 pi rho theta psi rho iota sigma eta omicron epsilon xi delta nu omicron[K
+ 45 gamma chi theta xi gamma eta chi[K
+ 46 delta epsilon psi phi chi mu[K
+ 47 iota epsilon omicron theta[K
+ 48 delta nu pi zeta chi theta zeta psi xi rho nu lambda xi[K
+ 49 mu lambda gamma omega mu[K
+ 50 lambda sigma[K
+ 51 omicron psi alpha nu lambda rho upsilon kappa rho[K
+ 52 delta theta delta[K
+ 53 iota iota beta[K
+ 54 zeta iota epsilon xi chi iota nu epsilon sigma rho tau pi psi lambda[K
+ 55 iota beta psi[K
+ 56 xi gamma iota alpha[K
+ 57 gamma iota gamma upsilon theta gamma iota delta omicron alpha lambda sigma[K
+ 58 iota upsilon epsilon beta rho psi theta delta[K
+ 59 iota beta zeta eta[K
+ 60 phi kappa rho eta kappa omicron[K
+ 61 chi zeta iota mu alpha iota beta alpha alpha omega[K
+ 62 sigma eta rho pi theta omic[K[24S[H 64 epsilon nu mu beta epsilon alpha gamma phi omega iota xi zeta[K
+ 65 gamma chi[K
+ 66 rho chi kappa upsilon theta psi kappa beta[K
+ 67 zeta zeta iota omicron alpha iota mu lambda sigma[K
+ 68 theta beta kappa eta mu zeta alpha[K
+ 69 nu gamma pi iota rho phi eta[K
+ 70 rho alpha gamma iota gamma[K
+ 71 nu tau beta nu[K
+ 72 kappa kappa[K
+ 73 theta gamma tau rho epsilon chi psi upsilon nu lambda omega pi[K
+ 74 kappa omega upsilon phi[K
+ 75 beta psi rho phi[K
+ 76 omega psi rho epsilon rho rho tau alpha[K
+ 77 tau psi chi psi phi theta gamma alpha beta epsilon phi mu[K
+ 78 nu omicron sigma[K
+ 79 phi alpha[K
+ 80 sigma chi theta pi iota alpha omicron gamma omega rho sigma gamma[K
+ 81 rho gamma omega omega pi iota gamma iota theta omega eta theta[K
+ 82 phi omicron pi nu gamma pi chi kappa beta upsilon phi phi eta[K
+ 83 upsilon epsilon lambda[K
+ 84 phi omega psi kappa upsilon tau[K
+ 85 alpha pi beta pi[K
+ 86 chi delta psi eta chi pi[K
+ 87 psi rho kappa omicron[K[20S[4;26H omicron omicron
+ 88 delta sigma eta kappa gamma pi alpha kappa omicron gamma rho omicron iota nu[6;1H 89 eta gamma tau gamma epsilon[K
+ 90 rho iota mu epsilon upsilon phi rho iota delta psi mu theta pi[K
+ 91 nu alpha zeta alpha pi chi omicron nu kappa[K
+ 92 epsilon xi mu nu lambda delta lambda alpha lambda lambda nu delta eta[K
+ 93 alpha omega kappa iota mu gamma nu nu tau gamma mu xi iota[K
+ 94 iota delta[K
+ 95 chi kappa[K
+ 96 epsilon theta iota xi rho lambda eta mu xi alpha phi nu[K
+ 97 sigma eta omega gamma beta omega xi omicron upsilon epsilon[K
+ 98 kappa pi beta sigma epsilon zeta pi xi lambda kappa kappa iota[K
+ 99 omega phi iota nu phi theta kappa pi sigma chi nu delta zeta[K
+100 zeta gamma eta rho pi sigma theta omicron lambda omicron xi epsilon[K
+101 eta theta gamma zeta lambda sigma gamma lambda theta mu[K
+102 tau eta alpha omega xi nu[K
+103 omega rho eta nu iota lambda beta pi[K
+104 tau mu epsilon chi rho rho[K
+105 eta gamma iota theta nu nu phi omicron xi kappa alpha epsilon[K
+106 xi psi[K
+107 pi tau pi alpha gamma [K[24S[H109 epsilon theta tau beta phi psi kappa epsilon phi iota rho phi xi psi[K
+110 delta delta gamma kappa rho tau eta nu iota theta upsilon alpha alpha sigma[K
+111 omicron iota lambda phi theta pi[K
+112 theta sigma theta alpha xi psi phi kappa beta alpha[K
+113 pi chi phi xi gamma[K
+114 theta chi xi mu theta pi[K
+115 psi lambda[K
+116 xi mu chi nu eta alpha kappa omega rho gamma eta pi eta[K
+117 eta theta omicron theta iota kappa[K
+118 upsilon pi upsilon[K
+119 theta pi xi chi[K
+120 upsilon epsilon[K
+121 beta eta alpha upsilon epsilon xi beta psi[K
+122 zeta nu[K
+123 psi lambda omega delta gamma zeta lambda eta zeta[K
+124 rho omega omicron beta kappa chi omega nu mu lambda omicron zeta[K
+125 alpha gamma iota[K
+126 mu xi delta[K
+127 eta nu mu kappa xi gamma beta psi pi eta[K
+128 sigma omicron eta lambda mu omega pi[K
+129 phi xi[K
+130 phi nu beta nu beta[K
+131 gamma beta iota eta omega gamma upsilon lambda mu[K
+132 lambda up[K[23S[1;14Hsilon beta iota omega psi
+133 lambda iota kappa alpha omega upsilon phi gamma alpha theta delta pi psi[K
+134 nu iota xi pi epsilon pi zeta alpha omega[K
+135 psi epsilon upsilon theta lambda lambda[K
+136 mu upsilon gamma rho eta nu zeta theta xi[K
+137 phi beta pi[K
+138 sigma lambda zeta xi delta gamma iota upsilon gamma eta[K
+139 xi pi psi[K
+140 zeta theta epsilon xi omicron upsilon chi theta omega[K
+141 chi delta kappa kappa iota tau iota mu iota omega[K
+142 eta omicron theta zeta theta theta[K
+143 kappa tau eta lambda[K
+144 nu iota theta[K
+145 rho theta phi delta phi omicron beta delta alpha pi[K
+146 omicron mu beta kappa theta[K
+147 beta eta upsilon[K
+148 eta gamma mu rho zeta omicron upsilon iota chi alpha delta[K
+149 upsilon psi upsilon mu eta beta mu lambda epsilon beta eta iota[K
+150 upsilon omega[K
+151 eta alpha lambda xi chi mu zeta upsilon kappa gamma eta beta[K
+152 pi sigma pi gamma xi delta nu chi sigma epsilon phi sigma gamma phi[K
+153 nu psi iota xi[K
+154 chi kappa xi beta kappa omega[K
+155 mu xi xi alpha mu phi eta [K[24S[H157 delta gamma nu tau mu omicron zeta epsilon[K
+158 beta sigma[K
+159 phi nu gamma tau[K
+160 mu omega rho zeta epsilon mu kappa zeta rho zeta gamma[K
+161 nu pi eta[K
+162 epsilon beta pi lambda beta upsilon[K
+163 nu gamma psi upsilon psi zeta phi theta upsilon nu upsilon eta[K
+164 zeta tau eta beta nu rho zeta nu mu[K
+165 epsilon theta omega[K
+166 beta sigma chi beta chi[K
+167 delta nu upsilon omicron sigma phi kappa[K
+168 xi kappa tau theta xi nu chi mu omicron rho omicron zeta[K
+169 alpha upsilon[K
+170 omicron theta omicron upsilon omicron zeta pi nu delta[K
+171 epsilon mu xi[K
+172 gamma omicron rho rho chi beta beta[K
+173 epsilon gamma omega lambda omega rho gamma beta rho nu phi epsilon[K
+174 gamma upsilon[K
+175 psi delta eta epsilon pi kappa zeta chi omega theta gamma mu upsilon[K
+176 iota zeta lambda upsilon iota omicron epsilon iota rho pi eta tau iota upsilon[K
+177 theta lambda mu beta eta zeta nu zeta phi iota[K
+178 lambda nu zeta iota delta rho beta phi mu omicron sigma rho[K
+179 psi delta io[K[22S[2;17Hta sigma phi nu omega mu iota nu mu
+180 epsilon mu lambda gamma omicron theta zeta upsilon omega beta kappa[K
+181 iota kappa phi tau chi lambda omega alpha omega beta[K
+182 epsilon kappa upsilon phi xi[K
+183 rho mu beta epsilon pi theta upsilon phi[K
+184 alpha beta[K
+185 tau mu[K
+186 delta rho mu sigma theta xi[K
+187 kappa tau epsilon eta mu upsilon pi zeta epsilon alpha theta[K
+188 epsilon omicron delta gamma phi epsilon chi iota nu iota alpha beta phi[K
+189 mu upsilon phi tau omicron upsilon rho omega pi theta[K
+190 alpha beta beta sigma[K
+191 nu zeta[K
+192 zeta beta delta alpha upsilon[K
+193 chi eta epsilon xi eta rho upsilon phi rho phi[K
+194 xi upsilon zeta rho kappa gamma kappa phi beta omega pi psi[K
+195 alpha nu xi omega omicron gamma omega phi omicron zeta[K
+196 delta iota theta phi beta[K
+197 lambda omega psi[K
+198 psi beta iota phi sigma chi[K
+199 chi rho iota kappa phi eta gamma rho[K
+200 zeta iota[K
+[K[?25l[?12l[?25hbash-5.3$ [?25l[13;1H─────────────────────────────────────────[32m───────────────────────────────────────(B[m[1;1H190 alpha beta beta sigma[K
+191 nu zeta[K
+192 zeta beta delta alpha upsilon[K
+193 chi eta epsilon xi eta rho upsilon phi rho phi[K
+194 xi upsilon zeta rho kappa gamma kappa phi beta omega pi psi[K
+195 alpha nu xi omega omicron gamma omega phi omicron zeta[K
+196 delta iota theta phi beta[K
+197 lambda omega psi[K
+198 psi beta iota phi sigma chi[K
+199 chi rho iota kappa phi eta gamma rho[K
+200 zeta iota[K
+bash-5.3$ [K[14;1H[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[?12l[?25h[10A[2Abash-5.3$ [K[14;1Hbash-5.3$ seq 1 30
+[14;24r[24;1H
+[14d1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+[K[1;24r[24;1H[14;24r[1;1H[11S[14d21[K
+22[K
+23[K
+24[K
+25[K
+26[K
+27[K
+28[K
+29[K
+30[K
+[K[?25l[?12l[?25h[1;24r[24;1Hbash-5.3$ [?25l[13;1H────────────────────────────────────────[32m┬───────────────────────────────────────[14;41H│[15;41H│[16;41H│[17;41H│[18;41H│[19;41H│[20;41H│[21;41H│[22;41H│[23;41H│[24;41H│(B[m[H190 alpha beta beta sigma[K
+191 nu zeta[K
+192 zeta beta delta alpha upsilon[K
+193 chi eta epsilon xi eta rho upsilon phi rho phi[K
+194 xi upsilon zeta rho kappa gamma kappa phi beta omega pi psi[K
+195 alpha nu xi omega omicron gamma omega phi omicron zeta[K
+196 delta iota theta phi beta[K
+197 lambda omega psi[K
+198 psi beta iota phi sigma chi[K
+199 chi rho iota kappa phi eta gamma rho[K
+200 zeta iota[K
+bash-5.3$ [K[14;40H[1K21[15;40H[1K22[16;40H[1K23[17;40H[1K24[18;40H[1K25[19;40H[1K26[20;40H[1K27[21;40H[1K28[22;40H[1K29[23;40H[1K30[24;40H[1Kbash-5.3$ [14;42H[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[?12l[?25h[10A[24;1Hbash-5.3$ [30X[14;42Hbash-5.3$ cat wide.txt[15;42Hplain line[16;42H日本語のテキストと漢字[17;42Hcafé naïve résumé[18;42H👨👨‍👨‍💻 emoji 😀 line[19;42Htab     separated       columns[20;42H[?25l[13;1H────────────────────────────────────────[32m┬───────────────────────────────────────[14;41H│[15;41H│[16;41H│[17;41H│[18;41H│[19;41H│[20;41H│[21;41H│[22;41H│[23;41H│[24;41H│(B[m[?12l[?25h[4Abash-5.3$ [?25l[13;1H[32m────────────────────────────────────────┬───────────────────────────────────────[14;41H[39m│[15;41H│[16;41H│[17;41H│[18;41H│[19;41H│[20;41H│[21;41H│[22;41H│[23;41H│[24;41H│(B[m[?12l[?25h[12;11H[1;12r[12;1H
+[11;11Hexit
+[K[1;24r[12;1H[?25l[?12l[?25h[1;12r[12;1H
+[Aexit
+[K[1;24r[12;1H[?25l[?12l[?25h[?25l[1;41H│[2;41H│[3;41H│[4;41H│[5;41H│[6;41H│[7;41H│[8;41H│[9;41H│[10;41H│[11;41H│[12;41H│[13;41H│[14;41H[32m│[15;41H│[16;41H│[17;41H│[18;41H│[19;41H│[20;41H│[21;41H│[22;41H│[23;41H│[24;41H│(B[m[1;40H[1K[H8[2;40H[1K9[3;40H[1K10[4;40H[1K11[5;40H[1K12[6;40H[1K13[7;40H[1K14[8;40H[1K15[9;40H[1K16[10;40H[1K17[11;40H[1K18[12;40H[1K19[13;40H[1K20[14;40H[1K21[15;40H[1K22[16;40H[1K23[17;40H[1K24[18;40H[1K25[19;40H[1K26[20;40H[1K27[21;40H[1K28[22;40H[1K29[23;40H[1K30[24;40H[1Kbash-5.3$ [1;42Hbash-5.3$ cat wide.txt[K[2;42Hplain line[K[3;42H日本語のテキストと漢字[K[4;42Hcafé naïve résumé[K[5;42H👨‍💻 emoji 😀 line[K[6;42Htab     separated       columns[K[7;42Hbash-5.3$ [K[8;42H[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[?12l[?25h[7;52H[24;1Hbash-5.3$ [30X[7;42Hbash-5.3$ [Kexit[8;42Hexit[9;42H[?25l[H8[K
+9[K
+10[K
+11[K
+12[K
+13[K
+14[K
+15[K
+16[K
+17[K
+18[K
+19[K
+20[K
+21[K
+22[K
+23[K
+24[K
+25[K
+26[K
+27[K
+28[K
+29[K
+30[K
+bash-5.3$ [K[?12l[?25hbash-5.3$ [K
+[23;11Hexit
+[K[?25l[?12l[?25h
+[Aexit
+[K[?25l[?12l[?25h[1;24r(B[m[?1l>[H[2J[?12l[?25h[?1000l[?1002l[?1003l[?1006l[?1005l[?2004l[?7727l[?1004l[?1049l[23;0;0t[?2031l[exited]
