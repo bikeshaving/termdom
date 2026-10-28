@@ -1892,7 +1892,7 @@ function getSheetNamespaces(
 		return undefined;
 	}
 	const namespaces: SelectorNamespaces = {default: null, prefixes: new Map()};
-	for (const rule of sheet.cssRules) {
+	for (const rule of _(sheet).rules) {
 		if (getPreludeStage(rule) === PRELUDE_OVER) {
 			break;
 		}
