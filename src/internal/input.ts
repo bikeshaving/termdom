@@ -488,7 +488,11 @@ export function dispatchInput(
 	// Pseudo-state and the selection move with no mutation record. Each
 	// names the rows it changes.
 	requestFrame(input.framebuffer);
-	if (Array.isArray(item) || item.kind !== "focus" || item.focused) {
+	if (
+		Array.isArray(item) ||
+		item.kind === "paste" ||
+		(item.kind === "focus" && item.focused)
+	) {
 		takeMouseBack(input);
 	}
 	if (Array.isArray(item)) {
