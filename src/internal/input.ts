@@ -402,6 +402,9 @@ export class Input {
 	frameViews: WeakMap<Document, Input>;
 	pressView: Input | null;
 	pressOffset: {left: number; top: number};
+	// The embed whose program took the press, which hears the drag and the
+	// release wherever the pointer goes, until the last button lets go.
+	programPress: FramePointLevel | null;
 	// The document scroll hit its top and the user kept scrolling up, so
 	// the wheel belongs to the terminal's scrollback until the next
 	// keystroke: terminals snap to the live screen on input, and none
@@ -460,6 +463,7 @@ export class Input {
 		this.frameViews = new WeakMap();
 		this.pressView = null;
 		this.pressOffset = {left: 0, top: 0};
+		this.programPress = null;
 		this.mouseDownTarget = null;
 		this.popoverPressTarget = null;
 		this.selectionDragAnchor = null;
@@ -838,15 +842,20 @@ function deliverMouseReport(input: Input, {
 			? getClientPoint(input, x, y)
 			: getLevelClientPoint(input, found.levels.at(-1)!, x, y);
 
-	// A program that asked for the mouse hears it in its box's cells, and
-	// the wheel scrolls the program rather than the page.
-	if (
-		found !== null &&
-		sendMouseToProgram(found.levels.at(-1)!, x, y, code, isRelease, ticks) &&
-		(wheelDeltaY !== null || wheelDeltaX !== null)
-	) {
-		return;
-	}
+	// A program that asked for the mouse hears it in its box's cells, as
+	// its embed's default action, and the wheel scrolls the program rather
+	// than the page.
+	const sendToProgram = (pressed?: FramePointLevel): boolean => {
+		const level = pressed ?? found?.levels.at(-1);
+		return level !== undefined &&
+			sendMouseToProgram(
+				level,
+				x,
+				y,
+				{code, isRelease, ticks},
+				pressed === undefined ? "inside" : "anywhere",
+			);
+	};
 
 	if (wheelDeltaY !== null) {
 		const notCanceled = dispatchAsUserAgent(
@@ -866,7 +875,7 @@ function deliverMouseReport(input: Input, {
 				}),
 			),
 		);
-		if (!notCanceled) {
+		if (!notCanceled || sendToProgram()) {
 			return;
 		}
 		// A wheel up over the shell's rows above the page is for the
@@ -904,7 +913,7 @@ function deliverMouseReport(input: Input, {
 		);
 		// The document never scrolls sideways, so a notch no box takes
 		// goes nowhere.
-		const scroller = notCanceled
+		const scroller = notCanceled && !sendToProgram()
 			? getWheelScroller(input, hit, wheelDeltaX, "left")
 			: null;
 		if (scroller !== null) {
@@ -992,6 +1001,9 @@ function deliverMouseReport(input: Input, {
 		});
 		if (!input.mouseEventsSuppressed) {
 			dispatchMouseLike(input, "mouse", "mousemove", target, eventInit);
+			if (input.programPress !== null) {
+				sendToProgram(input.programPress);
+			}
 		}
 		dragTo(view, viewX, viewY, inView);
 		return;
@@ -1009,7 +1021,23 @@ function deliverMouseReport(input: Input, {
 		} else {
 			dispatchMouseLike(input, "pointer", "pointermove", target, eventInit);
 		}
-		dispatchPress(view, target, base, viewX, viewY, inView, eventInit, detail);
+		const pressed = dispatchPress(
+			view,
+			target,
+			base,
+			viewX,
+			viewY,
+			inView,
+			eventInit,
+			detail,
+		);
+		if (before === 0) {
+			input.programPress = pressed && sendToProgram()
+				? found!.levels.at(-1)!
+				: null;
+		} else if (pressed && input.programPress !== null) {
+			sendToProgram(input.programPress);
+		}
 		// The menu itself is the browser's, and a terminal has none to open.
 		if (button === 2) {
 			dispatchMouseLike(input, "pointer", "contextmenu", target, eventInit);
@@ -1025,39 +1053,50 @@ function deliverMouseReport(input: Input, {
 	} else {
 		dispatchMouseLike(input, "pointer", "pointermove", target, eventInit);
 	}
+	if (!input.mouseEventsSuppressed && input.programPress !== null) {
+		sendToProgram(input.programPress);
+	}
 	dispatchRelease(view, target, button, eventInit);
 	if (state.buttons === 0) {
 		input.mouseEventsSuppressed = false;
 		input.pressView = null;
+		input.programPress = null;
 	}
 }
 
 // The report for a program whose embed is under the point, at the cell of
-// its box the point is on. A wheel the program does not take scrolls its
-// history. False where no program there takes the mouse or the wheel.
+// its box the point is on. A point on the embed's border or padding is
+// the embed's own, unless a drag the program took has gone there. A wheel
+// the program does not take scrolls its history. False where no program
+// there takes the mouse or the wheel.
 function sendMouseToProgram(
 	level: FramePointLevel,
 	x: number,
 	y: number,
-	code: number,
-	isRelease: boolean,
-	ticks: number,
+	{code, isRelease, ticks}: {code: number; isRelease: boolean; ticks: number},
+	reach: "inside" | "anywhere",
 ): boolean {
 	const program = getRunningProgram(level.element);
-	const box = program === null
-		? null
-		: _(level.document).extra.layout.contentRect(level.element!);
+	const {layout, framebuffer} = _(level.document).extra;
+	const box = program === null ? null : layout.contentRect(level.element!);
 	if (program === null || box === null) {
 		return false;
 	}
-	const col = Math.min(
-		program.cols - 1,
-		Math.max(0, Math.floor(x - level.left - box.left)),
+	const left = Math.floor(x - level.left - box.left);
+	const top = Math.floor(
+		y -
+		level.top -
+		box.top -
+			(layout.isInFixedSpace(level.element!) ? framebuffer.scrollTop : 0),
 	);
-	const row = Math.min(
-		program.rows - 1,
-		Math.max(0, Math.floor(y - level.top - box.top)),
-	);
+	if (
+		reach === "inside" &&
+		(left < 0 || left >= program.cols || top < 0 || top >= program.rows)
+	) {
+		return false;
+	}
+	const col = Math.min(program.cols - 1, Math.max(0, left));
+	const row = Math.min(program.rows - 1, Math.max(0, top));
 	let taken = false;
 	for (let tick = 0; tick < ticks; tick++) {
 		taken = program.sendMouse(code, col, row, isRelease);
@@ -1477,7 +1516,7 @@ function dispatchPress(
 	isInDocument: boolean,
 	eventInit: object,
 	clicks: number,
-): void {
+): boolean {
 	input.mouseDownTarget = target;
 	input.rangeDrag = null;
 	input.selectionUnit = null;
@@ -1496,7 +1535,7 @@ function dispatchPress(
 	const notCanceled =
 		input.mouseEventsSuppressed || dispatchAsUserAgent(target, mousedown);
 	if (!notCanceled) {
-		return;
+		return false;
 	}
 	// Default action: focus the nearest focusable ancestor, or blur. A
 	// press in editable content focuses its editing host, unless what it
@@ -1529,7 +1568,7 @@ function dispatchPress(
 	if (base === 0 && isInDocument && moveRangeThumb(target, x, true)) {
 		input.rangeDrag = target;
 		requestRender(input.document);
-		return;
+		return true;
 	}
 
 	// Default action: a press in a text control places the caret and anchors a
@@ -1590,6 +1629,7 @@ function dispatchPress(
 			requestRender(input.document);
 		}
 	}
+	return true;
 }
 
 function getCommonInclusiveAncestor(a: Element, b: Element): Element | null {
