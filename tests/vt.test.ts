@@ -287,3 +287,13 @@ test("rows a resize pushes off the top go into history", () => {
 	expect(historyText(term)).toEqual(["a", "b"]);
 	expect(screen(term)).toEqual(["c", "d"]);
 });
+
+test("a resize on the alternate screen keeps the shell's last rows", () => {
+	const {term} = create(10, 4);
+	term.setHistoryLimit(10);
+	term.write("a\r\nb\r\nc\r\n$ \x1b[?1049hvim");
+	term.resize(10, 2);
+	term.write("\x1b[?1049l");
+	expect(historyText(term)).toEqual(["a", "b"]);
+	expect(screen(term)).toEqual(["c", "$"]);
+});
