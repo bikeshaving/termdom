@@ -2254,7 +2254,7 @@ exports[`email fixture: notes-digest-row.html 1`] = `
                  │                                                                │
                  │                                                                │
                  │                             ╭────────────╮                     │
-                 │            xxxxxxxxx xxx    │ You follow │                 xx  │
+                 │            xxxxxxxxx xxx    │ You follow │                xx   │
                  │                             ╰────────────╯                     │
                  │            xxxxxxxxxxx xxxxxxxx xxxx xxxxxxx xx xxxxxxx x xx   │
                  │            xxx xx xxxx x xxxxx xxxxxxxx xxxx xx xxxxxx xx      │

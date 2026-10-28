@@ -96,7 +96,9 @@ export function getNaturalRatio(
 	element: Element,
 	content: ReplacedContent = getReplacedContent(element),
 ): number {
-	if (content === null || content.kind === "text") {
+	if (
+		content === null || content.kind === "text" || element.localName === "embed"
+	) {
 		return NaN;
 	}
 	const {width, height} = content.kind === "blank" || content.kind === "grid"
