@@ -3,36 +3,28 @@ title: Images and canvas
 description: How <img> and <canvas> draw pixels in cells.
 ---
 
-A cell can show two pixels. The engine draws the lower half block,
-`▄`, in the foreground color, and the background color fills the
-upper half. `<img>` and `<canvas>` both draw pixels this way. The
-pixels are ordinary cells, so they scroll, clip and redraw like text.
-They also work over SSH and inside tmux.
+A cell shows two pixels: a lower half block, `▄`, in the foreground
+color over the background color. `<img>` and `<canvas>` draw this way,
+so their pixels are ordinary cells that scroll, clip, and work over SSH
+and in tmux.
 
-Most terminals draw block characters themselves, so each half block
-fills exactly half of the cell. Terminal.app draws them from the font
-instead. In Menlo and SF Mono the block glyphs sit low in the cell. The
-upper half block leaves a thin strip of the wrong color at the top of
-the cell and reaches past the middle. The background color fills any
-part of the cell the glyph does not cover. With the lower half block,
-the only visible flaw is that the line between the two pixels sits a
-little low.
+Terminal.app draws block characters from the font, and in Menlo and SF
+Mono they sit a little low, so the line between the two pixels is
+slightly off center.
 
-Two options control how pixels are drawn: `images` for `<img>`, and
-`canvas` for a canvas's `"2d"` context. Each takes one of three values:
+The `images` option controls `<img>`, and `canvas` controls the `"2d"`
+context:
 
-- `"auto"` is the default for both. It picks the best method the
-  terminal supports. Today that is always cells.
+- `"auto"` (default) uses the best method the terminal supports.
+  Currently that's always cells.
 - `"cells"` always draws cells.
 - `"none"` draws nothing. An `<img>` loads nothing and shows its `alt`
-  text, as a browser does with images turned off. `getContext("2d")`
-  returns `null`, so a canvas shows its fallback content. A
-  `"termdom-cellgrid"` context still draws cells, but its `drawImage()`
-  draws nothing.
+  text. `getContext("2d")` returns `null`, so a canvas shows its
+  fallback content. A `"termdom-cellgrid"` context still works, but its
+  `drawImage()` draws nothing.
 
-A page written for a browser often reads better with `"none"`. Half
-blocks blur logos and detailed pictures, and the alt text says what
-they show.
+Pages written for a browser often read better with `"none"`: half
+blocks blur logos and detail, and alt text says what they show.
 
 ```ts
 new TermDOM({images: "none", canvas: "none"});
@@ -44,17 +36,15 @@ new TermDOM({images: "none", canvas: "none"});
 <img src="cover.jpg" alt="Album cover">
 ```
 
-`src` is a URL with any scheme, such as `https:`, `data:` or `file:`.
-A path resolves against the document's URL, which the `url` option
-sets. A document at `about:blank` has no URL to resolve against, so a
-path there points to nothing. A program that shows local files should
-set `url` to a `file:` URL, such as the URL of its working directory.
+`src` takes any URL scheme, such as `https:`, `data:`, or `file:`.
+Relative URLs resolve against the document URL, set by the `url`
+option. At the default `about:blank` they resolve to nothing, so a
+program that shows local files should set `url` to a `file:` URL.
 
 ### Loading
 
-With no policy set, an image loads from wherever its `src` points, as
-it does in a browser. A program that shows markup it does not trust,
-such as email, limits what can load with the `csp` option:
+Without a policy, images load from anywhere. To restrict untrusted
+markup such as email, set `csp`:
 
 ```ts
 // Images from the web and data: URLs only.
@@ -64,44 +54,31 @@ new TermDOM({csp: "img-src https: data:"});
 new TermDOM({csp: "img-src cid: data:"});
 ```
 
-The option is a Content Security Policy, written in the same syntax as
-a `Content-Security-Policy` header. An `<img>` loads only what
-`img-src` allows. When the policy has no `img-src`, `default-src`
-decides. When the option is left out or set to `""`, there is no
-policy.
+The value is a `Content-Security-Policy` header. Images load only what
+`img-src` allows, or `default-src` if there's no `img-src`. Leaving it
+out or setting `""` means no policy.
 
-Source expressions match as CSP Level 3 defines them. They include
-`'none'`, `'self'`, `*`, a scheme such as `https:` or `cid:`, and a
-host such as `https://*.example.com:8443/img/`. `*` covers the network
-schemes and the document's own scheme. It does not cover `data:` or
-`cid:`. A host written without a scheme takes the document's scheme.
-For a document that is not served over the network, such as one at
-`about:blank` or a `file:` URL, it takes the network schemes instead.
+Sources match per CSP Level 3: `'none'`, `'self'`, `*`, schemes such as
+`https:` or `cid:`, and hosts such as `https://*.example.com:8443/img/`.
+`*` covers the network schemes and the document's own scheme, but not
+`data:` or `cid:`. A host without a scheme takes the document's scheme,
+or the network schemes for an `about:blank` or `file:` document.
 
-A page can add its own policy with a
-`<meta http-equiv="Content-Security-Policy">` tag in its head. This
-can only narrow the policy, never widen it, because a load must pass
-every policy. The tag's policy takes effect when the tag is inserted
-into the head, as in a browser. Removing the tag or changing its
-`content` later has no effect.
+A page's `<meta http-equiv="Content-Security-Policy">` adds a policy
+when it's inserted into the head. It can only narrow the option's
+policy, since a load must pass both. Removing or changing the tag later
+does nothing.
 
-When a policy blocks a load, the engine fires
-`securitypolicyviolation` at the element. The event is a
-`SecurityPolicyViolationEvent`. It bubbles to the document and names
-the URL, the directive and the policy. The image shows its `alt` text
-instead. If the program set no policy, the engine also reports the
-first blocked load once, in the place uncaught errors go: the
-transport's log, or the scrollback at exit.
+A blocked load fires a bubbling `securitypolicyviolation` event at the
+element, naming the URL, directive, and policy, and the image shows its
+`alt` text. If the program set no policy, the first blocked load is
+also reported once where uncaught errors go.
 
-When the policy allows a load, the engine first dispatches a `"fetch"`
-event on the TermDOM. The event is a `FetchEvent`, the same type a
-Service Worker receives. If no listener answers, the request goes to
-the network. A listener answers by calling `respondWith()`, which also
-stops the other listeners from running. Any of these fails the load:
-
-- answering with `Response.error()`
-- answering with a promise that rejects
-- calling `preventDefault()` without answering
+An allowed load first fires a `"fetch"` event, a `FetchEvent`, on the
+TermDOM. If no listener calls `respondWith()`, the request goes to the
+network. The first `respondWith()` stops the other listeners. The load
+fails if a listener responds with `Response.error()` or a rejected
+promise, or calls `preventDefault()` without responding.
 
 ```ts
 const term = new TermDOM({csp: "img-src cid: https:"});
@@ -113,258 +90,194 @@ term.addEventListener("fetch", (event) => {
 });
 ```
 
-The policy check comes before the listeners, as a page's policy
-applies before its Service Worker sees a request. A load that a
-listener answers must also pass the policy. To serve `cid:` URLs, a
-program needs both `img-src cid:` in its policy and a listener.
+The policy is checked before listeners run, so serving `cid:` URLs
+takes both `img-src cid:` and a listener.
 
-Other parts of the event:
-
-- `request.destination` says what the load is for (`"image"`).
+- `request.destination` is `"image"`.
 - `handled` settles once the load is answered.
-- `waitUntil()` makes `dispose()` wait for work a listener continues
-  after answering.
-- `dispose()` aborts loads that are still in flight. A listener sees
-  this on `request.signal`.
+- `waitUntil()` makes `dispose()` wait for a listener's remaining work.
+- `dispose()` aborts loads in flight, through `request.signal`.
 
-A load that is waiting for a listener's answer ends when the image's
-`src` changes or the TermDOM is disposed. This happens whether or not
-the answer ever arrives.
+A load waiting on a listener ends when the image's `src` changes or the
+TermDOM is disposed.
 
-A redirect can come from the network or from a listener's
-`Response.redirect()`. The engine checks each redirect against the
-policy again and follows it on the network. It does not offer the
-redirect to the listeners, as a browser follows a redirect
-without asking its Service Worker. A redirect may only go to an
-`http:` or `https:` URL, and the engine follows at most 20.
+Redirects, from the network or `Response.redirect()`, are rechecked
+against the policy and followed on the network without going back to
+the listeners. Only `http:` and `https:` targets are followed, at most
+20. A listener that responds with `fetch(event.request)` follows
+redirects itself, and the response is checked against its final URL.
+Violation reports always name the original URL.
 
-A listener that answers with `fetch(event.request)` follows redirects
-itself. The engine then checks the response against the policy using
-the URL where the redirects ended, as a browser does with a Service
-Worker's response. A violation report always names the URL the
-document asked for, never the URL it was redirected to.
+To block images selectively, such as remote images in quoted mail,
+edit the markup before inserting it.
 
-To decide image by image, such as blocking remote images only in
-quoted mail, change the markup before inserting it. A mail client
-cleans its markup the same way before showing it.
+Requests start after the script that set `src` finishes, so a listener
+added right after inserting markup still sees its images.
 
-The request waits until the script that set the source finishes. So a
-listener added right after the markup still sees that markup's images.
+Only a `file:` document can load `file:` URLs, whatever the policy
+says. Node's `fetch` can't read files; Bun's and Deno's can. To load
+local files on every runtime, answer those requests in a listener.
 
-Only a document whose own URL is a `file:` URL can load `file:` URLs.
-This holds no matter what the policy says. So untrusted markup in a
-page at `about:blank` or an `https:` URL cannot read local files.
-Node's `fetch` cannot read files, but Bun's and Deno's can. A program
-that wants local files to load on every runtime must answer those
-requests in its own listener.
+The page's `window.fetch` resolves relative URLs against the document
+and goes through the same steps: `connect-src` (or `default-src`), then
+the `"fetch"` listeners, then the network. A listener's own `fetch`
+calls go straight to the network.
 
-The page's own `window.fetch` resolves a relative URL against the
-document's URL, as a browser's does. Its requests take the same path
-as the markup's loads:
+Handler attributes such as `onerror="..."` run only with
+`scripting: "enabled"`, and then with full access to everything the
+program can reach. Under a policy, they run only if the first of
+`script-src-attr`, `script-src`, and `default-src` that the policy
+names allows `'unsafe-inline'` without a nonce or hash. Blocked handlers
+fire `securitypolicyviolation`. Leave scripting off for untrusted
+markup.
 
-1. The engine checks them against `connect-src`, or `default-src` when
-   the policy has no `connect-src`.
-2. The engine offers them to the `"fetch"` listeners.
-3. If no listener answers, the engine sends them to the network.
+### Formats
 
-A listener may call `fetch` itself, either while it answers or on the
-request it was given. That call goes straight to the network and does
-not come back to the listener, as with a Service Worker.
-
-An inline event handler, such as `onerror="..."` in the markup, runs
-only when the page is made with `scripting: "enabled"`. It then runs with
-full access to everything the program can reach, like the program's
-own code. Under a policy, a handler runs only if the policy allows
-`'unsafe-inline'` in the first of these directives that it names:
-`script-src-attr`, `script-src`, `default-src`. A nonce or hash in the
-same list cancels `'unsafe-inline'`. When a handler is blocked, the
-engine reports it with `securitypolicyviolation`. With scripting on
-and no policy, every handler runs. Leave scripting off for markup the
-program does not trust.
-
-The engine decodes PNG, JPEG, GIF and BMP:
-
-| Format | What decodes |
+| Format | Supported |
 | --- | --- |
-| PNG | Every color type and bit depth, palettes, `tRNS` transparency, Adam7 interlacing |
-| JPEG | Baseline and progressive, any chroma subsampling, restart markers, grayscale, CMYK and YCCK. The engine rotates the image by its Exif orientation, as browsers do by default |
-| GIF | The first frame, with its transparent color |
-| BMP | 1, 4, 8, 16, 24 and 32 bits, RLE4 and RLE8 |
+| PNG | All color types and bit depths, palettes, `tRNS` transparency, Adam7 interlacing |
+| JPEG | Baseline and progressive, any chroma subsampling, restart markers, grayscale, CMYK, YCCK. Rotated by Exif orientation |
+| GIF | The first frame, with transparency |
+| BMP | 1, 4, 8, 16, 24, and 32 bits, RLE4 and RLE8 |
 
-It does not decode WebP, AVIF or SVG. It also does not decode
-arithmetic-coded or lossless JPEGs.
+WebP, AVIF, SVG, and arithmetic-coded or lossless JPEG are not
+supported.
 
-`load` and `error` fire as they do in a browser. `decode()`,
-`complete`, `naturalWidth`, `naturalHeight` and `currentSrc` report on
-the image. `new Image()` creates an `<img>`. The engine reads `srcset`
-only for its `1x` candidate.
+`load`, `error`, `decode()`, `complete`, `naturalWidth`,
+`naturalHeight`, `currentSrc`, and `new Image()` work. Only the `1x`
+`srcset` candidate is used.
 
-An image that is not showing follows HTML's rendering rules:
+An image that isn't showing:
 
-- An image that failed to load, was blocked or has no `src` shows its
-  `alt` text inline, as plain text that wraps like any other text.
-- An image that is not showing, has a `src` and has no `alt` attribute
-  is an empty box with a border.
-- An image that has a size, from `width` and `height` or from CSS, is
-  a box of that size with a border and its `alt` text inside. The text
-  is cut off with an ellipsis when it does not fit. This applies while
-  the image is still loading, or in a quirks-mode document (one with no
-  `<!doctype html>`).
-- An empty `alt` marks an image as decoration only, and the image shows
-  nothing. An `<img>` with neither a `src` nor an `alt` also shows
-  nothing.
+- If it failed, was blocked, or has no `src`, its `alt` text shows
+  inline and wraps like other text.
+- If it has a `src` and no `alt` attribute, it's an empty bordered box.
+- If it has a size from attributes or CSS, and is loading or in a
+  quirks-mode document, it's a bordered box of that size with its `alt`
+  text inside, cut off with an ellipsis.
+- If `alt` is empty, or there's neither `src` nor `alt`, nothing shows.
 
 ### Size
 
-An image's natural size in cells is its size in pixels divided by the
-size of a cell. When the `cellSize` option is set, the engine uses
-that cell size. With the default unit cell, where one CSS pixel is one
-whole cell, the engine uses the terminal's real cell size instead. It
-asks the terminal for its cell size (XTWINOPS 16) and assumes 8 by 16
-pixels until the terminal answers. At 8 by 16, a 400 by 400 image is
-50 columns by 25 rows. It asks again when the terminal resizes, so a
-font zoom resizes images too. `term.measureCell()` reports the same
-measurement to a program, and a `"cellchange"` event announces a new
-one.
+An image's natural size in cells is its pixel size divided by the cell
+size. With `cellSize` set, that's the cell size used. With the default
+unit cell, TermDOM uses the terminal's real cell size (XTWINOPS 16),
+assuming 8 by 16 until it answers, so a 400 by 400 image is 50 columns
+by 25 rows. It asks again on resize, so zooming the font resizes
+images. `term.measureCell()` and the `"cellchange"` event expose the
+same measurement.
 
-`naturalWidth` and `naturalHeight` report this size in CSS pixels.
-Under the unit cell a CSS pixel is a cell, so this works the way a
-browser reports the size of a high-density image. For example, a 400
-by 200 file with 8 by 16 pixel cells reports 50 by 13. When the
-`cellSize` option is set, a CSS pixel is a pixel, and the natural size
-is the file's size.
+`naturalWidth` and `naturalHeight` are in CSS pixels. Under the unit
+cell that's cells, so a 400 by 200 image with 8 by 16 cells reports 50
+by 13. With `cellSize` set, they're the file's pixel size.
 
-`width` and `height`, as attributes or in CSS, are lengths like any
-other. They are in CSS pixels, which are cells under the unit cell.
-When only one of them is set, the other follows the image's aspect
-ratio. `max-width: 100%` keeps an image inside its container.
+`width` and `height`, as attributes or CSS, are CSS pixels. If only one
+is set, the other keeps the aspect ratio. `max-width: 100%` keeps an
+image inside its container.
 
-On a line of text, an image keeps its full height, and its top lines up
-with the top of the line.
+Inline, an image keeps its full height, aligned to the top of the line.
 
 ### Fitting
 
-`object-fit` and `object-position` place the image in its box when the
-box has a different shape. `fill` is the default. `contain`, `cover`,
-`none` and `scale-down` keep the image's aspect ratio. `image-rendering:
-pixelated` or `crisp-edges` makes the engine use the nearest pixel
-instead of averaging all the pixels a cell covers.
+`object-fit` and `object-position` place the image when its box is a
+different shape. `fill` is the default; `contain`, `cover`, `none`, and
+`scale-down` keep the aspect ratio. `image-rendering: pixelated` or
+`crisp-edges` samples the nearest pixel instead of averaging.
 
 ### Transparency
 
-A pixel that is at least half opaque is drawn. A pixel that is less
-than half opaque leaves the cell under it unchanged. On an element with
-a `background-color`, translucent pixels blend over that color instead.
+Pixels at least half opaque are drawn; others leave the cell as it
+was. On an element with a `background-color`, translucent pixels blend
+over it.
 
 ### Limits
 
-An image file states its size before its pixels, so a few bytes can
-ask for gigabytes of memory. Like a browser, the engine checks the
-stated size before it allocates memory. An image that goes past any of
-these limits fails to load:
+Images that exceed these limits fail to load:
 
-- A response can be at most 64 MB. The engine checks both the declared
-  length and the bytes as they arrive.
-- An image can be at most 32768 pixels on a side and 2^26 pixels in
-  total.
-- The engine inflates a PNG's data only as far as the image needs.
-- A JPEG can have at most four components and 500 scans.
+- Responses up to 64 MB, checked against the declared length and as
+  bytes arrive.
+- At most 32768 pixels a side and 2^26 pixels in total, checked before
+  allocating.
+- PNG data is inflated only as far as the image needs.
+- JPEGs up to four components and 500 scans.
 
-A decoded image keeps all its pixels, at four bytes each, for as long
-as it is loaded. So `createImageBitmap()` makes an exact copy. An image
-of more than 2^20 pixels also keeps a smaller copy of 2^20 pixels
-(4 MB), and the engine draws its cells from that copy.
+Decoded images keep every pixel, at four bytes each, while loaded, so
+`createImageBitmap()` is an exact copy. Images over 2^20 pixels also
+keep a 2^20-pixel (4 MB) copy to draw cells from.
 
-An image whose box would sample more than 2^26 pixels draws nothing. So
-does a 2D canvas past that size. Creating `ImageData` past that size
-throws a `RangeError`. A cell grid stops at 2^22 cells.
+An image or 2D canvas whose box would sample more than 2^26 pixels
+draws nothing, and creating `ImageData` that large throws `RangeError`.
+A cell grid is capped at 2^22 cells.
 
 ### Decoding
 
-The engine decodes images one at a time on the runtime's web `Worker`,
-so a large image does not stall the page. Bun and Deno have a web
-`Worker`. Node has one from version 26.9, behind a flag. To decode off
-the page's thread in Node, run `node --experimental-web-worker` or set
-`NODE_OPTIONS=--experimental-web-worker`.
+Images decode one at a time on a web `Worker`, so large images don't
+stall the page. Bun and Deno have one. Node 26.9 and later have one
+behind `--experimental-web-worker`, which you can pass to `node` or set
+in `NODE_OPTIONS`.
 
-Without a `Worker`, and in a CommonJS build, images decode on the
-page's thread in 16 ms slices. Input and frames keep running between
-slices. If a decode takes more than 10 seconds, the engine stops it and
-that image fails to load. The images queued behind it still decode.
-The worker ships in the package, and TermDOM starts it on its own.
+Without a `Worker`, or in a CommonJS build, images decode on the main
+thread in 16 ms slices, with input and frames running between them. A
+decode that takes over 10 seconds is stopped and the image fails.
 
-The worker exits one second after its last decode, or when the last
-TermDOM is disposed. It never keeps a finished program running.
+The worker ships with the package and starts on its own. It exits one
+second after its last decode, or when the last TermDOM is disposed, and
+never keeps a finished program running.
 
-On a Node without the flag, a program can supply a `Worker` itself.
-TermDOM uses any global `Worker` it finds, so the
+On Node without the flag, any global `Worker` is used, such as the
 [`@b9g/node-webworker`](https://www.npmjs.com/package/@b9g/node-webworker)
-shim provides one on Node 18 or later:
+shim for Node 18 and later:
 
 ```ts
 import {Worker} from "@b9g/node-webworker";
 globalThis.Worker ??= Worker;
 ```
 
-If Node already has its own `Worker`, the `??=` leaves it in place.
-
-When an image gets a new `src`, the engine cancels the request for the
-old one. If the old image's decode is still waiting its turn, the
-engine drops it.
+Changing an image's `src` cancels the old request, and its decode if it
+hasn't started.
 
 ## `<canvas>`
 
-A canvas is laid out at `width` by `height` CSS pixels, as HTML sizes
-it, no matter which context it uses. Under the default unit cell a CSS
-pixel is a cell, so `<canvas width="40" height="10">` is 40 columns by
-10 rows. When the `cellSize` option is set, the attributes are in
-pixels, and the canvas covers the cells its pixels fill. CSS sizes a
-canvas like any other element.
+A canvas is `width` by `height` CSS pixels. Under the unit cell,
+`<canvas width="40" height="10">` is 40 columns by 10 rows. With
+`cellSize` set, the attributes are pixels. CSS can size it like any
+element.
 
-Without the attributes, a canvas is 300 by 150 pixels, the HTML
-default. Under the unit cell, `width` and `height` default to 38 and 9
-instead. Those are the cells that 300 by 150 pixels fill at 8 by 16
-pixels per cell, so a canvas with no size set comes out about as large
-as it would in a browser.
+Without attributes, a canvas is HTML's default 300 by 150 pixels, which
+under the unit cell becomes 38 by 9 cells, the cells 300 by 150 pixels
+fill at 8 by 16.
 
-`getContext()` accepts two context types.
+`getContext()` takes `"2d"` and `"termdom-cellgrid"`.
 
 ### `"2d"`
 
-The 2D context draws pixels into a bitmap of `width` by `height`
-pixels, scaled to fit the canvas's box. A cell shows two pixels, one
-above the other. So a bitmap twice as tall as its box in cells shows
-every pixel. The context supports:
+The 2D context draws into a `width` by `height` bitmap, scaled to the
+canvas's box at two pixels per cell, one above the other. A bitmap
+twice as tall as the box in cells shows every pixel. It supports:
 
 - rectangles, paths (lines, arcs, ellipses, Bézier curves, `arcTo`,
-  `roundRect`), `Path2D` with SVG path data, filling with the `nonzero`
-  and `evenodd` rules, stroking with widths, caps, joins and dashes,
-  and `clip()`
-- transforms, `save()` and `restore()`
-- colors, `createLinearGradient()`, `createRadialGradient()`,
-  `createConicGradient()` and `createPattern()`
-- `globalAlpha`, and the Porter-Duff `globalCompositeOperation` values
-  plus `lighter`
-- `drawImage()` from an `<img>`, another `<canvas>` or an
-  `ImageBitmap`, scaled and cropped. `drawImage(image, x, y)` draws an
-  image at its natural size, the way Safari draws a high-density image.
-  Source rectangles and `createImageBitmap()` use the file's real
-  pixels, as in every browser, so `createImageBitmap(image)` is a
-  full-resolution copy.
-- `getImageData()`, `putImageData()` and `createImageData()`
+  `roundRect`), `Path2D` with SVG path data, `nonzero` and `evenodd`
+  fills, strokes with widths, caps, joins, and dashes, and `clip()`
+- transforms, `save()`, and `restore()`
+- colors, linear, radial, and conic gradients, and patterns
+- `globalAlpha`, the Porter-Duff `globalCompositeOperation` values, and
+  `lighter`
+- `drawImage()` from an `<img>`, `<canvas>`, or `ImageBitmap`, scaled
+  and cropped. `drawImage(image, x, y)` draws at natural size; source
+  rectangles use the file's real pixels.
+- `getImageData()`, `putImageData()`, and `createImageData()`
 - `toDataURL()` and `toBlob()`, as PNG
 - `isPointInPath()` and `isPointInStroke()`
 
-A terminal has no fonts for the engine to rasterize. So `fillText()`
-and `strokeText()` draw text as cells on top of the pixels, starting at
-the cell that contains the text's anchor point. They apply
-`textAlign`, `textBaseline` and `direction`. Painting pixels over the
-anchor point paints over the text. `measureText()` counts each column
-of text as one cell's width in pixels. Shadows and `filter` keep their
-values, but draw nothing.
+There are no fonts to rasterize, so `fillText()` and `strokeText()`
+draw text as cells over the pixels, from the cell holding the anchor
+point, honoring `textAlign`, `textBaseline`, and `direction`. Pixels
+drawn over the anchor cover the text. `measureText()` counts each
+column as one cell's width in pixels. Shadows and `filter` draw
+nothing.
 
-The sample below draws 60 by 40 pixels into 60 columns by 20 rows. Each
-pixel is half a cell tall, so the circle comes out round:
+This draws 60 by 40 pixels into 60 columns by 20 rows, so the circle is
+round:
 
 ```ts
 const canvas = document.createElement("canvas");
@@ -382,30 +295,22 @@ ctx.fill();
 document.body.append(canvas);
 ```
 
-Drawing repaints the canvas on the next frame. The program does not
-need to change the DOM.
+Drawing shows on the next frame.
 
 ### `"termdom-cellgrid"`
 
-The cell grid context is experimental. It belongs to TermDOM alone,
-has no standard to follow, and may change in a minor release. Its name
-carries TermDOM's prefix, the same way browsers once prefixed their own
-context types (`"moz-webgl"`, `"webkit-3d"`).
+Experimental and specific to TermDOM. It may change in a minor release.
 
-The cell grid context draws cells instead of pixels. It has as many
-cells as the canvas's box holds, and `cols` and `rows` report that
-count. Under the unit cell that is `width` by `height`. In any mode,
-CSS sets the size exactly: `width: 40ch; height: 10ch` holds 40 by 10
-cells.
+This context draws cells instead of pixels. `cols` and `rows` are how
+many cells the canvas's box holds: `width` by `height` under the unit
+cell, or exactly what CSS sets, so `width: 40ch; height: 10ch` holds 40
+by 10.
 
-When the box changes size, the cells that still fit keep what was drawn
-in them, and the new cells start empty. A terminal treats its screen
-the same way when its window is resized. A `ResizeObserver` on the
-canvas tells a script when to draw again.
+When the box resizes, cells that still fit keep their contents and new
+cells start empty. Use a `ResizeObserver` to know when to redraw.
 
-The context's interface is not on `window`. The `@b9g/termdom` package
-exports its type as `CanvasCellGridContext`. Importing the package
-tells TypeScript that `getContext("termdom-cellgrid")` returns one.
+The `@b9g/termdom` package exports the type `CanvasCellGridContext`,
+and importing it types `getContext("termdom-cellgrid")`.
 
 ```ts
 const canvas = document.createElement("canvas");
@@ -423,49 +328,42 @@ grid.strokeRect(0, 0, 20, 3);
 document.body.append(canvas);
 ```
 
-Every method takes coordinates in cells and rounds fractional values
-to the nearest cell.
-
-Lines are drawn with box-drawing characters. Where two lines meet, they
-join in a corner, a tee or a cross, the same way borders do. Lines on
-a canvas join each other, but they do not join the page's borders
-around the canvas.
+Coordinates are cells, rounded to the nearest. Lines use box-drawing
+characters and join each other into corners, tees, and crosses, but not
+the page's borders.
 
 | Member | What it does |
 | --- | --- |
-| `cols`, `rows` | The number of columns and rows the canvas's box holds |
-| `fillStyle` | A CSS color. Reading it back gives the same form a 2D context gives. The default, `CanvasText`, is the terminal's own text color, and `Canvas` is its background color. `currentcolor` is the canvas element's `color`, when that is set. A translucent fill blends over the cell. Text less than half opaque draws nothing |
-| `strokeStyle` | The color of lines, set the same way as `fillStyle` |
-| `lineStyle` | A CSS `border-style`: `solid` (the default), `double`, `dashed`, `dotted`, `none` and the rest |
-| `lineJoin` | `miter` (the default); `round`, which rounds the corners of `strokeRect()`; or `bevel`, which draws the same as `miter` |
-| `font` | A CSS `font` shorthand, as a 2D context takes it, such as `"bold 1px monospace"`. The weight and style make text bold, dim or italic. A cell has no size or font family to change. A value the shorthand rejects is ignored |
-| `textAlign` | `start` (the default), `end`, `left`, `right` or `center` |
-| `direction` | `inherit` (the default), which uses the canvas element's CSS `direction`, or `ltr` or `rtl`. Right-to-left text is drawn in display order. The direction also decides which side is `start` and which is `end` |
-| `textDecoration` | `none`, or `underline` and `line-through`, alone or together |
-| `save()`, `restore()` | Push and pop the settings above, as in a 2D context |
-| `fillText(text, x, y, maxWidth?)` | Writes characters in the fill color, on top of the cells' backgrounds. A wide character takes two columns. Text past `maxWidth` columns is cut off. A `maxWidth` of zero or less, or `NaN`, draws nothing |
-| `fillRect(x, y, w, h)` | Sets the background of cells to the fill color. A `CanvasText` fill draws the cells in inverse video |
+| `cols`, `rows` | Columns and rows the box holds |
+| `fillStyle` | A CSS color. Defaults to `CanvasText`, the terminal's text color; `Canvas` is its background; `currentcolor` is the element's `color`. Translucent fills blend; text under half opacity draws nothing |
+| `strokeStyle` | Line color, like `fillStyle` |
+| `lineStyle` | A `border-style`: `solid` (default), `double`, `dashed`, `dotted`, `none`, and so on |
+| `lineJoin` | `miter` (default), `round` for rounded `strokeRect()` corners, or `bevel`, drawn as `miter` |
+| `font` | A CSS `font` shorthand such as `"bold 1px monospace"`. Weight and style give bold, dim, or italic; size and family do nothing. Invalid values are ignored |
+| `textAlign` | `start` (default), `end`, `left`, `right`, or `center` |
+| `direction` | `inherit` (default, the element's CSS `direction`), `ltr`, or `rtl`. Sets which side is `start` |
+| `textDecoration` | `none`, `underline`, `line-through`, or both |
+| `save()`, `restore()` | Push and pop the settings above |
+| `fillText(text, x, y, maxWidth?)` | Writes text in the fill color over the cells' backgrounds. Wide characters take two columns. Text past `maxWidth` columns is cut; a `maxWidth` of zero or less, or `NaN`, draws nothing |
+| `fillRect(x, y, w, h)` | Sets cell backgrounds to the fill color. A `CanvasText` fill draws inverse video |
 | `clearRect(x, y, w, h)` | Empties cells |
-| `strokeLine(x1, y1, x2, y2)` | Draws a line from one cell to another, including both ends, along a row or a column. A diagonal line draws nothing |
-| `strokeRect(x, y, w, h)` | Draws a box around the `w` by `h` cells starting at (x, y) |
-| `drawImage(image, ...)` | Draws an image's pixels, two to a cell. Without a size, the image takes its natural size in cells |
-| `getCell(x, y)` | Returns the cell's `char`, `color` and `background`, and whether it is `bold`, `italic`, `dim`, `underline`, `strikethrough` or `inverse`. Returns `null` for an empty cell |
-| `measureText(text)` | Returns the text's width in columns |
-| `reset()` | Clears the grid, the settings and the saved settings |
-| `isContextLost()` | Always returns `false` |
+| `strokeLine(x1, y1, x2, y2)` | A line between two cells, inclusive, along a row or column. Diagonals draw nothing |
+| `strokeRect(x, y, w, h)` | A box around `w` by `h` cells at (x, y) |
+| `drawImage(image, ...)` | An image's pixels, two per cell, at natural size unless sized |
+| `getCell(x, y)` | The cell's `char`, `color`, `background`, and `bold`, `italic`, `dim`, `underline`, `strikethrough`, `inverse`, or `null` if empty |
+| `measureText(text)` | Width in columns |
+| `reset()` | Clears the grid and settings |
+| `isContextLost()` | Always `false` |
 
-## Text alone
+## Pixels as text
 
-A program can also write pixels as plain text. Use a lower half block
-in a span whose `color` is the lower pixel and whose
-`background-color` is the upper pixel.
+You can also write pixels as text: a lower half block in a span whose
+`color` is the lower pixel and `background-color` the upper.
 
 ```html
 <pre><span style="color: #61afef; background-color: #e06c75">▄▄▄</span>
 <span style="color: #e5c07b; background-color: #98c379">▄▄▄</span></pre>
 ```
 
-This stays aligned through scrolling, clipping and repaints, like any
-text. But every run of one color pair needs its own element. An
-`<img>` or a `<canvas>` is a single element no matter how many pixels
-it has.
+Each run of one color pair needs its own element, while an `<img>` or
+`<canvas>` is one element however many pixels it has.

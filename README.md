@@ -4,10 +4,9 @@
 
 ![Klondike solitaire rendered by TermDOM](./docs/solitaire.gif)
 
-TermDOM is a JavaScript/TypeScript library that renders HTML and CSS to the
-terminal. It draws actual DOM nodes to terminal output and redraws the screen
-when they are mutated, so TUIs and interactive CLIs can be written with
-vanilla JavaScript, or any frontend web framework or library.
+TermDOM renders HTML and CSS in the terminal. It draws a real DOM and
+redraws when it changes, so you can write terminal apps with plain
+JavaScript or any frontend framework.
 
 ```sh
 npm install @b9g/termdom
@@ -19,7 +18,6 @@ import {TermDOM} from "@b9g/termdom";
 const term = new TermDOM();
 term.attach();
 
-// The document is a real DOM document.
 const {document} = term;
 document.body.innerHTML = `
   <style>
@@ -38,7 +36,6 @@ document.body.innerHTML = `
   </div>
 `;
 
-// TermDOM observes mutations and re-renders automatically.
 let n = 0;
 setInterval(() => {
   n = (n + 1) % 101;
@@ -51,97 +48,81 @@ setInterval(() => {
 
 ## Features
 
-- **Stylesheets** CSS from `<style>` elements and `style` attributes cascades
-  and inherits as in the browser, translated to ANSI color and decoration.
-- **Layout** The CSS box model, flexbox, grid, and table layout, computed in whole
-  terminal cells, with margins, borders, and padding.
-- **Text** CJK, emoji, and combining characters take correct widths; Hebrew
-  and Arabic render in visual order with contextual shaping.
-- **DOM utilities** `document.querySelector()`, `MutationObserver`,
-  `ResizeObserver`, and `getBoundingClientRect()` work and report
-  cell-based layout.
-- **Events** Keyboard, mouse, focus, and paste events fire on elements, the
-  document, and the window, decoded from stdin.
-- **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, radios, and
-  sliders have terminal-native looks, restylable with CSS; Tab and
-  `:focus` work.
-- **Scrolling** Documents and `overflow` boxes taller than the terminal
-  scroll with the wheel, the arrow and page keys, `window.scrollTo()` and
-  `element.scrollIntoView()`.
-- **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`,
-  `:host`, and scoped styles; the built-in controls are shadow trees.
-- **Selection** Drag to select, styled with `::selection`; the caret moves
-  by grapheme, and text fields bind the readline chords (Ctrl+A/E/K/U/W).
-- **Fullscreen** `Element.requestFullscreen()` renders to the alternate
-  screen; exiting restores the shell and its scrollback.
-- **Images and canvas** `<img>` decodes PNG, JPEG, GIF and BMP on the
-  runtime's web `Worker` where there is one, and `<canvas>` has a 2D
-  context and a `"termdom-cellgrid"` context; pixels are drawn two to a
-  cell with half blocks. The `images` and `canvas` options turn either
-  off, the `csp` option narrows what markup may load, as
-  `new TermDOM({csp: "img-src https: data:"})`, and a `"fetch"` listener
-  can answer each load, as a Service Worker does.
+- **Stylesheets**: the cascade and inheritance, drawn as ANSI colors
+  and attributes.
+- **Layout**: the box model, flexbox, grid, and tables, in whole cells.
+- **Text**: correct widths for CJK, emoji, and combining characters;
+  Hebrew and Arabic in visual order with shaping.
+- **DOM**: `querySelector()`, `MutationObserver`, `ResizeObserver`, and
+  `getBoundingClientRect()`, measured in cells.
+- **Events**: keyboard, mouse, focus, and paste, decoded from stdin.
+- **Forms**: inputs, textareas, selects, checkboxes, radios, and
+  sliders, styleable with CSS.
+- **Scrolling**: documents and `overflow` boxes, by wheel, keys, or
+  `scrollTo()`.
+- **Web Components**: custom elements, shadow DOM, `<slot>`, and
+  scoped styles.
+- **Selection**: drag to select, `::selection`, and readline keys in
+  text fields.
+- **Fullscreen**: `requestFullscreen()` uses the alternate screen and
+  restores the shell on exit.
+- **Images and canvas**: PNG, JPEG, GIF, and BMP, and 2D and cell-grid
+  canvases, drawn two pixels per cell. A `csp` option and `"fetch"`
+  listener control what loads.
 
 ## How it works
 
-TermDOM implements the browser's rendering pipeline against a grid of character
-cells instead of pixels. The cell is the unit basis for CSS lengths: by
-default `1px` and `1ch` both mean one cell. On each frame the engine recomputes style and layout for
-whatever mutated, paints the result into a cell buffer, diffs it against the
-previous frame, and writes the difference to stdout as ANSI escape sequences.
-Escape sequences from stdin are decoded into keyboard, mouse, and paste events
-and dispatched to DOM nodes.
+TermDOM runs the browser's rendering pipeline on a grid of character
+cells. By default `1px` and `1ch` are both one cell. Each frame, it
+recomputes style and layout for what changed, paints into a cell
+buffer, and writes the difference from the last frame as ANSI escape
+sequences. Input from stdin becomes DOM events.
 
 ## Examples
 
-- [`markdown.ts`](./examples/markdown.ts) — a Markdown viewer that pages
-  when the document is taller than the terminal.
-- [`chat.ts`](./examples/chat.ts) — a streaming LLM chat client powered by
-  [ch.at](https://ch.at), with a transcript and composer.
-- [`todomvc.ts`](./examples/todomvc.ts) — the official TodoMVC with its
-  component logic unmodified; only the stylesheet was swapped.
+- [`markdown.ts`](./examples/markdown.ts) — a paging Markdown viewer.
+- [`chat.ts`](./examples/chat.ts) — a streaming LLM chat client using
+  [ch.at](https://ch.at).
+- [`todomvc.ts`](./examples/todomvc.ts) — the official TodoMVC, with
+  only the stylesheet changed.
 - [`fuzzy-finder.ts`](./examples/fuzzy-finder.ts) — a file picker that
   prints the selection to stdout.
-- [`weather.ts`](./examples/weather.ts) — an emoji forecast from
-  Open-Meteo, with a city search and flexbox day cards.
-- [`popover.ts`](./examples/popover.ts) — a menu bar where every menu is
-  a declarative popover; open, dismiss and stacking are the platform's.
-- [`codemirror.ts`](./examples/codemirror.ts) — CodeMirror editing a file on a
-  `contenteditable` host, with line numbers and syntax colors.
-- [`solitaire.ts`](./examples/solitaire.ts) — the Klondike solitaire above,
-  with seeded deals playable by keyboard or mouse.
-- [`hello-{react,vue,svelte,crank}.ts`](./examples) — one greeting and
-  keypress counter apiece, each driving that framework's stock renderer.
-- [`ssh.ts`](./examples/ssh.ts) — an SSH server where every session gets a
-  document of its own, rendered over the session's channel.
-- [`shell.ts`](./examples/shell.ts) — `ls`, `cat`, `less`, `cd` and `pwd`
-  over the filesystem, which on termdom.org is this repository.
-- [`images.ts`](./examples/images.ts) — an `<img>` at its natural size and
-  under each `object-fit`; pass a path or URL to show your own image.
-- [`canvas.ts`](./examples/canvas.ts) — an animated 2D canvas beside
-  Conway's Life on a `"termdom-cellgrid"` canvas.
+- [`weather.ts`](./examples/weather.ts) — a forecast from Open-Meteo,
+  with city search.
+- [`popover.ts`](./examples/popover.ts) — a menu bar built from
+  `popover` attributes.
+- [`codemirror.ts`](./examples/codemirror.ts) — CodeMirror editing a
+  file, with line numbers and syntax highlighting.
+- [`solitaire.ts`](./examples/solitaire.ts) — the solitaire above,
+  played by keyboard or mouse.
+- [`hello-{react,vue,svelte,crank}.ts`](./examples) — a key-press
+  counter in each framework, using its standard renderer.
+- [`ssh.ts`](./examples/ssh.ts) — an SSH server that gives each session
+  its own document.
+- [`shell.ts`](./examples/shell.ts) — `ls`, `cat`, `less`, `cd`, and
+  `pwd`. On termdom.org, it browses this repository.
+- [`images.ts`](./examples/images.ts) — an image under each
+  `object-fit`. Pass a path or URL to show your own.
+- [`canvas.ts`](./examples/canvas.ts) — an animated 2D canvas and
+  Conway's Life on a cell-grid canvas.
 
-More runnable examples can be found in [`examples/`](./examples). Most of
-them also run in the browser at
-[termdom.org/examples](https://termdom.org/examples/), from the same
-files.
+More are in [`examples/`](./examples), and most also run in the
+browser at [termdom.org/examples](https://termdom.org/examples/).
 
 ## Runtimes
 
-TermDOM runs on Node, Bun and Deno. The library has no native components and
-can be used to create binaries with tools like `bun build --compile`.
+Node, Bun, and Deno. There are no native dependencies, so
+`bun build --compile` works.
 
 ## Compatibility
 
-[COMPATIBILITY.md](./COMPATIBILITY.md) is generated by probing each feature
-against the engine.
+[COMPATIBILITY.md](./COMPATIBILITY.md) lists supported features,
+generated by testing each one.
 
 ## Name
 
-Not to be confused with [DomTerm](https://domterm.org) by Per Bothner, a
-terminal emulator built out of DOM elements. The two projects are each other's
-inverse: DomTerm puts a terminal in the DOM; TermDOM puts the DOM in a
-terminal.
+Not to be confused with [DomTerm](https://domterm.org) by Per Bothner,
+which puts a terminal in the DOM. TermDOM puts the DOM in a terminal.
 
 ## License
 

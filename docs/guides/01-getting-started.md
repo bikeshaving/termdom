@@ -9,7 +9,7 @@ description: Install TermDOM and render a document.
 npm install @b9g/termdom
 ```
 
-TermDOM runs on Node, Bun, and Deno. It has no native or WASM
+TermDOM runs on Node, Bun, and Deno, with no native or WASM
 dependencies.
 
 ## Usage
@@ -31,27 +31,21 @@ document.body.appendChild(box);
 ```
 
 `attach()` puts the terminal in raw mode and starts rendering. There is
-no render call. The engine observes DOM mutations and paints them on
-the next frame, so any change to the document shows up on the screen.
+no render call: changes to the document appear on the next frame.
 
-The engine draws the document below the shell prompt, where a
-command's output goes. The document stays live there until
-the program ends. After that, it stays in the scrollback like any
-other output. This is called flow mode. The
-[rendering guide](/guides/rendering/) describes flow mode, fullscreen
-mode, and static output.
+The document is drawn below the shell prompt and stays live until the
+program ends, then stays in the scrollback. The
+[rendering guide](/guides/rendering/) covers this, fullscreen, and
+static output.
 
-For static output, do not call `attach()`. Instead,
-`term.renderANSI(html)` returns an ANSI string, and `term.print(html)`
-writes that string to stdout.
+For static output, skip `attach()`. `term.renderANSI(html)` returns an
+ANSI string, and `term.print(html)` writes it to stdout.
 
 ## Units
 
-A terminal is a grid of character cells. By default, `1px` and `1ch`
-are both one cell. So `width: 12ch` is twelve columns, and
-`height: 3px` is three rows. The engine rounds lengths that fall
-between cells to whole cells. The `cellSize` option sets how many CSS
-pixels one cell is.
+By default, `1px` and `1ch` are both one cell, so `width: 12ch` is
+twelve columns and `height: 3px` is three rows. Lengths round to whole
+cells. The `cellSize` option changes how many CSS pixels a cell is.
 
 ## Stylesheets
 
@@ -71,14 +65,14 @@ style.textContent = `
 document.head.appendChild(style);
 ```
 
-Selectors, specificity, inheritance, `@media` queries, and custom
-properties work the same way they do in a browser.
+Selectors, specificity, inheritance, `@media`, and custom properties
+all work.
 
 ## Quitting
 
-`window.close()` ends the session. It leaves the final frame in the
-terminal's scrollback, restores the terminal's modes, and exits the
-process. By default, Ctrl-C does the same.
+`window.close()` ends the session. It leaves the last frame in the
+scrollback, restores the terminal, and exits the process. Ctrl-C does
+the same by default.
 
 ```ts
 document.addEventListener("keydown", (ev) => {
@@ -88,25 +82,15 @@ document.addEventListener("keydown", (ev) => {
 
 ## Frameworks
 
-A framework renders into `term.document` the same way it renders into
-a browser document. Most frameworks also read DOM globals such as
+Frameworks render into `term.document`. Most also read globals such as
 `document`, `window`, and `Element`. `installGlobals(term)` copies the
-properties of the TermDOM window onto `globalThis`, replacing the
-runtime's own globals of the same name. It returns a function that
-restores the originals. It leaves a few runtime globals in place; the
+TermDOM window's properties onto `globalThis` and returns a function
+that restores the originals. A few runtime globals are left alone; the
 API guide lists them.
 
-Frameworks read the environment once, when their modules load. For
-example:
-
-- React decides at load time which events a text field fires.
-- Vue takes `document` at load time.
-- CodeMirror reads `navigator` at load time to choose between Cmd and
-  Ctrl.
-
-Static imports load before any code in the importing module runs. So
-install the globals first, and then import the framework with a
-dynamic `import()`:
+Frameworks read these globals when their modules load, and static
+imports load before your code runs. Install the globals first, then
+import the framework with `import()`:
 
 ```ts
 import {installGlobals, TermDOM} from "@b9g/termdom";
@@ -117,10 +101,9 @@ const {createRoot} = await import("react-dom/client");
 createRoot(term.document.body).render(<App />);
 ```
 
-If the program imports the framework before installing the globals,
-two things go wrong. React misses edits that do not come from a key
-press, such as a paste. CodeMirror on a Mac binds Cmd, which a
-terminal cannot send.
+Imported too early, React misses edits that don't come from a key
+press, such as a paste, and CodeMirror on a Mac binds Cmd, which a
+terminal can't send.
 
 Vue:
 
@@ -131,8 +114,8 @@ createApp(App).mount(term.document.body);
 ```
 
 Svelte components must be compiled first, with `svelte/compiler` and
-`generate: "client"`, or with a bundler plugin. The Svelte client
-runtime resolves under the `browser` export condition:
+`generate: "client"` or a bundler plugin. Run with the `browser` export
+condition:
 
 ```sh
 node --conditions=browser app.js
@@ -146,7 +129,7 @@ installGlobals(term);
 mount(App, {target: term.document.body});
 ```
 
-Crank does not need the globals:
+Crank doesn't need the globals:
 
 ```ts
 import {renderer} from "@b9g/crank/dom";
@@ -155,20 +138,19 @@ renderer.render(<App />, term.document.body);
 ```
 
 The [hello examples](https://github.com/bikeshaving/termdom/tree/main/examples)
-show each framework running.
+run each framework.
 [`examples/todomvc.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/todomvc.ts)
 is a full program.
 
 ## Next
 
 - [Rendering](/guides/rendering/): flow mode, fullscreen, static
-  output, and what the engine asks the terminal.
+  output, and what TermDOM asks the terminal.
 - [Layout](/guides/layout/): the box model, flexbox, grid, tables, and
   MathML.
-- [Styling](/guides/styling/): how each CSS property maps to the
-  terminal.
+- [Styling](/guides/styling/): how CSS maps to the terminal.
 - [Events and input](/guides/events-and-input/): keyboard, mouse,
   focus, and form controls.
-- [Images and canvas](/guides/images-and-canvas/): how `<img>` and
-  `<canvas>` draw pixels in cells.
-- [API](/guides/api/): the full surface.
+- [Images and canvas](/guides/images-and-canvas/): `<img>` and
+  `<canvas>`.
+- [API](/guides/api/): everything else.
