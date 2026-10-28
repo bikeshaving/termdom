@@ -397,6 +397,7 @@ export class PtySession {
 	disposed: boolean;
 	// How many lines of history the view is scrolled back.
 	scrolled: number;
+	focused: boolean;
 
 	constructor(
 		command: string,
@@ -414,6 +415,7 @@ export class PtySession {
 		this.drawn = -1;
 		this.disposed = false;
 		this.scrolled = 0;
+		this.focused = false;
 		this.terminal = new Terminal(this.cols, this.rows, (data) =>
 			this.write(data),
 		);
@@ -619,6 +621,10 @@ export class PtySession {
 
 	/** Tells the program its box gained or lost focus, if it asked. */
 	sendFocus(focused: boolean): void {
+		if (focused === this.focused) {
+			return;
+		}
+		this.focused = focused;
 		if (this.terminal.focusReporting && !this.exited) {
 			this.write(focused ? "\x1b[I" : "\x1b[O");
 		}

@@ -16992,7 +16992,17 @@ export function focusTakesInterrupt(document: globalThis.Document): boolean {
 	return getRunningProgram(getKeyTarget(document)) !== null;
 }
 
+// Focus on a frame is focus on whatever is focused inside it.
 function reportProgramFocus(element: Element | null, focused: boolean): void {
+	for (
+		let inner = getDrawnFrameDocument(element);
+		inner !== null;
+		inner = getDrawnFrameDocument(element)
+	) {
+		element =
+			getFocusedElement(inner as unknown as globalThis.Document) as Element |
+			null;
+	}
 	getRunningProgram(element)?.sendFocus(focused);
 }
 
