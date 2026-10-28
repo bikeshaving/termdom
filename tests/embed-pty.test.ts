@@ -445,6 +445,23 @@ test("a program that asks hears when its embed gains and loses focus", async () 
 	await dom.dispose();
 });
 
+test("an embed focused in a frame hears focus leave and return with the frame", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, document} = await mount(
+		`<iframe style="width: 20px; height: 4px; border: 0" srcdoc="<embed type='application/x-pty' src='sh' width='12' height='2'>"></iframe><button>b</button>`,
+		spawn,
+	);
+	await settle(dom);
+	children[0].options.onData("\x1b[?1004h");
+	await settle(dom);
+	const frame = document.querySelector("iframe")!;
+	frame.contentDocument!.querySelector("embed")!.focus();
+	document.querySelector("button")!.focus();
+	frame.focus();
+	expect(children[0].written).toEqual(["\x1b[I", "\x1b[O", "\x1b[I"]);
+	await dom.dispose();
+});
+
 test("an embed in the starting markup starts once the page is attached", async () => {
 	const {spawn, children} = fakeSpawner();
 	replaceSpawner(spawn);
