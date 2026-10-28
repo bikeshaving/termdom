@@ -82,6 +82,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		}
 	};
 	const loader = getDocumentLoader(window);
+	const unloaded = new AbortController();
 	attachDocument(document, {
 		layout,
 		cascade,
@@ -96,7 +97,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 			: (request, context) => loader(document, request, context),
 		// A frame's handler attributes stay inert.
 		allowsInlineHandler: () => false,
-		loadSignal: parentSlots.loadSignal,
+		loadSignal: AbortSignal.any([parentSlots.loadSignal, unloaded.signal]),
 		render: () => {
 			stale = true;
 			if (fitting) {
@@ -130,6 +131,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		dispose() {
 			stale = false;
 			disposed = true;
+			unloaded.abort();
 			dispose(cascade);
 			layout.dispose();
 		},

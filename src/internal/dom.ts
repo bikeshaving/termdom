@@ -143,6 +143,7 @@ import {
 	UNIT_CELL,
 } from "./units.ts";
 import {
+	bindToRealm,
 	createDocumentIn,
 	declareNodeClasses,
 	forgetClasses,
@@ -17050,7 +17051,11 @@ function startProgram(embed: HTMLEmbedElement): void {
 	const fire = (type: string, build = (): Event => new Event(type)) =>
 		setTimeout(() => {
 			if (!run.aborted) {
-				embed.dispatchEvent(constructInternal(build));
+				embed.dispatchEvent(
+					runInRealm(getDocumentRealm(embed.ownerDocument), () =>
+						constructInternal(build),
+					),
+				);
 			}
 		}, 0);
 	const attachedSlots = _(attached);
@@ -17092,8 +17097,9 @@ function startProgram(embed: HTMLEmbedElement): void {
 	slots.extra.program = program;
 	// As a Native Client module's embed did, the embed takes messages for
 	// its program while it runs one.
-	Object.defineProperty(embed, "postMessage", {
-		value(message: unknown): void {
+	const realm = getDocumentRealm(embed.ownerDocument);
+	const postMessage = {
+		postMessage(message: unknown): void {
 			if (arguments.length < 1) {
 				throw new TypeError("postMessage needs a message");
 			}
@@ -17102,6 +17108,9 @@ function startProgram(embed: HTMLEmbedElement): void {
 			}
 			program.receive(message);
 		},
+	}.postMessage;
+	Object.defineProperty(embed, "postMessage", {
+		value: realm === null ? postMessage : bindToRealm(realm, postMessage),
 		configurable: true,
 		writable: true,
 	});

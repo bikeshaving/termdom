@@ -717,7 +717,7 @@ export function runInRealm<T>(realm: Realm | null, run: () => T): T {
 // Function.prototype, that runs `value` with the realm active. Called on
 // nothing, or on the object node:vm stands in for the global with, it is
 // called on the realm's global, as Web IDL calls a global's members.
-function bindToRealm<T extends (...args: never[]) => unknown>(
+export function bindToRealm<T extends (...args: never[]) => unknown>(
 	realm: Realm,
 	value: T,
 ): T {
