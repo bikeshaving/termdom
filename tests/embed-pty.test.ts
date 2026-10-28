@@ -93,6 +93,19 @@ async function settle(dom: TermDOM): Promise<void> {
 	await nextFrame(dom);
 }
 
+test("an embed disposed with its page before its error is due fires none", async () => {
+	replaceSpawner(null);
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport, pty: "none"});
+	const heard: string[] = [];
+	dom.document.addEventListener("error", () => heard.push("error"), true);
+	dom.document.body.innerHTML =
+		`<embed type="application/x-pty" src="top" width="10" height="3">`;
+	await dom.dispose();
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(heard).toEqual([]);
+});
+
 test("without the pty option, an embed runs nothing and fires error", async () => {
 	const {dom, document, heard} = await mount(
 		`<embed type="application/x-pty" src="top" width="10" height="3">`,

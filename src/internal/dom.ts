@@ -17058,9 +17058,10 @@ function startProgram(embed: HTMLEmbedElement): void {
 	}
 	const slots = _(embed);
 	const run = (slots.extra.programRun = new AbortController()).signal;
+	const attachedSlots = _(attached);
 	const fire = (type: string, build = (): Event => new Event(type)) =>
 		setTimeout(() => {
-			if (!run.aborted) {
+			if (!run.aborted && !attachedSlots.extra.loadSignal.aborted) {
 				embed.dispatchEvent(
 					runInRealm(getDocumentRealm(embed.ownerDocument), () =>
 						constructInternal(build),
@@ -17068,7 +17069,6 @@ function startProgram(embed: HTMLEmbedElement): void {
 				);
 			}
 		}, 0);
-	const attachedSlots = _(attached);
 	const spawn = attachedSlots.extra.pty;
 	if (spawn === null || attachedSlots.extra.loadSignal.aborted) {
 		fire("error");
