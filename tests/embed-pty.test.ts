@@ -409,6 +409,7 @@ test("a program that asks for the mouse hears it in its box, wheel included", as
 	const embed = document.querySelector("embed")!;
 	const top = Math.round(embed.getBoundingClientRect().top);
 	await send(terminal, `\x1b[<0;6;${top + 2}M`);
+	await send(terminal, `\x1b[<0;6;${top + 2}m`);
 	expect(children[0].written).toEqual([]);
 	expect(document.activeElement).toBe(embed);
 	children[0].options.onData("\x1b[?1000h\x1b[?1006h");
@@ -426,6 +427,77 @@ test("a program that asks for the mouse hears it in its box, wheel included", as
 	await settle(dom);
 	await send(terminal, `\x1b[<0;6;${top + 2}M`);
 	expect(children[0].written.at(-1)).toBe("\x1b[M\x20\x22\x22");
+	await dom.dispose();
+});
+
+test("a page that cancels the press or the wheel keeps it from the program", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="3" style="display: block">`,
+		spawn,
+	);
+	const embed = document.querySelector("embed")!;
+	const top = Math.round(embed.getBoundingClientRect().top);
+	children[0].options.onData("\x1b[?1000h\x1b[?1006h");
+	await settle(dom);
+	const cancel = (event: Event) => event.preventDefault();
+	embed.addEventListener("mousedown", cancel);
+	embed.addEventListener("wheel", cancel);
+	await send(terminal, `\x1b[<0;2;${top + 1}M`);
+	await send(terminal, `\x1b[<0;2;${top + 1}m`);
+	await send(terminal, `\x1b[<65;2;${top + 1}M`);
+	expect(children[0].written).toEqual([]);
+	embed.removeEventListener("mousedown", cancel);
+	embed.removeEventListener("wheel", cancel);
+	await send(terminal, `\x1b[<0;2;${top + 1}M`);
+	await send(terminal, `\x1b[<0;2;${top + 1}m`);
+	expect(children[0].written).toEqual(["\x1b[<0;2;1M", "\x1b[<0;2;1m"]);
+	await dom.dispose();
+});
+
+test("a fixed embed hears the row it shows, and its padding is its own", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal} = await mount(
+		`<div style="height: 40px">tall</div>` +
+			`<embed type="application/x-pty" src="sh" width="10" height="3" style="position: fixed; top: 2px; left: 0; padding: 0 1px">`,
+		spawn,
+	);
+	children[0].options.onData("\x1b[?1000h\x1b[?1006h");
+	dom.window.scrollTo(0, 10);
+	await settle(dom);
+	expect(dom.window.scrollY).toBeGreaterThan(0);
+	await send(terminal, "\x1b[<0;1;3M");
+	await send(terminal, "\x1b[<0;1;3m");
+	expect(children[0].written).toEqual([]);
+	await send(terminal, "\x1b[<0;3;4M");
+	await send(terminal, "\x1b[<0;3;4m");
+	expect(children[0].written).toEqual(["\x1b[<0;2;2M", "\x1b[<0;2;2m"]);
+	await dom.dispose();
+});
+
+test("a drag the program took stays its own, and one from elsewhere never reaches it", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="3" style="display: block"><div style="height: 3px">below</div>`,
+		spawn,
+	);
+	const top = Math.round(
+		document.querySelector("embed")!.getBoundingClientRect().top,
+	);
+	children[0].options.onData("\x1b[?1002h\x1b[?1006h");
+	await settle(dom);
+	await send(terminal, `\x1b[<0;2;${top + 5}M`);
+	await send(terminal, `\x1b[<32;3;${top + 2}M`);
+	await send(terminal, `\x1b[<0;3;${top + 2}m`);
+	expect(children[0].written).toEqual([]);
+	await send(terminal, `\x1b[<0;2;${top + 2}M`);
+	await send(terminal, `\x1b[<32;3;${top + 5}M`);
+	await send(terminal, `\x1b[<0;3;${top + 5}m`);
+	expect(children[0].written).toEqual([
+		"\x1b[<0;2;2M",
+		"\x1b[<32;3;3M",
+		"\x1b[<0;3;3m",
+	]);
 	await dom.dispose();
 });
 
