@@ -398,14 +398,10 @@ export class PtySession {
 	// How many lines of history the view is scrolled back.
 	scrolled: number;
 	focused: boolean;
+	// What was sent before the program started, written once it has.
+	pending: string[] | null;
 
-	constructor(
-		command: string,
-		spawn: PtySpawner,
-		cols: number,
-		rows: number,
-		listeners: PtySessionListeners,
-	) {
+	constructor(cols: number, rows: number, listeners: PtySessionListeners) {
 		this.cols = Math.max(1, cols);
 		this.rows = Math.max(1, rows);
 		this.version = 0;
@@ -416,9 +412,31 @@ export class PtySession {
 		this.disposed = false;
 		this.scrolled = 0;
 		this.focused = false;
+		this.pending = [];
+		this.process = null;
 		this.terminal = new Terminal(this.cols, this.rows, (data) =>
 			this.write(data),
 		);
+	}
+
+	/** Where the program's cursor is, or null while it is hidden or gone. */
+	get caret(): Caret | null {
+		const terminal = this.terminal;
+		const row = terminal.y + this.scrolled;
+		if (this.exited || !terminal.cursorVisible || row >= this.rows) {
+			return null;
+		}
+		return {
+			col: Math.min(terminal.x, this.cols - 1),
+			row,
+			shape: terminal.cursorShape,
+			color: null,
+		};
+	}
+
+	/** Runs `command` at the session's size. */
+	start(command: string, spawn: PtySpawner): void {
+		const listeners = this.listeners;
 		this.process = spawn(command, {
 			cols: this.cols,
 			rows: this.rows,
@@ -456,25 +474,19 @@ export class PtySession {
 				listeners.exit(code);
 			},
 		});
-	}
-
-	/** Where the program's cursor is, or null while it is hidden or gone. */
-	get caret(): Caret | null {
-		const terminal = this.terminal;
-		const row = terminal.y + this.scrolled;
-		if (this.exited || !terminal.cursorVisible || row >= this.rows) {
-			return null;
+		const pending = this.pending!;
+		this.pending = null;
+		for (const data of pending) {
+			this.process.write(data);
 		}
-		return {
-			col: Math.min(terminal.x, this.cols - 1),
-			row,
-			shape: terminal.cursorShape,
-			color: null,
-		};
 	}
 
 	write(data: string): void {
-		this.process?.write(data);
+		if (this.pending !== null) {
+			this.pending.push(data);
+		} else {
+			this.process?.write(data);
+		}
 	}
 
 	/** Sends what the user typed, returning the view to the bottom. */

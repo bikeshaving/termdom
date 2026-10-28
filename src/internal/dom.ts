@@ -17083,33 +17083,24 @@ function startProgram(embed: HTMLEmbedElement): void {
 	}
 	const {width, height} = getProgramNaturalSize(embed);
 	const cell = getCellSize(embed as unknown as Node);
-	let program: PtySession;
-	try {
-		program = new PtySession(
-			command,
-			spawn,
-			Math.round(width / cell.width),
-			Math.round(height / cell.height),
-			{
-				change: () => invalidateReplaced(embed, false),
-				exit: (code) => {
-					invalidateReplaced(embed, false);
-					fire("close", () =>
-						new CloseEvent("close", {wasClean: code !== null, code: code ?? 0}),
-					);
-				},
-				titlechange: (title) =>
-					fire("titlechange", () =>
-						new CustomEvent("titlechange", {detail: title}),
-					),
-				bell: () => fire("bell"),
+	const program = new PtySession(
+		Math.round(width / cell.width),
+		Math.round(height / cell.height),
+		{
+			change: () => invalidateReplaced(embed, false),
+			exit: (code) => {
+				invalidateReplaced(embed, false);
+				fire("close", () =>
+					new CloseEvent("close", {wasClean: code !== null, code: code ?? 0}),
+				);
 			},
-		);
-	} catch (error) {
-		attachedSlots.extra.reportUncaught(error);
-		fire("error");
-		return;
-	}
+			titlechange: (title) =>
+				fire("titlechange", () =>
+					new CustomEvent("titlechange", {detail: title}),
+				),
+			bell: () => fire("bell"),
+		},
+	);
 	program.setScrollback(getScrollbackLimit(embed));
 	slots.extra.program = program;
 	let top = _(embed).document;
@@ -17159,7 +17150,43 @@ function startProgram(embed: HTMLEmbedElement): void {
 		{once: true, signal: run},
 	);
 	invalidateReplaced(embed, true);
-	fire("load");
+	// The program starts at the size its box was laid out at, so what it
+	// prints first is not drawn for another.
+	setTimeout(() => {
+		if (run.aborted || attachedSlots.extra.loadSignal.aborted) {
+			return;
+		}
+		flushLayout(embed as unknown as Node);
+		const rect = attachedSlots.extra.layout.getRect(embed);
+		if (rect) {
+			const box = cssom.getBoxModel(embed);
+			program.resize(
+				Math.round(
+					rect.width -
+					box.borderLeftWidth -
+					box.paddingLeft -
+					box.borderRightWidth -
+						box.paddingRight,
+				),
+				Math.round(
+					rect.height -
+					box.borderTopWidth -
+					box.paddingTop -
+					box.borderBottomWidth -
+						box.paddingBottom,
+				),
+			);
+		}
+		try {
+			program.start(command, spawn);
+		} catch (error) {
+			attachedSlots.extra.reportUncaught(error);
+			stopProgram(embed);
+			fire("error");
+			return;
+		}
+		fire("load");
+	}, 0);
 }
 
 interface HTMLFieldSetElementExtra extends NodeExtra {
