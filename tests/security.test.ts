@@ -116,33 +116,34 @@ test("a title never carries its own escape sequences to the terminal", async () 
 	dom.dispose();
 });
 
-test("a <script> in rendered HTML is inert, and a handler attribute is the app's", async () => {
+test("a <script> set with innerHTML is inert, and a handler attribute runs in the page's window", async () => {
 	const t = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({
 		transport: t.transport,
 		colorDepth: "rgb",
 		scripting: "enabled",
 	});
-	const flags = globalThis as unknown as {
+	const host = globalThis as unknown as {__termdomHandler?: boolean};
+	const page = dom.window as unknown as {
 		__termdomScript?: boolean;
 		__termdomHandler?: boolean;
 	};
-	flags.__termdomScript = false;
-	flags.__termdomHandler = false;
-	// A parsed script never runs: the engine loads nothing. With scripting
-	// on, a handler attribute runs when its event fires, as in a browser.
+	// innerHTML's scripts never run. With scripting on, a handler attribute
+	// runs when its event fires, with the page's window as its global, not
+	// the program's.
 	dom.document.body.innerHTML =
 		"<script>globalThis.__termdomScript = true;</script>" +
 		"<div onclick=\"globalThis.__termdomHandler = this.tagName === 'DIV' && event.type === 'click';\">text</div>";
 	await nextFrame(dom);
-	expect(flags.__termdomScript).toBe(false);
-	expect(flags.__termdomHandler).toBe(false);
+	expect(page.__termdomScript).toBe(undefined);
+	expect(page.__termdomHandler).toBe(undefined);
 	dom.document
 		.querySelector("div")
 		?.dispatchEvent(new dom.window.MouseEvent("click", {bubbles: true}));
 	await nextFrame(dom);
-	expect(flags.__termdomScript).toBe(false);
-	expect(flags.__termdomHandler).toBe(true);
+	expect(page.__termdomScript).toBe(undefined);
+	expect(page.__termdomHandler).toBe(true);
+	expect(host.__termdomHandler).toBe(undefined);
 	dom.dispose();
 });
 
@@ -262,8 +263,7 @@ test("a handler compiles once its node is adopted into the live document", async
 		colorDepth: "rgb",
 		scripting: "enabled",
 	});
-	const flags = globalThis as unknown as InertFlags;
-	flags.__termdomInert = false;
+	const page = dom.window as unknown as InertFlags;
 
 	// Built in an inert document, the handler does not compile...
 	const built = dom.document.implementation.createHTMLDocument("x");
@@ -272,14 +272,14 @@ test("a handler compiles once its node is adopted into the live document", async
 	const div = built.querySelector("div")!;
 	expect(div.onclick).toBe(null);
 
-	// ...but adopting it into the live, scripted document makes it the app's
-	// own markup again, exactly as in a browser.
+	// ...but adopting it into the live, scripted document makes it the
+	// page's own markup again, exactly as in a browser.
 	dom.document.body.append(dom.document.adoptNode(div));
 	const adopted = div as unknown as {onclick: unknown};
 	expect(typeof adopted.onclick).toBe("function");
 	div.dispatchEvent(new dom.window.MouseEvent("click", {bubbles: true}));
 	await nextFrame(dom);
-	expect(flags.__termdomInert).toBe(true);
+	expect(page.__termdomInert).toBe(true);
 	dom.dispose();
 });
 

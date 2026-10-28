@@ -532,23 +532,20 @@ test("window.fetch is held to connect-src, and a listener's own fetch goes to th
 });
 
 test("an inline handler runs only where the policy allows 'unsafe-inline', and a block is reported", () => {
-	const global = globalThis as Record<string, unknown>;
-	try {
-		for (const [csp, runs, blocked] of [
-			[undefined, true, false],
-			["default-src 'none'", false, false],
-			["script-src 'self'", false, true],
-			["script-src 'unsafe-inline'", true, false],
-			["script-src 'unsafe-inline' 'nonce-abc'", false, true],
-			["script-src 'none'; script-src-attr 'unsafe-inline'", true, false],
-		] as const) {
-			const dom = create(
-				csp === undefined
-					? {scripting: "enabled"}
-					: {csp, scripting: "enabled"},
-			);
-			let ran = 0;
-			global.__inlineHandlerRan = () => ran++;
+	for (const [csp, runs, blocked] of [
+		[undefined, true, false],
+		["default-src 'none'", false, false],
+		["script-src 'self'", false, true],
+		["script-src 'unsafe-inline'", true, false],
+		["script-src 'unsafe-inline' 'nonce-abc'", false, true],
+		["script-src 'none'; script-src-attr 'unsafe-inline'", true, false],
+	] as const) {
+		const dom = create(
+			csp === undefined ? {scripting: "enabled"} : {csp, scripting: "enabled"},
+		);
+		let ran = 0;
+			(dom.window as unknown as Record<string, unknown>).__inlineHandlerRan =
+				() => ran++;
 			const reported: string[] = [];
 			dom.document.addEventListener("securitypolicyviolation", (event) => {
 				reported.push(
@@ -563,9 +560,6 @@ test("an inline handler runs only where the policy allows 'unsafe-inline', and a
 			expect(ran).toBe(runs ? 2 : 0);
 			expect(reported).toEqual(blocked ? ["script-src-attr"] : []);
 			dom.dispose();
-		}
-	} finally {
-		delete global.__inlineHandlerRan;
 	}
 });
 

@@ -66,7 +66,7 @@ import {
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
 import {PTYSession, type PTYSpawner} from "./pty.ts";
-import {rehomeClone} from "./realms.ts";
+import {compileInWindow, rehomeClone, runInWindow} from "./realms.ts";
 import type {ResourceLoader} from "./resources.ts";
 import {
 	_,
@@ -2214,6 +2214,108 @@ export function createFetchEvent(
 
 /** The answer a listener gave a fetch event, or null for none. */
 export function getFetchResponse(event: FetchEvent): Promise<Response> | null {
+	return _(event).response;
+}
+
+/** A script a document offers its TermDOM, as a "script" event says it. */
+export interface ScriptRequest {
+	kind: "classic" | "module";
+	element: globalThis.HTMLScriptElement;
+	document: globalThis.Document;
+	source: string | null;
+	url: string | null;
+	base: string;
+	importMaps: readonly string[];
+}
+
+export interface ScriptEventInit extends EventInit, ScriptRequest {}
+
+export interface ScriptEventSlots extends EventSlots {
+	init: ScriptEventInit;
+	response: Promise<void> | null;
+}
+
+export interface ScriptEvent {
+	readonly [internals]: ScriptEventSlots;
+}
+
+/**
+ * A script a document is about to run, dispatched at the TermDOM and
+ * never in the page. A listener runs it another way with respondWith(),
+ * which stops the other listeners. Without an answer, TermDOM runs it
+ * itself.
+ */
+export class ScriptEvent extends Event {
+	constructor(type: string, init: ScriptEventInit) {
+		super(type, init);
+		const slots = _(this);
+		slots.init = {...init, importMaps: Object.freeze([...init.importMaps])};
+		slots.response = null;
+	}
+
+	get kind(): "classic" | "module" {
+		return _(this).init.kind;
+	}
+
+	get element(): globalThis.HTMLScriptElement {
+		return _(this).init.element;
+	}
+
+	get document(): globalThis.Document {
+		return _(this).init.document;
+	}
+
+	// A classic script's text, or a module's when it is inline.
+	get source(): string | null {
+		return _(this).init.source;
+	}
+
+	// A classic script's URL, the document's for one inline, or a module's
+	// resolved src, null for one inline.
+	get url(): string | null {
+		return _(this).init.url;
+	}
+
+	get base(): string {
+		return _(this).init.base;
+	}
+
+	// The import maps that count, as their JSON, in order.
+	get importMaps(): readonly string[] {
+		return _(this).init.importMaps;
+	}
+
+	/**
+	 * Run the script another way, during the event. For a classic script
+	 * the promise settles when it has run, and rejects with what it threw.
+	 * For a module it settles when evaluation finishes, and a rejection
+	 * fails the element.
+	 */
+	respondWith(result: PromiseLike<void>): void {
+		if (this.eventPhase === Event.NONE) {
+			throw domError(
+				"InvalidStateError",
+				"respondWith() is only called while the event is dispatched",
+			);
+		}
+		const slots = _(this);
+		if (slots.response !== null) {
+			throw domError("InvalidStateError", "The script was already answered");
+		}
+		this.stopImmediatePropagation();
+		slots.response = Promise.resolve(result).then(() => {});
+	}
+}
+
+/** A "script" event for `request`, made outside any page's realm. */
+export function createScriptEvent(request: ScriptRequest): ScriptEvent {
+	return runInRealm(null, () =>
+		constructInternal(() => new ScriptEvent("script", request)),
+	);
+}
+
+/** The answer a listener gave a script event, or null for none. */
+export function getScriptResponse(event: ScriptEvent): Promise<void> | null {
 	return _(event).response;
 }
 
@@ -5245,8 +5347,25 @@ function compileEventHandler(
 		setEventHandler(target, type, null);
 		return null;
 	}
+	// Run in the window's context, where node:vm makes one, with the
+	// element, its form and its document in scope, as HTML has it.
+	const element = value.element;
+	const view = _(document).extra.defaultView;
+	const form = getFormOwner(element);
+	const scopes = [
+		document,
+		...(form === null ? [] : [form]),
+		element,
+	] as unknown as object[];
 	try {
-		record.value = new Function("event", value.source) as EventHandlerValue;
+		// Parsed here first: Bun's node:vm reports bad syntax as a plain
+		// Error, where a page expects a SyntaxError.
+		const parsed = new Function("event", value.source);
+		record.value = ((
+			view === null || getDocumentRealm(document) !== null
+				? null
+				: compileInWindow(view, value.source, scopes, `on${type}`)
+		) ?? parsed) as EventHandlerValue;
 	} catch (error) {
 		reportError(error, _(value.element).document);
 		setEventHandler(target, type, null);
@@ -6192,10 +6311,13 @@ export function reportError(
 ): void {
 	const view = document === null ? null : _(document).extra.defaultView;
 	if (view !== null && !reportingWindows.has(view)) {
+		// An error a page's script throws is its realm's, which instanceof
+		// does not know.
+		const isError = Object.prototype.toString.call(error) === "[object Error]";
 		const event = constructInternal(() =>
 			new ErrorEvent("error", {
 				cancelable: true,
-				message: error instanceof Error ? error.message : String(error),
+				message: isError ? String((error as Error).message) : String(error),
 				error,
 			}),
 		);
@@ -6300,12 +6422,27 @@ function registerDocumentWide(
 // of walking the tree again. A document-wide collection is reached through
 // the document of the change's point, because a tree under construction
 // outside the document can still contain its members.
+// The scripts of each document whose scripts run, below.
+const documentScripts = new WeakMap<Document, DocumentScripts>();
+
+// Scripts connected by the insertion running now. They start once it is
+// done, as HTML's post-connection steps do.
+const insertedScripts: HTMLScriptElement[] = [];
+
 function runChildrenChangedSteps(
 	point: Node,
 	changed: readonly Node[] | null,
 	added: boolean,
 ): void {
 	const pointSlots = _(point);
+	if (
+		added &&
+		pointSlots.connected &&
+		documentScripts.has(pointSlots.document) &&
+		implementsInterface(point, HTMLScriptElement)
+	) {
+		startInsertedScript(point as HTMLScriptElement);
+	}
 	if (heldListDocuments.has(pointSlots.document)) {
 		for (let nodeSlots: Slots<Node> | null = getSlots(point);
 			nodeSlots !== null;
@@ -7415,6 +7552,9 @@ function insertNode(
 	runChildrenChangedSteps(parent, nodes, true);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(parent, nodes, [], previousSibling, child);
+	}
+	if (insertedScripts.length > 0) {
+		startInsertedScripts();
 	}
 }
 
@@ -22324,8 +22464,23 @@ class HTMLQuoteElement extends HTMLElement {
 	declare cite: globalThis.HTMLQuoteElement["cite"];
 }
 
-// The element is the one the spec defines and its text is the text it
-// holds. Executing it is the step this DOM does not have.
+interface HTMLScriptElementExtra extends NodeExtra {
+	// HTML's "already started": the script was prepared once and never is
+	// again, or came from markup set with innerHTML, which never runs.
+	alreadyStarted: boolean;
+	// HTML's "force async": a script a page makes runs when it is fetched,
+	// unless the page set async, even to false.
+	forceAsync: boolean;
+}
+
+interface HTMLScriptElementSlots extends HTMLElementSlots {
+	extra: HTMLScriptElementExtra;
+}
+
+interface HTMLScriptElement {
+	readonly [internals]: HTMLScriptElementSlots;
+}
+
 class HTMLScriptElement extends HTMLElement {
 	declare referrerPolicy: globalThis.HTMLScriptElement["referrerPolicy"];
 	declare src: globalThis.HTMLScriptElement["src"];
@@ -22339,6 +22494,13 @@ class HTMLScriptElement extends HTMLElement {
 	declare defer: globalThis.HTMLScriptElement["defer"];
 	declare event: globalThis.HTMLScriptElement["event"];
 	declare noModule: globalThis.HTMLScriptElement["noModule"];
+	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
+		super(...args);
+		const slots = _(this);
+		slots.extra.alreadyStarted = false;
+		slots.extra.forceAsync = true;
+	}
+
 	get text(): string {
 		return getChildText(this);
 	}
@@ -22349,16 +22511,616 @@ class HTMLScriptElement extends HTMLElement {
 
 	/** Async is the one boolean whose IDL attribute a parser can force. */
 	get async(): boolean {
-		return hasAttributeByName(this, "async");
+		return _(this).extra.forceAsync || hasAttributeByName(this, "async");
 	}
 
 	set async(value: boolean) {
+		_(this).extra.forceAsync = false;
 		toggleAttributeByName(this, "async", Boolean(value));
 	}
 
 	static supports(type: string): boolean {
 		const named = String(type);
 		return named === "classic" || named === "module" || named === "importmap";
+	}
+
+	override _insertionSteps(this: Slots<HTMLScriptElement>): void {
+		superStep(HTMLScriptElement, "_insertionSteps").call(this);
+		if (this.connected) {
+			insertedScripts.push(getOwner(this));
+		}
+	}
+
+	override _attributeChangeSteps(
+		this: Slots<HTMLScriptElement>,
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		superStep(HTMLScriptElement, "_attributeChangeSteps").call(
+			this,
+			localName,
+			oldValue,
+			value,
+			namespace,
+		);
+		if (namespace !== null) {
+			return;
+		}
+		if (localName === "async" && value !== null) {
+			this.extra.forceAsync = false;
+		} else if (localName === "src" && value !== null && this.connected) {
+			startInsertedScript(getOwner(this));
+		}
+	}
+}
+
+declareExtraSlots(HTMLScriptElement);
+
+// ---------------------------------------------------------------------------
+// Scripts. TermDOM decides when a <script> runs: its order, the
+// document's readyState and currentScript, and the events the page sees.
+// A "script" event at the TermDOM lets a program run it another way.
+// Without an answer, a classic script runs in the window's own context
+// through node:vm.
+
+type ScriptKind = "classic" | "module";
+
+interface ScriptRun {
+	element: HTMLScriptElement;
+	kind: ScriptKind;
+	// From a src: fires load once it has run.
+	external: boolean;
+	url: string | null;
+	// A classic script's text, fetched or inline; a module's inline text.
+	source: Promise<string> | string | null;
+}
+
+interface DocumentScripts {
+	readyState: globalThis.DocumentReadyState;
+	// Whether the scripts the markup held have started. One the page
+	// inserts before then waits for them.
+	started: boolean;
+	early: HTMLScriptElement[];
+	// Scripts run one at a time, a listener's answer included, so only
+	// one sees itself as currentScript.
+	queue: Promise<void>;
+	running: number;
+	// The tail of the scripts a page inserted with async false, which run
+	// in the order they were inserted.
+	ordered: Promise<void>;
+	// Scripts the load event waits for.
+	waiting: number;
+	parsed: boolean;
+	importMaps: string[];
+	moduleStarted: boolean;
+	currentScript: HTMLScriptElement | null;
+}
+
+const JAVASCRIPT_TYPES = new Set([
+	"application/ecmascript",
+	"application/javascript",
+	"application/x-ecmascript",
+	"application/x-javascript",
+	"text/ecmascript",
+	"text/javascript",
+	"text/javascript1.0",
+	"text/javascript1.1",
+	"text/javascript1.2",
+	"text/javascript1.3",
+	"text/javascript1.4",
+	"text/javascript1.5",
+	"text/jscript",
+	"text/livescript",
+	"text/x-ecmascript",
+	"text/x-javascript",
+]);
+
+// HTML's script type, from the type attribute or the old language one.
+function getScriptType(
+	element: HTMLScriptElement,
+): ScriptKind | "importmap" | null {
+	const type = getAttributeValue(element, "type");
+	const language = getAttributeValue(element, "language");
+	let essence: string;
+	if (type === null) {
+		if (language === null || language === "") {
+			return "classic";
+		}
+		essence = `text/${language}`;
+	} else if (type === "") {
+		return "classic";
+	} else {
+		essence = trimASCIIWhitespace(type);
+	}
+	essence = toASCIILowercase(essence);
+	if (JAVASCRIPT_TYPES.has(essence)) {
+		return "classic";
+	}
+	if (essence === "module" || essence === "importmap") {
+		return essence;
+	}
+	return null;
+}
+
+/** The document's readyState, while its scripts run. */
+export function getDocumentReadyState(
+	document: Document,
+): globalThis.DocumentReadyState {
+	return documentScripts.get(document)?.readyState ?? "complete";
+}
+
+export function getCurrentScript(document: Document): HTMLScriptElement | null {
+	return documentScripts.get(document)?.currentScript ?? null;
+}
+
+// The scripts of a document an engine draws with scripting on. They
+// start in a task after the one that attached it, so a program can add
+// its "script" listener after constructing the TermDOM.
+function scheduleDocumentScripts(document: Document): void {
+	if (
+		documentScripts.has(document) ||
+		!isScriptedDocument(document as unknown as globalThis.Document)
+	) {
+		return;
+	}
+	const scripts: DocumentScripts = {
+		readyState: "loading",
+		started: false,
+		early: [],
+		queue: Promise.resolve(),
+		running: 0,
+		ordered: Promise.resolve(),
+		waiting: 0,
+		parsed: false,
+		importMaps: [],
+		moduleStarted: false,
+		currentScript: null,
+	};
+	documentScripts.set(document, scripts);
+	setTimeout(() => {
+		void runDocumentScripts(document, scripts);
+	}, 0);
+}
+
+function isDocumentLive(document: Document): boolean {
+	const attached = getAttachedDocument(document as unknown as Node);
+	return attached !== undefined && !_(attached).extra.loadSignal.aborted;
+}
+
+function fireDocumentEvent(
+	target: EventTarget,
+	type: string,
+	init?: EventInit,
+): void {
+	dispatch(target, constructInternal(() => new Event(type, init)));
+}
+
+function setReadyState(
+	document: Document,
+	scripts: DocumentScripts,
+	state: globalThis.DocumentReadyState,
+): void {
+	scripts.readyState = state;
+	fireDocumentEvent(document as unknown as EventTarget, "readystatechange");
+}
+
+// What HTML does at the end of a parse, with every script the markup held
+// found at once: those that would have stopped the parser in order, then
+// the deferred ones and the modules, then DOMContentLoaded, and load
+// once the async ones have run too.
+async function runDocumentScripts(
+	document: Document,
+	scripts: DocumentScripts,
+): Promise<void> {
+	if (!isDocumentLive(document)) {
+		return;
+	}
+	scripts.started = true;
+	const blocking: ScriptRun[] = [];
+	const deferred: ScriptRun[] = [];
+	for (const node of descendants(document)) {
+		if (!implementsInterface(node, HTMLScriptElement)) {
+			continue;
+		}
+		const element = node as HTMLScriptElement;
+		const run = prepareScript(element, scripts);
+		if (run === null) {
+			continue;
+		}
+		const async = hasAttributeByName(element, "async");
+		if (run.kind === "module") {
+			if (async) {
+				runWhenFetched(run, scripts);
+			} else {
+				deferred.push(run);
+			}
+		} else if (!run.external) {
+			blocking.push(run);
+		} else if (async) {
+			runWhenFetched(run, scripts);
+		} else if (hasAttributeByName(element, "defer")) {
+			deferred.push(run);
+		} else {
+			blocking.push(run);
+		}
+	}
+	for (const element of scripts.early.splice(0)) {
+		startInsertedScript(element);
+	}
+	for (const run of blocking) {
+		await runInTurn(run, scripts);
+	}
+	if (!isDocumentLive(document)) {
+		return;
+	}
+	setReadyState(document, scripts, "interactive");
+	for (const run of deferred) {
+		await runInTurn(run, scripts);
+	}
+	if (!isDocumentLive(document)) {
+		return;
+	}
+	fireDocumentEvent(document as unknown as EventTarget, "DOMContentLoaded", {
+		bubbles: true,
+	});
+	scripts.parsed = true;
+	finishLoading(document, scripts);
+}
+
+function finishLoading(document: Document, scripts: DocumentScripts): void {
+	if (
+		!scripts.parsed ||
+		scripts.waiting > 0 ||
+		scripts.readyState === "complete" ||
+		!isDocumentLive(document)
+	) {
+		return;
+	}
+	setReadyState(document, scripts, "complete");
+	const view = _(document).extra.defaultView;
+	if (view !== null) {
+		fireDocumentEvent(view as unknown as EventTarget, "load");
+	}
+}
+
+// HTML's "prepare the script element", up to where the script waits for
+// its turn: what kind it is, and for a classic one from a src, the fetch.
+// Null for a script that will not run.
+function prepareScript(
+	element: HTMLScriptElement,
+	scripts: DocumentScripts,
+): ScriptRun | null {
+	const slots = _(element);
+	if (slots.extra.alreadyStarted || !element.isConnected) {
+		return null;
+	}
+	const src = getAttributeValue(element, "src");
+	if (src === null && getChildText(element) === "") {
+		return null;
+	}
+	const type = getScriptType(element);
+	if (type === null) {
+		return null;
+	}
+	slots.extra.alreadyStarted = true;
+	const document = slots.document;
+	if (type === "classic" && hasAttributeByName(element, "nomodule")) {
+		return null;
+	}
+	const attached = getAttachedDocument(document as unknown as Node)!;
+	if (
+		src === null &&
+		attached !== undefined &&
+		_(attached).extra.allowsInlineScript?.(element) === false
+	) {
+		return null;
+	}
+	if (type === "importmap") {
+		if (src !== null) {
+			queueScriptError(element, "An import map must be inline");
+		} else if (scripts.moduleStarted) {
+			queueScriptError(
+				element,
+				"An import map after the first module is ignored",
+			);
+		} else {
+			scripts.importMaps.push(getChildText(element));
+		}
+		return null;
+	}
+	if (src === null) {
+		return {
+			element,
+			kind: type,
+			external: false,
+			url: type === "classic" ? getDocumentURL(document) : null,
+			source: getChildText(element),
+		};
+	}
+	const url = parseURL(trimASCIIWhitespace(src), getDocumentBaseURL(document));
+	if (url === null || trimASCIIWhitespace(src) === "") {
+		queueScriptError(element, "The script's src is not a URL");
+		return null;
+	}
+	if (type === "module") {
+		scripts.moduleStarted = true;
+		return {element, kind: type, external: true, url, source: null};
+	}
+	const source = fetchClassicScript(element, url);
+	source.catch(() => {});
+	return {element, kind: type, external: true, url, source};
+}
+
+function getDocumentURL(document: Document): string {
+	return _(document).extra.documentURL;
+}
+
+function queueScriptError(element: HTMLScriptElement, message: string): void {
+	setTimeout(() => {
+		if (isDocumentLive(_(element).document)) {
+			fireScriptError(element, message);
+		}
+	}, 0);
+}
+
+function fireScriptError(element: HTMLScriptElement, message: string): void {
+	dispatch(
+		element as unknown as EventTarget,
+		constructInternal(() => new ErrorEvent("error", {message})),
+	);
+}
+
+// A classic script's text, fetched as the engine fetches anything the
+// markup names: through the policy and the TermDOM's fetch listeners.
+async function fetchClassicScript(
+	element: HTMLScriptElement,
+	url: string,
+): Promise<string> {
+	const document = _(element).document;
+	const attached = getAttachedDocument(document as unknown as Node);
+	if (attached === undefined) {
+		throw new TypeError("This document loads nothing");
+	}
+	const request = new Request(url, {signal: _(attached).extra.loadSignal});
+	setRequestDestination(request, "script");
+	const response = await _(attached).extra.load(request, {
+		initiator: element as unknown as globalThis.Element,
+	});
+	if (!response.ok) {
+		throw new TypeError(`The script's server answered ${response.status}`);
+	}
+	const charset = /;\s*charset=("?)([^";]+)\1/i.exec(
+		response.headers.get("content-type") ?? "",
+	)?.[2];
+	const bytes = await response.arrayBuffer();
+	let decoder: TextDecoder;
+	try {
+		decoder = new TextDecoder(charset ?? "utf-8");
+	} catch (error) {
+		if (!(error instanceof RangeError)) {
+			throw error;
+		}
+		decoder = new TextDecoder("utf-8");
+	}
+	return decoder.decode(bytes);
+}
+
+// A script's turn among those that run one at a time.
+function runInTurn(run: ScriptRun, scripts: DocumentScripts): Promise<void> {
+	const turn = scripts.queue.then(() => executeScript(run, scripts));
+	scripts.queue = turn.catch(() => {});
+	return turn;
+}
+
+// An async script, or one a page inserted, runs once it is fetched, and
+// holds the load event until it has.
+function runWhenFetched(run: ScriptRun, scripts: DocumentScripts): void {
+	scripts.waiting++;
+	const fetched = run.source instanceof Promise
+		? run.source.then(() => {}, () => {})
+		: Promise.resolve();
+	void fetched
+		.then(() => runInTurn(run, scripts))
+		.finally(() => {
+			scripts.waiting--;
+			finishLoading(_(run.element).document, scripts);
+		});
+}
+
+// A script the page inserted, or one whose src or text it set once the
+// script was in the document, starts as HTML's post-connection steps
+// would start it.
+function startInsertedScript(element: HTMLScriptElement): void {
+	const document = _(element).document;
+	const scripts = documentScripts.get(document);
+	if (scripts === undefined || _(element).extra.alreadyStarted) {
+		return;
+	}
+	if (!scripts.started) {
+		if (!scripts.early.includes(element)) {
+			scripts.early.push(element);
+		}
+		return;
+	}
+	const run = prepareScript(element, scripts);
+	if (run === null) {
+		return;
+	}
+	if (run.kind === "classic" && !run.external) {
+		if (scripts.running === 0) {
+			void executeScript(run, scripts);
+		} else {
+			void runInTurn(run, scripts);
+		}
+		return;
+	}
+	if (
+		run.kind === "classic" &&
+		!_(element).extra.forceAsync &&
+		!hasAttributeByName(element, "async")
+	) {
+		scripts.waiting++;
+		const fetched = run.source as Promise<string>;
+		const turn = scripts.ordered
+			.then(() => fetched.then(() => {}, () => {}))
+			.then(() => runInTurn(run, scripts));
+		scripts.ordered = turn.catch(() => {});
+		void turn.finally(() => {
+			scripts.waiting--;
+			finishLoading(document, scripts);
+		});
+		return;
+	}
+	runWhenFetched(run, scripts);
+}
+
+/** Starts the scripts the insertion that just finished connected. */
+function startInsertedScripts(): void {
+	for (const element of insertedScripts.splice(0)) {
+		startInsertedScript(element);
+	}
+}
+
+// HTML's "execute the script element", with the TermDOM asked first.
+async function executeScript(
+	run: ScriptRun,
+	scripts: DocumentScripts,
+): Promise<void> {
+	const {element} = run;
+	const document = _(element).document;
+	if (!isDocumentLive(document) || _(element).document !== document) {
+		return;
+	}
+	const attached = getAttachedDocument(document as unknown as Node)!;
+	if (run.kind === "module") {
+		await executeModule(run, scripts, attached);
+		return;
+	}
+	// Inline text runs without waiting a microtask, so a script the page
+	// inserts runs inside the insertion.
+	let source: string;
+	try {
+		source = typeof run.source === "string"
+			? run.source
+			: await (run.source as Promise<string>);
+	} catch (error) {
+		if (isDocumentLive(document)) {
+			fireScriptError(
+				element,
+				error instanceof Error ? error.message : String(error),
+			);
+		}
+		return;
+	}
+	if (!isDocumentLive(document)) {
+		return;
+	}
+	const answer =
+		_(attached).extra.runScript?.({
+			kind: "classic",
+			element: element as unknown as globalThis.HTMLScriptElement,
+			document: document as unknown as globalThis.Document,
+			source,
+			url: run.url,
+			base: getDocumentBaseURL(document),
+			importMaps: scripts.importMaps,
+		}) ?? null;
+	// A script the default runs synchronously, one inside another when a
+	// script inserts one, so currentScript comes back to the outer one.
+	// A listener's answer takes its turn alone.
+	const outer = scripts.currentScript;
+	scripts.currentScript = element;
+	try {
+		if (answer === null) {
+			if (!runClassicScript(document, source, run.url ?? "")) {
+				fireScriptError(
+					element,
+					"A classic script needs node:vm, or a \"script\" listener " +
+						"on the TermDOM to run it",
+				);
+				return;
+			}
+		} else {
+			scripts.running++;
+			try {
+				await answer;
+			} finally {
+				scripts.running--;
+			}
+		}
+	} catch (error) {
+		if (isDocumentLive(document)) {
+			reportError(error, document);
+		}
+	} finally {
+		if (scripts.currentScript === element) {
+			scripts.currentScript = outer;
+		}
+	}
+	if (run.external && isDocumentLive(document)) {
+		fireDocumentEvent(element as unknown as EventTarget, "load");
+	}
+}
+
+// The default for a classic script no listener answered: node:vm, in the
+// document's window.
+function runClassicScript(
+	document: Document,
+	source: string,
+	filename: string,
+): boolean {
+	const view = _(document).extra.defaultView;
+	if (view === null) {
+		return false;
+	}
+	return runInRealm(getDocumentRealm(document), () =>
+		runInWindow(view as unknown as object, source, filename),
+	);
+}
+
+async function executeModule(
+	run: ScriptRun,
+	scripts: DocumentScripts,
+	attached: Document,
+): Promise<void> {
+	const {element} = run;
+	const document = _(element).document;
+	scripts.moduleStarted = true;
+	const answer =
+		_(attached).extra.runScript?.({
+			kind: "module",
+			element: element as unknown as globalThis.HTMLScriptElement,
+			document: document as unknown as globalThis.Document,
+			source: run.external ? null : run.source as string,
+			url: run.url,
+			base: getDocumentBaseURL(document),
+			importMaps: scripts.importMaps,
+		}) ?? null;
+	if (answer === null) {
+		fireScriptError(
+			element,
+			"A module needs a \"script\" listener on the TermDOM to run it",
+		);
+		return;
+	}
+	scripts.running++;
+	try {
+		await answer;
+	} catch (error) {
+		if (isDocumentLive(document)) {
+			fireScriptError(
+				element,
+				error instanceof Error ? error.message : String(error),
+			);
+		}
+		return;
+	} finally {
+		scripts.running--;
+	}
+	if (run.external && isDocumentLive(document)) {
+		fireDocumentEvent(element as unknown as EventTarget, "load");
 	}
 }
 
@@ -27965,6 +28727,11 @@ export interface DocumentExtra extends NodeExtra {
 		element: globalThis.Element,
 		violations: "report" | "silent",
 	) => boolean;
+	// Whether they let an inline <script> run.
+	allowsInlineScript?: (element: globalThis.Element) => boolean;
+	// Offers a script to the TermDOM's "script" listeners: their answer,
+	// or null to run it the default way.
+	runScript?: (request: ScriptRequest) => Promise<void> | null;
 	// Where an exception the page let escape goes once the window's error
 	// event has not handled it. The engine owns the terminal, so it decides.
 	reportUncaught: (error: unknown) => void;
@@ -28645,7 +29412,7 @@ export class Document extends Node implements globalThis.Document {
 	}
 
 	get readyState(): globalThis.DocumentReadyState {
-		return "complete";
+		return getDocumentReadyState(this as unknown as Document);
 	}
 
 	/** On makes the body an editing host. Only "on" and "off" mean anything. */
@@ -28660,9 +29427,12 @@ export class Document extends Node implements globalThis.Document {
 		}
 	}
 
-	/** Script does not run while this document is built. */
+	/** The classic script running now, while the document's scripts run. */
 	get currentScript(): globalThis.HTMLOrSVGScriptElement | null {
-		return null;
+		return getCurrentScript(
+			this as unknown as Document,
+		) as unknown as globalThis.HTMLOrSVGScriptElement |
+			null;
 	}
 
 	// CSSOM View §7. Outside quirks mode the root element always scrolls
@@ -31902,7 +32672,14 @@ class Range extends AbstractRange implements globalThis.Range {
 		if (context === null) {
 			throw domError("NotSupportedError", "The range has no context");
 		}
-		return parseHTMLFragment(String(markup ?? ""), context);
+		// Unlike innerHTML's, this fragment's scripts run once inserted.
+		const fragment = parseHTMLFragment(String(markup ?? ""), context);
+		for (const node of descendants(fragment)) {
+			if (implementsInterface(node, HTMLScriptElement)) {
+				_(node as HTMLScriptElement).extra.alreadyStarted = false;
+			}
+		}
+		return fragment;
 	}
 
 	surroundContents(newParent: Node): void {
@@ -35882,6 +36659,11 @@ function parseHTMLFragment(
 	if (allowDeclarativeShadowRoots) {
 		attachDeclarativeShadowRoots(fragment);
 	}
+	for (const node of descendants(fragment)) {
+		if (implementsInterface(node, HTMLScriptElement)) {
+			_(node as HTMLScriptElement).extra.alreadyStarted = true;
+		}
+	}
 	return fragment;
 }
 
@@ -37185,6 +37967,8 @@ export interface DocumentEngine {
 		element: globalThis.Element,
 		violations: "report" | "silent",
 	): boolean;
+	allowsInlineScript(element: globalThis.Element): boolean;
+	runScript(request: ScriptRequest): Promise<void> | null;
 	// Aborts when the TermDOM is disposed, and the document's loads with it.
 	loadSignal: globalThis.AbortSignal;
 	render(): Promise<void>;
@@ -37222,6 +38006,9 @@ export function attachDocument(
 		engine.allowsInlineHandler(element);
 	attachedSlots.extra.allowsPlugin = (element, violations) =>
 		engine.allowsPlugin(element, violations);
+	attachedSlots.extra.allowsInlineScript = (element) =>
+		engine.allowsInlineScript(element);
+	attachedSlots.extra.runScript = (request) => engine.runScript(request);
 	attachedSlots.extra.loadSignal = engine.loadSignal;
 	attachedSlots.extra.visible = false;
 	attachedSlots.extra.systemFocused = true;
@@ -37277,6 +38064,7 @@ export function attachDocument(
 			startProgram(node as HTMLEmbedElement);
 		}
 	}
+	scheduleDocumentScripts(attached);
 }
 
 type TextControlOrSelect =

@@ -680,6 +680,15 @@ function remember(value: object, record: SlotRecord): void {
 	}
 }
 
+/**
+ * Gives `alias` the record `owner` has, so the engine reads one as the
+ * other: a node:vm context's global proxy, which stands in for the window
+ * it was made from.
+ */
+export function aliasSlots(alias: object, owner: object): void {
+	new Slot(alias, Slot.read(owner));
+}
+
 /** The record of `value`, typed as the tree links hold it. */
 export function getSlots<T extends {readonly [internals]: object}>(
 	value: T & {readonly [kObject]?: never},

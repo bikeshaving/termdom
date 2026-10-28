@@ -124,8 +124,8 @@ the `"fetch"` listeners, then the network. A listener's own `fetch`
 calls go straight to the network.
 
 Handler attributes such as `onerror="..."` run only with
-`scripting: "enabled"`, and then with full access to everything the
-program can reach. Under a policy, they run only if the first of
+`scripting: "enabled"`, with the page's window as their global. They
+can still reach the program through the objects they are given. Under a policy, they run only if the first of
 `script-src-attr`, `script-src`, and `default-src` that the policy
 names allows `'unsafe-inline'` without a nonce or hash. Blocked handlers
 fire `securitypolicyviolation`. Leave scripting off for untrusted

@@ -5,6 +5,7 @@
  * parent's. node:vm makes such a realm in Node, Bun and Deno. Where there
  * is none, as in a browser running TermDOM, a frame shares the parent's.
  */
+import {aliasSlots} from "./slots.ts";
 import {
 	type Constructor,
 	installRealmInterfaces,
@@ -54,7 +55,21 @@ const INTRINSICS = [
 
 interface VM {
 	createContext(sandbox?: object): object;
-	runInContext(code: string, context: object): unknown;
+	isContext(object: object): boolean;
+	compileFunction(
+		code: string,
+		params: string[],
+		options: {
+			parsingContext: object;
+			contextExtensions: object[];
+			filename?: string;
+		},
+	): (...args: unknown[]) => unknown;
+	runInContext(
+		code: string,
+		context: object,
+		options?: {filename?: string},
+	): unknown;
 }
 
 let vm: VM | null | undefined;
@@ -69,6 +84,59 @@ function getVM(): VM | null {
 			: null;
 	}
 	return vm;
+}
+
+/**
+ * Runs a classic script with `window` as its global, as HTML runs one in
+ * its window: the window's members are its globals, and its own var and
+ * function declarations land on the window. False where there is no
+ * node:vm to run it with. The page's window becomes a context the first
+ * time; its built-ins, such as Array and Error, are then the context's.
+ */
+export function runInWindow(
+	window: object,
+	source: string,
+	filename: string,
+): boolean {
+	const vm = getVM();
+	if (vm === null) {
+		return false;
+	}
+	makeContext(vm, window);
+	vm.runInContext(source, window, {filename});
+	return true;
+}
+
+/**
+ * An event handler attribute's function, compiled as HTML compiles one:
+ * the window is its global, and `scopes` are looked in first, the last
+ * innermost. Null where there is no node:vm.
+ */
+export function compileInWindow(
+	window: object,
+	source: string,
+	scopes: object[],
+	filename: string,
+): ((...args: unknown[]) => unknown) | null {
+	const vm = getVM();
+	if (vm === null) {
+		return null;
+	}
+	makeContext(vm, window);
+	return vm.compileFunction(
+		source,
+		["event"],
+		{parsingContext: window, contextExtensions: scopes, filename},
+	);
+}
+
+function makeContext(vm: VM, window: object): void {
+	if (!vm.isContext(window)) {
+		vm.createContext(window);
+		// Code in the context sees its global proxy as this, globalThis and
+		// window, so the proxy is the window to the engine too.
+		aliasSlots(vm.runInContext("globalThis", window) as object, window);
+	}
 }
 
 /** Whether a frame can have a realm of its own here. */

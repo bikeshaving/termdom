@@ -20,6 +20,7 @@ import {
 	clearWindowTimers,
 	constructInternal,
 	controlCheck,
+	createScriptEvent,
 	discardFrames,
 	disconnectObservers,
 	dispatchAsUserAgent,
@@ -32,6 +33,7 @@ import {
 	focusInitialAutofocus,
 	getGraphicsSettings,
 	getProcessTimers,
+	getScriptResponse,
 	type GraphicsSetting,
 	hasFrameCallbacks,
 	HistoryChangeEvent,
@@ -44,6 +46,7 @@ import {
 	runFocusFixup,
 	runFrameCallbacks,
 	runScrollSteps,
+	type ScriptEvent,
 	setDocumentVisible,
 	syncFormControls,
 	syncMediaQueries,
@@ -124,6 +127,7 @@ import {findSpawner, type PTYSpawner} from "./internal/pty.ts";
 import {
 	answerRequest,
 	checkInlineHandler,
+	checkInlineScript,
 	checkPlugin,
 	createWindowFetch,
 	type DocumentLoader,
@@ -152,6 +156,9 @@ export {
 	type HistoryChangeEventInit,
 	HistoryTraverseEvent,
 	type HistoryTraverseEventInit,
+	ScriptEvent,
+	type ScriptEventInit,
+	type ScriptRequest,
 } from "./internal/dom.ts";
 export {transportFromProcess, transportFromSSH} from "./internal/exchange.ts";
 export {
@@ -252,16 +259,16 @@ export interface TermDOMOptions {
 	csp?: string;
 
 	/**
-	 * Whether the page's scripts run, as far as its markup is concerned,
-	 * with the values of `@media (scripting)`. TermDOM runs no <script>
-	 * itself, so it is the embedder who says so. With `"none"`, the
-	 * default, a <noscript>'s markup is parsed and shown, as in a browser
-	 * with scripting off, and handler attributes such as `onclick="..."`
-	 * never run. With `"enabled"` a <noscript> shows nothing and handler
-	 * attributes run, with the same powers as the program itself, so only
-	 * enable it for markup you trust. A `csp` whose script-src-attr, or
-	 * the script-src or default-src it falls back to, is 'none' turns it
-	 * off. Any other value throws a TypeError.
+	 * Whether the page's scripts run, with the values of
+	 * `@media (scripting)`. With `"none"`, the default, nothing runs and a
+	 * <noscript>'s markup is shown. With `"enabled"`, <script> elements and
+	 * handler attributes such as `onclick="..."` run with the page's
+	 * window as their global, through node:vm, and a "script" listener on
+	 * the TermDOM can run them another way. node:vm is not a sandbox: a
+	 * script can reach the program through the objects it is given, so
+	 * only enable it for markup you trust. A `csp` whose script-src-attr,
+	 * or the script-src or default-src it falls back to, is 'none' turns
+	 * it off. Any other value throws a TypeError.
 	 */
 	scripting?: "none" | "enabled";
 
@@ -491,6 +498,7 @@ export interface TermDOMEventMap {
 	cellchange: CellChangeEvent;
 	fetch: FetchEvent;
 	historychange: HistoryChangeEvent;
+	script: ScriptEvent;
 	historytraverse: HistoryTraverseEvent;
 }
 
@@ -725,6 +733,13 @@ export class TermDOM extends EventTarget {
 				checkInlineHandler(document, element, requestPolicy),
 			allowsPlugin: (element, violations) =>
 				checkPlugin(element, requestPolicy, violations),
+			allowsInlineScript: (element) =>
+				checkInlineScript(document, element, requestPolicy),
+			runScript: (request) => {
+				const event = createScriptEvent(request);
+				this.dispatchEvent(event);
+				return getScriptResponse(event);
+			},
 			loadSignal: slots.loads.signal,
 			render: () => render(this),
 			reportUncaught: (error) => {

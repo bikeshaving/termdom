@@ -51,14 +51,15 @@ Options:
 - `csp?: string`: a `Content-Security-Policy` that limits what markup
   may load. Without it, everything loads. Set one for untrusted markup;
   the images guide has examples.
-- `scripting?: "none" | "enabled"`: what the markup treats as the
-  scripting state, matching `@media (scripting)`. TermDOM never runs
-  `<script>`. With `"none"` (default), `<noscript>` content shows and
-  handler attributes such as `onclick="..."` don't run. With
-  `"enabled"`, `<noscript>` is hidden and handler attributes run with
-  your program's full access, so enable it only for trusted markup. A
-  `csp` whose `script-src-attr` (or `script-src`, or `default-src`) is
-  `'none'` turns it off.
+- `scripting?: "none" | "enabled"`: whether the markup's scripts run,
+  matching `@media (scripting)`. With `"none"` (default), nothing runs
+  and `<noscript>` content shows. With `"enabled"`, `<script>` elements
+  and handler attributes such as `onclick="..."` run with the page's
+  window as their global, through `node:vm`, as a frame's do. `node:vm`
+  is not a sandbox: a script can reach your program through the objects
+  it is given, so enable scripting only for trusted markup. A `csp`
+  whose `script-src-attr` (or `script-src`, or `default-src`) is
+  `'none'` turns it off. See "Scripts" below.
 - `reducedMotion?: "no-preference" | "reduce"`: what
   `@media (prefers-reduced-motion)` reports. Defaults to
   `"no-preference"`.
@@ -199,6 +200,56 @@ term.addEventListener("fetch", (event) => {
 
 Blocked loads fire `securitypolicyviolation` at the element instead.
 The images guide covers both.
+
+### Scripts
+
+With `scripting: "enabled"`, the document's `<script>` elements run as
+in a browser, except that the whole document is parsed first. Scripts
+that would have blocked the parser run in order, then `defer` scripts,
+then `DOMContentLoaded` fires; `async` scripts run as they arrive, and
+the window's `load` waits for them. A script the page inserts runs when
+it is inserted, or for one with a `src`, when it is fetched. Scripts
+set with `innerHTML` never run.
+
+`document.readyState`, `document.currentScript`, `readystatechange`, and
+each script's `load` and `error` events work as in a browser. A script
+with a `src` is fetched like an image: through `csp` and the `"fetch"`
+listeners. An exception a script throws goes to the window's `error`
+event.
+
+The first script runs in a task after the constructor returns, so a
+program can add listeners before any script runs.
+
+Without `node:vm`, as in a browser, a classic script fires `error`. A
+module (`type="module"`) fires `error` unless a `"script"` listener
+runs it.
+
+### `term.addEventListener("script", listener)`
+
+Each script about to run fires a `"script"` event, a `ScriptEvent`, at
+the `TermDOM`. The page never sees it. A listener runs the script
+another way with `respondWith(promise)`:
+
+```ts
+term.addEventListener("script", (event) => {
+  if (event.kind === "classic") {
+    event.respondWith(runElsewhere(event.source, event.url));
+  }
+});
+```
+
+- `kind` is `"classic"` or `"module"`; `element` and `document` say
+  which script it is.
+- A classic script's `source` is its text, inline or fetched, and `url`
+  its URL, or the document's for one inline. `currentScript` stays set
+  until the promise settles. A rejection is what the script threw, and
+  goes to the window's `error` event.
+- A module's `url` is its resolved `src`, or `null` with its text in
+  `source` for one inline. `base` is the document's base URL and
+  `importMaps` the JSON of the import maps that count. A rejection
+  fires `error` on the element.
+- `respondWith()` works once, during dispatch. Without it, the script
+  runs the default way.
 
 ### `term.measureCell()`
 

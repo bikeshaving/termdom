@@ -248,11 +248,18 @@ function checkRequest(
 	);
 }
 
-// An inline event handler runs only where the directive that governs it
-// allows 'unsafe-inline', which a nonce or a hash in the same list cancels
-// (CSP3 §6.7.3.3). One that does not run is reported.
+// An inline event handler, or an inline <script>, runs only where the
+// directive that governs it allows 'unsafe-inline', which a nonce or a
+// hash in the same list cancels (CSP3 §6.7.3.3). A script whose nonce
+// attribute matches a 'nonce-' source runs too. One that does not run is
+// reported.
 const INLINE_HANDLER_DIRECTIVES = [
 	"script-src-attr",
+	"script-src",
+	"default-src",
+];
+const INLINE_SCRIPT_DIRECTIVES = [
+	"script-src-elem",
 	"script-src",
 	"default-src",
 ];
@@ -263,14 +270,47 @@ export function checkInlineHandler(
 	element: Element,
 	policy: RequestPolicy,
 ): boolean {
+	return checkInline(
+		document,
+		element,
+		policy,
+		INLINE_HANDLER_DIRECTIVES,
+		null,
+	);
+}
+
+export function checkInlineScript(
+	document: Document,
+	element: Element,
+	policy: RequestPolicy,
+): boolean {
+	return checkInline(
+		document,
+		element,
+		policy,
+		INLINE_SCRIPT_DIRECTIVES,
+		element.getAttribute("nonce"),
+	);
+}
+
+function checkInline(
+	document: Document,
+	element: Element,
+	policy: RequestPolicy,
+	directives: readonly string[],
+	nonce: string | null,
+): boolean {
 	for (const stated of [...policy.policies, ...getDocumentPolicies(document)]) {
-		const directive = INLINE_HANDLER_DIRECTIVES.find((name) =>
-			stated.directives.has(name),
-		);
+		const directive = directives.find((name) => stated.directives.has(name));
 		if (directive === undefined) {
 			continue;
 		}
 		const sources = stated.directives.get(directive)!;
+		if (
+			nonce !== null && nonce !== "" && sources.includes(`'nonce-${nonce}'`)
+		) {
+			continue;
+		}
 		if (
 			sources.some((source) => source.toLowerCase() === "'unsafe-inline'") &&
 			!sources.some((source) => NONCE_OR_HASH.test(source))
@@ -280,7 +320,7 @@ export function checkInlineHandler(
 		policy.violate(element.isConnected ? element : document, {
 			documentURI: stripURLForReport(new URL(document.URL)),
 			blockedURI: "inline",
-			effectiveDirective: "script-src-attr",
+			effectiveDirective: directives[0],
 			originalPolicy: stated.text,
 			disposition: "enforce",
 			bubbles: true,
@@ -485,6 +525,7 @@ function parseContentSecurityPolicy(text: string): ContentSecurityPolicy {
 const FETCH_DIRECTIVES: Partial<Record<RequestDestination, string>> = {
 	"": "connect-src",
 	image: "img-src",
+	script: "script-src-elem",
 	style: "style-src",
 	font: "font-src",
 	audio: "media-src",
@@ -501,6 +542,10 @@ function getEffectiveDirective(
 	const directive = FETCH_DIRECTIVES[destination ?? ""];
 	if (directive !== undefined && policy.directives.has(directive)) {
 		return directive;
+	}
+	// A script's falls back to script-src before default-src.
+	if (destination === "script" && policy.directives.has("script-src")) {
+		return "script-src";
 	}
 	return policy.directives.has("default-src") ? "default-src" : null;
 }
