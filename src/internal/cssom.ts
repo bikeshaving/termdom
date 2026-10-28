@@ -102,7 +102,7 @@ import {
 	UA_DOCUMENT_STYLES,
 	UA_ELEMENT_STYLES,
 } from "./useragent.ts";
-import {windowMember} from "./webidl.ts";
+import {runInRealm, windowMember} from "./webidl.ts";
 
 // Per-element defaults that are STATE, not stylesheet: the fullscreen
 // element's viewport block, a select sized to its widest option label so
@@ -7412,10 +7412,12 @@ function computedSlotsFor(
 	if (!slots) {
 		parseStylesheetsIfStale(cascade);
 		const fresh = _(
-			new ComputedStyleDeclaration(
-				element,
-				getCascadeRules(cascade, element),
-				cascade,
+			runInRealm(null, () =>
+				new ComputedStyleDeclaration(
+					element,
+					getCascadeRules(cascade, element),
+					cascade,
+				),
 			),
 		);
 		slots = fresh;
@@ -8235,11 +8237,8 @@ function getPseudoDeclaration(
 		return cached;
 	}
 	const declarations = pseudoDeclarationsFor(cascade, element, pseudoElement);
-	const declaration = new PseudoStyleDeclaration(
-		declarations,
-		element,
-		cascade,
-		pseudoElement,
+	const declaration = runInRealm(null, () =>
+		new PseudoStyleDeclaration(declarations, element, cascade, pseudoElement),
 	);
 	// The cache is fetched HERE, not before the work. Resolving the host's
 	// style can reparse the stylesheets, which replaces every cache on this
@@ -8995,8 +8994,8 @@ function getResolvedStyle(
 	// An element out of the document, or out of the flat tree it composes,
 	// has no style to report. Only an author read comes through here.
 	if (!isBeingRendered(element)) {
-		return new EmptyStyleDeclaration(
-			element,
+		return runInRealm(null, () =>
+			new EmptyStyleDeclaration(element),
 		) as unknown as globalThis.CSSStyleDeclaration;
 	}
 
@@ -9004,8 +9003,8 @@ function getResolvedStyle(
 	if (pseudoElt) {
 		const parsed = CSSValues.parsePseudoElementArgument(String(pseudoElt));
 		if (parsed === null) {
-			return new EmptyStyleDeclaration(
-				element,
+			return runInRealm(null, () =>
+				new EmptyStyleDeclaration(element),
 			) as unknown as globalThis.CSSStyleDeclaration;
 		}
 		pseudoElement = unescapeHighlightName(parsed);

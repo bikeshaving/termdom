@@ -482,3 +482,41 @@ withRealms("what a frame's last animation frame changes is drawn", async () => {
 	expect(rows(terminal, 1)).toEqual(["tick 3"]);
 	dom.dispose();
 });
+
+withRealms("a hidden frame's window still computes styles", async () => {
+	const dom = new TermDOM({transport: new MockProcess({cols: 40}).transport});
+	dom.document.body.innerHTML =
+		"<iframe srcdoc=\"<style>p { color: red }</style><p>x</p>\" style=\"display: none\"></iframe>";
+	await settle(dom);
+	const frame = dom.document.querySelector("iframe")!;
+	const p = frame.contentDocument!.querySelector("p")!;
+	expect(frame.contentWindow!.getComputedStyle(p).color).toBe("rgb(255, 0, 0)");
+	dom.dispose();
+});
+
+withRealms("a frame computes styles before it is first drawn", () => {
+	const dom = new TermDOM({transport: new MockProcess({cols: 40}).transport});
+	dom.document.body.innerHTML = "<iframe srcdoc=\"<p>x</p>\"></iframe>";
+	const frame = dom.document.querySelector("iframe")!;
+	const p = frame.contentDocument!.querySelector("p")!;
+	expect(frame.contentWindow!.getComputedStyle(p).display).toBe("block");
+	dom.dispose();
+});
+
+withRealms(
+	"an element made after a frame is drawn computes styles",
+	async () => {
+		const dom = new TermDOM({transport: new MockProcess({cols: 40}).transport});
+		dom.document.body.innerHTML = "<iframe srcdoc=\"<p>x</p>\"></iframe>";
+		await settle(dom);
+		const frame = dom.document.querySelector("iframe")!;
+		const window = frame.contentWindow as any;
+		const span = window.eval(
+			"const span = document.createElement('span'); document.body.append(span); span",
+		);
+		const style = window.getComputedStyle(span);
+		expect(style.display).toBe("inline");
+		expect(style instanceof window.CSSStyleDeclaration).toBe(true);
+		dom.dispose();
+	},
+);

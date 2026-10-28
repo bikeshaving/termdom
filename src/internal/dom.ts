@@ -18461,26 +18461,33 @@ function fitFrame(
 	cols: number,
 	rows: number,
 ): CellGrid {
+	ensureFrameDocument(frame);
+	return (
+		_(frame).extra.frameRenderer?.fit(cols, rows) ?? new CellGrid(rows, cols)
+	);
+}
+
+// A frame gets its engine with its document, drawn or not, so a hidden
+// frame's window computes styles as a browser's does.
+function ensureFrameRenderer(frame: HTMLIFrameElement): void {
 	const slots = _(frame);
-	let renderer = slots.extra.frameRenderer;
-	if (renderer === null) {
-		const parent = getAttachedDocument(frame);
-		ensureFrameDocument(frame);
-		const window = slots.extra.contentWindow;
-		const document = slots.extra.contentDocument;
-		if (
-			frameEngineFactory !== null &&
-			parent !== undefined &&
-			document !== null &&
-			implementsInterface(window, Window)
-		) {
-			renderer = frameEngineFactory(document, window, parent, () =>
-				frameChanged(frame),
-			);
-			slots.extra.frameRenderer = renderer;
-		}
+	const parent = getAttachedDocument(frame);
+	const window = slots.extra.contentWindow;
+	const document = slots.extra.contentDocument;
+	if (
+		slots.extra.frameRenderer === null &&
+		frameEngineFactory !== null &&
+		parent !== undefined &&
+		document !== null &&
+		implementsInterface(window, Window)
+	) {
+		slots.extra.frameRenderer = frameEngineFactory(
+			document,
+			window,
+			parent,
+			() => frameChanged(frame),
+		);
 	}
-	return renderer?.fit(cols, rows) ?? new CellGrid(rows, cols);
 }
 
 // The frame's document changed: its cells are painted again with the
@@ -18492,7 +18499,11 @@ function frameChanged(frame: HTMLIFrameElement): void {
 
 function ensureFrameDocument(frame: HTMLIFrameElement): void {
 	const frameSlots = _(frame);
-	if (!frame.isConnected || frameSlots.extra.contentDocument !== null) {
+	if (!frame.isConnected) {
+		return;
+	}
+	if (frameSlots.extra.contentDocument !== null) {
+		ensureFrameRenderer(frame);
 		return;
 	}
 	const srcdoc = getAttributeValue(frame, "srcdoc");
@@ -18504,6 +18515,7 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 	if (built !== null) {
 		frameSlots.extra.contentDocument = built.document;
 		frameSlots.extra.contentWindow = built.window;
+		ensureFrameRenderer(frame);
 		return;
 	}
 	const contentDocument = parseHTMLDocument(srcdoc ?? "", url, true, registry);
