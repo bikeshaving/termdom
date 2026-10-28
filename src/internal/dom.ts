@@ -6082,10 +6082,7 @@ export function setSystemFocus(
 		return;
 	}
 	_(attached).extra.systemFocused = focused;
-	reportProgramFocus(
-		getKeyTarget(attached as unknown as globalThis.Document) as Element | null,
-		focused,
-	);
+	reportProgramFocus(getFocusedElement(attached) as Element | null, focused);
 	const chain: Array<{target: EventTarget; realm: Realm | null}> = [];
 	let level: Document | null = attached;
 	while (level !== null) {
@@ -17003,12 +17000,11 @@ export function getRunningProgram(
 }
 
 /**
- * Whether keys go to a program now: the element keys go to, through the
- * frames, is an embed whose program is running. It takes Ctrl+C, as a
- * terminal's program would.
+ * Whether keys go to a program now: the focused element is an embed whose
+ * program is running. It takes Ctrl+C, as a terminal's program would.
  */
 export function focusTakesInterrupt(document: globalThis.Document): boolean {
-	return getRunningProgram(getKeyTarget(document)) !== null;
+	return getRunningProgram(getFocusedElement(document)) !== null;
 }
 
 function reportProgramFocus(element: Element | null, focused: boolean): void {
@@ -37272,7 +37268,7 @@ export function attachDocument(
 			connectShadowRoot(root);
 		}
 		// An embed parsed before its document had an engine, as one in the
-		// starting markup or in a frame's srcdoc is, starts its program now.
+		// starting markup is, starts its program now.
 		if (
 			implementsInterface(node, HTMLEmbedElement) &&
 			_(node as HTMLEmbedElement).extra.program === null

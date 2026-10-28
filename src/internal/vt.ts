@@ -374,6 +374,7 @@ export class Terminal {
 		this.x = Math.min(this.x, cols - 1);
 		this.y = Math.max(0, Math.min(this.y, rows - 1));
 		this.wrapPending = false;
+		this.preceding = null;
 	}
 
 	consume(code: number): void {
@@ -708,7 +709,8 @@ export class Terminal {
 		let col = preceding.col;
 		const grow = width - preceding.width;
 		if (grow > 0 && col + width > this.cols) {
-			if (!this.autowrap) {
+			if (!this.autowrap || this.cols < 2) {
+				this.preceding = null;
 				return;
 			}
 			const cluster = line.chars[col];
