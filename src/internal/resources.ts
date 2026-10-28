@@ -11,6 +11,7 @@ import {
 	createFetchEvent,
 	getFetchResponse,
 	getMetaPolicyTexts,
+	getPolicyURL,
 	setRequestDestination,
 } from "./dom.ts";
 import {splitOnASCIIWhitespace} from "./text.ts";
@@ -219,7 +220,7 @@ function checkRequest(
 	context: RequestContext,
 	policy: RequestPolicy,
 ): void {
-	const self = new URL(document.URL);
+	const self = new URL(getPolicyURL(document));
 	if (url.protocol === "file:" && self.protocol !== "file:") {
 		throw new TypeError("A document that is not a file cannot load a file");
 	}

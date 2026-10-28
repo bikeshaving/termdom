@@ -601,13 +601,12 @@ withRealms("a srcdoc frame is held to its page's meta policy", async () => {
 withRealms(
 	"a frame's scripts run without a read, and the iframe loads after the frame does",
 	async () => {
-		const p = page(
-			`<iframe onload="log.push('iframe load')" srcdoc="
+		const p = page(`<iframe onload="log.push('iframe load')" srcdoc="
 				<script>addEventListener('load', () => parent.log.push('frame load'))</script>
 				<script src='slow.js'></script>
-			"></iframe>`,
-			{files: {"app/slow.js": "parent.log.push('frame script')"}},
-		);
+			"></iframe>`, {
+			files: {"app/slow.js": "parent.log.push('frame script')"},
+		});
 		await until(() => p.log().includes("iframe load"));
 		expect(p.log()).toEqual(["frame script", "frame load", "iframe load"]);
 		await p.dom.dispose();
@@ -652,3 +651,126 @@ withModules(
 		await p.dom.dispose();
 	},
 );
+
+test("a script parsed with scripting off never runs, even adopted into a page whose scripts run", async () => {
+	const p = page(
+		`<script>
+			const parsed = new DOMParser().parseFromString("<script>log.push('parsed')<\\/script>", "text/html");
+			document.body.append(document.adoptNode(parsed.querySelector("script")));
+			log.push("done");
+		</script>`,
+	);
+	await loaded(p);
+	expect(p.log()).toEqual(["done"]);
+	await p.dom.dispose();
+});
+
+test("a policy an earlier script adds blocks a later file, though it was fetched ahead", async () => {
+	const p = page(`<script>
+			const meta = document.createElement("meta");
+			meta.httpEquiv = "Content-Security-Policy";
+			meta.content = "script-src 'nonce-abc'";
+			document.head.append(meta);
+		</script>
+		<script src="later.js"></script>
+		<script nonce="abc">log.push("after");</script>`, {
+		files: {"app/later.js": `log.push("later ran")`},
+	});
+	await loaded(p);
+	expect(p.log()).toEqual(["after"]);
+	await p.dom.dispose();
+});
+
+test("an inserted script a listener runs holds DOMContentLoaded, and sees itself as currentScript in dispatch", async () => {
+	let finish = () => {};
+	const seen: string[] = [];
+	const p = page(`<script>
+			document.addEventListener("DOMContentLoaded", () => log.push("DOMContentLoaded"));
+			const inner = document.createElement("script");
+			inner.id = "inner";
+			inner.textContent = "inner";
+			document.body.append(inner);
+		</script>`, {
+		listen: (dom) => {
+			dom.addEventListener("script", (event) => {
+				if (event.source === "inner") {
+					seen.push(event.document.currentScript?.id ?? "none");
+					event.respondWith(
+						new Promise<void>((resolve) => {
+								finish = resolve;
+						}),
+					);
+				}
+			});
+		},
+	});
+	await until(() => seen.length > 0);
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	expect(p.log()).toEqual([]);
+	finish();
+	await loaded(p);
+	expect(seen).toEqual(["inner"]);
+	expect(p.log()).toEqual(["DOMContentLoaded"]);
+	await p.dom.dispose();
+});
+
+test("scripts in a declarative shadow root in the markup run; createContextualFragment's template scripts can", async () => {
+	const p = page(
+		`<div><template shadowrootmode="open"><script>log.push("shadow")</script></template></div>
+		<script>
+			const range = document.createRange();
+			range.selectNodeContents(document.body);
+			const template = range.createContextualFragment("<template><script>log.push('template')<\\/script></template>").firstChild;
+			document.body.append(document.importNode(template.content, true));
+		</script>`,
+	);
+	await loaded(p);
+	expect(p.log()).toEqual(["shadow", "template"]);
+	await p.dom.dispose();
+});
+
+withRealms(
+	"a script moved into another document before its turn does not run",
+	async () => {
+		const p = page(`<iframe sandbox></iframe>
+		<script>
+			const frame = document.querySelector("iframe").contentDocument;
+			frame.body.append(document.getElementById("later"));
+		</script>
+		<script id="later" src="later.js"></script>
+		<script>log.push("after");</script>`, {
+			files: {"app/later.js": `log.push("later ran")`},
+		});
+		await loaded(p);
+		expect(p.log()).toEqual(["after"]);
+		await p.dom.dispose();
+	},
+);
+
+withRealms(
+	"a srcdoc frame's files load under 'self', and resolve against its page's base URL",
+	async () => {
+		const p = page(
+			`<iframe srcdoc="<script nonce='abc' src='frame.js'></script>"></iframe>`,
+			{
+				csp: "script-src 'self' 'nonce-abc'",
+				files: {"app/frame.js": "parent.log.push('frame file')"},
+			},
+		);
+		await until(() => p.log().length > 0);
+		expect(p.log()).toEqual(["frame file"]);
+		await p.dom.dispose();
+	},
+);
+
+withModules("an import() ends the time for import maps", async () => {
+	const p =
+		page(
+			`<script>import("./mod.js").then(() => log.push("imported"));</script>
+		<script type="importmap" onerror="log.push('map refused')">{"imports": {}}</script>`,
+			{files: {"app/mod.js": "export {};"}},
+		);
+	await until(() => p.log().length === 2);
+	expect(p.log().sort()).toEqual(["imported", "map refused"]);
+	await p.dom.dispose();
+});
