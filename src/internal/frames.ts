@@ -91,7 +91,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		cellSize: parentSlots.cellSize,
 		images: parentSlots.images,
 		canvas: parentSlots.canvas,
-		pty: parentSlots.pty,
+		pty: "framed",
 		load: loader === null
 			? parentSlots.load
 			: (request, context) => loader(document, request, context),

@@ -17011,17 +17011,7 @@ export function focusTakesInterrupt(document: globalThis.Document): boolean {
 	return getRunningProgram(getKeyTarget(document)) !== null;
 }
 
-// Focus on a frame is focus on whatever is focused inside it.
 function reportProgramFocus(element: Element | null, focused: boolean): void {
-	for (
-		let inner = getDrawnFrameDocument(element);
-		inner !== null;
-		inner = getDrawnFrameDocument(element)
-	) {
-		element =
-			getFocusedElement(inner as unknown as globalThis.Document) as Element |
-			null;
-	}
 	getRunningProgram(element)?.sendFocus(
 		focused &&
 		hasSystemFocus(element!.ownerDocument as unknown as globalThis.Document),
@@ -17103,6 +17093,10 @@ function startProgram(embed: HTMLEmbedElement): void {
 		fire("error", () => fail("This runtime has no pseudo-terminal"));
 		return;
 	}
+	if (spawn === "framed") {
+		fire("error", () => fail("A frame runs no program"));
+		return;
+	}
 	if (attachedSlots.extra.loadSignal.aborted) {
 		return;
 	}
@@ -17132,14 +17126,9 @@ function startProgram(embed: HTMLEmbedElement): void {
 	);
 	program.setScrollback(getScrollbackLimit(embed));
 	slots.extra.program = program;
-	let top = _(embed).document;
-	for (let owner = getFrameOwner(top);
-		owner !== null;
-		owner = getFrameOwner(top)) {
-		top = _(owner).document;
-	}
 	program.sendFocus(
-		getKeyTarget(top) === (embed as unknown) && hasSystemFocus(top),
+		getFocusedElement(slots.document) === embed &&
+		hasSystemFocus(slots.document),
 	);
 	// While its program runs, the embed is replaced by the program's
 	// screen, drawn as an iframe draws its document.
@@ -27955,9 +27944,9 @@ export interface DocumentExtra extends NodeExtra {
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
 	// Starts an <embed type="application/x-pty">'s program, or says why
-	// none may run: the pty option is "none", or the runtime has no
-	// pseudo-terminal.
-	pty: PtySpawner | "none" | "unavailable";
+	// none may run: the pty option is "none", the runtime has no
+	// pseudo-terminal, or the document is a frame's.
+	pty: PtySpawner | "none" | "unavailable" | "framed";
 	load: ResourceLoader;
 	loadSignal: globalThis.AbortSignal;
 	// Whether the document's policies let an element's inline handler run.
@@ -37176,7 +37165,7 @@ export interface DocumentEngine {
 	cellSize: CellSizeSetting;
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
-	pty: PtySpawner | "none" | "unavailable";
+	pty: PtySpawner | "none" | "unavailable" | "framed";
 	// Answers the loads the document's markup asks for.
 	load: ResourceLoader;
 	allowsInlineHandler(element: globalThis.Element): boolean;
