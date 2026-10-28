@@ -9988,16 +9988,17 @@ Object.defineProperty(DocumentFragment.prototype, Symbol.toStringTag, {
 });
 
 function getDescendantText(node: Node): string {
-	let text = "";
+	let text: string | null = null;
 	let current: Node | null = getObject(_(node).firstChild);
 	while (current !== null) {
 		const type = getNodeType(current);
 		if (type === TEXT_NODE || type === CDATA_SECTION_NODE) {
-			text += _((current as CharacterData)).data;
+			const data = _((current as CharacterData)).data;
+			text = text === null ? data : text + data;
 		}
 		current = nextInTree(current, node);
 	}
-	return text;
+	return text ?? "";
 }
 
 function setDescendantText(node: Node, value: string | null): void {
