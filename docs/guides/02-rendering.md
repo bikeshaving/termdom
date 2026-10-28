@@ -39,12 +39,10 @@ When the document fits in the terminal, the rows above it hold the
 shell's earlier output. Turning the wheel up over those rows scrolls
 the terminal's own scrollback instead. Over the document, the wheel
 always belongs to the document, even where nothing there can scroll.
-No terminal reports when the user has scrolled back down. For that reason
-the engine takes the mouse back for the document on the next thing the
-user does that reaches it: a keystroke, a paste, or the terminal
-regaining focus. A key or paste is also delivered to the document.
-While the wheel belongs to the terminal, `document.visibilityState` is
-`"hidden"` and the document is blurred.
+No terminal reports when the user has scrolled back down, so the
+document takes the mouse back on the next key, paste, or return of
+focus. Until then, `document.visibilityState` is `"hidden"` and the
+document is blurred.
 
 Each frame repaints the region in place. The program can end with
 `window.close()`, with `dispose()`, or by the user pressing Ctrl-C. In
