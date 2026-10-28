@@ -791,3 +791,95 @@ test("a second policy an earlier script adds blocks a later file too", async () 
 	expect(p.log()).toEqual(["after"]);
 	await p.dom.dispose();
 });
+
+test("a script's error says which file it came from, and where", async () => {
+	const positions: Array<[string, number, number]> = [];
+	const p = page(`<script>
+			window.addEventListener("error", (event) => log.push([event.filename, event.lineno, event.colno]));
+		</script>
+		<script src="throws.js"></script>
+		<script>
+
+			null.inline;</script>`, {
+		files: {"app/throws.js": "\n\n  null.external;"},
+	});
+	await loaded(p);
+	for (const [filename, lineno, colno] of p.log() as unknown as Array<[
+		string,
+		number,
+		number,
+	]>) {
+		positions.push([filename, lineno, colno > 0 ? 1 : 0]);
+	}
+	expect(positions).toEqual([
+		["https://example.com/app/throws.js", 3, 1],
+		["https://example.com/app/page.html", 3, 1],
+	]);
+	await p.dom.dispose();
+});
+
+test("an inserted or async script runs while a parsed module is still loading", async () => {
+	let link = (_evaluate: () => Promise<void>) => {};
+	const p = page(`<script type="module" src="slow.js"></script>
+		<script async src="async.js"></script>
+		<script>
+			const inserted = document.createElement("script");
+			inserted.src = "inserted.js";
+			document.body.append(inserted);
+		</script>`, {
+		files: {
+			"app/async.js": `log.push("async")`,
+			"app/inserted.js": `log.push("inserted")`,
+		},
+		listen: (dom) => {
+			dom.addEventListener("script", (event) => {
+				if (event.kind === "module") {
+					event.respondWith(
+						new Promise((resolve) => {
+								link = resolve;
+						}),
+					);
+				}
+			});
+		},
+	});
+	await until(() => p.log().length === 2);
+	expect([...p.log()].sort()).toEqual(["async", "inserted"]);
+	expect(p.dom.document.readyState).toBe("interactive");
+	link(async () => {
+		p.window.log.push("module");
+	});
+	await loaded(p);
+	expect(p.log().at(-1)).toBe("module");
+	await p.dom.dispose();
+});
+
+test("modules fetch side by side, and run in order once fetched", async () => {
+	const links: Array<(evaluate: () => Promise<void>) => void> = [];
+	const p = page(`<script type="module" src="one.js"></script>
+		<script type="module" src="two.js"></script>`, {
+		listen: (dom) => {
+			dom.addEventListener("script", (event) => {
+				if (event.kind === "module") {
+					event.respondWith(
+						new Promise((resolve) => {
+							links.push(resolve);
+						}),
+					);
+				}
+			});
+		},
+	});
+	await until(() => links.length === 2);
+	links[1](async () => {
+		p.window.log.push("two");
+	});
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(p.log()).toEqual([]);
+	links[0](async () => {
+		p.window.log.push("one");
+	});
+	await loaded(p);
+	expect(p.log()).toEqual(["one", "two"]);
+	await p.dom.dispose();
+});

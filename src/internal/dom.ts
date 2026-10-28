@@ -2239,7 +2239,7 @@ export interface ScriptEventInit extends EventInit, ScriptRequest {}
 
 export interface ScriptEventSlots extends EventSlots {
 	init: ScriptEventInit;
-	response: Promise<void> | null;
+	response: Promise<unknown> | null;
 }
 
 export interface ScriptEvent {
@@ -2295,10 +2295,12 @@ export class ScriptEvent extends Event {
 	/**
 	 * Run the script another way, during the event. For a classic script
 	 * the promise settles when it has run, and rejects with what it threw.
-	 * For a module it settles when evaluation finishes, and a rejection
-	 * fails the element.
+	 * A module's event fires when it is prepared: the promise resolves,
+	 * once the graph is fetched and linked, to a function that runs it,
+	 * which TermDOM calls in the module's turn. A rejection fails the
+	 * element; the function's is what the module threw.
 	 */
-	respondWith(result: PromiseLike<void>): void {
+	respondWith(result: PromiseLike<void | (() => PromiseLike<unknown>)>): void {
 		if (this.eventPhase === Event.NONE) {
 			throw domError(
 				"InvalidStateError",
@@ -2310,7 +2312,7 @@ export class ScriptEvent extends Event {
 			throw domError("InvalidStateError", "The script was already answered");
 		}
 		this.stopImmediatePropagation();
-		slots.response = Promise.resolve(result).then(() => {});
+		slots.response = Promise.resolve(result);
 	}
 }
 
@@ -2322,7 +2324,7 @@ export function createScriptEvent(request: ScriptRequest): ScriptEvent {
 }
 
 /** The answer a listener gave a script event, or null for none. */
-export function getScriptResponse(event: ScriptEvent): Promise<void> | null {
+export function getScriptResponse(event: ScriptEvent): Promise<unknown> | null {
 	return _(event).response;
 }
 
@@ -6328,9 +6330,31 @@ function callInRealm<Args extends unknown[]>(
 // reporting mode" has it, rather than firing another without end.
 const reportingWindows = new WeakSet<object>();
 
+// Where in `filename` an error was thrown: its file, and the line and
+// column of the first stack frame in it.
+function getErrorPosition(
+	error: unknown,
+	filename: string,
+): {filename: string; lineno: number; colno: number} {
+	const stack = (error as {stack?: unknown} | null)?.stack;
+	if (filename === "" || typeof stack !== "string") {
+		return {filename, lineno: 0, colno: 0};
+	}
+	// The first mention with a line and a column: a runtime may lead with
+	// the file and line alone, above the source it quotes.
+	const escaped = filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const match = new RegExp(`${escaped}:(\\d+):(\\d+)`).exec(stack);
+	return {
+		filename,
+		lineno: match === null ? 0 : Number(match[1]),
+		colno: match === null ? 0 : Number(match[2]),
+	};
+}
+
 export function reportError(
 	error: unknown,
 	document: Document | null = null,
+	filename = "",
 ): void {
 	const view = document === null ? null : _(document).extra.defaultView;
 	if (view !== null && !reportingWindows.has(view)) {
@@ -6342,6 +6366,7 @@ export function reportError(
 				cancelable: true,
 				message: isError ? String((error as Error).message) : String(error),
 				error,
+				...getErrorPosition(error, filename),
 			}),
 		);
 		reportingWindows.add(view);
@@ -22662,6 +22687,9 @@ interface ScriptRun {
 	url: string | null;
 	// A classic script's text, fetched or inline; a module's inline text.
 	source: Promise<string> | string | null;
+	// A module's graph, fetched and linked from when it is prepared, so
+	// graphs load side by side: what runs it, in its turn.
+	linked: Promise<() => PromiseLike<unknown>> | null;
 }
 
 interface DocumentScripts {
@@ -22671,9 +22699,9 @@ interface DocumentScripts {
 	// inserts before then waits for them.
 	started: boolean;
 	early: HTMLScriptElement[];
-	// Scripts run one at a time, a listener's answer included, so only
-	// one sees itself as currentScript.
-	queue: Promise<void>;
+	// Classic scripts a listener runs take turns, so only one at a time is
+	// currentScript: the last of them, and how many are running.
+	classic: Promise<void>;
 	running: number;
 	// The tail of the scripts a page inserted with async false, which run
 	// in the order they were inserted.
@@ -22764,7 +22792,7 @@ function scheduleDocumentScripts(document: Document): void {
 		readyState: "loading",
 		started: false,
 		early: [],
-		queue: Promise.resolve(),
+		classic: Promise.resolve(),
 		running: 0,
 		ordered: Promise.resolve(),
 		waiting: 0,
@@ -22863,15 +22891,15 @@ async function runDocumentScripts(
 				deferred.push(run);
 			}
 		} else if (!run.external) {
-			await runInTurn(run, scripts);
-			await settleQueue(scripts);
+			await executeScript(run, scripts);
+			await waitForClassic(scripts);
 		} else if (async) {
 			runWhenFetched(run, scripts);
 		} else if (hasAttributeByName(element, "defer")) {
 			deferred.push(run);
 		} else {
-			await runInTurn(run, scripts);
-			await settleQueue(scripts);
+			await executeScript(run, scripts);
+			await waitForClassic(scripts);
 		}
 		if (!isDocumentLive(document)) {
 			return;
@@ -22879,8 +22907,8 @@ async function runDocumentScripts(
 	}
 	setReadyState(document, scripts, "interactive");
 	for (const run of deferred) {
-		await runInTurn(run, scripts);
-		await settleQueue(scripts);
+		await executeScript(run, scripts);
+		await waitForClassic(scripts);
 	}
 	if (!isDocumentLive(document)) {
 		return;
@@ -22970,13 +22998,14 @@ function prepareScript(
 		scripts.moduleStarted = true;
 	}
 	if (src === null) {
-		return {
+		return withGraph({
 			element,
 			kind: type,
 			external: false,
 			url: type === "classic" ? getDocumentURL(document) : null,
 			source: getChildText(element),
-		};
+			linked: null,
+		}, scripts);
 	}
 	const url = parseURL(trimASCIIWhitespace(src), getDocumentBaseURL(document));
 	if (url === null || trimASCIIWhitespace(src) === "") {
@@ -22984,8 +23013,14 @@ function prepareScript(
 		return null;
 	}
 	if (type === "module") {
-		scripts.moduleStarted = true;
-		return {element, kind: type, external: true, url, source: null};
+		return withGraph({
+			element,
+			kind: type,
+			external: true,
+			url,
+			source: null,
+			linked: null,
+		}, scripts);
 	}
 	const preload = preloads.get(element);
 	preloads.delete(element);
@@ -22997,7 +23032,17 @@ function prepareScript(
 			? preload.source
 			: fetchScript(element, url, "classic");
 	source.catch(() => {});
-	return {element, kind: type, external: true, url, source};
+	return {element, kind: type, external: true, url, source, linked: null};
+}
+
+// A module starts fetching and linking its graph the moment it is
+// prepared.
+function withGraph(run: ScriptRun, scripts: DocumentScripts): ScriptRun {
+	if (run.kind === "module") {
+		run.linked = linkModuleScript(run, scripts);
+		run.linked.catch(() => {});
+	}
+	return run;
 }
 
 function getDocumentURL(document: Document): string {
@@ -23090,32 +23135,24 @@ function preloadScript(element: HTMLScriptElement): void {
 	});
 }
 
-// Waits for the scripts a turn queued, as scripts it inserted that a
-// listener runs, so the parse goes on only once they are done.
-async function settleQueue(scripts: DocumentScripts): Promise<void> {
-	let queue: Promise<void>;
-	do {
-		queue = scripts.queue;
-		await queue;
-	} while (queue !== scripts.queue);
-}
-
-// A script's turn among those that run one at a time.
-function runInTurn(run: ScriptRun, scripts: DocumentScripts): Promise<void> {
-	const turn = scripts.queue.then(() => executeScript(run, scripts));
-	scripts.queue = turn.catch(() => {});
-	return turn;
+// A classic script waits while one a listener runs is still running,
+// and the parse goes on only once those it inserted are done.
+async function waitForClassic(scripts: DocumentScripts): Promise<void> {
+	while (scripts.running > 0) {
+		await scripts.classic;
+	}
 }
 
 // An async script, or one a page inserted, runs once it is fetched, and
 // holds the load event until it has.
 function runWhenFetched(run: ScriptRun, scripts: DocumentScripts): void {
 	scripts.waiting++;
-	const fetched = run.source instanceof Promise
-		? run.source.then(() => {}, () => {})
+	const ready = run.linked ?? run.source;
+	const fetched = ready instanceof Promise
+		? ready.then(() => {}, () => {})
 		: Promise.resolve();
 	void fetched
-		.then(() => runInTurn(run, scripts))
+		.then(() => executeScript(run, scripts))
 		.finally(() => {
 			scripts.waiting--;
 			finishLoading(_(run.element).document, scripts);
@@ -23142,18 +23179,9 @@ function startInsertedScript(element: HTMLScriptElement): void {
 		return;
 	}
 	if (run.kind === "classic" && !run.external) {
-		if (scripts.running === 0) {
-			// It runs inside the insertion. Should a listener answer it, the
-			// scripts after it wait for that answer too.
-			const ran = executeScript(run, scripts);
-			scripts.queue = Promise.all([scripts.queue, ran]).then(
-				() => {},
-				() => {},
-			);
-			holdLoad(ran, scripts);
-		} else {
-			holdLoad(runInTurn(run, scripts), scripts);
-		}
+		// It runs inside the insertion, unless a classic script a listener
+		// runs is still running.
+		holdLoad(executeScript(run, scripts), scripts);
 		return;
 	}
 	if (
@@ -23165,7 +23193,7 @@ function startInsertedScript(element: HTMLScriptElement): void {
 		const fetched = run.source as Promise<string>;
 		const turn = scripts.ordered
 			.then(() => fetched.then(() => {}, () => {}))
-			.then(() => runInTurn(run, scripts));
+			.then(() => executeScript(run, scripts));
 		scripts.ordered = turn.catch(() => {});
 		void turn.finally(() => {
 			scripts.waiting--;
@@ -23212,7 +23240,7 @@ async function executeScript(
 	}
 	const attached = getAttachedDocument(document as unknown as Node)!;
 	if (run.kind === "module") {
-		await executeModule(run, scripts, attached);
+		await executeModule(run, scripts);
 		return;
 	}
 	// Inline text runs without waiting a microtask, so a script the page
@@ -23230,6 +23258,9 @@ async function executeScript(
 			);
 		}
 		return;
+	}
+	if (scripts.running > 0) {
+		await waitForClassic(scripts);
 	}
 	if (!isInPlace(run, scripts)) {
 		return;
@@ -23265,6 +23296,8 @@ async function executeScript(
 			}
 		} else {
 			scripts.running++;
+			const done = answer.then(() => {}, () => {});
+			scripts.classic = Promise.all([scripts.classic, done]).then(() => {});
 			try {
 				await answer;
 			} finally {
@@ -23273,7 +23306,7 @@ async function executeScript(
 		}
 	} catch (error) {
 		if (isDocumentLive(document)) {
-			reportError(error, document);
+			reportError(error, document, run.url ?? "");
 		}
 	} finally {
 		if (scripts.currentScript === element) {
@@ -23285,65 +23318,9 @@ async function executeScript(
 	}
 }
 
-// The default for a module no listener answered: its graph fetched,
-// linked and run in the document's window with node:vm. A module that
-// fails to load fails the element; one that throws reports it, and loads.
-async function runModuleScript(
-	run: ScriptRun,
-	scripts: DocumentScripts,
-): Promise<void> {
-	const {element} = run;
-	const document = scripts.document;
-	const realm = getDocumentRealm(document);
-	const context = getScriptContext(document);
-	if (!canRunModules() || context === null) {
-		fireScriptError(
-			element,
-			"A module needs node:vm's SourceTextModule, which Node has with " +
-				"--experimental-vm-modules, or a \"script\" listener on the TermDOM",
-		);
-		return;
-	}
-	let evaluate: () => Promise<unknown>;
-	try {
-		evaluate = await runInRealm(realm, () =>
-			linkInWindow(
-				context,
-				createModuleHost(element, scripts),
-				run.url ?? getDocumentBaseURL(document),
-				run.external ? null : run.source as string,
-			),
-		);
-	} catch (error) {
-		if (isInPlace(run, scripts)) {
-			fireScriptError(
-				element,
-				Object.prototype.toString.call(error) === "[object Error]"
-					? String((error as Error).message)
-					: String(error),
-			);
-		}
-		return;
-	}
-	if (!isInPlace(run, scripts)) {
-		return;
-	}
-	try {
-		await runInRealm(realm, evaluate);
-	} catch (error) {
-		if (isDocumentLive(document)) {
-			reportError(error, document);
-		}
-	}
-	if (run.external && isInPlace(run, scripts)) {
-		fireDocumentEvent(document, element as unknown as EventTarget, "load");
-	}
-}
-
 // The default for a classic script no listener answered: node:vm, in the
-// document's window.
-// An inline script's import() resolves against the document's base URL,
-// and one from a file against the file's.
+// document's window. An inline script's import() resolves against the
+// document's base URL, and one from a file against the file's.
 function runClassicScript(
 	run: ScriptRun,
 	scripts: DocumentScripts,
@@ -23544,11 +23521,48 @@ function matchSpecifierMap(
 async function executeModule(
 	run: ScriptRun,
 	scripts: DocumentScripts,
-	attached: Document,
 ): Promise<void> {
 	const {element} = run;
 	const document = scripts.document;
-	scripts.moduleStarted = true;
+	let evaluate: () => PromiseLike<unknown>;
+	try {
+		evaluate = await run.linked!;
+	} catch (error) {
+		if (isInPlace(run, scripts)) {
+			fireScriptError(
+				element,
+				Object.prototype.toString.call(error) === "[object Error]"
+					? String((error as Error).message)
+					: String(error),
+			);
+		}
+		return;
+	}
+	if (!isInPlace(run, scripts)) {
+		return;
+	}
+	try {
+		await evaluate();
+	} catch (error) {
+		if (isDocumentLive(document)) {
+			reportError(error, document, run.url ?? getDocumentBaseURL(document));
+		}
+	}
+	if (run.external && isInPlace(run, scripts)) {
+		fireDocumentEvent(document, element as unknown as EventTarget, "load");
+	}
+}
+
+// A module's graph, as soon as it is prepared: a "script" listener's, or
+// fetched and linked in the document's window with node:vm. What it
+// resolves to runs the graph.
+function linkModuleScript(
+	run: ScriptRun,
+	scripts: DocumentScripts,
+): Promise<() => PromiseLike<unknown>> {
+	const {element} = run;
+	const document = scripts.document;
+	const attached = getAttachedDocument(document as unknown as Node)!;
 	const answer =
 		_(attached).extra.runScript?.({
 			kind: "module",
@@ -23559,30 +23573,31 @@ async function executeModule(
 			base: getDocumentBaseURL(document),
 			importMaps: scripts.importMaps,
 		}) ?? null;
-	if (!isInPlace(run, scripts)) {
-		return;
+	if (answer !== null) {
+		return answer.then((evaluate) =>
+			typeof evaluate === "function"
+				? evaluate as () => PromiseLike<unknown>
+				: () => Promise.resolve(),
+		);
 	}
-	if (answer === null) {
-		await runModuleScript(run, scripts);
-		return;
+	const realm = getDocumentRealm(document);
+	const context = getScriptContext(document);
+	if (!canRunModules() || context === null) {
+		return Promise.reject(
+			new TypeError(
+				"A module needs node:vm's SourceTextModule, which Node has with " +
+				"--experimental-vm-modules, or a \"script\" listener on the TermDOM",
+			),
+		);
 	}
-	scripts.running++;
-	try {
-		await answer;
-	} catch (error) {
-		if (isInPlace(run, scripts)) {
-			fireScriptError(
-				element,
-				error instanceof Error ? error.message : String(error),
-			);
-		}
-		return;
-	} finally {
-		scripts.running--;
-	}
-	if (run.external && isInPlace(run, scripts)) {
-		fireDocumentEvent(document, element as unknown as EventTarget, "load");
-	}
+	return runInRealm(realm, () =>
+		linkInWindow(
+			context,
+			createModuleHost(element, scripts),
+			run.url ?? getDocumentBaseURL(document),
+			run.external ? null : run.source as string,
+		),
+	).then((evaluate) => () => runInRealm(realm, evaluate));
 }
 
 // Selectedness lives on the options. The select's members read it, and
@@ -29192,7 +29207,7 @@ export interface DocumentExtra extends NodeExtra {
 	allowsInlineScript?: (element: globalThis.Element) => boolean;
 	// Offers a script to the TermDOM's "script" listeners: their answer,
 	// or null to run it the default way.
-	runScript?: (request: ScriptRequest) => Promise<void> | null;
+	runScript?: (request: ScriptRequest) => Promise<unknown> | null;
 	// Where an exception the page let escape goes once the window's error
 	// event has not handled it. The engine owns the terminal, so it decides.
 	reportUncaught: (error: unknown) => void;
@@ -38434,7 +38449,7 @@ export interface DocumentEngine {
 		violations: "report" | "silent",
 	): boolean;
 	allowsInlineScript(element: globalThis.Element): boolean;
-	runScript(request: ScriptRequest): Promise<void> | null;
+	runScript(request: ScriptRequest): Promise<unknown> | null;
 	// Aborts when the TermDOM is disposed, and the document's loads with it.
 	loadSignal: globalThis.AbortSignal;
 	render(): Promise<void>;

@@ -215,7 +215,7 @@ set with `innerHTML` never run.
 each script's `load` and `error` events work as in a browser. A script
 with a `src` is fetched like an image: through `csp` and the `"fetch"`
 listeners. An exception a script throws goes to the window's `error`
-event.
+event, with the script's file, line and column.
 
 The first script runs in a task after the constructor returns, so a
 program can add listeners before any script runs.
@@ -249,10 +249,14 @@ term.addEventListener("script", (event) => {
   its URL, or the document's for one inline. `currentScript` stays set
   until the promise settles. A rejection is what the script threw, and
   goes to the window's `error` event.
-- A module's `url` is its resolved `src`, or `null` with its text in
-  `source` for one inline. `base` is the document's base URL and
-  `importMaps` the JSON of the import maps that count. A rejection
-  fires `error` on the element.
+- A module's event fires as soon as it is prepared, so module graphs
+  load side by side. Its `url` is its resolved `src`, or `null` with its
+  text in `source` for one inline. `base` is the document's base URL
+  and `importMaps` the JSON of the import maps that count. Resolve the
+  promise, once the graph is fetched and linked, to a function that
+  runs it; TermDOM calls that function in the module's turn. A
+  rejection fires `error` on the element, and the function's rejection
+  is what the module threw.
 - `respondWith()` works once, during dispatch. Without it, the script
   runs the default way.
 
