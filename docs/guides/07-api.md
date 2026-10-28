@@ -69,6 +69,9 @@ Options:
   context. With `"none"`, `getContext("2d")` returns `null`. The
   `"termdom-cellgrid"` context always works, but its `drawImage()`
   draws nothing under `"none"`.
+- `pty?: "none" | "auto"`: whether `<embed type="application/x-pty">`
+  runs its command. `"none"` (default) runs nothing. Experimental; see
+  the images and canvas guide.
 - `colorDepth?: "auto" | ColorDepth`: `24`, `8`, or `4` bits, or
   `"rgb"`, `"256"`, or `"ansi"`. `"auto"` (default) asks the terminal.
   See "Color depth" in the styling guide.

@@ -1,6 +1,6 @@
 ---
 title: Images and canvas
-description: How <img> and <canvas> draw pixels in cells.
+description: How <img> and <canvas> draw pixels in cells, and how <embed> runs a program.
 ---
 
 A cell shows two pixels: a lower half block, `▄`, in the foreground
@@ -354,6 +354,81 @@ the page's borders.
 | `measureText(text)` | Width in columns |
 | `reset()` | Clears the grid and settings |
 | `isContextLost()` | Always `false` |
+
+## `<embed type="application/x-pty">`
+
+Experimental. It may change in a minor release.
+
+The embed runs `src` with `/bin/sh -c` and draws the program's screen
+in its box.
+
+```html
+<embed type="application/x-pty" src="htop" width="80" height="24">
+```
+
+Nothing runs unless the `pty` option allows it:
+
+```ts
+new TermDOM({pty: "auto"});
+```
+
+Under `"auto"`, Bun uses its own pseudo-terminal and Node uses
+`node-pty` if it is installed. Elsewhere, and under `"none"` (the
+default), the embed fires `error`.
+
+### Size
+
+`width` and `height` are CSS pixels, so columns and rows under the unit
+cell. The default is 80 by 24. The program is resized to the box.
+
+The embed keeps 2000 lines of scrollback. `scrollback` sets another
+number, and `0` keeps none.
+
+### Input
+
+A focused embed sends every key to the program, Tab, Escape and Ctrl+C
+included, and pastes too. To keep a key, cancel its `keydown`:
+
+```ts
+document.addEventListener("keydown", (event) => {
+  if (event.ctrlKey && event.key === "q") {
+    event.preventDefault();
+    leave();
+  }
+}, true);
+```
+
+A program that asks for the mouse gets clicks, drags and the wheel in
+its box. Cancel `pointerdown`, `mousedown` or `wheel` to keep one.
+Otherwise the wheel scrolls the scrollback, then the page.
+
+A program that asks for focus reports is told when the embed gains and
+loses focus.
+
+`postMessage()` sends input while the program runs. A string goes as
+is, so `\r` is Enter. A `keydown` or `paste` event, or an object with
+its fields, goes as the user's would. After the program ends it throws
+`InvalidStateError`.
+
+```ts
+embed.postMessage("make\r");
+embed.postMessage({type: "keydown", key: "c", ctrlKey: true});
+```
+
+### Events
+
+- `load`: the program started.
+- `error`: it could not start.
+- `close`: it ended. A `CloseEvent` whose `code` is the exit code, and
+  whose `wasClean` is false if a signal killed it. The last screen
+  stays.
+- `titlechange`: a `CustomEvent` with the new title in `detail`.
+- `bell`: the program rang the bell.
+
+### Limits
+
+- The 16 basic colors are xterm's, not the outer terminal's.
+- Images the program draws don't show.
 
 ## Pixels as text
 
