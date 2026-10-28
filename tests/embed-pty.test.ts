@@ -13,10 +13,7 @@ import {
 	type PtySpawnOptions,
 	replaceSpawner,
 } from "../src/internal/pty.ts";
-import {canCreateRealms} from "../src/internal/realms.ts";
 import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.js";
-
-const withRealms = canCreateRealms() ? test : test.skip;
 
 interface FakeChild {
 	command: string;
@@ -733,23 +730,6 @@ test("a program started in a focused embed hears focus leave", async () => {
 	await dom.dispose();
 });
 
-test("an embed focused in a frame hears focus leave and return with the frame", async () => {
-	const {spawn, children} = fakeSpawner();
-	const {dom, document} = await mount(
-		`<iframe style="width: 20px; height: 4px; border: 0" srcdoc="<embed type='application/x-pty' src='sh' width='12' height='2'>"></iframe><button>b</button>`,
-		spawn,
-	);
-	await settle(dom);
-	children[0].options.onData("\x1b[?1004h");
-	await settle(dom);
-	const frame = document.querySelector("iframe")!;
-	frame.contentDocument!.querySelector("embed")!.focus();
-	document.querySelector("button")!.focus();
-	frame.focus();
-	expect(children[0].written).toEqual(["\x1b[I", "\x1b[O", "\x1b[I"]);
-	await dom.dispose();
-});
-
 test("an embed in the starting markup starts once the page is attached", async () => {
 	const {spawn, children} = fakeSpawner();
 	replaceSpawner(spawn);
@@ -765,69 +745,25 @@ test("an embed in the starting markup starts once the page is attached", async (
 	expect(children[0].killed).toBe(true);
 });
 
-test("an embed in a frame draws in the frame and takes the keys there", async () => {
+test("an embed in a frame runs nothing and fires an error that says so", async () => {
 	const {spawn, children} = fakeSpawner();
-	const {dom, terminal, document} = await mount(
-		`<iframe style="width: 20px; height: 4px; border: 0" srcdoc="<style>body{margin:0}</style><embed type='application/x-pty' src='sh' width='12' height='2'>"></iframe>`,
+	const {dom, document} = await mount(
+		`<iframe srcdoc="<embed type='application/x-pty' src='sh'>"></iframe>`,
 		spawn,
 	);
-	await settle(dom);
-	expect(children.map((child) => child.command)).toEqual(["sh"]);
-	children[0].options.onData("inner");
-	await settle(dom);
-	await until(() => rowText(terminal, 0).includes("inner"));
 	const frame = document.querySelector("iframe")!;
-	frame.contentDocument!.querySelector("embed")!.focus();
-	await send(terminal, "x");
-	await send(terminal, "\x03");
-	expect(children[0].written).toEqual(["x", "\x03"]);
-	expect(dom.window.closed).toBe(false);
-	await dom.dispose();
-	expect(children[0].killed).toBe(true);
-});
-
-test("removing or navigating a frame stops the programs in it", async () => {
-	const {spawn, children} = fakeSpawner();
-	const frameHTML =
-		`<iframe style="width: 20px; height: 4px; border: 0" srcdoc="<embed type='application/x-pty' src='sh' width='12' height='2'>"></iframe>`;
-	const {dom, document} = await mount(frameHTML + frameHTML, spawn);
-	await settle(dom);
-	expect(children.map((child) => child.killed)).toEqual([false, false]);
-	const [first, second] = document.querySelectorAll("iframe");
-	first.remove();
-	expect(children[0].killed).toBe(true);
-	second.setAttribute("srcdoc", "<p>gone</p>");
-	await settle(dom);
-	expect(children[1].killed).toBe(true);
+	await until(() => frame.contentDocument?.querySelector("embed") != null);
+	const embed = frame.contentDocument!.querySelector("embed")!;
+	const messages: string[] = [];
+	embed.addEventListener("error", (event) =>
+		messages.push((event as ErrorEvent).message),
+	);
+	embed.setAttribute("src", "top");
+	await until(() => messages.length > 0);
+	expect(messages).toEqual(["A frame runs no program"]);
+	expect(children).toEqual([]);
 	await dom.dispose();
 });
-
-withRealms(
-	"an embed in a frame fires its events in the frame's realm",
-	async () => {
-		const {spawn, children} = fakeSpawner();
-		const {dom, document} = await mount(
-			`<iframe style="width: 20px; height: 4px; border: 0" srcdoc="<embed type='application/x-pty' src='sh' width='12' height='2'>"></iframe>`,
-			spawn,
-		);
-		await settle(dom);
-		const frame = document.querySelector("iframe")!;
-		const window = frame.contentWindow as any;
-		const embed = frame.contentDocument!.querySelector("embed")! as any;
-		const seen: boolean[] = [];
-		embed.addEventListener("close", (event: Event) => {
-			seen.push(
-				event instanceof window.CloseEvent,
-				event instanceof dom.window.CloseEvent,
-			);
-		});
-		expect(embed.postMessage instanceof window.Function).toBe(true);
-		children[0].options.onExit(0, null);
-		await until(() => seen.length > 0);
-		expect(seen).toEqual([true, false]);
-		await dom.dispose();
-	},
-);
 
 test("the wheel scrolls back through what scrolled off, and a key returns", async () => {
 	const {spawn, children} = fakeSpawner();
