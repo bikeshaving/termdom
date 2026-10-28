@@ -140,8 +140,8 @@ it is the only call that writes to the terminal. It returns a promise
 that resolves once the first frame has been written.</p><p>While a TermDOM is attached to the process transport, the process stays
 alive until <code>dispose()</code> or <code>window.close()</code>.</p><p><code>document.visibilityState</code> is <code>&quot;hidden&quot;</code> before <code>attach()</code>, <code>&quot;visible&quot;</code>
 until <code>dispose()</code>, and <code>&quot;hidden&quot;</code> after that. It is also <code>&quot;hidden&quot;</code>
-while the terminal&#039;s scrollback has control of the mouse wheel, until
-the next keystroke. <code>visibilitychange</code> fires on each change.</p><h3 id="term-renderansi-html"><code>term.renderANSI(html?)</code> <a class="heading-anchor" href="#term-renderansi-html">#</a></h3><p>Returns the whole document as an ANSI string at the terminal&#039;s width.
+while the wheel is scrolling the terminal&#039;s scrollback.
+<code>visibilitychange</code> fires on each change.</p><h3 id="term-renderansi-html"><code>term.renderANSI(html?)</code> <a class="heading-anchor" href="#term-renderansi-html">#</a></h3><p>Returns the whole document as an ANSI string at the terminal&#039;s width.
 The string contains colors and line breaks, but no cursor movement. If
 you pass an HTML string, <code>renderANSI()</code> renders that string instead and
 does not change the document.</p><pre class="language-typescript"><code class="language-typescript"><span class="token keyword">const</span> page <span class="token operator">=</span> term<span class="token punctuation">.</span><span class="token function">renderANSI</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>

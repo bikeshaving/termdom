@@ -30,10 +30,10 @@ window cannot scroll above the document&#039;s first row.</p><p>When the documen
 shell&#039;s earlier output. Turning the wheel up over those rows scrolls
 the terminal&#039;s own scrollback instead. Over the document, the wheel
 always belongs to the document, even where nothing there can scroll.
-No terminal reports when the user has scrolled back down. For that reason
-the engine takes the mouse back for the document on the next keystroke,
-and that keystroke is also delivered to the document. While the wheel
-belongs to the terminal, <code>document.visibilityState</code> is <code>&quot;hidden&quot;</code>.</p><p>Each frame repaints the region in place. The program can end with
+No terminal reports when the user has scrolled back down, so the
+document takes the mouse back on the next key, paste, or return of
+focus. Until then, <code>document.visibilityState</code> is <code>&quot;hidden&quot;</code> and the
+document is blurred.</p><p>Each frame repaints the region in place. The program can end with
 <code>window.close()</code>, with <code>dispose()</code>, or by the user pressing Ctrl-C. In
 each case the engine erases the region and prints the whole document
 once more as plain output. The final state then sits in the scrollback

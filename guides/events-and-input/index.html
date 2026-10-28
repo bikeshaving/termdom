@@ -61,7 +61,14 @@ follows a focused link.</p><p>Escape closes the element on top of the top layer,
 dialog or an open popover. It does this even if a <code>keydown</code> listener
 canceled the key.</p><p>Tab from the last focusable element leaves nothing focused. The next
 Tab then focuses the first element. A browser behaves the same way when
-focus leaves the page for its toolbar and comes back.</p><h2 id="dialogs-popovers-and-details">Dialogs, popovers, and details <a class="heading-anchor" href="#dialogs-popovers-and-details">#</a></h2><p><code>&lt;dialog&gt;</code> opens with <code>show()</code> or <code>showModal()</code>. A modal dialog sits in
+focus leaves the page for its toolbar and comes back.</p><p>When the terminal loses focus, because you switched to another window
+or tmux pane, the focused element gets <code>blur</code> and <code>focusout</code>, then the
+window gets <code>blur</code>. The element stays <code>document.activeElement</code>. When
+focus returns, the window gets <code>focus</code>, then the element gets <code>focus</code>
+and <code>focusin</code>.</p><p>While the terminal is away, <code>document.hasFocus()</code> is false, <code>:focus</code>
+matches nothing, and no cursor shows. The page is also blurred while
+the wheel is scrolling the terminal&#039;s scrollback.</p><p>A terminal that doesn&#039;t report focus never fires these. In tmux, turn
+on <code>focus-events</code>.</p><h2 id="dialogs-popovers-and-details">Dialogs, popovers, and details <a class="heading-anchor" href="#dialogs-popovers-and-details">#</a></h2><p><code>&lt;dialog&gt;</code> opens with <code>show()</code> or <code>showModal()</code>. A modal dialog sits in
 the top layer, centered, with a <code>Canvas</code> backdrop that covers the page.
 Escape closes it and fires <code>cancel</code>, then <code>close</code>.</p><p>A <code>[popover]</code> opens with <code>showPopover()</code>, <code>togglePopover()</code>, or a
 <code>popovertarget</code> button. Light dismiss works: a click outside the
