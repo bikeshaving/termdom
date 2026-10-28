@@ -41,6 +41,7 @@ import {
 	setDocumentLoader,
 } from "./resources.ts";
 import {_, prepareClasses} from "./slots.ts";
+import {splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
 import type {setTimeout} from "./timers.ts";
 import {
 	type Constructor,
@@ -238,9 +239,15 @@ setFrameWindowFactory((source, url, registry, parent, frame) => {
 	if (realm === null) {
 		return null;
 	}
+	// A sandboxed frame runs scripts only with allow-scripts.
+	const sandbox = frame?.getAttribute("sandbox") ?? null;
 	const scripting =
 		parent !== null &&
-		isScriptedDocument(parent.document as unknown as globalThis.Document);
+		isScriptedDocument(parent.document as unknown as globalThis.Document) &&
+		(sandbox === null ||
+			splitOnASCIIWhitespace(toASCIILowercase(sandbox)).includes(
+				"allow-scripts",
+			));
 	return runInRealm(realm, () => {
 		const document = parseHTMLDocument(source, url, true, registry, scripting);
 		realm.document = document;

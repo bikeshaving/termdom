@@ -23,10 +23,11 @@ interface Page {
 // each file `files` names, and a 404 for anything else.
 function page(
 	html: string,
-	{files = {}, scripting = "enabled", csp, listen}: {
+	{files = {}, scripting = "enabled", csp, head = "", listen}: {
 		files?: Record<string, string>;
 		scripting?: "enabled" | "none";
 		csp?: string;
+		head?: string;
 		listen?: (dom: TermDOM) => void;
 	} = {},
 ): Page {
@@ -36,7 +37,7 @@ function page(
 		scripting,
 		csp,
 		url: "https://example.com/app/page.html",
-		html: `<!doctype html><head><script nonce="abc">var log = [];</script></head><body>${html}</body>`,
+		html: `<!doctype html><head>${head}<script nonce="abc">var log = [];</script></head><body>${html}</body>`,
 	});
 	dom.addEventListener("fetch", (event) => {
 		const name = new URL(event.request.url).pathname.slice(1);
@@ -465,7 +466,6 @@ withRealms(
 	"a frame's scripts and handlers run in its own realm, with its own document state",
 	async () => {
 		const p = page(FRAME);
-		void p.dom.document.querySelector("iframe")!.contentDocument;
 		await until(() => p.log().includes("frame DOMContentLoaded"));
 		expect(p.log()).toEqual([
 			"frame script",
@@ -496,7 +496,6 @@ withRealms(
 				});
 			},
 		});
-		void p.dom.document.querySelector("iframe")!.contentDocument;
 		await until(() => p.log().includes("frame DOMContentLoaded"));
 		const frame = p.dom.document.querySelector("iframe")!;
 		expect(documents).toEqual([p.dom.document, frame.contentDocument]);
@@ -514,3 +513,142 @@ withRealms("a frame runs nothing when its page runs no scripts", async () => {
 	).toBe(undefined);
 	await p.dom.dispose();
 });
+
+test("a clone keeps whether its script started, so innerHTML's and run scripts never run again", async () => {
+	const p = page(
+		`<div id="holder"></div>
+		<script id="ran">log.push("ran once");</script>
+		<script>
+			const holder = document.getElementById("holder");
+			holder.innerHTML = "<script>log.push('innerHTML clone')<\\/script>";
+			document.body.append(holder.cloneNode(true));
+			document.body.append(document.getElementById("ran").cloneNode(true));
+			const made = document.createElement("script");
+			made.textContent = "log.push('made clone')";
+			document.body.append(made.cloneNode(true));
+		</script>`,
+	);
+	await loaded(p);
+	expect(p.log()).toEqual(["ran once", "made clone"]);
+	await p.dom.dispose();
+});
+
+test("scripts innerHTML puts in a template or a shadow root never run", async () => {
+	const p = page(
+		`<div id="host"></div>
+		<script>
+			const holder = document.createElement("div");
+			holder.innerHTML = "<template><script>log.push('template')<\\/script></template>";
+			document.body.append(document.importNode(holder.querySelector("template").content, true));
+			document.getElementById("host").setHTMLUnsafe(
+				"<div><template shadowrootmode='open'><script>log.push('shadow')<\\/script></template></div>",
+			);
+			log.push("done");
+		</script>`,
+	);
+	await loaded(p);
+	expect(p.log()).toEqual(["done"]);
+	await p.dom.dispose();
+});
+
+test("a parsed script is not async unless it says so; a made one is until set", async () => {
+	const p = page(
+		`<script id="plain">log.push(document.getElementById("plain").async, document.createElement("script").async)</script>`,
+	);
+	await loaded(p);
+	expect(p.log()).toEqual([false, true]);
+	await p.dom.dispose();
+});
+
+test("a script prepares in its turn: an earlier one can remove it", async () => {
+	const p = page(`<script>document.getElementById("later").remove();</script>
+		<script id="later" src="later.js"></script>
+		<script>log.push("after");</script>`, {
+		files: {"app/later.js": `log.push("later ran")`},
+	});
+	await loaded(p);
+	expect(p.log()).toEqual(["after"]);
+	await p.dom.dispose();
+});
+
+withRealms(
+	"a sandboxed frame runs scripts only with allow-scripts",
+	async () => {
+		const p = page(
+			`<iframe sandbox srcdoc="<script>parent.log.push('sandboxed')</script>"></iframe>
+		<iframe sandbox="allow-scripts" srcdoc="<script>parent.log.push('allowed')</script>"></iframe>`,
+		);
+		await until(() => p.log().length > 0);
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		expect(p.log()).toEqual(["allowed"]);
+		await p.dom.dispose();
+	},
+);
+
+withRealms("a srcdoc frame is held to its page's meta policy", async () => {
+	const p = page(
+		`<iframe srcdoc="<script>parent.log.push('frame inline')</script><script nonce='abc'>parent.log.push('frame nonce')</script>"></iframe>`,
+		{
+			head: `<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-abc'">`,
+		},
+	);
+	await until(() => p.log().length > 0);
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	expect(p.log()).toEqual(["frame nonce"]);
+	await p.dom.dispose();
+});
+
+withRealms(
+	"a frame's scripts run without a read, and the iframe loads after the frame does",
+	async () => {
+		const p = page(
+			`<iframe onload="log.push('iframe load')" srcdoc="
+				<script>addEventListener('load', () => parent.log.push('frame load'))</script>
+				<script src='slow.js'></script>
+			"></iframe>`,
+			{files: {"app/slow.js": "parent.log.push('frame script')"}},
+		);
+		await until(() => p.log().includes("iframe load"));
+		expect(p.log()).toEqual(["frame script", "frame load", "iframe load"]);
+		await p.dom.dispose();
+	},
+);
+
+withModules(
+	"an import map a classic script adds counts; one after an inline module does not",
+	async () => {
+		const p = page(
+			`<script>
+			const map = document.createElement("script");
+			map.type = "importmap";
+			map.textContent = '{"imports": {"one": "./one.js"}}';
+			document.head.append(map);
+		</script>
+		<script type="module">import {name} from "one"; log.push(name);</script>
+		<script type="importmap">{"imports": {"two": "./two.js"}}</script>
+		<script type="module" onerror="log.push('two unmapped')">import "two";</script>`,
+			{
+				files: {
+					"app/one.js": `export const name = "one";`,
+					"app/two.js": `log.push("two");`,
+				},
+			},
+		);
+		await loaded(p);
+		expect(p.log()).toEqual(["one", "two unmapped"]);
+		await p.dom.dispose();
+	},
+);
+
+withModules(
+	"an inline classic script's import() resolves against the base URL",
+	async () => {
+		const p = page(`<base href="https://example.com/lib/">
+		<script>import("./mod.js").then((m) => log.push(m.where));</script>`, {
+			files: {"lib/mod.js": `export const where = "lib";`},
+		});
+		await until(() => p.log().length > 0);
+		expect(p.log()).toEqual(["lib"]);
+		await p.dom.dispose();
+	},
+);

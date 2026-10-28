@@ -133,6 +133,7 @@ export function runInWindow(
 	window: object,
 	source: string,
 	filename: string,
+	base: string,
 	host: ModuleHost,
 ): boolean {
 	const vm = getVM();
@@ -152,7 +153,7 @@ export function runInWindow(
 						vm,
 						window,
 						host,
-						host.resolve(specifier, filename),
+						host.resolve(specifier, base),
 					)).namespace,
 			}),
 	});

@@ -5363,15 +5363,22 @@ function compileEventHandler(
 		element,
 	] as unknown as object[];
 	try {
-		// Parsed here first: Bun's node:vm reports bad syntax as a plain
-		// Error, where a page expects a SyntaxError.
-		const parsed = new Function("event", value.source);
 		const context = getScriptContext(document);
-		record.value = ((
-			context === null
-				? null
-				: compileInWindow(context, value.source, scopes, `on${type}`)
-		) ?? parsed) as EventHandlerValue;
+		let compiled: unknown = null;
+		if (context !== null) {
+			try {
+				compiled = compileInWindow(context, value.source, scopes, `on${type}`);
+			} catch (error) {
+				// Bun's node:vm reports bad syntax as a plain Error, where a
+				// page expects a SyntaxError: parsing again here throws one.
+				if ((error as Error | null)?.name !== "SyntaxError") {
+					new Function("event", value.source);
+				}
+				throw error;
+			}
+		}
+		record.value =
+			(compiled ?? new Function("event", value.source)) as EventHandlerValue;
 	} catch (error) {
 		reportError(error, _(value.element).document);
 		setEventHandler(target, type, null);
@@ -6434,6 +6441,15 @@ const documentScripts = new WeakMap<Document, DocumentScripts>();
 // Scripts connected by the insertion running now. They start once it is
 // done, as HTML's post-connection steps do.
 const insertedScripts: HTMLScriptElement[] = [];
+
+// Whether the parser is making a fragment, whose scripts never run.
+let parsingFragment = false;
+
+// Fetches started for the markup's scripts before their turn.
+const preloads = new WeakMap<
+	HTMLScriptElement,
+	{url: string; source: Promise<string>}
+>();
 
 function runChildrenChangedSteps(
 	point: Node,
@@ -15479,9 +15495,16 @@ function getURLAttribute(element: Element, attribute: string): string {
 
 // The href of the first base element that has one, resolved against the
 // document's URL. Falls back to the document's URL when there is no such
-// element or its href does not parse.
+// element or its href does not parse, or for a srcdoc frame, to the base
+// URL of the document its iframe is in, as HTML's fallback base URL is.
 function getDocumentBaseURL(document: Document): string {
-	const fallback = _(document).extra.documentURL;
+	let fallback = _(document).extra.documentURL;
+	if (fallback === "about:srcdoc") {
+		const owner = getFrameOwner(document);
+		if (owner !== null) {
+			fallback = getDocumentBaseURL(_(owner).document);
+		}
+	}
 	for (const node of descendants(document)) {
 		if (getNodeType(node) !== ELEMENT_NODE) {
 			continue;
@@ -18891,10 +18914,33 @@ export function discardFrames(document: globalThis.Document | Document): void {
 function scheduleFrameLoad(frame: HTMLIFrameElement): void {
 	const slots = _(frame);
 	const run = (slots.extra.frameDocumentRun = {});
-	setTimeout(() => {
+	const fire = () => {
 		if (frame.isConnected && slots.extra.frameDocumentRun === run) {
 			frame.dispatchEvent(constructInternal(() => new Event("load")));
 		}
+	};
+	setTimeout(() => {
+		if (!frame.isConnected || slots.extra.frameDocumentRun !== run) {
+			return;
+		}
+		// In a page whose scripts run, the frame is built now, so its own
+		// scripts run without waiting for a read or a paint, and its load
+		// waits for the frame's.
+		if (
+			isScriptedDocument(slots.document as unknown as globalThis.Document) &&
+			getAttachedDocument(slots.document as unknown as Node) !== undefined
+		) {
+			ensureFrameDocument(frame);
+			const content = slots.extra.contentDocument;
+			const scripts = content === null
+				? undefined
+				: documentScripts.get(content);
+			if (scripts !== undefined && scripts.readyState !== "complete") {
+				scripts.whenLoaded.push(fire);
+				return;
+			}
+		}
+		fire();
 	}, 0);
 }
 
@@ -22530,6 +22576,12 @@ class HTMLScriptElement extends HTMLElement {
 		return named === "classic" || named === "module" || named === "importmap";
 	}
 
+	override _cloningSteps(this: Slots<HTMLScriptElement>, copy: Node): void {
+		const extra = _(copy as HTMLScriptElement).extra;
+		extra.alreadyStarted = this.extra.alreadyStarted;
+		extra.forceAsync = this.extra.forceAsync;
+	}
+
 	override _insertionSteps(this: Slots<HTMLScriptElement>): void {
 		superStep(HTMLScriptElement, "_insertionSteps").call(this);
 		if (this.connected) {
@@ -22604,6 +22656,8 @@ interface DocumentScripts {
 	importMap: ImportMap | null;
 	moduleStarted: boolean;
 	currentScript: HTMLScriptElement | null;
+	// What waits for the window's load: a frame's own load event.
+	whenLoaded: Array<() => void>;
 }
 
 const JAVASCRIPT_TYPES = new Set([
@@ -22686,6 +22740,7 @@ function scheduleDocumentScripts(document: Document): void {
 		importMap: null,
 		moduleStarted: false,
 		currentScript: null,
+		whenLoaded: [],
 	};
 	documentScripts.set(document, scripts);
 	setTimeout(() => {
@@ -22748,13 +22803,20 @@ async function runDocumentScripts(
 		return;
 	}
 	scripts.started = true;
-	const blocking: ScriptRun[] = [];
-	const deferred: ScriptRun[] = [];
+	const parsed: HTMLScriptElement[] = [];
 	for (const node of descendants(document)) {
-		if (!implementsInterface(node, HTMLScriptElement)) {
-			continue;
+		if (implementsInterface(node, HTMLScriptElement)) {
+			parsed.push(node as HTMLScriptElement);
+			preloadScript(node as HTMLScriptElement);
 		}
-		const element = node as HTMLScriptElement;
+	}
+	for (const element of scripts.early.splice(0)) {
+		startInsertedScript(element);
+	}
+	// Each is prepared when the parser would have reached it, after the
+	// ones before it ran, which can change or remove it.
+	const deferred: ScriptRun[] = [];
+	for (const element of parsed) {
 		const run = prepareScript(element, scripts);
 		if (run === null) {
 			continue;
@@ -22767,23 +22829,17 @@ async function runDocumentScripts(
 				deferred.push(run);
 			}
 		} else if (!run.external) {
-			blocking.push(run);
+			await runInTurn(run, scripts);
 		} else if (async) {
 			runWhenFetched(run, scripts);
 		} else if (hasAttributeByName(element, "defer")) {
 			deferred.push(run);
 		} else {
-			blocking.push(run);
+			await runInTurn(run, scripts);
 		}
-	}
-	for (const element of scripts.early.splice(0)) {
-		startInsertedScript(element);
-	}
-	for (const run of blocking) {
-		await runInTurn(run, scripts);
-	}
-	if (!isDocumentLive(document)) {
-		return;
+		if (!isDocumentLive(document)) {
+			return;
+		}
 	}
 	setReadyState(document, scripts, "interactive");
 	for (const run of deferred) {
@@ -22815,6 +22871,9 @@ function finishLoading(document: Document, scripts: DocumentScripts): void {
 	const view = _(document).extra.defaultView;
 	if (view !== null) {
 		fireDocumentEvent(document, view as unknown as EventTarget, "load");
+	}
+	for (const fire of scripts.whenLoaded.splice(0)) {
+		fire();
 	}
 }
 
@@ -22863,6 +22922,9 @@ function prepareScript(
 		}
 		return null;
 	}
+	if (type === "module") {
+		scripts.moduleStarted = true;
+	}
 	if (src === null) {
 		return {
 			element,
@@ -22881,7 +22943,11 @@ function prepareScript(
 		scripts.moduleStarted = true;
 		return {element, kind: type, external: true, url, source: null};
 	}
-	const source = fetchScript(element, url, "classic");
+	const preload = preloads.get(element);
+	preloads.delete(element);
+	const source = preload?.url === url
+		? preload.source
+		: fetchScript(element, url, "classic");
 	source.catch(() => {});
 	return {element, kind: type, external: true, url, source};
 }
@@ -22949,6 +23015,29 @@ async function fetchScript(
 	return decoder.decode(bytes);
 }
 
+// The markup's classic scripts with a src are fetched at once, as a
+// browser's preload scanner fetches them. Each script still prepares in
+// its turn, and takes the fetch if its src still names it.
+function preloadScript(element: HTMLScriptElement): void {
+	const src = getAttributeValue(element, "src");
+	if (
+		src === null ||
+		_(element).extra.alreadyStarted ||
+		getScriptType(element) !== "classic" ||
+		hasAttributeByName(element, "nomodule")
+	) {
+		return;
+	}
+	const document = _(element).document;
+	const url = parseURL(trimASCIIWhitespace(src), getDocumentBaseURL(document));
+	if (url === null) {
+		return;
+	}
+	const source = fetchScript(element, url, "classic");
+	source.catch(() => {});
+	preloads.set(element, {url, source});
+}
+
 // A script's turn among those that run one at a time.
 function runInTurn(run: ScriptRun, scripts: DocumentScripts): Promise<void> {
 	const turn = scripts.queue.then(() => executeScript(run, scripts));
@@ -22992,7 +23081,13 @@ function startInsertedScript(element: HTMLScriptElement): void {
 	}
 	if (run.kind === "classic" && !run.external) {
 		if (scripts.running === 0) {
-			void executeScript(run, scripts);
+			// It runs inside the insertion. Should a listener answer it, the
+			// scripts after it wait for that answer too.
+			const ran = executeScript(run, scripts);
+			scripts.queue = Promise.all([scripts.queue, ran]).then(
+				() => {},
+				() => {},
+			);
 		} else {
 			void runInTurn(run, scripts);
 		}
@@ -23069,6 +23164,9 @@ async function executeScript(
 			base: getDocumentBaseURL(document),
 			importMaps: scripts.importMaps,
 		}) ?? null;
+	if (!isDocumentLive(document)) {
+		return;
+	}
 	// A script the default runs synchronously, one inside another when a
 	// script inserts one, so currentScript comes back to the outer one.
 	// A listener's answer takes its turn alone.
@@ -23076,7 +23174,7 @@ async function executeScript(
 	scripts.currentScript = element;
 	try {
 		if (answer === null) {
-			if (!runClassicScript(element, scripts, source, run.url ?? "")) {
+			if (!runClassicScript(run, scripts, source)) {
 				fireScriptError(
 					element,
 					"A classic script needs node:vm, or a \"script\" listener " +
@@ -23160,19 +23258,27 @@ async function runModuleScript(
 
 // The default for a classic script no listener answered: node:vm, in the
 // document's window.
+// An inline script's import() resolves against the document's base URL,
+// and one from a file against the file's.
 function runClassicScript(
-	element: HTMLScriptElement,
+	run: ScriptRun,
 	scripts: DocumentScripts,
 	source: string,
-	filename: string,
 ): boolean {
+	const {element} = run;
 	const document = _(element).document;
 	const context = getScriptContext(document);
 	if (context === null) {
 		return false;
 	}
 	return runInRealm(getDocumentRealm(document), () =>
-		runInWindow(context, source, filename, createModuleHost(element, scripts)),
+		runInWindow(
+			context,
+			source,
+			run.url ?? "",
+			run.external ? run.url! : getDocumentBaseURL(document),
+			createModuleHost(element, scripts),
+		),
 	);
 }
 
@@ -23366,6 +23472,9 @@ async function executeModule(
 			base: getDocumentBaseURL(document),
 			importMaps: scripts.importMaps,
 		}) ?? null;
+	if (!isDocumentLive(document)) {
+		return;
+	}
 	if (answer === null) {
 		await runModuleScript(run, scripts);
 		return;
@@ -36591,6 +36700,14 @@ function createTreeAdapter(document: Document | null) {
 				parseRegistry,
 			);
 			adapter.adoptAttributes(element, attrs);
+			// A script the parser makes is not async unless it says so, and one
+			// a fragment parse makes, as innerHTML's, never runs: template
+			// contents and shadow roots included.
+			if (implementsInterface(element, HTMLScriptElement)) {
+				const extra = _(element as HTMLScriptElement).extra;
+				extra.forceAsync = false;
+				extra.alreadyStarted = parsingFragment;
+			}
 			return element;
 		},
 		createCommentNode(data: string): Comment {
@@ -36904,7 +37021,9 @@ function parseHTMLFragment(
 	const document = contextSlots.document;
 	const adapter = createTreeAdapter(document);
 	const outerRegistry = parseRegistry;
+	const outerParsingFragment = parsingFragment;
 	parseRegistry = contextSlots.registry;
+	parsingFragment = true;
 	let parsed: DocumentFragment;
 	try {
 		parsed = Parse5.parseFragment(context as never, markup, {
@@ -36915,6 +37034,7 @@ function parseHTMLFragment(
 		}) as unknown as DocumentFragment;
 	} finally {
 		parseRegistry = outerRegistry;
+		parsingFragment = outerParsingFragment;
 	}
 	const fragment =
 		document.createDocumentFragment() as unknown as DocumentFragment;
@@ -36923,11 +37043,6 @@ function parseHTMLFragment(
 	}
 	if (allowDeclarativeShadowRoots) {
 		attachDeclarativeShadowRoots(fragment);
-	}
-	for (const node of descendants(fragment)) {
-		if (implementsInterface(node, HTMLScriptElement)) {
-			_(node as HTMLScriptElement).extra.alreadyStarted = true;
-		}
 	}
 	return fragment;
 }
@@ -41955,9 +42070,21 @@ function addDocumentPolicy(document: object, content: string): void {
 	}
 }
 
-/** The policy texts the document's <meta> elements stated, in order. */
+/**
+ * The policy texts the document's <meta> elements stated, in order. A
+ * srcdoc or about:blank frame has its page's too, as CSP has such a
+ * document inherit its creator's policy.
+ */
 export function getMetaPolicyTexts(document: object): readonly string[] {
-	return metaPolicyTexts.get(document) ?? [];
+	const own = metaPolicyTexts.get(document) ?? [];
+	const url = _(document as Document).extra.documentURL;
+	if (url !== "about:srcdoc" && url !== "about:blank") {
+		return own;
+	}
+	const owner = getFrameOwner(document as Document);
+	return owner === null
+		? own
+		: [...getMetaPolicyTexts(_(owner).document), ...own];
 }
 
 /**
