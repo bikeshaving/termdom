@@ -774,3 +774,20 @@ withModules("an import() ends the time for import maps", async () => {
 	expect(p.log().sort()).toEqual(["imported", "map refused"]);
 	await p.dom.dispose();
 });
+
+test("a second policy an earlier script adds blocks a later file too", async () => {
+	const p = page(`<script nonce="abc">
+			const meta = document.createElement("meta");
+			meta.httpEquiv = "Content-Security-Policy";
+			meta.content = "script-src 'nonce-abc'";
+			document.head.append(meta);
+		</script>
+		<script src="later.js"></script>
+		<script nonce="abc">log.push("after");</script>`, {
+		files: {"app/later.js": `log.push("later ran")`},
+		head: `<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'nonce-abc'">`,
+	});
+	await loaded(p);
+	expect(p.log()).toEqual(["after"]);
+	await p.dom.dispose();
+});

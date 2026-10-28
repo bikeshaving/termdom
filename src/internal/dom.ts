@@ -23083,7 +23083,11 @@ function preloadScript(element: HTMLScriptElement): void {
 	}
 	const source = fetchScript(element, url, "classic");
 	source.catch(() => {});
-	preloads.set(element, {url, source, policies: getMetaPolicyTexts(document)});
+	preloads.set(element, {
+		url,
+		source,
+		policies: [...getMetaPolicyTexts(document)],
+	});
 }
 
 // Waits for the scripts a turn queued, as scripts it inserted that a
