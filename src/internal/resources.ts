@@ -291,6 +291,39 @@ export function checkInlineHandler(
 	return true;
 }
 
+/**
+ * Whether the policies let an <embed> run its program. An object-src, or
+ * a default-src without one, of 'none' forbids it, as it forbids plugins
+ * in a browser. A program is not loaded from a URL, so no other source
+ * list says anything about it.
+ */
+export function checkPlugin(element: Element, policy: RequestPolicy): boolean {
+	const document = element.ownerDocument;
+	for (const stated of [...policy.policies, ...getDocumentPolicies(document)]) {
+		const sources =
+			stated.directives.get("object-src") ??
+			stated.directives.get("default-src");
+		if (
+			sources === undefined ||
+			sources.length !== 1 ||
+			sources[0].toLowerCase() !== "'none'"
+		) {
+			continue;
+		}
+		policy.violate(element.isConnected ? element : document, {
+			documentURI: stripURLForReport(new URL(document.URL)),
+			blockedURI: "",
+			effectiveDirective: "object-src",
+			originalPolicy: stated.text,
+			disposition: "enforce",
+			bubbles: true,
+			composed: true,
+		});
+		return false;
+	}
+	return true;
+}
+
 // CSP3 §5.4: a URL that is not HTTP(S) reports as its scheme alone, and
 // one that is reports without its fragment and credentials.
 function stripURLForReport(url: URL): string {

@@ -106,7 +106,32 @@ test("an embed disposed with its page before its error is due fires none", async
 	expect(heard).toEqual([]);
 });
 
-test("without the pty option, an embed runs nothing and fires error", async () => {
+async function errorMessages(
+	html: string,
+	pty: "none" | "auto",
+): Promise<{dom: TermDOM; messages: string[]}> {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport, pty, html});
+	const messages: string[] = [];
+	dom.window.addEventListener("error", () => messages.push("window error"));
+	dom.document.addEventListener(
+		"error",
+		(event) => messages.push((event as ErrorEvent).message),
+		true,
+	);
+	await until(() => messages.length > 0);
+	await nextFrame(dom);
+	return {dom, messages};
+}
+
+test("without the pty option, an embed runs nothing and fires an error that says why", async () => {
+	replaceSpawner(null);
+	const {dom: quiet, messages} = await errorMessages(
+		`<embed type="application/x-pty" src="top">`,
+		"none",
+	);
+	expect(messages).toEqual(['The pty option is "none"']);
+	await quiet.dispose();
 	const {dom, document, heard} = await mount(
 		`<embed type="application/x-pty" src="top" width="10" height="3">`,
 		"none",
@@ -116,6 +141,50 @@ test("without the pty option, an embed runs nothing and fires error", async () =
 	expect(heard).toEqual(["error"]);
 	expect(embed.getBoundingClientRect().width).toBe(0);
 	expect(embed.tabIndex).toBe(0);
+	await dom.dispose();
+});
+
+test("a policy whose object-src is 'none' keeps an embed's program from running", async () => {
+	const {spawn, children} = fakeSpawner();
+	replaceSpawner(spawn);
+	const {dom, messages} = await errorMessages(
+		`<head><meta http-equiv="Content-Security-Policy" content="object-src 'none'"></head>` +
+			`<body><embed type="application/x-pty" src="top"></body>`,
+		"auto",
+	);
+	expect(messages).toEqual(["The Content-Security-Policy forbids it"]);
+	expect(children).toEqual([]);
+	await dom.dispose();
+});
+
+test("a program that cannot start fires error on its embed and nothing on the window", async () => {
+	replaceSpawner(() => {
+		throw new Error("no such shell");
+	});
+	const {dom, messages} = await errorMessages(
+		`<embed type="application/x-pty" src="top">`,
+		"auto",
+	);
+	expect(messages).toEqual(["no such shell"]);
+	await dom.dispose();
+});
+
+test("a pty embed's src reads back as the command it was given", async () => {
+	const {spawn} = fakeSpawner();
+	replaceSpawner(spawn);
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		pty: "auto",
+		url: "file:///home/user/app/",
+	});
+	const pty = dom.document.createElement("embed");
+	pty.type = "application/x-pty";
+	pty.src = "vim 'notes.txt'";
+	const plain = dom.document.createElement("embed");
+	plain.src = "image.svg";
+	expect(pty.src).toBe("vim 'notes.txt'");
+	expect(plain.src).toBe("file:///home/user/app/image.svg");
 	await dom.dispose();
 });
 
@@ -163,7 +232,7 @@ test("a program starts at the size its box is laid out at, and hears what was po
 	embed.style.cssText = "display: block; width: 30px; height: 5px";
 	embed.src = "vim";
 	document.body.append(embed);
-	embed.postMessage!("i");
+	embed.postMessage("i");
 	await settle(dom);
 	expect(children[0].sizes).toEqual([[30, 5]]);
 	expect(children[0].written).toEqual(["i"]);
@@ -225,13 +294,13 @@ test("load fires when the program starts, and close when it ends", async () => {
 		spawn,
 	);
 	await until(() => heard.length > 0);
-	children[0].options.onExit(0);
+	children[0].options.onExit(0, null);
 	await until(() => heard.length > 1);
 	expect(heard).toEqual(["load", "close"]);
 	await dom.dispose();
 });
 
-test("close is a CloseEvent with the program's exit code", async () => {
+test("close is a CloseEvent with the exit code, and the signal that ended the program", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, document} = await mount(
 		`<embed type="application/x-pty" src="one"><embed type="application/x-pty" src="two">`,
@@ -245,16 +314,17 @@ test("close is a CloseEvent with the program's exit code", async () => {
 		},
 		true,
 	);
-	children[0].options.onExit(3);
-	children[1].options.onExit(null);
+	children[0].options.onExit(3, null);
+	children[1].options.onExit(137, "SIGKILL");
 	await until(() => closes.length === 2);
 	expect(
 		closes.map((event) => [
 			event.constructor === dom.window.CloseEvent,
 			event.code,
 			event.wasClean,
+			event.reason,
 		]),
-	).toEqual([[true, 3, true], [true, 0, false]]);
+	).toEqual([[true, 3, true, ""], [true, 137, false, "SIGKILL"]]);
 	await dom.dispose();
 });
 
@@ -297,21 +367,29 @@ test("titlechange and bell fire when the program sets its title and rings", asyn
 	await dom.dispose();
 });
 
-test("postMessage types into the program while it runs, and only then", async () => {
+test("postMessage types into the program while it runs, and throws InvalidStateError otherwise", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, document} = await mount(
 		`<embed type="application/x-pty" src="sh"><embed src="plain.svg">`,
 		spawn,
 	);
 	const [embed, plain] = document.querySelectorAll("embed");
-	expect("postMessage" in plain).toBe(false);
-	embed.postMessage!("make\r");
+	const notRunning = (send: () => void) => {
+		try {
+			send();
+		} catch (error) {
+			return (error as DOMException).name;
+		}
+		return "nothing thrown";
+	};
+	expect(notRunning(() => plain.postMessage("x"))).toBe("InvalidStateError");
+	embed.postMessage("make\r");
 	expect(children[0].written).toEqual(["make\r"]);
 	expect(() => (embed.postMessage as () => void)()).toThrow(TypeError);
-	children[0].options.onExit(0);
-	expect(() => embed.postMessage!("x")).toThrow(dom.window.DOMException);
+	children[0].options.onExit(0, null);
+	expect(notRunning(() => embed.postMessage("x"))).toBe("InvalidStateError");
 	embed.remove();
-	expect("postMessage" in embed).toBe(false);
+	expect(notRunning(() => embed.postMessage("x"))).toBe("InvalidStateError");
 	await dom.dispose();
 });
 
@@ -324,28 +402,28 @@ test("postMessage forwards key and paste events as the user's own input", async 
 	const {KeyboardEvent, ClipboardEvent, DataTransfer} = dom.window;
 	const embed = document.querySelector("embed")!;
 	const written = children[0].written;
-	embed.postMessage!({type: "keydown", key: "ArrowUp"});
+	embed.postMessage({type: "keydown", key: "ArrowUp"});
 	children[0].options.onData("\x1b[?1h\x1b[?2004h");
-	embed.postMessage!(new KeyboardEvent("keydown", {key: "ArrowUp"}));
-	embed.postMessage!(new KeyboardEvent("keydown", {key: "c", ctrlKey: true}));
-	embed.postMessage!(new KeyboardEvent("keyup", {key: "c", ctrlKey: true}));
-	embed.postMessage!({type: "keydown", key: "Shift", shiftKey: true});
-	embed.postMessage!({type: "keydown", key: "a", isComposing: true});
+	embed.postMessage(new KeyboardEvent("keydown", {key: "ArrowUp"}));
+	embed.postMessage(new KeyboardEvent("keydown", {key: "c", ctrlKey: true}));
+	embed.postMessage(new KeyboardEvent("keyup", {key: "c", ctrlKey: true}));
+	embed.postMessage({type: "keydown", key: "Shift", shiftKey: true});
+	embed.postMessage({type: "keydown", key: "a", isComposing: true});
 	const clipboardData = new DataTransfer();
 	clipboardData.setData("text/plain", "one\ntwo");
-	embed.postMessage!(new ClipboardEvent("paste", {clipboardData}));
-	embed.postMessage!(42 as unknown as string);
+	embed.postMessage(new ClipboardEvent("paste", {clipboardData}));
 	expect(written).toEqual([
 		"\x1b[A",
 		"\x1bOA",
 		"\x03",
 		"\x1b[200~one\rtwo\x1b[201~",
-		"42",
 	]);
-	expect(() => embed.postMessage!({key: "a"} as any)).toThrow(TypeError);
-	expect(() => embed.postMessage!({type: "keydown"} as any)).toThrow(TypeError);
-	expect(() => embed.postMessage!({type: "paste"} as any)).toThrow(TypeError);
-	expect(() => embed.postMessage!({type: "click"} as any)).toThrow(TypeError);
+	expect(() => embed.postMessage(42 as unknown as string)).toThrow(TypeError);
+	expect(() => embed.postMessage(null as unknown as string)).toThrow(TypeError);
+	expect(() => embed.postMessage({key: "a"} as any)).toThrow(TypeError);
+	expect(() => embed.postMessage({type: "keydown"} as any)).toThrow(TypeError);
+	expect(() => embed.postMessage({type: "paste"} as any)).toThrow(TypeError);
+	expect(() => embed.postMessage({type: "click"} as any)).toThrow(TypeError);
 	await dom.dispose();
 });
 
@@ -741,7 +819,7 @@ withRealms(
 			);
 		});
 		expect(embed.postMessage instanceof window.Function).toBe(true);
-		children[0].options.onExit(0);
+		children[0].options.onExit(0, null);
 		await until(() => seen.length > 0);
 		expect(seen).toEqual([true, false]);
 		await dom.dispose();
@@ -947,7 +1025,7 @@ test("keys go to the focused embed alone, a click moves them, and an ended progr
 	await send(terminal, "b");
 	expect(children[0].written).toEqual(["a"]);
 	expect(children[1].written).toEqual(["b"]);
-	children[1].options.onExit(0);
+	children[1].options.onExit(0, null);
 	await settle(dom);
 	await send(terminal, "\t");
 	expect(children[1].written).toEqual(["b"]);
