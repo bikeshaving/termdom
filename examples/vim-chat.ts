@@ -15,7 +15,7 @@ import {TermDOM} from "@b9g/termdom";
 const editor = process.env.EDITOR ?? "vim";
 const file = join(mkdtempSync(join(tmpdir(), "vim-chat-")), "message.txt");
 
-const term = new TermDOM({pty: "auto"});
+const term = new TermDOM({ptyEmbeds: "auto"});
 term.attach();
 const {document} = term;
 

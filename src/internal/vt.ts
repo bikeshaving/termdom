@@ -472,7 +472,7 @@ export class Terminal {
 					this.state = CSI_INTERMEDIATE;
 				} else if (code >= 0x40 && code < 0x7f) {
 					this.state = GROUND;
-					this.dispatchCsi(String.fromCharCode(code));
+					this.dispatchCSI(String.fromCharCode(code));
 				}
 				return;
 			case CSI_INTERMEDIATE:
@@ -484,7 +484,7 @@ export class Terminal {
 					this.state = CSI_IGNORE;
 				} else if (code < 0x7f) {
 					this.state = GROUND;
-					this.dispatchCsi(String.fromCharCode(code));
+					this.dispatchCSI(String.fromCharCode(code));
 				}
 				return;
 			case CSI_IGNORE:
@@ -496,7 +496,7 @@ export class Terminal {
 				return;
 			case OSC_STRING:
 				if (code === 0x07) {
-					this.dispatchOsc();
+					this.dispatchOSC();
 					this.preceding = null;
 					this.state = GROUND;
 				} else if (code >= 0x20 && this.osc.length < MAX_OSC) {
@@ -519,10 +519,10 @@ export class Terminal {
 	// ESC or ST ends a string, and an OSC or a DCS takes effect.
 	endString(): void {
 		if (this.state === OSC_STRING) {
-			this.dispatchOsc();
+			this.dispatchOSC();
 			this.preceding = null;
 		} else if (this.state === DCS_STRING) {
-			this.dispatchDcs();
+			this.dispatchDCS();
 			this.preceding = null;
 		}
 	}
@@ -1006,12 +1006,12 @@ export class Terminal {
 		return value === 0 ? fallback : value;
 	}
 
-	dispatchCsi(final: string): void {
-		this.runCsi(final);
+	dispatchCSI(final: string): void {
+		this.runCSI(final);
 		this.preceding = null;
 	}
 
-	runCsi(final: string): void {
+	runCSI(final: string): void {
 		const {prefix, intermediates} = this;
 		if (prefix === "?" && intermediates === "") {
 			if (final === "h" || final === "l") {
@@ -1499,7 +1499,7 @@ export class Terminal {
 		}
 	}
 
-	dispatchOsc(): void {
+	dispatchOSC(): void {
 		const match = /^([02]);(.*)$/s.exec(this.osc);
 		if (match !== null) {
 			this.title = match[2];
@@ -1513,7 +1513,7 @@ export class Terminal {
 
 	// DECRQSS: the SGR, the margins, the cursor's shape, and the fixed
 	// answers xterm gives for protection and the conformance level.
-	dispatchDcs(): void {
+	dispatchDCS(): void {
 		const request = /^\$q(.*)$/s.exec(this.dcs)?.[1];
 		this.dcs = "";
 		if (request === undefined) {

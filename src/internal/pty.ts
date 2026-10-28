@@ -31,7 +31,7 @@ import {
 } from "./vt.ts";
 
 /** What a TermDOM needs from a running pseudo-terminal. */
-export interface PtyProcess {
+export interface PTYProcess {
 	write(data: string): void;
 	resize(cols: number, rows: number): void;
 	// Hangs up, as closing a terminal window does. A shell ignores
@@ -39,7 +39,7 @@ export interface PtyProcess {
 	kill(): void;
 }
 
-export interface PtySpawnOptions {
+export interface PTYSpawnOptions {
 	cols: number;
 	rows: number;
 	onData(data: Uint8Array | string): void;
@@ -49,10 +49,10 @@ export interface PtySpawnOptions {
 }
 
 /** Starts `command` in a pseudo-terminal. */
-export type PtySpawner = (
+export type PTYSpawner = (
 	command: string,
-	options: PtySpawnOptions,
-) => PtyProcess;
+	options: PTYSpawnOptions,
+) => PTYProcess;
 
 interface BunTerminal {
 	write(data: string): void;
@@ -81,7 +81,7 @@ interface BunLike {
 	): BunSubprocess;
 }
 
-interface NodePtyChild {
+interface NodePTYChild {
 	onData(listener: (data: string) => void): void;
 	onExit(listener: (event: {exitCode: number; signal?: number}) => void): void;
 	write(data: string): void;
@@ -89,7 +89,7 @@ interface NodePtyChild {
 	kill(signal?: string): void;
 }
 
-interface NodePty {
+interface NodePTY {
 	spawn(
 		file: string,
 		args: string[],
@@ -99,13 +99,13 @@ interface NodePty {
 			rows: number;
 			env: Record<string, string | undefined>;
 		},
-	): NodePtyChild;
+	): NodePTYChild;
 }
 
-let replacement: PtySpawner | null = null;
+let replacement: PTYSpawner | null = null;
 
 /** Stands in for the runtime's pseudo-terminal, as the tests do. */
-export function replaceSpawner(spawner: PtySpawner | null): void {
+export function replaceSpawner(spawner: PTYSpawner | null): void {
 	replacement = spawner;
 }
 
@@ -113,7 +113,7 @@ export function replaceSpawner(spawner: PtySpawner | null): void {
  * The pseudo-terminal this runtime can use: Bun's own, or node-pty on
  * Node when it is installed. Null where there is none.
  */
-export function findSpawner(): PtySpawner | null {
+export function findSpawner(): PTYSpawner | null {
 	if (replacement !== null) {
 		return replacement;
 	}
@@ -124,11 +124,11 @@ export function findSpawner(): PtySpawner | null {
 	if ("Deno" in globalThis) {
 		return null;
 	}
-	const nodePty = loadNodePty();
-	return nodePty === null ? null : createNodePtySpawner(nodePty);
+	const nodePTY = loadNodePTY();
+	return nodePTY === null ? null : createNodePTYSpawner(nodePTY);
 }
 
-function createBunSpawner(bun: BunLike): PtySpawner {
+function createBunSpawner(bun: BunLike): PTYSpawner {
 	return (command, {cols, rows, onData, onExit}) => {
 		const child = bun.spawn(
 			["/bin/sh", "-c", command],
@@ -161,7 +161,7 @@ interface NodeModule {
 	createRequire(from: string): (id: string) => unknown;
 }
 
-function loadNodePty(): NodePty | null {
+function loadNodePTY(): NodePTY | null {
 	const {process} =
 		globalThis as {process?: {getBuiltinModule?: (id: string) => unknown}};
 	if (process === undefined || typeof process.getBuiltinModule !== "function") {
@@ -172,7 +172,7 @@ function loadNodePty(): NodePty | null {
 		? import.meta.url
 		: `${globalThis.process.cwd()}/`;
 	try {
-		return nodeModule.createRequire(from)("node-pty") as NodePty;
+		return nodeModule.createRequire(from)("node-pty") as NodePTY;
 	} catch (err) {
 		if ((err as {code?: unknown}).code === "MODULE_NOT_FOUND") {
 			return null;
@@ -192,9 +192,9 @@ function getSignalName(number: number): string | null {
 	return entry === undefined ? null : entry[0];
 }
 
-function createNodePtySpawner(nodePty: NodePty): PtySpawner {
+function createNodePTYSpawner(nodePTY: NodePTY): PTYSpawner {
 	return (command, {cols, rows, onData, onExit}) => {
-		const child = nodePty.spawn(
+		const child = nodePTY.spawn(
 			"/bin/sh",
 			["-c", command],
 			{
@@ -391,7 +391,7 @@ export function encodeKey(
 }
 
 /** What a session tells its embed about the program. */
-export interface PtySessionListeners {
+export interface PTYSessionListeners {
 	change(): void;
 	exit(code: number, signal: string | null): void;
 	titlechange(title: string): void;
@@ -404,14 +404,14 @@ export interface PtySessionListeners {
  * box's size, and caret says where the terminal's cursor goes. Every
  * change to the screen calls the `change` listener.
  */
-export class PtySession {
+export class PTYSession {
 	cols: number;
 	rows: number;
 	version: number;
 	exited: boolean;
-	process: PtyProcess | null;
+	process: PTYProcess | null;
 	terminal: Terminal;
-	listeners: PtySessionListeners;
+	listeners: PTYSessionListeners;
 	grid: CellGrid;
 	// The version the grid was drawn at, or -1 for one not drawn yet.
 	drawn: number;
@@ -425,7 +425,7 @@ export class PtySession {
 	// what it wrote anyway, should it never turn it off.
 	held: ReturnType<typeof setTimeout> | null;
 
-	constructor(cols: number, rows: number, listeners: PtySessionListeners) {
+	constructor(cols: number, rows: number, listeners: PTYSessionListeners) {
 		this.cols = Math.max(1, cols);
 		this.rows = Math.max(1, rows);
 		this.version = 0;
@@ -460,7 +460,7 @@ export class PtySession {
 	}
 
 	/** Runs `command` at the session's size. */
-	start(command: string, spawn: PtySpawner): void {
+	start(command: string, spawn: PTYSpawner): void {
 		const listeners = this.listeners;
 		this.process = spawn(command, {
 			cols: this.cols,

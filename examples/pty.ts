@@ -8,7 +8,7 @@
 import {TermDOM} from "@b9g/termdom";
 
 const command = process.argv[2] ?? "top";
-const term = new TermDOM({pty: "auto"});
+const term = new TermDOM({ptyEmbeds: "auto"});
 term.attach();
 const {document} = term;
 

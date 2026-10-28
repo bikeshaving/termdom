@@ -120,7 +120,7 @@ import {
 	resolveDocumentScrollBand,
 	resolveScrollShift,
 } from "./internal/painter.ts";
-import {findSpawner, type PtySpawner} from "./internal/pty.ts";
+import {findSpawner, type PTYSpawner} from "./internal/pty.ts";
 import {
 	answerRequest,
 	checkInlineHandler,
@@ -304,12 +304,13 @@ export interface TermDOMOptions {
 	 *   Bun's own, or on Node the node-pty package when it is installed.
 	 *   Where there is none, such as on Deno, it fires `error`.
 	 *
-	 * Any other value throws a TypeError.
+	 * Only the page runs programs, never a frame. Any other value throws
+	 * a TypeError.
 	 *
 	 * @experimental The element and its events may change in a minor
 	 * release.
 	 */
-	pty?: "none" | "auto";
+	ptyEmbeds?: "none" | "auto";
 
 	/**
 	 * The colors the terminal shows, in the bits `screen.colorDepth`
@@ -424,16 +425,16 @@ function toReducedMotion(option: TermDOMOptions["reducedMotion"]): boolean {
 	throw new TypeError('reducedMotion must be "no-preference" or "reduce"');
 }
 
-function toPtySpawner(
-	option: TermDOMOptions["pty"],
-): PtySpawner | "none" | "unavailable" {
+function toPTYSpawner(
+	option: TermDOMOptions["ptyEmbeds"],
+): PTYSpawner | "none" | "unavailable" {
 	if (option === undefined || option === "none") {
 		return "none";
 	}
 	if (option === "auto") {
 		return findSpawner() ?? "unavailable";
 	}
-	throw new TypeError('pty must be "none" or "auto"');
+	throw new TypeError('ptyEmbeds must be "none" or "auto"');
 }
 
 function toFailFast(option: unknown): boolean {
@@ -598,7 +599,7 @@ export class TermDOM extends EventTarget {
 		const cellSize = toCellSizeSetting(options.cellSize);
 		const images = toGraphicsSetting("images", options.images);
 		const canvas = toGraphicsSetting("canvas", options.canvas);
-		const pty = toPtySpawner(options.pty);
+		const pty = toPTYSpawner(options.ptyEmbeds);
 		const slots = _(this);
 		slots.colorDepth = toColorDepth(options.colorDepth);
 		const url = toDocumentURL(options.url);
