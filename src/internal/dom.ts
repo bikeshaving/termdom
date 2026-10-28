@@ -65,7 +65,7 @@ import {
 	unregisterReplacedContent,
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
-import {PtySession, type PtySpawner} from "./pty.ts";
+import {PTYSession, type PTYSpawner} from "./pty.ts";
 import {rehomeClone} from "./realms.ts";
 import type {ResourceLoader} from "./resources.ts";
 import {
@@ -13090,7 +13090,7 @@ function getDefaultTabIndex(element: Element): number {
 		case "textarea":
 			return 0;
 		case "embed":
-			return isPtyEmbed(element) ? 0 : -1;
+			return isPTYEmbed(element) ? 0 : -1;
 		case "summary": {
 			const parent = getObject(elementSlots.parent);
 			return parent !== null &&
@@ -16886,7 +16886,7 @@ class HTMLDListElement extends HTMLElement {
 /** Never loads, so it has no SVG document. */
 const PTY_TYPE = "application/x-pty";
 
-function isPtyEmbed(element: Element): boolean {
+function isPTYEmbed(element: Element): boolean {
 	return _(element).localName === "embed" &&
 		getAttributeValue(element, "type")?.trim().toLowerCase() === PTY_TYPE;
 }
@@ -16895,12 +16895,12 @@ function isPtyEmbed(element: Element): boolean {
  * <embed>: nothing, except with type="application/x-pty", where src is
  * a command run in a pseudo-terminal and its screen is drawn in the
  * embed's box, as an iframe draws its document. A program allows that
- * with the pty option. The program is resized to the box, and takes the
+ * with the ptyEmbeds option. The program is resized to the box, and takes the
  * keys, pastes and mouse while the embed has focus.
  */
 interface HTMLEmbedElementExtra extends NodeExtra {
 	// What draws the program, while one runs.
-	program: PtySession | null;
+	program: PTYSession | null;
 	// Aborted when the program it started is stopped.
 	programRun: AbortController;
 }
@@ -16994,7 +16994,7 @@ declareExtraSlots(HTMLEmbedElement);
 /** The program an embed runs, or null for an element that runs none. */
 export function getRunningProgram(
 	element: globalThis.Element | Element | null,
-): PtySession | null {
+): PTYSession | null {
 	if (element === null || !implementsInterface(element, HTMLEmbedElement)) {
 		return null;
 	}
@@ -17062,7 +17062,7 @@ function startProgram(embed: HTMLEmbedElement): void {
 	if (
 		attached === undefined ||
 		!embed.isConnected ||
-		!isPtyEmbed(embed) ||
+		!isPTYEmbed(embed) ||
 		command === ""
 	) {
 		return;
@@ -17086,7 +17086,7 @@ function startProgram(embed: HTMLEmbedElement): void {
 	const fail = (message: string) => new ErrorEvent("error", {message});
 	const spawn = attachedSlots.extra.pty;
 	if (spawn === "none") {
-		fire("error", () => fail('The pty option is "none"'));
+		fire("error", () => fail('The ptyEmbeds option is "none"'));
 		return;
 	}
 	if (spawn === "unavailable") {
@@ -17102,7 +17102,7 @@ function startProgram(embed: HTMLEmbedElement): void {
 	}
 	const {width, height} = getProgramNaturalSize(embed);
 	const cell = getCellSize(embed as unknown as Node);
-	const program = new PtySession(
+	const program = new PTYSession(
 		Math.round(width / cell.width),
 		Math.round(height / cell.height),
 		{
@@ -25071,7 +25071,7 @@ const embedSource = Object.getOwnPropertyDescriptor(
 Object.defineProperty(HTMLEmbedElement.prototype, "src", {
 	...embedSource,
 	get(this: HTMLEmbedElement): string {
-		return isPtyEmbed(this)
+		return isPTYEmbed(this)
 			? getAttributeValue(this, "src") ?? ""
 			: embedSource.get!.call(this);
 	},
@@ -27944,9 +27944,9 @@ export interface DocumentExtra extends NodeExtra {
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
 	// Starts an <embed type="application/x-pty">'s program, or says why
-	// none may run: the pty option is "none", the runtime has no
+	// none may run: the ptyEmbeds option is "none", the runtime has no
 	// pseudo-terminal, or the document is a frame's.
-	pty: PtySpawner | "none" | "unavailable" | "framed";
+	pty: PTYSpawner | "none" | "unavailable" | "framed";
 	load: ResourceLoader;
 	loadSignal: globalThis.AbortSignal;
 	// Whether the document's policies let an element's inline handler run.
@@ -37165,7 +37165,7 @@ export interface DocumentEngine {
 	cellSize: CellSizeSetting;
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
-	pty: PtySpawner | "none" | "unavailable" | "framed";
+	pty: PTYSpawner | "none" | "unavailable" | "framed";
 	// Answers the loads the document's markup asks for.
 	load: ResourceLoader;
 	allowsInlineHandler(element: globalThis.Element): boolean;

@@ -8,24 +8,24 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {
 	encodeKey,
-	type PtyProcess,
-	type PtySpawner,
-	type PtySpawnOptions,
+	type PTYProcess,
+	type PTYSpawner,
+	type PTYSpawnOptions,
 	replaceSpawner,
 } from "../src/internal/pty.ts";
 import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.js";
 
 interface FakeChild {
 	command: string;
-	options: PtySpawnOptions;
+	options: PTYSpawnOptions;
 	written: string[];
 	sizes: Array<[number, number]>;
 	killed: boolean;
 }
 
-function fakeSpawner(): {spawn: PtySpawner; children: FakeChild[]} {
+function fakeSpawner(): {spawn: PTYSpawner; children: FakeChild[]} {
 	const children: FakeChild[] = [];
-	const spawn: PtySpawner = (command, options): PtyProcess => {
+	const spawn: PTYSpawner = (command, options): PTYProcess => {
 		const child: FakeChild = {
 			command,
 			options,
@@ -47,7 +47,7 @@ function fakeSpawner(): {spawn: PtySpawner; children: FakeChild[]} {
 
 async function mount(
 	html: string,
-	pty: "none" | "auto" | PtySpawner,
+	pty: "none" | "auto" | PTYSpawner,
 ): Promise<{
 	dom: TermDOM;
 	terminal: MockProcess;
@@ -58,7 +58,7 @@ async function mount(
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({
 		transport: terminal.transport,
-		pty: typeof pty === "function" ? "auto" : pty,
+		ptyEmbeds: typeof pty === "function" ? "auto" : pty,
 	});
 	const heard: string[] = [];
 	for (const type of ["load", "error", "close"]) {
@@ -93,7 +93,7 @@ async function settle(dom: TermDOM): Promise<void> {
 test("an embed disposed with its page before its error is due fires none", async () => {
 	replaceSpawner(null);
 	const terminal = new MockProcess({cols: 40, rows: 12});
-	const dom = new TermDOM({transport: terminal.transport, pty: "none"});
+	const dom = new TermDOM({transport: terminal.transport, ptyEmbeds: "none"});
 	const heard: string[] = [];
 	dom.document.addEventListener("error", () => heard.push("error"), true);
 	dom.document.body.innerHTML =
@@ -108,7 +108,8 @@ async function errorMessages(
 	pty: "none" | "auto",
 ): Promise<{dom: TermDOM; messages: string[]}> {
 	const terminal = new MockProcess({cols: 40, rows: 12});
-	const dom = new TermDOM({transport: terminal.transport, pty, html});
+	const dom =
+		new TermDOM({transport: terminal.transport, ptyEmbeds: pty, html});
 	const messages: string[] = [];
 	dom.window.addEventListener("error", () => messages.push("window error"));
 	dom.document.addEventListener(
@@ -121,13 +122,13 @@ async function errorMessages(
 	return {dom, messages};
 }
 
-test("without the pty option, an embed runs nothing and fires an error that says why", async () => {
+test("without the ptyEmbeds option, an embed runs nothing and fires an error that says why", async () => {
 	replaceSpawner(null);
 	const {dom: quiet, messages} = await errorMessages(
 		`<embed type="application/x-pty" src="top">`,
 		"none",
 	);
-	expect(messages).toEqual(['The pty option is "none"']);
+	expect(messages).toEqual(['The ptyEmbeds option is "none"']);
 	await quiet.dispose();
 	const {dom, document, heard} = await mount(
 		`<embed type="application/x-pty" src="top" width="10" height="3">`,
@@ -172,7 +173,7 @@ test("a pty embed's src reads back as the command it was given", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({
 		transport: terminal.transport,
-		pty: "auto",
+		ptyEmbeds: "auto",
 		url: "file:///home/user/app/",
 	});
 	const pty = dom.document.createElement("embed");
@@ -485,7 +486,7 @@ test("keys are sent as xterm sends them", () => {
 	expect(encodeKey(key("Shift"), false)).toBe(null);
 });
 
-test("with pty: \"auto\", Bun runs the command in its own pseudo-terminal", async () => {
+test("with ptyEmbeds: \"auto\", Bun runs the command in its own pseudo-terminal", async () => {
 	if ((globalThis as {Bun?: unknown}).Bun === undefined) {
 		return;
 	}
@@ -736,7 +737,7 @@ test("an embed in the starting markup starts once the page is attached", async (
 	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({
 		transport: terminal.transport,
-		pty: "auto",
+		ptyEmbeds: "auto",
 		html: `<embed type="application/x-pty" src="top" width="10" height="2">`,
 	});
 	await settle(dom);
@@ -825,12 +826,12 @@ test("with scrollback=\"0\", the wheel passes to the page", async () => {
 	await dom.dispose();
 });
 
-test("the pty option takes none or auto, and throws on anything else", () => {
-	expect(() => new TermDOM({pty: true as unknown as "auto"})).toThrow(
+test("the ptyEmbeds option takes none or auto, and throws on anything else", () => {
+	expect(() => new TermDOM({ptyEmbeds: true as unknown as "auto"})).toThrow(
 		TypeError,
 	);
 	const {spawn} = fakeSpawner();
-	expect(() => new TermDOM({pty: spawn as unknown as "auto"})).toThrow(
+	expect(() => new TermDOM({ptyEmbeds: spawn as unknown as "auto"})).toThrow(
 		TypeError,
 	);
 });

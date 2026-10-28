@@ -367,10 +367,10 @@ Removing the embed or its `src` stops the program.
 <embed type="application/x-pty" src="htop" style="width: 80ch; height: 24lh">
 ```
 
-Nothing runs unless the `pty` option allows it:
+Nothing runs unless the `ptyEmbeds` option allows it:
 
 ```ts
-new TermDOM({pty: "auto"});
+new TermDOM({ptyEmbeds: "auto"});
 ```
 
 Under `"auto"`, Bun uses its own pseudo-terminal and Node uses

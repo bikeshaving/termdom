@@ -15,6 +15,7 @@ export default [
 			// An engine that parses and emits terminal escape sequences writes
 			// regexes about control characters on purpose.
 			"no-control-regex": "off",
+			"acrocase/acrocase": ["error", {acronyms: ["PTY", "CSI", "OSC", "DCS"]}],
 		},
 	},
 	{
