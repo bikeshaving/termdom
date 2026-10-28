@@ -1,8 +1,7 @@
 /**
  * A chat with ch.at where you write each message in vim, running in an
  * <embed type="application/x-pty">. :wq sends the message and opens vim
- * again for the next one. :q! sends nothing. Ctrl+Q quits. Set EDITOR to
- * use another editor.
+ * again for the next one. :q! sends nothing. Ctrl+Q quits.
  *
  *   bun examples/vim-chat.ts
  */
@@ -12,7 +11,6 @@ import {join} from "node:path";
 
 import {TermDOM} from "@b9g/termdom";
 
-const editor = process.env.EDITOR ?? "vim";
 const file = join(mkdtempSync(join(tmpdir(), "vim-chat-")), "message.txt");
 
 const term = new TermDOM({ptyEmbeds: "auto"});
@@ -74,7 +72,7 @@ function compose(): void {
   writeFileSync(file, "");
   const embed = document.createElement("embed");
   embed.type = "application/x-pty";
-  embed.src = `${editor} '${file.replaceAll("'", "'\\''")}'`;
+  embed.src = `vim -c 'set nonumber norelativenumber' '${file.replaceAll("'", "'\\''")}'`;
   embed.addEventListener("close", () => {
     embed.remove();
     const text = readFileSync(file, "utf8").trim();
