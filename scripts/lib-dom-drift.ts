@@ -135,6 +135,12 @@ const AHEAD_OF_LIB_DOM: Record<string, Record<string, string>> = {
 	},
 };
 
+// Members TermDOM adds that no standard has. Each names the guide that
+// documents it.
+const TERMDOM_EXTENSIONS: Record<string, Record<string, string>> = {
+	HTMLEmbedElement: {postMessage: "docs/guides/06-images-and-canvas.md"},
+};
+
 // The runtime's own objects, handed to the page as they are. FormData
 // extends the runtime's so that its fetch() takes one, and performance is
 // the runtime's.
@@ -192,6 +198,9 @@ function allowedOn(name: string): Set<string> {
 		}
 	}
 	for (const member of Object.keys(AHEAD_OF_LIB_DOM[name] ?? {})) {
+		allowed.add(member);
+	}
+	for (const member of Object.keys(TERMDOM_EXTENSIONS[name] ?? {})) {
 		allowed.add(member);
 	}
 	for (const member of FROM_THE_RUNTIME[name] ?? []) {
