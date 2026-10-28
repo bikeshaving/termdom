@@ -34,10 +34,12 @@ const CSI_INTERMEDIATE = 5;
 const CSI_IGNORE = 6;
 const OSC_STRING = 7;
 const IGNORED_STRING = 8;
+const DCS_STRING = 9;
 
 const MAX_PARAMS = 32;
 const MAX_SUBPARAMS = 8;
 const MAX_OSC = 4096;
+const MAX_DCS = 64;
 
 // The DEC special graphics set, for line drawing, from _ to ~.
 const DEC_GRAPHICS =
@@ -84,8 +86,8 @@ function eraseCells(line: Line, start: number, end: number, bg: number): void {
 }
 
 // After cells shift, a wide character can lose either half. The half
-// left behind becomes a blank.
-function repairWide(line: Line): void {
+// left behind becomes a blank in the given colors and attributes.
+function repairWide(line: Line, fg: number, bg: number, attrs: number): void {
 	const {widths, chars} = line;
 	for (let col = 0; col < line.cols; col++) {
 		const broken = widths[col] === 2
@@ -94,6 +96,9 @@ function repairWide(line: Line): void {
 		if (broken) {
 			widths[col] = 1;
 			chars[col] = "";
+			line.fg[col] = fg;
+			line.bg[col] = bg;
+			line.attrs[col] = attrs;
 		}
 	}
 }
@@ -116,7 +121,7 @@ function resizeLine(line: Line, cols: number): Line {
 	resized.fg.set(line.fg.subarray(0, count));
 	resized.bg.set(line.bg.subarray(0, count));
 	resized.attrs.set(line.attrs.subarray(0, count));
-	repairWide(resized);
+	repairWide(resized, DEFAULT_COLOR, DEFAULT_COLOR, 0);
 	return resized;
 }
 
@@ -127,7 +132,6 @@ interface SavedCursor {
 	bg: number;
 	attrs: number;
 	originMode: boolean;
-	autowrap: boolean;
 	charsets: string[];
 	shift: number;
 }
@@ -194,6 +198,12 @@ export class Terminal {
 	newlineMode: boolean;
 	bracketedPaste: boolean;
 	focusReporting: boolean;
+	synchronizedOutput: boolean;
+	// Whether an OSC 8 link is open, which underlines what is printed.
+	link: boolean;
+	// The character printed last, which a mark, a joiner or a selector
+	// after it joins, and REP repeats. Anything but printing forgets it.
+	preceding: {col: number; width: number; joining: boolean} | null;
 	// 0 for none, or the DECSET number that turned it on: 9, 1000, 1002 or
 	// 1003.
 	mouseTracking: number;
@@ -207,6 +217,7 @@ export class Terminal {
 	prefix: string;
 	intermediates: string;
 	osc: string;
+	dcs: string;
 	highSurrogate: number;
 	decoder: TextDecoder;
 
@@ -244,6 +255,9 @@ export class Terminal {
 		this.newlineMode = false;
 		this.bracketedPaste = false;
 		this.focusReporting = false;
+		this.synchronizedOutput = false;
+		this.link = false;
+		this.preceding = null;
 		this.mouseTracking = 0;
 		this.mouseEncoding = 0;
 		this.state = GROUND;
@@ -251,6 +265,7 @@ export class Terminal {
 		this.prefix = "";
 		this.intermediates = "";
 		this.osc = "";
+		this.dcs = "";
 		this.highSurrogate = 0;
 	}
 
@@ -362,26 +377,33 @@ export class Terminal {
 	}
 
 	consume(code: number): void {
+		if (
+			this.state === GROUND &&
+			(code >= 0x20 && code !== 0x7f) &&
+			(code < 0x80 || code >= 0xa0)
+		) {
+			this.print(code);
+			return;
+		}
 		if (code === 0x18 || code === 0x1a) {
+			this.preceding = null;
 			this.state = GROUND;
 			return;
 		}
-		if (code === 0x1b) {
-			if (this.state === OSC_STRING) {
-				this.dispatchOsc();
-			}
-			this.state = ESCAPE;
+		if (code === 0x1b || code === 0x9c) {
+			this.endString();
+			this.state = code === 0x1b ? ESCAPE : GROUND;
 			this.intermediates = "";
+			return;
+		}
+		if (code >= 0x80 && code < 0xa0) {
+			this.consumeC1(code);
 			return;
 		}
 		switch (this.state) {
 			case GROUND:
-				if (code >= 0x20 && code < 0x7f) {
-					this.print(code);
-				} else if (code < 0x20) {
+				if (code < 0x20) {
 					this.execute(code);
-				} else if (code >= 0xa0) {
-					this.print(code);
 				}
 				return;
 			case ESCAPE:
@@ -398,9 +420,10 @@ export class Terminal {
 				} else if (code === 0x5d) {
 					this.osc = "";
 					this.state = OSC_STRING;
-				} else if (
-					code === 0x50 || code === 0x58 || code === 0x5e || code === 0x5f
-				) {
+				} else if (code === 0x50) {
+					this.dcs = "";
+					this.state = DCS_STRING;
+				} else if (code === 0x58 || code === 0x5e || code === 0x5f) {
 					this.state = IGNORED_STRING;
 				} else {
 					this.state = GROUND;
@@ -474,6 +497,7 @@ export class Terminal {
 			case OSC_STRING:
 				if (code === 0x07) {
 					this.dispatchOsc();
+					this.preceding = null;
 					this.state = GROUND;
 				} else if (code >= 0x20 && this.osc.length < MAX_OSC) {
 					this.osc += String.fromCodePoint(code);
@@ -484,10 +508,67 @@ export class Terminal {
 					this.state = GROUND;
 				}
 				return;
+			case DCS_STRING:
+				if (this.dcs.length < MAX_DCS) {
+					this.dcs += String.fromCodePoint(code);
+				}
+				return;
+		}
+	}
+
+	// ESC or ST ends a string, and an OSC or a DCS takes effect.
+	endString(): void {
+		if (this.state === OSC_STRING) {
+			this.dispatchOsc();
+			this.preceding = null;
+		} else if (this.state === DCS_STRING) {
+			this.dispatchDcs();
+			this.preceding = null;
+		}
+	}
+
+	// The 8-bit controls, as xterm reads them: CSI, OSC and DCS start
+	// their sequences, and IND, NEL and HTS act as their ESC forms do.
+	consumeC1(code: number): void {
+		switch (code) {
+			case 0x9b:
+				this.params = [[0]];
+				this.prefix = "";
+				this.intermediates = "";
+				this.state = CSI_ENTRY;
+				return;
+			case 0x9d:
+				this.osc = "";
+				this.state = OSC_STRING;
+				return;
+			case 0x90:
+				this.dcs = "";
+				this.state = DCS_STRING;
+				return;
+			case 0x98:
+			case 0x9e:
+			case 0x9f:
+				this.state = IGNORED_STRING;
+				return;
+		}
+		this.state = GROUND;
+		this.preceding = null;
+		if (code === 0x84) {
+			this.lineFeed();
+		} else if (code === 0x85) {
+			this.x = 0;
+			this.lineFeed();
+		} else if (code === 0x88) {
+			this.tabStops[this.x] = true;
 		}
 	}
 
 	execute(code: number): void {
+		this.runControl(code);
+		this.preceding = null;
+	}
+
+	runControl(code: number): void {
 		switch (code) {
 			case 0x07:
 				this.bells++;
@@ -528,14 +609,20 @@ export class Terminal {
 		if (code >= 0x5f && code <= 0x7e && this.charsets[this.shift] === "0") {
 			char = DEC_GRAPHICS[code - 0x5f];
 		} else if (code >= 0x7f) {
-			width = getStringWidth(char);
+			width = Math.min(getStringWidth(char), 2);
 		}
-		const lines = this.lines;
+		const preceding = this.preceding;
+		if (preceding !== null) {
+			const joined = joinedWidth(code, width, preceding);
+			if (joined !== null) {
+				this.join(char, joined, code === 0x200d);
+				return;
+			}
+		}
 		if (width === 0) {
 			this.combine(char);
 			return;
 		}
-		width = Math.min(width, 2);
 		if (this.wrapPending) {
 			this.wrapPending = false;
 			if (this.autowrap) {
@@ -544,16 +631,13 @@ export class Terminal {
 			}
 		}
 		if (width === 2 && this.x === this.cols - 1) {
-			if (this.cols < 2) {
+			if (!this.autowrap || this.cols < 2) {
+				this.preceding = null;
 				return;
 			}
-			if (this.autowrap) {
-				eraseCells(lines[this.y], this.x, this.x + 1, this.bg);
-				this.x = 0;
-				this.lineFeed();
-			} else {
-				this.x = this.cols - 2;
-			}
+			this.fillBlank(this.lines[this.y], this.x, this.x + 1);
+			this.x = 0;
+			this.lineFeed();
 		}
 		const line = this.lines[this.y];
 		if (this.insertMode) {
@@ -562,27 +646,105 @@ export class Terminal {
 				shiftCells(line, this.x, this.x + width, count);
 			}
 		}
-		eraseCells(line, this.x, this.x + width, this.bg);
+		if (this.x > 0 && line.widths[this.x - 1] === 2) {
+			this.fillBlank(line, this.x - 1, this.x);
+		}
+		const attrs = this.printedAttrs();
 		line.chars[this.x] = char;
 		line.widths[this.x] = width;
 		line.fg[this.x] = this.fg;
 		line.bg[this.x] = this.bg;
-		line.attrs[this.x] = this.attrs;
+		line.attrs[this.x] = attrs;
 		if (width === 2) {
 			line.chars[this.x + 1] = "";
 			line.widths[this.x + 1] = 0;
 			line.fg[this.x + 1] = this.fg;
 			line.bg[this.x + 1] = this.bg;
-			line.attrs[this.x + 1] = this.attrs;
+			line.attrs[this.x + 1] = attrs;
 		}
 		if (this.insertMode) {
-			repairWide(line);
+			repairWide(line, this.fg, this.bg, attrs);
 		}
+		this.preceding = {col: this.x, width, joining: false};
+		this.advance(width);
+	}
+
+	// What a printed cell takes: the SGR attributes, underlined in a link.
+	printedAttrs(): number {
+		return this.link ? this.attrs | UNDERLINE : this.attrs;
+	}
+
+	// Past the last column the cursor waits there, and the next character
+	// wraps, or with autowrap off, writes over the last cell. An orphaned
+	// second half of a wide character after the cursor becomes a blank.
+	advance(width: number): void {
 		this.x += width;
 		if (this.x >= this.cols) {
 			this.x = this.cols - 1;
-			this.wrapPending = this.autowrap;
+			this.wrapPending = true;
+			return;
 		}
+		const line = this.lines[this.y];
+		if (line.widths[this.x] === 0) {
+			this.fillBlank(line, this.x, this.x + 1);
+		}
+	}
+
+	// Blank cells in the current colors and attributes, as xterm leaves
+	// where a wide character did not fit or was cut.
+	fillBlank(line: Line, start: number, end: number): void {
+		line.chars.fill("", start, end);
+		line.widths.fill(1, start, end);
+		line.fg.fill(this.fg, start, end);
+		line.bg.fill(this.bg, start, end);
+		line.attrs.fill(this.printedAttrs(), start, end);
+	}
+
+	// Adds a character to the one printed before it, which grows to
+	// `width` cells. One that no longer fits wraps to the next line.
+	join(char: string, width: number, joining: boolean): void {
+		const preceding = this.preceding!;
+		let line = this.lines[this.y];
+		let col = preceding.col;
+		const grow = width - preceding.width;
+		if (grow > 0 && col + width > this.cols) {
+			if (!this.autowrap) {
+				return;
+			}
+			const cluster = line.chars[col];
+			const fg = line.fg[col];
+			const bg = line.bg[col];
+			const attrs = line.attrs[col];
+			this.fillBlank(line, col, this.cols);
+			this.wrapPending = false;
+			this.x = 0;
+			this.lineFeed();
+			line = this.lines[this.y];
+			col = 0;
+			eraseCells(line, 0, preceding.width, this.bg);
+			line.chars[0] = cluster;
+			line.fg[0] = fg;
+			line.bg[0] = bg;
+			line.attrs[0] = attrs;
+			this.x = preceding.width;
+		}
+		line.chars[col] += char;
+		if (grow > 0) {
+			line.widths[col] = width;
+			const from = col + preceding.width;
+			eraseCells(line, from, from + grow, this.bg);
+			line.chars.fill("", from, from + grow);
+			line.widths.fill(0, from, from + grow);
+			line.fg.fill(this.fg, from, from + grow);
+			line.bg.fill(this.bg, from, from + grow);
+			line.attrs.fill(this.printedAttrs(), from, from + grow);
+			this.wrapPending = false;
+			this.x = col + preceding.width;
+			this.preceding = {col, width, joining};
+			this.advance(grow);
+			return;
+		}
+		this.preceding = {col, width: preceding.width, joining};
 	}
 
 	// A mark, a variation selector, or a joiner and what follows it, joins
@@ -641,7 +803,9 @@ export class Terminal {
 	}
 
 	tab(count: number): void {
-		this.wrapPending = false;
+		if (this.wrapPending) {
+			return;
+		}
 		while (count > 0 && this.x < this.cols - 1) {
 			this.x++;
 			if (this.tabStops[this.x]) {
@@ -651,7 +815,9 @@ export class Terminal {
 	}
 
 	backTab(count: number): void {
-		this.wrapPending = false;
+		if (this.wrapPending) {
+			return;
+		}
 		while (count > 0 && this.x > 0) {
 			this.x--;
 			if (this.tabStops[this.x]) {
@@ -668,11 +834,23 @@ export class Terminal {
 		this.y = Math.max(top, Math.min(y + top, bottom));
 	}
 
+	// Up stops at the top margin and down at the bottom one, when the
+	// cursor starts on the margin's side of them.
 	moveVertically(delta: number): void {
 		this.wrapPending = false;
-		const inRegion = this.y >= this.scrollTop && this.y <= this.scrollBottom;
-		const top = inRegion ? this.scrollTop : 0;
-		const bottom = inRegion ? this.scrollBottom : this.rows - 1;
+		const top = this.y >= this.scrollTop ? this.scrollTop : 0;
+		const bottom = this.y <= this.scrollBottom
+			? this.scrollBottom
+			: this.rows - 1;
+		this.y = Math.max(top, Math.min(this.y + delta, bottom));
+	}
+
+	// VPR moves down past the margins, to the edge of the screen, or of
+	// the region in origin mode.
+	moveRelative(delta: number): void {
+		this.wrapPending = false;
+		const top = this.originMode ? this.scrollTop : 0;
+		const bottom = this.originMode ? this.scrollBottom : this.rows - 1;
 		this.y = Math.max(top, Math.min(this.y + delta, bottom));
 	}
 
@@ -684,7 +862,6 @@ export class Terminal {
 			bg: this.bg,
 			attrs: this.attrs,
 			originMode: this.originMode,
-			autowrap: this.autowrap,
 			charsets: [...this.charsets],
 			shift: this.shift,
 		};
@@ -710,20 +887,21 @@ export class Terminal {
 		this.bg = saved.bg;
 		this.attrs = saved.attrs;
 		this.originMode = saved.originMode;
-		this.autowrap = saved.autowrap;
 		this.charsets = [...saved.charsets];
 		this.shift = saved.shift;
 	}
 
-	useAlternate(on: boolean, clear: boolean): void {
+	// Entering the alternate screen clears it in the current background,
+	// as xterm.js does for all three modes.
+	useAlternate(on: boolean): void {
 		const target = on ? this.alternate : this.normal;
 		if (target === this.buffer) {
 			return;
 		}
 		this.buffer = target;
-		if (clear) {
+		if (on) {
 			for (const line of this.alternate.lines) {
-				eraseCells(line, 0, this.cols, DEFAULT_COLOR);
+				eraseCells(line, 0, this.cols, this.bg);
 			}
 		}
 		this.wrapPending = false;
@@ -746,6 +924,7 @@ export class Terminal {
 		this.normal.saved = null;
 		this.alternate.saved = null;
 		this.wrapPending = false;
+		this.preceding = null;
 	}
 
 	fullReset(): void {
@@ -757,6 +936,8 @@ export class Terminal {
 		this.newlineMode = false;
 		this.bracketedPaste = false;
 		this.focusReporting = false;
+		this.synchronizedOutput = false;
+		this.link = false;
 		this.mouseTracking = 0;
 		this.mouseEncoding = 0;
 		this.cursorShape = 0;
@@ -765,6 +946,11 @@ export class Terminal {
 	}
 
 	dispatchEscape(final: string): void {
+		this.runEscape(final);
+		this.preceding = null;
+	}
+
+	runEscape(final: string): void {
 		const intermediates = this.intermediates;
 		if (intermediates === "") {
 			switch (final) {
@@ -821,6 +1007,11 @@ export class Terminal {
 	}
 
 	dispatchCsi(final: string): void {
+		this.runCsi(final);
+		this.preceding = null;
+	}
+
+	runCsi(final: string): void {
 		const {prefix, intermediates} = this;
 		if (prefix === "?" && intermediates === "") {
 			if (final === "h" || final === "l") {
@@ -836,10 +1027,16 @@ export class Terminal {
 			}
 			return;
 		}
-		if (prefix === "?" && intermediates === "$" && final === "p") {
+		if (
+			intermediates === "$" &&
+			final === "p" &&
+			(prefix === "?" || prefix === "")
+		) {
 			const mode = this.param(0, 0);
-			const state = this.privateModeState(mode);
-			this.reply(`\x1b[?${mode};${state}$y`);
+			const state = prefix === "?"
+				? this.privateModeState(mode)
+				: this.ansiModeState(mode);
+			this.reply(`\x1b[${prefix}${mode};${state}$y`);
 			return;
 		}
 		if (prefix === ">") {
@@ -872,8 +1069,10 @@ export class Terminal {
 				this.moveVertically(-n);
 				return;
 			case "B":
-			case "e":
 				this.moveVertically(n);
+				return;
+			case "e":
+				this.moveRelative(n);
 				return;
 			case "C":
 			case "a":
@@ -933,7 +1132,7 @@ export class Terminal {
 				this.backTab(n);
 				return;
 			case "b":
-				this.repeat(n);
+				this.repeat(n, this.preceding);
 				return;
 			case "c":
 				if (this.param(0, 0) === 0) {
@@ -1008,7 +1207,9 @@ export class Terminal {
 			1047: this.alternateScreen,
 			1049: this.alternateScreen,
 			2004: this.bracketedPaste,
+			2026: this.synchronizedOutput,
 			1004: this.focusReporting,
+			1048: true,
 			9: this.mouseTracking === 9,
 			1000: this.mouseTracking === 1000,
 			1002: this.mouseTracking === 1002,
@@ -1017,7 +1218,23 @@ export class Terminal {
 			1006: this.mouseEncoding === 1006,
 			1015: this.mouseEncoding === 1015,
 		};
+		if (mode === 8) {
+			return 3;
+		}
+		if (mode === 67) {
+			return 4;
+		}
 		return mode in states ? states[mode] ? 1 : 2 : 0;
+	}
+
+	ansiModeState(mode: number): number {
+		const states: Record<number, number> = {
+			2: 4,
+			4: this.insertMode ? 1 : 2,
+			12: 3,
+			20: this.newlineMode ? 1 : 2,
+		};
+		return states[mode] ?? 0;
 	}
 
 	setPrivateMode(mode: number, on: boolean): void {
@@ -1031,23 +1248,13 @@ export class Terminal {
 				return;
 			case 7:
 				this.autowrap = on;
-				if (!on) {
-					this.wrapPending = false;
-				}
 				return;
 			case 25:
 				this.cursorVisible = on;
 				return;
 			case 47:
-				this.useAlternate(on, false);
-				return;
 			case 1047:
-				if (!on) {
-					for (const line of this.alternate.lines) {
-						eraseCells(line, 0, this.cols, DEFAULT_COLOR);
-					}
-				}
-				this.useAlternate(on, false);
+				this.useAlternate(on);
 				return;
 			case 1048:
 				if (on) {
@@ -1059,9 +1266,9 @@ export class Terminal {
 			case 1049:
 				if (on) {
 					this.saveCursor();
-					this.useAlternate(true, true);
+					this.useAlternate(true);
 				} else {
-					this.useAlternate(false, false);
+					this.useAlternate(false);
 					this.restoreCursor();
 				}
 				return;
@@ -1082,14 +1289,22 @@ export class Terminal {
 			case 2004:
 				this.bracketedPaste = on;
 				return;
+			case 2026:
+				this.synchronizedOutput = on;
+				return;
 		}
 	}
 
+	// From past the last column, which is where the cursor waits after
+	// writing there, erasing to the right erases nothing on its row.
+	eraseStart(): number {
+		return this.wrapPending ? this.cols : this.x;
+	}
+
 	eraseDisplay(mode: number): void {
-		this.wrapPending = false;
 		const lines = this.lines;
 		if (mode === 0) {
-			eraseCells(lines[this.y], this.x, this.cols, this.bg);
+			eraseCells(lines[this.y], this.eraseStart(), this.cols, this.bg);
 			for (let row = this.y + 1; row < this.rows; row++) {
 				eraseCells(lines[row], 0, this.cols, this.bg);
 			}
@@ -1097,7 +1312,7 @@ export class Terminal {
 			for (let row = 0; row < this.y; row++) {
 				eraseCells(lines[row], 0, this.cols, this.bg);
 			}
-			eraseCells(lines[this.y], 0, this.x + 1, this.bg);
+			eraseCells(lines[this.y], 0, this.eraseStart() + 1, this.bg);
 		} else if (mode === 2) {
 			for (const line of lines) {
 				eraseCells(line, 0, this.cols, this.bg);
@@ -1108,12 +1323,11 @@ export class Terminal {
 	}
 
 	eraseLine(mode: number): void {
-		this.wrapPending = false;
 		const line = this.lines[this.y];
 		if (mode === 0) {
-			eraseCells(line, this.x, this.cols, this.bg);
+			eraseCells(line, this.eraseStart(), this.cols, this.bg);
 		} else if (mode === 1) {
-			eraseCells(line, 0, this.x + 1, this.bg);
+			eraseCells(line, 0, this.eraseStart() + 1, this.bg);
 		} else if (mode === 2) {
 			eraseCells(line, 0, this.cols, this.bg);
 		}
@@ -1129,7 +1343,7 @@ export class Terminal {
 		line.fg.fill(DEFAULT_COLOR, this.x, this.x + count);
 		line.bg.fill(this.bg, this.x, this.x + count);
 		line.attrs.fill(0, this.x, this.x + count);
-		repairWide(line);
+		repairWide(line, DEFAULT_COLOR, this.bg, 0);
 	}
 
 	deleteChars(count: number): void {
@@ -1142,7 +1356,7 @@ export class Terminal {
 		line.fg.fill(DEFAULT_COLOR, this.cols - count);
 		line.bg.fill(this.bg, this.cols - count);
 		line.attrs.fill(0, this.cols - count);
-		repairWide(line);
+		repairWide(line, DEFAULT_COLOR, this.bg, 0);
 	}
 
 	insertLines(count: number): void {
@@ -1163,20 +1377,20 @@ export class Terminal {
 		this.wrapPending = false;
 	}
 
-	// REP repeats the character before the cursor.
-	repeat(count: number): void {
-		let col = this.wrapPending ? this.x : this.x - 1;
-		const line = this.lines[this.y];
-		if (col >= 0 && line.widths[col] === 0) {
-			col--;
-		}
-		const char = col >= 0 ? line.chars[col] : "";
-		if (char === "") {
+	// REP repeats the character printed just before it, marks and all.
+	repeat(count: number, preceding: Terminal["preceding"]): void {
+		if (preceding === null) {
 			return;
 		}
-		const code = char.codePointAt(0)!;
+		const cluster = this.lines[this.y].chars[preceding.col];
+		if (cluster === "") {
+			return;
+		}
+		this.preceding = preceding;
 		for (let index = 0; index < Math.min(count, 0xffff); index++) {
-			this.print(code);
+			for (const char of cluster) {
+				this.print(char.codePointAt(0)!);
+			}
 		}
 	}
 
@@ -1290,8 +1504,97 @@ export class Terminal {
 		if (match !== null) {
 			this.title = match[2];
 		}
+		const link = /^8;([^;]*);(.*)$/s.exec(this.osc);
+		if (link !== null && (link[2] !== "" || link[1].trim() === "")) {
+			this.link = link[2] !== "";
+		}
 		this.osc = "";
 	}
+
+	// DECRQSS: the SGR, the margins, the cursor's shape, and the fixed
+	// answers xterm gives for protection and the conformance level.
+	dispatchDcs(): void {
+		const request = /^\$q(.*)$/s.exec(this.dcs)?.[1];
+		this.dcs = "";
+		if (request === undefined) {
+			return;
+		}
+		const answers: Record<string, string> = {
+			m: `${this.describeGraphics()}m`,
+			r: `${this.scrollTop + 1};${this.scrollBottom + 1}r`,
+			" q": `${this.cursorShape === 0 ? 2 : this.cursorShape} q`,
+			"\"q": "0\"q",
+			"\"p": "61;1\"p",
+		};
+		const answer = answers[request];
+		this.reply(
+			answer === undefined ? "\x1bP0$r\x1b\\" : `\x1bP1$r${answer}\x1b\\`,
+		);
+	}
+
+	// The SGR parameters that give the current attributes and colors.
+	describeGraphics(): string {
+		const params = ["0"];
+		const names: Array<[number, number]> = [
+			[BOLD, 1],
+			[DIM, 2],
+			[ITALIC, 3],
+			[UNDERLINE, 4],
+			[BLINK, 5],
+			[INVERSE, 7],
+			[INVISIBLE, 8],
+			[STRIKETHROUGH, 9],
+			[DOUBLE_UNDERLINE, 21],
+			[OVERLINE, 53],
+		];
+		for (const [bit, param] of names) {
+			if ((this.attrs & bit) !== 0) {
+				params.push(String(param));
+			}
+		}
+		const color = (value: number, base: number, bright: number) => {
+			if (value === DEFAULT_COLOR) {
+				return;
+			}
+			if ((value & RGB_COLOR) !== 0) {
+				params.push(
+					`${base + 8};2;${(value >> 16) & 255};${(value >> 8) & 255};${value & 255}`,
+				);
+			} else if (value < 8) {
+				params.push(String(base + value));
+			} else if (value < 16) {
+				params.push(String(bright + value - 8));
+			} else {
+				params.push(`${base + 8};5;${value}`);
+			}
+		};
+		color(this.fg, 30, 90);
+		color(this.bg, 40, 100);
+		return params.join(";");
+	}
+}
+
+// How wide the character before grows to with `code` joined to it, as
+// termdom measures a cluster, or null for a character that starts a cell
+// of its own. A joiner keeps the cluster open for whatever follows.
+function joinedWidth(
+	code: number,
+	width: number,
+	preceding: {width: number; joining: boolean},
+): number | null {
+	if (code === 0x200d) {
+		return preceding.width;
+	}
+	if (preceding.joining) {
+		return Math.max(preceding.width, width);
+	}
+	if (code === 0xfe0f) {
+		return 2;
+	}
+	if (code === 0xfe0e || (code >= 0x1f3fb && code <= 0x1f3ff) || width === 0) {
+		return preceding.width;
+	}
+	return null;
 }
 
 const clampByte = (value: number | undefined) =>
@@ -1299,7 +1602,8 @@ const clampByte = (value: number | undefined) =>
 
 // SGR 38, 48 and 58, in both forms: 38;5;n and 38;2;r;g;b with
 // semicolons, where the color takes the parameters that follow, and
-// 38:5:n and 38:2::r:g:b with colons, where it is all one parameter.
+// 38:5:n and 38:2:space:r:g:b with colons, where it is all one
+// parameter and the color space, often left empty, comes first.
 function readExtendedColor(
 	params: number[][],
 	index: number,
@@ -1310,13 +1614,12 @@ function readExtendedColor(
 			return {color: clampByte(param[2]), used: 0};
 		}
 		if (param[1] === 2) {
-			const start = param.length >= 6 ? 3 : 2;
 			return {
 				color:
 					RGB_COLOR |
-					(clampByte(param[start]) << 16) |
-					(clampByte(param[start + 1]) << 8) |
-					clampByte(param[start + 2]),
+					(clampByte(param[3]) << 16) |
+					(clampByte(param[4]) << 8) |
+					clampByte(param[5]),
 				used: 0,
 			};
 		}

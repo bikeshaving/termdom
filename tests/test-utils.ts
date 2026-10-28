@@ -54,7 +54,7 @@ const ZWJ_PENDING = 1;
  * Registering this makes the mock a terminal that agrees; a test that wants
  * disagreement scripts the replies itself.
  */
-const TABLE_UNICODE_VERSION = {
+export const TABLE_UNICODE_VERSION = {
 	version: "table",
 	wcwidth(codepoint: number): 0 | 1 | 2 {
 		const width = getStringWidth(String.fromCodePoint(codepoint));

@@ -1,0 +1,24 @@
+[?1h=* [33mcommit ae1b5b2ff561336cce4d24a51f98312b44fec9d3[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mside[m[33m)[m[m
+[31m|[m Author: Example <e@example.com>[m
+[31m|[m Date:   Fri Jan 9 12:00:00 2026 +0000[m
+[31m|[m [m
+[31m|[m     A side change[m
+[31m|[m   [m
+[31m|[m * [33mcommit a2d9a534ce00e0bd507d364499595e70010419b7[m[33m ([m[1;32mmain[m[33m)[m[m
+[31m|[m [32m|[m Author: Example <e@example.com>[m
+[31m|[m [32m|[m Date:   Tue Jan 6 12:00:00 2026 +0000[m
+[31m|[m [32m|[m [m
+[31m|[m [32m|[m     Change number 6[m
+[31m|[m [32m|[m [m
+[31m|[m * [33mcommit be3bc464b83f4b066d11940f637005d5d2d601e6[m[m
+[31m|[m[31m/[m  Author: Example <e@example.com>[m
+[31m|[m   Date:   Mon Jan 5 12:00:00 2026 +0000[m
+[31m|[m   [m
+[31m|[m       Change number 5[m
+[31m|[m [m
+* [33mcommit e3ff346f0036a040ba900ad8d046e0e05beacca6[m[m
+[32m|[m Author: Example <e@example.com>[m
+[32m|[m Date:   Sun Jan 4 12:00:00 2026 +0000[m
+[32m|[m [m
+[32m|[m     Change number 4[m
+:[K[K[?1l>
