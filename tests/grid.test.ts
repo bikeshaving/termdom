@@ -1145,6 +1145,23 @@ test("an inline-grid sits on the line whole", async () => {
 	expect(rows()[1]).toBe("       ef");
 });
 
+test("an inline-grid whose items are inline elements paints them", async () => {
+	// Each item is blockified and holds its own lines, which paint from the
+	// grid's box, so the grid has to be the item's parent box.
+	const alone = await render(
+		"<p>before</p><span style=\"display:inline-grid\"><span>a</span></span><p>after</p>",
+	);
+	expect(alone.rows().slice(0, 3)).toEqual(["before", "a", "after"]);
+	const stacked = await render(
+		"<span style=\"display:inline-grid\"><span style=\"grid-area: 1 / 1\">ab</span><span style=\"grid-area: 1 / 1\">c</span></span>",
+	);
+	expect(stacked.rows()[0]).toBe("cb");
+	const inFlex = await render(
+		"<div style=\"display:flex\"><span style=\"display:inline-grid\"><span>x</span><span>y</span></span></div>",
+	);
+	expect(inFlex.rows().slice(0, 2)).toEqual(["x", "y"]);
+});
+
 test("collapsible white space between items is not an item", async () => {
 	// css-flexbox-1 §4, which css-grid-2 §6 takes over: an anonymous item of
 	// nothing but collapsible white space is not rendered, so the newlines in
