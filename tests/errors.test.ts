@@ -7,6 +7,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {installGlobals, TermDOM} from "../src/index.ts";
+import {_} from "../src/internal/slots.ts";
 import {inputDispatched, MockProcess, nextFrame, until} from "./test-utils.js";
 
 const press = (col: number, row: number): string => `\x1b[<0;${col};${row}M`;
@@ -100,6 +101,34 @@ test("a stderr that is the terminal is not written to", async () => {
 	expect(log).toEqual([]);
 	await dom.dispose();
 	expect(terminal.getScreenContents()).toContain("Error: held");
+});
+
+test("the engine failing in a frame is told to a transport that logs, then ends the session", async () => {
+	const logged: string[] = [];
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({
+		transport: {
+			...terminal.transport,
+			logError: (text: string) => {
+				logged.push(text);
+				return true;
+			},
+		},
+	});
+	await dom.attach();
+	await nextFrame(dom);
+	const layout =
+		(_(dom) as unknown as {layout: {performLayout(): void}}).layout;
+	layout.performLayout = () => {
+		throw new Error("the engine broke");
+	};
+	// The frame's own waiter takes the error, so none escapes the test.
+	const render =
+		(_(dom.document as never) as {extra: {render(): Promise<void>}})
+			.extra.render;
+	await expect(render()).rejects.toThrow("the engine broke");
+	expect(logged.join("")).toContain("the engine broke");
+	await until(() => dom.window.closed);
 });
 
 test("a frame callback's exception does not stop the frames", async () => {
