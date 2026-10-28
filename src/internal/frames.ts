@@ -95,11 +95,14 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		load: loader === null
 			? parentSlots.load
 			: (request, context) => loader(document, request, context),
-		// A frame's handler attributes stay inert.
-		allowsInlineHandler: () => false,
+		// A frame's scripts are held to the page's policy and its own, and
+		// offered to the same TermDOM.
+		allowsInlineHandler: (element) =>
+			parentSlots.allowsInlineHandler?.(element) ?? false,
 		allowsPlugin: () => false,
-		allowsInlineScript: () => false,
-		runScript: () => null,
+		allowsInlineScript: (element) =>
+			parentSlots.allowsInlineScript?.(element) ?? false,
+		runScript: (request) => parentSlots.runScript?.(request) ?? null,
 		loadSignal: AbortSignal.any([parentSlots.loadSignal, unloaded.signal]),
 		render: () => {
 			stale = true;

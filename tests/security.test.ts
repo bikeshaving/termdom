@@ -149,8 +149,8 @@ test("a <script> set with innerHTML is inert, and a handler attribute runs in th
 
 // A document an author builds through the DOM -- a DOMParser result,
 // createHTMLDocument, a <template>'s contents -- has no browsing context, and
-// an iframe's content document, which has one in a realm of its own, is never
-// scripted, so scripting is disabled for each. Its handler
+// an iframe's content document is scripted only when its page is, so
+// scripting is disabled for each. Its handler
 // content attributes must stay inert: they never compile or run, even for the
 // events the engine dispatches on its own (a <details open> toggle, an
 // <iframe> load), and they reflect as null. This is the guarantee a sanitizer
@@ -238,7 +238,7 @@ test("a handler in a <template>'s contents is inert", async () => {
 	dom.dispose();
 });
 
-test("a handler in an iframe's content document is inert", async () => {
+test("a handler in an iframe's content document is inert when the page runs no scripts", async () => {
 	const dom = new TermDOM({
 		transport: new MockProcess().transport,
 		colorDepth: "rgb",
@@ -254,6 +254,8 @@ test("a handler in an iframe's content document is inert", async () => {
 	await settle();
 
 	expect(flags.__termdomInert).toBe(false);
+	const frame = iframe.contentWindow as unknown as InertFlags | null;
+	expect(frame?.__termdomInert).toBe(undefined);
 	dom.dispose();
 });
 

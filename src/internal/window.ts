@@ -33,6 +33,7 @@ import {
 	Window,
 	windowTimers,
 } from "./dom.ts";
+import {isScriptedDocument} from "./hints.ts";
 import {createRealm, rehomeClone} from "./realms.ts";
 import {
 	createWindowFetch,
@@ -229,16 +230,19 @@ export function getInterfaceObjects(): ReadonlyMap<string, Constructor> {
 }
 
 // A frame's document and window, built in a realm of their own where the
-// runtime can make one. Its handler attributes stay inert, as a frame's
-// did before it had a realm, and its requests are the window's it is in:
-// held to the same policy, and offered to the same fetch listeners.
+// runtime can make one. Its scripts run there when its parent's do, and
+// its requests are the window's it is in: held to the same policy, and
+// offered to the same fetch listeners.
 setFrameWindowFactory((source, url, registry, parent, frame) => {
 	const realm = createRealm();
 	if (realm === null) {
 		return null;
 	}
+	const scripting =
+		parent !== null &&
+		isScriptedDocument(parent.document as unknown as globalThis.Document);
 	return runInRealm(realm, () => {
-		const document = parseHTMLDocument(source, url, true, registry);
+		const document = parseHTMLDocument(source, url, true, registry, scripting);
 		realm.document = document;
 		const window = buildWindow(document, realm);
 		const windowSlots = _(window);

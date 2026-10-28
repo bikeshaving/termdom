@@ -730,11 +730,11 @@ export class TermDOM extends EventTarget {
 					requestPolicy,
 				),
 			allowsInlineHandler: (element) =>
-				checkInlineHandler(document, element, requestPolicy),
+				checkInlineHandler(element.ownerDocument, element, requestPolicy),
 			allowsPlugin: (element, violations) =>
 				checkPlugin(element, requestPolicy, violations),
 			allowsInlineScript: (element) =>
-				checkInlineScript(document, element, requestPolicy),
+				checkInlineScript(element.ownerDocument, element, requestPolicy),
 			runScript: (request) => {
 				const event = createScriptEvent(request);
 				this.dispatchEvent(event);

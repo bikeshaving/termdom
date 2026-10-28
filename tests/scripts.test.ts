@@ -5,11 +5,12 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {type ScriptEvent, TermDOM} from "../src/index.ts";
-import {canRunModules} from "../src/internal/realms.ts";
+import {canCreateRealms, canRunModules} from "../src/internal/realms.ts";
 import {MockProcess, until} from "./test-utils.js";
 
 const withModules = canRunModules() ? test : test.skip;
 const withoutModules = canRunModules() ? test.skip : test;
+const withRealms = canCreateRealms() ? test : test.skip;
 
 interface Page {
 	dom: TermDOM;
@@ -444,3 +445,72 @@ withoutModules(
 		await p.dom.dispose();
 	},
 );
+
+const FRAME = `<iframe srcdoc="
+	<script>
+		var inFrame = 1;
+		parent.log.push(
+			'frame script',
+			window !== parent,
+			document.readyState,
+			document.currentScript !== null,
+			[] instanceof parent.Array,
+		);
+		document.addEventListener('DOMContentLoaded', () => parent.log.push('frame DOMContentLoaded'));
+	</script>
+	<button onclick=&quot;parent.log.push('frame handler', typeof inFrame)&quot;>go</button>
+"></iframe>`;
+
+withRealms(
+	"a frame's scripts and handlers run in its own realm, with its own document state",
+	async () => {
+		const p = page(FRAME);
+		void p.dom.document.querySelector("iframe")!.contentDocument;
+		await until(() => p.log().includes("frame DOMContentLoaded"));
+		expect(p.log()).toEqual([
+			"frame script",
+			true,
+			"loading",
+			true,
+			false,
+			"frame DOMContentLoaded",
+		]);
+		expect(p.window.inFrame).toBe(undefined);
+		const frame = p.dom.document.querySelector("iframe")!;
+		(frame.contentDocument!.querySelector(
+			"button",
+		) as HTMLButtonElement).click();
+		expect(p.log().slice(-2)).toEqual(["frame handler", "number"]);
+		await p.dom.dispose();
+	},
+);
+
+withRealms(
+	"a frame's scripts reach the TermDOM's script listener, with the frame's document",
+	async () => {
+		const documents: unknown[] = [];
+		const p = page(FRAME, {
+			listen: (dom) => {
+				dom.addEventListener("script", (event) => {
+					documents.push(event.document);
+				});
+			},
+		});
+		void p.dom.document.querySelector("iframe")!.contentDocument;
+		await until(() => p.log().includes("frame DOMContentLoaded"));
+		const frame = p.dom.document.querySelector("iframe")!;
+		expect(documents).toEqual([p.dom.document, frame.contentDocument]);
+		await p.dom.dispose();
+	},
+);
+
+withRealms("a frame runs nothing when its page runs no scripts", async () => {
+	const p = page(FRAME, {scripting: "none"});
+	const frame = p.dom.document.querySelector("iframe")!;
+	void frame.contentDocument;
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	expect(
+		(frame.contentWindow as unknown as {inFrame?: number} | null)?.inFrame,
+	).toBe(undefined);
+	await p.dom.dispose();
+});

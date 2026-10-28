@@ -290,11 +290,24 @@ export function compileInWindow(
 }
 
 function makeContext(vm: VM, window: object): void {
-	if (!vm.isContext(window)) {
-		vm.createContext(window);
-		// Code in the context sees its global proxy as this, globalThis and
-		// window, so the proxy is the window to the engine too.
-		aliasSlots(vm.runInContext("globalThis", window) as object, window);
+	if (vm.isContext(window)) {
+		return;
+	}
+	vm.createContext(window);
+	const global = vm.runInContext("globalThis", window) as object;
+	// Code in the context sees its global proxy as this, globalThis and
+	// window, so the proxy is the window to the engine too.
+	aliasSlots(global, window);
+	// The context's built-ins, such as Array and JSON, become the window's
+	// own, so a frame's parent.Array is the page's Array, as in a browser.
+	for (const name of Object.getOwnPropertyNames(global)) {
+		if (name === "globalThis" || name in window) {
+			continue;
+		}
+		const descriptor = Object.getOwnPropertyDescriptor(global, name);
+		if (descriptor !== undefined) {
+			Object.defineProperty(window, name, descriptor);
+		}
 	}
 }
 

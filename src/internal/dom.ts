@@ -5315,8 +5315,7 @@ const FORWARDED_HANDLER_ATTRIBUTES: ReadonlySet<string> =
 // made without `scripting: "enabled"` never runs them. The documents an author
 // builds through the DOM -- a DOMParser result, createHTMLDocument, the
 // contents of a <template> -- have no window, and an iframe's content
-// document, which has one where it has a realm, is never a scripted
-// document, so their markup is inert: `new Function` is never called for a handler
+// document is scripted only when its page is, so their markup is inert: `new Function` is never called for a handler
 // content attribute in them, and the attribute reflects as null. This is
 // the guarantee HTML sanitizers such as DOMPurify rely on when they parse
 // hostile markup into an inert document, measure it, and strip the
@@ -5357,7 +5356,6 @@ function compileEventHandler(
 	// Run in the window's context, where node:vm makes one, with the
 	// element, its form and its document in scope, as HTML has it.
 	const element = value.element;
-	const view = _(document).extra.defaultView;
 	const form = getFormOwner(element);
 	const scopes = [
 		document,
@@ -5368,10 +5366,11 @@ function compileEventHandler(
 		// Parsed here first: Bun's node:vm reports bad syntax as a plain
 		// Error, where a page expects a SyntaxError.
 		const parsed = new Function("event", value.source);
+		const context = getScriptContext(document);
 		record.value = ((
-			view === null || getDocumentRealm(document) !== null
+			context === null
 				? null
-				: compileInWindow(view, value.source, scopes, `on${type}`)
+				: compileInWindow(context, value.source, scopes, `on${type}`)
 		) ?? parsed) as EventHandlerValue;
 	} catch (error) {
 		reportError(error, _(value.element).document);
@@ -22699,12 +22698,29 @@ function isDocumentLive(document: Document): boolean {
 	return attached !== undefined && !_(attached).extra.loadSignal.aborted;
 }
 
+// Built in the document's realm, so a frame's page sees its own Event.
 function fireDocumentEvent(
+	document: Document,
 	target: EventTarget,
 	type: string,
 	init?: EventInit,
 ): void {
-	dispatch(target, constructInternal(() => new Event(type, init)));
+	dispatch(
+		target,
+		runInRealm(getDocumentRealm(document), () =>
+			constructInternal(() => new Event(type, init)),
+		),
+	);
+}
+
+// Where the document's scripts run: the context node:vm made of the page's
+// window, or a frame's realm. Null where there is no window.
+function getScriptContext(document: Document): object | null {
+	const realm = getDocumentRealm(document);
+	if (realm !== null) {
+		return realm.sandbox;
+	}
+	return _(document).extra.defaultView as unknown as object | null;
 }
 
 function setReadyState(
@@ -22713,7 +22729,11 @@ function setReadyState(
 	state: globalThis.DocumentReadyState,
 ): void {
 	scripts.readyState = state;
-	fireDocumentEvent(document as unknown as EventTarget, "readystatechange");
+	fireDocumentEvent(
+		document,
+		document as unknown as EventTarget,
+		"readystatechange",
+	);
 }
 
 // What HTML does at the end of a parse, with every script the markup held
@@ -22772,9 +22792,12 @@ async function runDocumentScripts(
 	if (!isDocumentLive(document)) {
 		return;
 	}
-	fireDocumentEvent(document as unknown as EventTarget, "DOMContentLoaded", {
-		bubbles: true,
-	});
+	fireDocumentEvent(
+		document,
+		document as unknown as EventTarget,
+		"DOMContentLoaded",
+		{bubbles: true},
+	);
 	scripts.parsed = true;
 	finishLoading(document, scripts);
 }
@@ -22791,7 +22814,7 @@ function finishLoading(document: Document, scripts: DocumentScripts): void {
 	setReadyState(document, scripts, "complete");
 	const view = _(document).extra.defaultView;
 	if (view !== null) {
-		fireDocumentEvent(view as unknown as EventTarget, "load");
+		fireDocumentEvent(document, view as unknown as EventTarget, "load");
 	}
 }
 
@@ -22878,7 +22901,9 @@ function queueScriptError(element: HTMLScriptElement, message: string): void {
 function fireScriptError(element: HTMLScriptElement, message: string): void {
 	dispatch(
 		element as unknown as EventTarget,
-		constructInternal(() => new ErrorEvent("error", {message})),
+		runInRealm(getDocumentRealm(_(element).document), () =>
+			constructInternal(() => new ErrorEvent("error", {message})),
+		),
 	);
 }
 
@@ -23077,7 +23102,7 @@ async function executeScript(
 		}
 	}
 	if (run.external && isDocumentLive(document)) {
-		fireDocumentEvent(element as unknown as EventTarget, "load");
+		fireDocumentEvent(document, element as unknown as EventTarget, "load");
 	}
 }
 
@@ -23090,10 +23115,8 @@ async function runModuleScript(
 ): Promise<void> {
 	const {element} = run;
 	const document = _(element).document;
-	const view = _(document).extra.defaultView;
-	if (
-		!canRunModules() || view === null || getDocumentRealm(document) !== null
-	) {
+	const context = getScriptContext(document);
+	if (!canRunModules() || context === null) {
 		fireScriptError(
 			element,
 			"A module needs node:vm's SourceTextModule, which Node has with " +
@@ -23104,7 +23127,7 @@ async function runModuleScript(
 	let evaluate: () => Promise<unknown>;
 	try {
 		evaluate = await linkInWindow(
-			view as unknown as object,
+			context,
 			createModuleHost(element, scripts),
 			run.url ?? getDocumentBaseURL(document),
 			run.external ? null : run.source as string,
@@ -23131,7 +23154,7 @@ async function runModuleScript(
 		}
 	}
 	if (run.external && isDocumentLive(document)) {
-		fireDocumentEvent(element as unknown as EventTarget, "load");
+		fireDocumentEvent(document, element as unknown as EventTarget, "load");
 	}
 }
 
@@ -23144,17 +23167,12 @@ function runClassicScript(
 	filename: string,
 ): boolean {
 	const document = _(element).document;
-	const view = _(document).extra.defaultView;
-	if (view === null) {
+	const context = getScriptContext(document);
+	if (context === null) {
 		return false;
 	}
 	return runInRealm(getDocumentRealm(document), () =>
-		runInWindow(
-			view as unknown as object,
-			source,
-			filename,
-			createModuleHost(element, scripts),
-		),
+		runInWindow(context, source, filename, createModuleHost(element, scripts)),
 	);
 }
 
@@ -23367,7 +23385,7 @@ async function executeModule(
 		scripts.running--;
 	}
 	if (run.external && isDocumentLive(document)) {
-		fireDocumentEvent(element as unknown as EventTarget, "load");
+		fireDocumentEvent(document, element as unknown as EventTarget, "load");
 	}
 }
 
