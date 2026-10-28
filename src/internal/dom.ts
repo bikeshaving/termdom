@@ -16935,6 +16935,9 @@ class HTMLEmbedElement extends HTMLElement {
 	// As a Native Client module's embed did, the embed takes messages for
 	// the program it runs.
 	postMessage(message: unknown): void {
+		if (!implementsInterface(this, HTMLEmbedElement)) {
+			throw new TypeError("Illegal invocation");
+		}
 		if (arguments.length < 1) {
 			throw new TypeError("postMessage needs a message");
 		}

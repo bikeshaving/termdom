@@ -386,6 +386,9 @@ test("postMessage types into the program while it runs, and throws InvalidStateE
 	embed.postMessage("make\r");
 	expect(children[0].written).toEqual(["make\r"]);
 	expect(() => (embed.postMessage as () => void)()).toThrow(TypeError);
+	expect(() =>
+		dom.window.HTMLEmbedElement.prototype.postMessage.call(document.body, "x"),
+	).toThrow(TypeError);
 	children[0].options.onExit(0, null);
 	expect(notRunning(() => embed.postMessage("x"))).toBe("InvalidStateError");
 	embed.remove();
