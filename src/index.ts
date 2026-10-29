@@ -97,6 +97,7 @@ import {
 	repaintAll,
 	scrollTo,
 } from "./internal/framebuffer.ts";
+import type {Scripting} from "./internal/hints.ts";
 import {
 	releaseDecoder,
 	retainDecoder,
@@ -254,19 +255,25 @@ export interface TermDOMOptions {
 	csp?: string;
 
 	/**
-	 * Whether the page's scripts run, with the values of
-	 * `@media (scripting)`. With `"none"`, the default, nothing runs and a
-	 * <noscript>'s markup is shown. With `"enabled"`, code the page gives
-	 * as text, such as <script> elements, handler attributes like
-	 * `onclick="..."` and setTimeout("..."), runs with the page's window
-	 * as its global, through node:vm. Functions the program passes run
-	 * where they were written. node:vm is not a sandbox: a
-	 * script can reach the program through the objects it is given, so
-	 * only enable it for markup you trust. A `csp` whose script-src-attr,
-	 * or the script-src or default-src it falls back to, is 'none' turns
-	 * it off. Any other value throws a TypeError.
+	 * Which of the page's scripts run. With `"none"`, the default, nothing
+	 * runs and a <noscript>'s markup is shown. With `"enabled"`, handler
+	 * attributes like `onclick="..."` run and a <noscript> shows nothing.
+	 * With `"scripts"`, <script> elements and setTimeout("...") run too.
+	 * A <script> with a src runs only what a `"fetch"` listener answers:
+	 * TermDOM never fetches a script from the network itself. Either way
+	 * `@media (scripting)` is `enabled`.
+	 *
+	 * The page's code runs with its window as its global, through node:vm,
+	 * and functions the program passes run where they were written.
+	 * node:vm is not a sandbox: the page's code can reach the program, and
+	 * everything the program can, through the objects it is given. Only
+	 * enable scripting for markup you trust. A `csp` without
+	 * 'unsafe-eval' stops the page's eval(), as in a browser, but does not
+	 * stop that. A `csp` whose script-src-attr, or the script-src or
+	 * default-src it falls back to, is 'none' turns scripting off. Any
+	 * other value throws a TypeError.
 	 */
-	scripting?: "none" | "enabled";
+	scripting?: "none" | "enabled" | "scripts";
 
 	/**
 	 * Whether the page is told its reader prefers reduced motion, with
@@ -408,14 +415,14 @@ function toGraphicsSetting(
 	throw new TypeError(`${name} must be "auto", "cells" or "none"`);
 }
 
-function toScripting(option: TermDOMOptions["scripting"]): boolean {
-	if (option === undefined || option === "none") {
-		return false;
+function toScripting(option: TermDOMOptions["scripting"]): Scripting {
+	if (option === undefined) {
+		return "none";
 	}
-	if (option === "enabled") {
-		return true;
+	if (option === "none" || option === "enabled" || option === "scripts") {
+		return option;
 	}
-	throw new TypeError('scripting must be "none" or "enabled"');
+	throw new TypeError('scripting must be "none", "enabled" or "scripts"');
 }
 
 function toReducedMotion(option: TermDOMOptions["reducedMotion"]): boolean {
@@ -639,12 +646,14 @@ export class TermDOM extends EventTarget {
 		slots.loads = new AbortController();
 		slots.transport = options.transport ?? transportFromProcess();
 
+		const scripting = toScripting(options.scripting);
 		const window = slots.window = createWindow(
 			options.html ?? "<!DOCTYPE html><html><head></head><body></body></html>",
 			url,
 			"text/html",
-			toScripting(options.scripting) &&
-				!forbidsScripts(parseContentSecurityPolicies(options.csp ?? "")),
+			forbidsScripts(parseContentSecurityPolicies(options.csp ?? ""))
+				? "none"
+				: scripting,
 		);
 		this.window = window as unknown as globalThis.Window & typeof globalThis;
 

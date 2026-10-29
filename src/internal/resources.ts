@@ -126,7 +126,8 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * document's policies, offered to `target`'s "fetch" listeners, and sent
  * to the network when none answers. A redirect, from a listener or the
  * network, is checked again and followed on the network, as Fetch follows
- * one without its Service Worker.
+ * one without its Service Worker. A script is never sent to the network:
+ * it is what a listener answers, or nothing.
  */
 export async function answerRequest(
 	target: EventTarget,
@@ -141,10 +142,14 @@ export async function answerRequest(
 	// A listener's own fetch, made as it answers or of the request it was
 	// given, goes to the network, as a Service Worker's does, instead of
 	// back to the listener.
-	let response = offering > 0 || offered.has(request)
+	const answering = offering > 0 || offered.has(request);
+	let response = answering
 		? null
 		: await dispatchFetchEvent(target, request, policy);
 	if (response === null) {
+		if (destination === "script" && !answering) {
+			throw new TypeError(`No "fetch" listener answered ${request.url}`);
+		}
 		response = await networkFetch(new Request(request, {redirect: "manual"}));
 	} else if (response.url !== "" && response.url !== request.url) {
 		// A listener's response that came from somewhere, such as its own
@@ -171,7 +176,9 @@ export async function answerRequest(
 	let current = new URL(response.url || request.url);
 	for (let redirects = 1; isRedirect(response); redirects++) {
 		await response.body?.cancel().catch(() => {});
-		if (request.redirect !== "follow") {
+		if (
+			request.redirect !== "follow" || (destination === "script" && !answering)
+		) {
 			throw new TypeError(`${request.url} redirects`);
 		}
 		if (redirects > REDIRECT_LIMIT) {

@@ -200,17 +200,30 @@ function isLink(element: Element): boolean {
 }
 
 /** The declarations an element's attributes give it, or null for none. */
+/**
+ * What a document runs. With "enabled", its handler attributes. With
+ * "scripts", its <script> elements and string timers too.
+ */
+export type Scripting = "none" | "enabled" | "scripts";
+
 // The documents scripting is enabled in. Their <noscript> parsed as text
 // and shows nothing, as in a browser running scripts. Elsewhere it parsed
 // as markup and shows it.
-const scriptedDocuments = new WeakSet<Document>();
+const scriptedDocuments = new WeakMap<Document, Scripting>();
 
-export function markScriptedDocument(document: Document): void {
-	scriptedDocuments.add(document);
+export function markScriptedDocument(
+	document: Document,
+	scripting: Scripting,
+): void {
+	scriptedDocuments.set(document, scripting);
+}
+
+export function getScripting(document: Document): Scripting {
+	return scriptedDocuments.get(document) ?? "none";
 }
 
 export function isScriptedDocument(document: Document): boolean {
-	return scriptedDocuments.has(document);
+	return getScripting(document) !== "none";
 }
 
 export function getPresentationalHints(element: Element): Hints | null {

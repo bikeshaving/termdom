@@ -23,9 +23,9 @@ interface Page {
 // else.
 function page(
 	html: string,
-	{files = {}, scripting = "enabled", csp, head = "", listen}: {
+	{files = {}, scripting = "scripts", csp, head = "", listen}: {
 		files?: Record<string, string | Promise<string>>;
-		scripting?: "enabled" | "none";
+		scripting?: "scripts" | "enabled" | "none";
 		csp?: string;
 		head?: string;
 		listen?: (dom: TermDOM) => void;
@@ -238,6 +238,57 @@ test("with scripting off a string timer never runs", async () => {
 	await new Promise((resolve) => setTimeout(resolve, 20));
 	expect(p.window.ran).toBe(undefined);
 	await p.dom.dispose();
+});
+
+test("with scripting \"enabled\" handlers run, but no <script> or string timer does", async () => {
+	const p = page(`<script>log.push("script")</script>
+		<button onclick="globalThis.clicked = true"></button>`, {
+		scripting: "enabled",
+	});
+	p.window.setTimeout("globalThis.timer = true", 0);
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	p.dom.document.querySelector("button")!.click();
+	expect(p.window.log).toBe(undefined);
+	expect(p.window.timer).toBe(undefined);
+	expect(p.window.clicked).toBe(true);
+	await p.dom.dispose();
+});
+
+test("a script's src never goes to the network: one no listener answers, or answered with a redirect, fails", async () => {
+	const fetched: string[] = [];
+	const fetch = globalThis.fetch;
+	globalThis.fetch = ((input: Request | string) => {
+		fetched.push(typeof input === "string" ? input : input.url);
+		return Promise.resolve(new Response("log.push('fetched')"));
+	}) as typeof globalThis.fetch;
+	try {
+		const dom = new TermDOM({
+			transport: new MockProcess({cols: 40, rows: 12}).transport,
+			scripting: "scripts",
+			url: "https://example.com/",
+			html: `<script>var log = [];
+				document.addEventListener("error", (event) => log.push("error " + event.target.src), true);
+			</script>
+			<script src="unanswered.js"></script>
+			<script src="redirected.js"></script>`,
+		});
+		dom.addEventListener("fetch", (event) => {
+			if (event.request.url.endsWith("redirected.js")) {
+				event.respondWith(
+					Response.redirect("https://example.com/elsewhere.js", 302),
+				);
+			}
+		});
+		await until(() => dom.document.readyState === "complete");
+		expect((dom.window as unknown as {log: string[]}).log).toEqual([
+			"error https://example.com/unanswered.js",
+			"error https://example.com/redirected.js",
+		]);
+		expect(fetched).toEqual([]);
+		await dom.dispose();
+	} finally {
+		globalThis.fetch = fetch;
+	}
 });
 
 test("without 'unsafe-eval' a string timer is a violation, and eval and new Function throw", async () => {

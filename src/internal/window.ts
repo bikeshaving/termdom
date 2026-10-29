@@ -35,7 +35,7 @@ import {
 	Window,
 	windowTimers,
 } from "./dom.ts";
-import {isScriptedDocument} from "./hints.ts";
+import {getScripting, type Scripting} from "./hints.ts";
 import {createRealm, rehomeClone} from "./realms.ts";
 import {
 	createWindowFetch,
@@ -246,13 +246,14 @@ setFrameWindowFactory((source, url, registry, parent, frame) => {
 	}
 	// A sandboxed frame runs scripts only with allow-scripts.
 	const sandbox = frame?.getAttribute("sandbox") ?? null;
-	const scripting =
+	const scripting: Scripting =
 		parent !== null &&
-		isScriptedDocument(parent.document as unknown as globalThis.Document) &&
 		(sandbox === null ||
 			splitOnASCIIWhitespace(toASCIILowercase(sandbox)).includes(
 				"allow-scripts",
-			));
+			))
+			? getScripting(parent.document as unknown as globalThis.Document)
+			: "none";
 	return runInRealm(realm, () => {
 		const document = parseHTMLDocument(source, url, true, registry, scripting);
 		realm.document = document;
@@ -283,7 +284,7 @@ export function createWindow(
 	source: string,
 	url?: string,
 	contentType = "text/html",
-	scripting = false,
+	scripting: Scripting = "none",
 ): Window {
 	getInterfaceObjects();
 	if (contentType === "text/html") {

@@ -44,7 +44,12 @@ import {
 	requestFrame,
 	scrollTo,
 } from "./framebuffer.ts";
-import {isScriptedDocument, markScriptedDocument} from "./hints.ts";
+import {
+	getScripting,
+	isScriptedDocument,
+	markScriptedDocument,
+	type Scripting,
+} from "./hints.ts";
 import {
 	getInterface,
 	getReflections,
@@ -22668,13 +22673,13 @@ export function getCurrentScript(document: Document): HTMLScriptElement | null {
 	return documentScripts.get(document)?.currentScript ?? null;
 }
 
-// The scripts of a document an engine draws with scripting on. They
+// The scripts of a document an engine draws with scripting "scripts". They
 // start in a task after the one that attached it, so a program can add
 // its listeners after constructing the TermDOM.
 function scheduleDocumentScripts(document: Document): void {
 	if (
 		documentScripts.has(document) ||
-		!isScriptedDocument(document as unknown as globalThis.Document)
+		getScripting(document as unknown as globalThis.Document) !== "scripts"
 	) {
 		return;
 	}
@@ -23219,7 +23224,7 @@ export function getFrameEvaluation(
 export function runTimerString(document: Document, source: string): void {
 	if (
 		!isDocumentLive(document) ||
-		!isScriptedDocument(document as unknown as globalThis.Document) ||
+		getScripting(document as unknown as globalThis.Document) !== "scripts" ||
 		!allowsEval(document, "report")
 	) {
 		return;
@@ -36958,33 +36963,33 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 // Parses markup into a document carrying `registry`, which is none unless
 // the caller is making a window's or a frame's document. A document an
 // author builds carries none until a registry claims it, as one with no
-// browsing context does. With `scripting`, <noscript> holds text, as a
-// browser running scripts parses it. Without, it holds the markup it
-// shows.
+// browsing context does. With any `scripting` but "none", <noscript>
+// holds text, as a browser running scripts parses it. With "none", it
+// holds the markup it shows.
 export function parseHTMLDocument(
 	html: string,
 	url = "about:blank",
 	allowDeclarativeShadowRoots = true,
 	registry: CustomElementRegistry | null = null,
-	scripting = false,
+	scripting: Scripting = "none",
 ): Document {
 	const adapter = createTreeAdapter(null);
 	const outerRegistry = parseRegistry;
 	const outerInert = parsingInert;
 	parseRegistry = registry;
-	parsingInert = !scripting;
+	parsingInert = scripting === "none";
 	let document: Document;
 	try {
 		document = Parse5.parse(html, {
 			treeAdapter: adapter as never,
-			scriptingEnabled: scripting,
+			scriptingEnabled: scripting !== "none",
 		}) as unknown as Document;
 	} finally {
 		parseRegistry = outerRegistry;
 		parsingInert = outerInert;
 	}
-	if (scripting) {
-		markScriptedDocument(document as unknown as globalThis.Document);
+	if (scripting !== "none") {
+		markScriptedDocument(document as unknown as globalThis.Document, scripting);
 	}
 	_(document).registry = registry;
 	_(document).extra.documentURL = url;

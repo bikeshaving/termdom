@@ -51,17 +51,17 @@ Options:
 - `csp?: string`: a `Content-Security-Policy` that limits what markup
   may load. Without it, everything loads. Set one for untrusted markup;
   the images guide has examples.
-- `scripting?: "none" | "enabled"`: whether the markup's scripts run,
-  matching `@media (scripting)`. With `"none"` (default), nothing runs
-  and `<noscript>` content shows. With `"enabled"`, code the page gives
-  as text (`<script>` elements, handler attributes such as
-  `onclick="..."`, and `setTimeout("...")`) runs with the page's window
-  as its global, through `node:vm`, as a frame's does. Functions your
-  program passes run where you wrote them. `node:vm`
-  is not a sandbox: a script can reach your program through the objects
-  it is given, so enable scripting only for trusted markup. A `csp`
-  whose `script-src-attr` (or `script-src`, or `default-src`) is
-  `'none'` turns it off. See "Scripts" below.
+- `scripting?: "none" | "enabled" | "scripts"`: which of the markup's
+  scripts run. With `"none"` (default), nothing runs and `<noscript>`
+  content shows. With `"enabled"`, handler attributes such as
+  `onclick="..."` run. With `"scripts"`, `<script>` elements and
+  `setTimeout("...")` run too. The page's code runs with its window as
+  its global, through `node:vm`. Functions your program passes run
+  where you wrote them. `node:vm` is not a sandbox: the page's code can
+  reach your program, and anything your program can reach, so enable
+  scripting only for trusted markup. A `csp` whose `script-src-attr`
+  (or `script-src`, or `default-src`) is `'none'` turns it off. See
+  "Scripts" below.
 - `reducedMotion?: "no-preference" | "reduce"`: what
   `@media (prefers-reduced-motion)` reports. Defaults to
   `"no-preference"`.
@@ -206,7 +206,7 @@ The images guide covers both.
 
 ### Scripts
 
-With `scripting: "enabled"`, the document's `<script>` elements run as
+With `scripting: "scripts"`, the document's `<script>` elements run as
 in a browser, except that the whole document is parsed first. Scripts
 that would have blocked the parser run in order, then `defer` scripts,
 then `DOMContentLoaded` fires; `async` scripts run as they arrive, and
@@ -216,8 +216,9 @@ set with `innerHTML` never run.
 
 `document.readyState`, `document.currentScript`, `readystatechange`, and
 each script's `load` and `error` events work as in a browser. A script
-with a `src` is fetched like an image: through `csp` and the `"fetch"`
-listeners. An exception a script throws goes to the window's `error`
+with a `src` goes through `csp` and then the `"fetch"` listeners, but
+never to the network: if no listener answers, or a listener answers
+with a redirect, the script fires `error`. An exception a script throws goes to the window's `error`
 event, with the script's file, line and column.
 
 The first script runs in a task after the constructor returns, so a
@@ -225,9 +226,8 @@ program can add listeners before any script runs.
 
 Modules (`type="module"`) run through `node:vm`'s `SourceTextModule`,
 which Bun and Deno have and Node has only with
-`--experimental-vm-modules`. Each file in a module's graph is fetched
-through `csp` and the `"fetch"` listeners, and must be served as
-JavaScript. `<script type="importmap">` maps bare specifiers, and
+`--experimental-vm-modules`. Each file in a module's graph loads the same
+way, and must be served as JavaScript. `<script type="importmap">` maps bare specifiers, and
 `import()` works in modules and classic scripts. Where a runtime lacks
 what a script needs, the script fires `error` with a message that says
 so.
@@ -235,7 +235,9 @@ so.
 Under a `csp` whose `script-src` (or `default-src`) lacks
 `'unsafe-eval'`, `eval()` and `new Function()` throw `EvalError`, and a
 string timer doesn't run and fires `securitypolicyviolation`. A frame
-whose own markup states a policy can't use `eval()` at all.
+whose own markup states a policy can't use `eval()` at all. This
+matches a browser, but it is not a sandbox: the page's code can still
+make functions from strings through the program's own objects.
 
 ### `term.measureCell()`
 
