@@ -1536,20 +1536,12 @@ function compileNth(
 		if (getNodeType(element) !== ELEMENT_NODE) {
 			return false;
 		}
-		// The plain forms read the element's place in a list built once per
-		// parent. An `of S` list is filtered per candidate, since which
-		// siblings match S is not known until each is tried.
 		let index: number;
 		let count: number;
 		if (filter !== null) {
-			const counted = getSiblingIndex(element, state).elements.filter(
-				(sibling) =>
-					filter.some((complex) =>
-						matchComplex(complex, sibling, state, false),
-					),
-			);
-			index = counted.indexOf(element);
-			count = counted.length;
+			const counted = getFilteredSiblings(element, filter, state);
+			index = counted.index.get(element) ?? -1;
+			count = counted.elements.length;
 		} else if (ofType) {
 			const siblings = getTypeSiblings(element, state);
 			index = siblings.indexOf(element);
@@ -2161,6 +2153,18 @@ interface SiblingIndex {
 	elements: Element[];
 	index: Map<Element, number>;
 	byType: Map<string, Element[]>;
+	// The siblings an `of S` list keeps, by the list's compiled selector.
+	// Which siblings match S is only known by trying each, so it is done
+	// once a query and not once a candidate.
+	filtered: Map<CompiledComplex[], FilteredSiblings>;
+}
+
+interface FilteredSiblings {
+	elements: Element[];
+	index: Map<Element, number>;
+	// What `:scope` and a relative selector meant when it was filtered.
+	scope: Node | null;
+	anchor: Node | null;
 }
 
 function getSiblingIndex(element: Element, state: MatchState): SiblingIndex {
@@ -2173,10 +2177,38 @@ function getSiblingIndex(element: Element, state: MatchState): SiblingIndex {
 			elements,
 			index: new Map(elements.map((child, i) => [child, i])),
 			byType: new Map(),
+			filtered: new Map(),
 		};
 		state.siblings.set(key, siblings);
 	}
 	return siblings;
+}
+
+// The element's siblings that match an `of S` list, in order.
+function getFilteredSiblings(
+	element: Element,
+	filter: CompiledComplex[],
+	state: MatchState,
+): FilteredSiblings {
+	const siblings = getSiblingIndex(element, state);
+	let counted = siblings.filtered.get(filter);
+	if (
+		counted === undefined ||
+		counted.scope !== state.scope ||
+		counted.anchor !== state.anchor
+	) {
+		const elements = siblings.elements.filter((sibling) =>
+			filter.some((complex) => matchComplex(complex, sibling, state, false)),
+		);
+		counted = {
+			elements,
+			index: new Map(elements.map((child, i) => [child, i])),
+			scope: state.scope,
+			anchor: state.anchor,
+		};
+		siblings.filtered.set(filter, counted);
+	}
+	return counted;
 }
 
 // The siblings of the element's type and namespace, in order.
