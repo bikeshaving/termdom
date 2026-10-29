@@ -155,3 +155,15 @@ test("elements carry the node:util inspect method", () => {
 	const output = (div as any)![inspect](2, {colors: false});
 	expect(output).toBe('<div id="test">Hello</div>');
 });
+
+test("inspect formats: shows the page's control bytes as codes", () => {
+	const dom = documentWindow(
+		"<p id=\"p\" title=\"\x1b]52;c;cHduZWQ=\x07\">\x1b]0;title\x07hi<!--\x1b[2J--></p>",
+	);
+	const output = inspected(asElement(dom.window.document.getElementById("p")));
+	expect(output).not.toContain("\x1b");
+	expect(output).not.toContain("\x07");
+	expect(output).toContain("\\x1b]52;c;cHduZWQ=\\x07");
+	expect(output).toContain("\\x1b]0;title\\x07hi");
+	expect(output).toContain("<!--\\x1b[2J-->");
+});

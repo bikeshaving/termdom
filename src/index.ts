@@ -135,6 +135,7 @@ import {
 	setDocumentLoader,
 } from "./internal/resources.ts";
 import {_, type internals, moveLateMembers} from "./internal/slots.ts";
+import {showControlBytes} from "./internal/text.ts";
 import {queueMicrotask, queueTask, setTimeout} from "./internal/timers.ts";
 import {getCellSizeSetting} from "./internal/tree.ts";
 import {
@@ -1354,18 +1355,13 @@ function writeHeldErrors(termDOM: TermDOM): void {
 	});
 }
 
-// The page wrote the message, so a control byte in it is shown as its
-// code rather than sent for the terminal to act on.
+// The page wrote the message, so its control bytes are shown, not acted
+// on.
 function formatError(error: unknown): string {
 	const text = error instanceof Error
 		? error.stack || `${error.name}: ${error.message}`
 		: String(error);
-	return text
-		.replace(/\r\n/g, "\n")
-		.replace(/[\0-\x08\x0b-\x1f\x7f-\x9f]/g, (control) =>
-			`\\x${control.charCodeAt(0).toString(16).padStart(2, "0")}`,
-		)
-		.replace(/\n/g, "\r\n");
+	return showControlBytes(text.replace(/\r\n/g, "\n")).replace(/\n/g, "\r\n");
 }
 
 function isFullscreen(termDOM: TermDOM): boolean {
