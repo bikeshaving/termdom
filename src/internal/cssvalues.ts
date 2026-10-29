@@ -5547,8 +5547,7 @@ export function getMatchedTransitions(
 		const targets = name === "all"
 			? TRANSITIONABLE_ALL
 			: (
-				SHORTHAND_LONGHANDS.get(name) ??
-					(isSupportedProperty(name) ? [name] : [])
+				SHORTHAND_LONGHANDS.get(name) ?? (isSupportedProperty(name) ? [name] : [])
 			);
 		for (const target of targets) {
 			out.set(target, timing);
