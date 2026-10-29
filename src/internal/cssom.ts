@@ -3518,6 +3518,20 @@ function convertRules(
 	return rules;
 }
 
+// Rules nested deeper than this are dropped, so a sheet cannot recurse
+// the converter off the stack.
+const MAX_RULE_DEPTH = 32;
+
+function isTooDeep(parentRule: CSSRule | null): boolean {
+	let depth = 0;
+	for (let rule = parentRule; rule !== null; rule = rule.parentRule) {
+		if (++depth >= MAX_RULE_DEPTH) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function isInStyleRule(rule: CSSRule | null): boolean {
 	for (let current = rule; current !== null; current = current.parentRule) {
 		if (implementsInterface(current, CSSStyleRule)) {
@@ -3534,6 +3548,9 @@ function convertRule(
 	parentRule: CSSRule | null,
 	namespaces?: SelectorNamespaces,
 ): CSSRule | null {
+	if (isTooDeep(parentRule)) {
+		return null;
+	}
 	if (node.type === "Rule") {
 		const prelude = CSSValues.getPreludeText(node);
 		const selectors = parseSelectorList(prelude);
