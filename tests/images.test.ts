@@ -352,6 +352,12 @@ test("a size no image may have rejects before it is allocated", async () => {
 	).rejects.toThrow("more than an image may be");
 });
 
+test("a BMP shorter than the pixels its header states rejects before it is allocated", async () => {
+	const big = [0x00, 0x20, 0x00, 0x00];
+	await expect(decodeImage(patched("bmp-24.bmp", 18, ...big, ...big)))
+		.rejects.toThrow("ends before its pixels do");
+});
+
 test("a JPEG with more components, sampling or scans than an image has rejects", async () => {
 	const sof = findMarker(getImageBytes("jpeg-444.jpg"), 0xc0);
 	await expect(decodeImage(patched("jpeg-444.jpg", sof + 9, 5)))
