@@ -1354,11 +1354,18 @@ function writeHeldErrors(termDOM: TermDOM): void {
 	});
 }
 
+// The page wrote the message, so a control byte in it is shown as its
+// code rather than sent for the terminal to act on.
 function formatError(error: unknown): string {
 	const text = error instanceof Error
 		? error.stack || `${error.name}: ${error.message}`
 		: String(error);
-	return text.replace(/\r?\n/g, "\r\n");
+	return text
+		.replace(/\r\n/g, "\n")
+		.replace(/[\0-\x08\x0b-\x1f\x7f-\x9f]/g, (control) =>
+			`\\x${control.charCodeAt(0).toString(16).padStart(2, "0")}`,
+		)
+		.replace(/\n/g, "\r\n");
 }
 
 function isFullscreen(termDOM: TermDOM): boolean {

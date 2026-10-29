@@ -103,6 +103,24 @@ test("a stderr that is the terminal is not written to", async () => {
 	expect(terminal.getScreenContents()).toContain("Error: held");
 });
 
+test("a page's error reaches the log with its control bytes shown as codes", async () => {
+	const logged: string[] = [];
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({
+		transport: {
+			...terminal.transport,
+			logError: (text: string) => {
+				logged.push(text);
+				return true;
+			},
+		},
+	});
+	dom.window.reportError(new Error("X\x1b]52;c;QUJD\x07Y\tZ"));
+	expect(logged.join("")).toContain("X\\x1b]52;c;QUJD\\x07Y\tZ");
+	expect(logged.join("")).not.toContain("\x1b");
+	await dom.dispose();
+});
+
 test("the engine failing in a frame is told to a transport that logs, then ends the session", async () => {
 	const logged: string[] = [];
 	const terminal = new MockProcess({rows: 8, cols: 40});
