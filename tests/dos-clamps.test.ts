@@ -52,3 +52,9 @@ test("a huge textarea cols or rows is clamped", async () => {
 	await renderQuickly("<textarea cols=1000000000>x</textarea>");
 	await renderQuickly("<textarea rows=1000000000>x</textarea>");
 });
+
+test("a repeating gradient on a huge box colors only the visible rows", async () => {
+	await renderQuickly(
+		"<div style=\"height:1e8px;overflow:auto;background:repeating-linear-gradient(red 0,blue 1px)\">x</div>",
+	);
+});

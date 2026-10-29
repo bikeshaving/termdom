@@ -424,26 +424,32 @@ export function renderGradient(
 			gradient.repeating,
 			under,
 		);
+	// Only the cells the band can show are worth a color, however far the
+	// box runs past them.
+	const firstRow = Math.max(0, ctx.bandTop - ctx.viewportOffset - top);
+	const lastRow = Math.min(rows, ctx.bandBottom - ctx.viewportOffset - top);
+	const firstCol = Math.max(0, -left);
+	const lastCol = Math.min(cols, ctx.cols - left);
 	// Along a row or a column every cell of the other axis is the same
 	// color, so it is one fill. Only a slanted line is cell by cell.
 	if (dy === 0) {
-		for (let col = 0; col < cols; col++) {
+		for (let col = firstCol; col < lastCol; col++) {
 			const color = colorAt(col + 0.5 - startX, 0);
 			if (color !== null) {
 				drawRect(ctx, left + col, top, 1, rows, color);
 			}
 		}
 	} else if (dx === 0) {
-		for (let row = 0; row < rows; row++) {
+		for (let row = firstRow; row < lastRow; row++) {
 			const color = colorAt(0, (row + 0.5) * aspect - startY);
 			if (color !== null) {
 				drawRect(ctx, left, top + row, cols, 1, color);
 			}
 		}
 	} else {
-		for (let row = 0; row < rows; row++) {
+		for (let row = firstRow; row < lastRow; row++) {
 			const y = (row + 0.5) * aspect - startY;
-			for (let col = 0; col < cols; col++) {
+			for (let col = firstCol; col < lastCol; col++) {
 				const color = colorAt(col + 0.5 - startX, y);
 				if (color !== null) {
 					drawRect(ctx, left + col, top + row, 1, 1, color);
