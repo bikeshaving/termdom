@@ -270,6 +270,21 @@ test("the program is resized to the embed's box", async () => {
 	await dom.dispose();
 });
 
+test("a program's screen is at most a thousand cells each way, however large its box", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom} = await mount(
+		`<embed type="application/x-pty" src="top" width="3000000" height="3000000"><p>after</p>`,
+		spawn,
+	);
+	await settle(dom);
+	expect(dom.document.querySelector("p")).not.toBe(null);
+	for (const [cols, rows] of children[0].sizes) {
+		expect(cols).toBeLessThanOrEqual(1000);
+		expect(rows).toBeLessThanOrEqual(1000);
+	}
+	await dom.dispose();
+});
+
 test("a program starts at the size its box is laid out at, and hears what was posted before", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, document} = await mount("<p>above</p>", spawn);
