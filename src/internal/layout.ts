@@ -115,6 +115,9 @@ import {getCellSize, pxFromCells, UNIT_CELL} from "./units.ts";
 
 type Position = "static" | "relative" | "absolute" | "fixed" | "sticky";
 
+// The most cols or rows a textarea attribute can ask for, far past a terminal.
+const MAX_TEXTAREA_SIZE = 1000;
+
 const POSITIONS = new Set<string>([
 	"static",
 	"relative",
@@ -4215,7 +4218,9 @@ function collectLeaves(
 					// the UA chrome could not be undone by an author's `border:
 					// none`.
 					const cols = parseInt(getAttributeValue(element, "cols") ?? "", 10);
-					contentWidth = Number.isFinite(cols) && cols > 0 ? cols : 20;
+					contentWidth = Number.isFinite(cols) && cols > 0
+						? Math.min(cols, MAX_TEXTAREA_SIZE)
+						: 20;
 					contentWidthMode = "definite";
 				}
 
@@ -4369,7 +4374,9 @@ function collectLeaves(
 						const rows = parseInt(getAttributeValue(element, "rows") ?? "", 10);
 						finalContentHeight = Math.max(
 							finalContentHeight,
-							Number.isFinite(rows) && rows > 0 ? rows : 2,
+							Number.isFinite(rows) && rows > 0
+								? Math.min(rows, MAX_TEXTAREA_SIZE)
+								: 2,
 						);
 					}
 					if (boxModel.width === undefined && !offerOwnsWidth) {

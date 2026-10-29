@@ -47,3 +47,8 @@ test("huge grid lines, spans and auto-fill counts are clamped", async () => {
 		);
 	}
 });
+
+test("a huge textarea cols or rows is clamped", async () => {
+	await renderQuickly("<textarea cols=1000000000>x</textarea>");
+	await renderQuickly("<textarea rows=1000000000>x</textarea>");
+});
