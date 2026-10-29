@@ -1043,7 +1043,7 @@ const LIST_STYLE_LONGHANDS = [
 // `none` sets whichever of type/image was not given. A terminal has no
 // images, so it always means "no marker".
 function expandListStyle(value: string): Record<string, string> {
-	const parts: Record<string, string> = {};
+	const parts: Record<string, string> = Object.create(null);
 	const traced = getGrammarTerms("list-style", value);
 	if (traced) {
 		for (const component of traced) {
@@ -1143,7 +1143,7 @@ const BORDER_IMAGE_LONGHANDS = [
 function expandBorderImage(value: string): Record<string, string> {
 	const traced = getGrammarTerms("border-image", value);
 	if (traced) {
-		const out: Record<string, string> = {};
+		const out: Record<string, string> = Object.create(null);
 		for (const component of traced) {
 			for (const longhand of BORDER_IMAGE_LONGHANDS) {
 				if (component.terms.includes(longhand)) {
@@ -1156,7 +1156,7 @@ function expandBorderImage(value: string): Record<string, string> {
 		}
 		return out;
 	}
-	const out: Record<string, string> = {};
+	const out: Record<string, string> = Object.create(null);
 	const groups = value.split("/").map((group) => group.trim());
 	const slice: string[] = [];
 	const repeat: string[] = [];
@@ -1197,7 +1197,7 @@ function expandBorderRadius(value: string): Record<string, string> {
 	const verticalCorners = perEdge(
 		vertical.length === 0 ? horizontal : vertical,
 	);
-	const out: Record<string, string> = {};
+	const out: Record<string, string> = Object.create(null);
 	CORNERS.forEach((corner, i) => {
 		const h = horizontalCorners[i];
 		const v = verticalCorners[i];
@@ -1676,7 +1676,7 @@ const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
 export function expandShorthands(
 	declarations: Record<string, string>,
 ): Record<string, string> {
-	const out: Record<string, string> = {};
+	const out: Record<string, string> = Object.create(null);
 	const setEdges = (kind: string, values: string[]) => {
 		const edgeValues = perEdge(values);
 		EDGES.forEach((edge, i) => {
@@ -3418,7 +3418,7 @@ function readShorthandValue(
 		return Object.fromEntries(longhands.map((longhand) => [longhand, pending]));
 	}
 	const expanded = expandShorthands({[property]: value});
-	const out: Record<string, string> = {};
+	const out: Record<string, string> = Object.create(null);
 	let decomposed = false;
 	for (const longhand of longhands) {
 		if (expanded[longhand] === undefined) {
@@ -3440,7 +3440,7 @@ function readShorthandValue(
 		}
 	}
 	// Longhand order follows the shorthand's grammar, not the fill order.
-	const ordered: Record<string, string> = {};
+	const ordered: Record<string, string> = Object.create(null);
 	for (const longhand of longhands) {
 		if (longhand in out) {
 			ordered[longhand] = out[longhand];
@@ -5542,11 +5542,13 @@ export function getMatchedTransitions(
 			easing: easings.length > 0 ? easings[index % easings.length] : "ease",
 		};
 		// A shorthand in the list covers its longhands (css-transitions-1
-		// §2.1). `all` covers the bounded list above.
+		// §2.1). `all` covers the bounded list above, and a name that is no
+		// property covers nothing.
 		const targets = name === "all"
 			? TRANSITIONABLE_ALL
 			: (
-				SHORTHAND_LONGHANDS.get(name) ?? [name]
+				SHORTHAND_LONGHANDS.get(name) ??
+					(isSupportedProperty(name) ? [name] : [])
 			);
 		for (const target of targets) {
 			out.set(target, timing);

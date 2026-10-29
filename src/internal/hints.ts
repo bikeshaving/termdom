@@ -220,7 +220,7 @@ export function getPresentationalHints(element: Element): Hints | null {
 	const name = element.localName;
 	const get = (attribute: string): string | null =>
 		element.getAttribute(attribute);
-	const hints: Hints = {};
+	const hints: Hints = Object.create(null);
 
 	if (
 		name === "noscript" &&

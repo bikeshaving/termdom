@@ -943,9 +943,9 @@ class CSSStyleDeclaration {
 declareSealedRoot(CSSStyleDeclaration);
 
 const EMPTY_DECLARATIONS: CSSValues.DeclarationBlock = Object.freeze({
-	declarations: Object.freeze({}),
-	important: Object.freeze({}),
-	order: Object.freeze({}),
+	declarations: Object.freeze(Object.create(null)),
+	important: Object.freeze(Object.create(null)),
+	order: Object.freeze(Object.create(null)),
 });
 
 function getDeclarationBlock(
@@ -960,10 +960,10 @@ function getDeclarationBlock(
 		return styleSlots.block;
 	}
 
-	const declarations: Record<string, string> = {};
-	const important: Record<string, boolean> = {};
-	const order: Record<string, number> = {};
-	const importantValues: Record<string, string> = {};
+	const declarations: Record<string, string> = Object.create(null);
+	const important: Record<string, boolean> = Object.create(null);
+	const order: Record<string, number> = Object.create(null);
+	const importantValues: Record<string, string> = Object.create(null);
 	let undecomposed = false;
 	styleSlots.declarations.forEach((entry, index) => {
 		// An invalid declaration never enters the cascade. Dropping it lets a
@@ -4440,8 +4440,11 @@ function getHintRule(element: Element): ParsedCSSRule | null {
 			matcher: null,
 			relativeMatcher: null,
 			declarations: hints,
-			important: {},
-			order: Object.fromEntries(properties.map((name, i) => [name, i])),
+			important: Object.create(null),
+			order: Object.assign(
+				Object.create(null),
+				Object.fromEntries(properties.map((name, i) => [name, i])),
+			),
 			specificity: "",
 			layerRank: -1,
 		} as unknown as ParsedCSSRule;
@@ -4765,6 +4768,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	// Fully lazy. Most elements are only ever asked a handful of
 	// properties. The composition walker asks each element only `display`.
 	override getPropertyValue(property: string): string {
+		if (!CSSValues.isSupportedProperty(property)) {
+			return "";
+		}
 		// The author's read describes the DOM as it currently is. The engine
 		// reads through getComputedValue, which does not flush, because style
 		// is resolved from inside layout, which a flush would re-enter.
@@ -10387,6 +10393,7 @@ const MEDIA_RANGE_FEATURES: Record<
 	},
 	monochrome: {kind: "integer", value: () => 0},
 };
+Object.setPrototypeOf(MEDIA_RANGE_FEATURES, null);
 
 // What a discrete feature is on this terminal, among the values its
 // grammar allows. `falsy` is the value the boolean context reads as
@@ -10498,6 +10505,7 @@ const MEDIA_DISCRETE_FEATURES: Record<
 		value: () => "no-preference",
 	},
 };
+Object.setPrototypeOf(MEDIA_DISCRETE_FEATURES, null);
 
 // `em` and `rem` in a media query are the initial font size, one cell
 // tall.
@@ -11803,7 +11811,7 @@ function computePseudoElementStyle(
 	// cascade, so a flow-relative declaration fills BOTH names of its slot
 	// as it lands, and a later rule declaring either name overwrites in
 	// turn.
-	const computedStyle: Record<string, string> = {};
+	const computedStyle: Record<string, string> = Object.create(null);
 	let direction: string | null = null;
 	for (const rule of matchingRules) {
 		const names = Object.keys(rule.declarations)
