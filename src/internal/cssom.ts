@@ -5555,14 +5555,49 @@ function resolveFromParent(
 	return getComputedValue(parent, property) || null;
 }
 
-// Substituted values are substituted in turn. The depth guard stops a
-// property that (invalidly) refers to itself.
+// css-variables-1 lets a UA call a substituted value too long and make it
+// invalid, so a chain where each property doubles the last cannot run out
+// of time or memory. Each custom property keeps its own copy, so the cap
+// sits well under what browsers allow, and still fits an inline image.
+const MAX_SUBSTITUTED_LENGTH = 64 * 1024;
+
+// The custom properties being substituted, innermost last. One that comes
+// back to a property on this stack closes a cycle, and every property from
+// there up is in it.
+const substitutingProperties: Array<{
+	declaration: ComputedStyleDeclaration;
+	name: string;
+	cyclic: boolean;
+}> = [];
+
+// A custom property's value with its own var() substituted. A property in
+// a cycle, or one whose value would be too long, is the guaranteed-invalid
+// value, as an empty string.
+function substituteCustomProperty(
+	declaration: ComputedStyleDeclaration,
+	name: string,
+	value: string,
+): string {
+	const entry = {declaration, name, cyclic: false};
+	substitutingProperties.push(entry);
+	let substituted: string | null;
+	try {
+		substituted = substituteVar(declaration, value);
+	} finally {
+		substitutingProperties.pop();
+	}
+	return entry.cyclic ? "" : (substituted ?? "");
+}
+
+// Null where the value is invalid at computed-value time: a var() names
+// nothing and has no fallback, or the result is too long. Each custom
+// property named is read as its element's computed value, which is
+// substituted once and kept, so a chain costs one pass per property.
 function substituteVar(
 	declaration: ComputedStyleDeclaration,
 	value: string,
-	depth = 0,
-): string {
-	if (depth > 8 || !value.includes("var(")) {
+): string | null {
+	if (!value.includes("var(")) {
 		return value;
 	}
 
@@ -5594,19 +5629,31 @@ function substituteVar(
 			? undefined
 			: inner.slice(commaIndex + 1).trim();
 
-		// A custom property is an ordinary (always-inherited) cascade lookup.
-		// resolvePropertyValueRaw's step 4 already walks ancestors for it.
-		const resolved = resolvePropertyValueRaw(declaration, name) || null;
-		if (resolved !== null) {
-			out += substituteVar(declaration, resolved, depth + 1);
-		} else if (fallback !== undefined) {
-			out += substituteVar(declaration, fallback, depth + 1);
+		let resolved: string | null = null;
+		if (name.startsWith("--")) {
+			const at = substitutingProperties.findIndex((entry) =>
+				entry.declaration === declaration && entry.name === name);
+			if (at === -1) {
+				resolved = _(declaration)._baseValue(name) || null;
+			} else {
+				for (let k = at; k < substitutingProperties.length; k++) {
+					substitutingProperties[k].cyclic = true;
+				}
+			}
 		}
-		// Neither a value nor a fallback: the guaranteed-invalid value. Omit
-		// it, which approximates the property's own initial/inherited fallback.
+		if (resolved === null && fallback !== undefined) {
+			resolved = substituteVar(declaration, fallback);
+		}
+		if (resolved === null) {
+			return null;
+		}
+		out += resolved;
+		if (out.length > MAX_SUBSTITUTED_LENGTH) {
+			return null;
+		}
 		i = j;
 	}
-	return out;
+	return out.length > MAX_SUBSTITUTED_LENGTH ? null : out;
 }
 
 /**
@@ -5741,13 +5788,17 @@ function resolveCascadedValue(
 	// A custom property holds the tokens it was given. Substituting it into
 	// a property with its own grammar re-serializes them in that property's
 	// spelling.
-	const value = raw
-		? !raw.includes("var(")
-			? raw
-			: property.startsWith("--")
-				? substituteVar(declaration, raw)
-				: CSSValues.serializeCSSValue(substituteVar(declaration, raw), property)
-		: raw;
+	let value = raw;
+	if (raw.includes("var(")) {
+		if (property.startsWith("--")) {
+			value = substituteCustomProperty(declaration, property, raw);
+		} else {
+			const substituted = substituteVar(declaration, raw);
+			value = substituted === null
+				? ""
+				: CSSValues.serializeCSSValue(substituted, property);
+		}
+	}
 	// `currentcolor` is the element's own color, which is what a resolved
 	// value reports. On `color` itself it means the parent's.
 	if (
@@ -5774,7 +5825,11 @@ function resolvePendingValue(
 	pending: {shorthand: string; value: string},
 ): string {
 	const substituted = substituteVar(declaration, pending.value);
-	if (substituted.trim() === "" || substituted.includes("var(")) {
+	if (
+		substituted === null ||
+		substituted.trim() === "" ||
+		substituted.includes("var(")
+	) {
 		return "";
 	}
 	const value = CSSValues.expandShorthandValue(pending.shorthand, substituted)

@@ -1430,3 +1430,60 @@ describe("a shorthand that holds var()", () => {
 		dom.dispose();
 	});
 });
+
+describe("custom property substitution", () => {
+	test("a chain that doubles its value each step goes invalid instead of growing", () => {
+		let rules = "--v0: 1px;";
+		for (let n = 1; n <= 30; n++) {
+			rules += ` --v${n}: var(--v${n - 1}) var(--v${n - 1});`;
+		}
+		const started = performance.now();
+		const dom = domFor(
+			`<style>:root { ${rules} } #a { width: var(--v30) }` +
+				" #b { width: var(--v30, 5px) }</style><div id=a>a</div><div id=b>b</div>",
+		);
+		const {document, window} = dom;
+		const root = window.getComputedStyle(document.documentElement);
+		expect(root.getPropertyValue("--v3")).toBe(
+			"1px 1px 1px 1px 1px 1px 1px 1px",
+		);
+		expect(root.getPropertyValue("--v30")).toBe("");
+		expect(window.getComputedStyle(document.getElementById("a")!).width)
+			.toBe("80px");
+		expect(window.getComputedStyle(document.getElementById("b")!).width)
+			.toBe("5px");
+		expect(performance.now() - started).toBeLessThan(5000);
+		dom.dispose();
+	});
+
+	test("a chain of ordinary variables substitutes through every link", () => {
+		const dom = domFor(
+			"<style>:root { --base: 3px; --pad: var(--base); --both: var(--pad) var(--base) }" +
+				" div { --wide: calc(var(--pad) * 4); width: var(--wide); padding: var(--both) }" +
+				"</style><div>x</div>",
+		);
+		const styles = dom.window.getComputedStyle(
+			dom.document.querySelector("div")!,
+		);
+		expect(styles.getPropertyValue("--both")).toBe("3px 3px");
+		expect(styles.width).toBe("12px");
+		expect(styles.paddingTop).toBe("3px");
+		dom.dispose();
+	});
+
+	test("properties in a cycle are invalid, and a var() of one takes its fallback", () => {
+		const dom = domFor(
+			"<style>div { --a: var(--b, 1px); --b: var(--a); --c: var(--a, 2px);" +
+				" --self: var(--self, 3px); width: var(--a, 7px) }</style><div>x</div>",
+		);
+		const styles = dom.window.getComputedStyle(
+			dom.document.querySelector("div")!,
+		);
+		expect(styles.getPropertyValue("--b")).toBe("");
+		expect(styles.getPropertyValue("--a")).toBe("");
+		expect(styles.getPropertyValue("--c")).toBe("2px");
+		expect(styles.getPropertyValue("--self")).toBe("");
+		expect(styles.width).toBe("7px");
+		dom.dispose();
+	});
+});
