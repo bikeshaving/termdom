@@ -494,6 +494,34 @@ test("only a document that is a file loads files, whatever the policy", async ()
 	local.dispose();
 });
 
+test("only http, https, data and file URLs go to the network, though a listener may answer any", async () => {
+	const fetched: string[] = [];
+	const fetch = globalThis.fetch;
+	globalThis.fetch = ((request: Request) => {
+		fetched.push(request.url);
+		return Promise.resolve(new Response(PNG));
+	}) as typeof globalThis.fetch;
+	try {
+		const dom = create({url: "https://mail.example/message/1"});
+		dom.addEventListener("fetch", (event) => {
+			if (event.request.url.startsWith("cid:")) {
+				event.respondWith(new Response(PNG));
+			}
+		});
+		dom.document.body.innerHTML =
+			"<img src=\"s3://bucket/key\"><img src=\"blob:https://mail.example/1\">" +
+			"<img src=\"cid:part1\">";
+		const [s3, blob, cid] = dom.document.querySelectorAll("img");
+		expect(await settled(s3)).toBe("broken");
+		expect(await settled(blob)).toBe("broken");
+		expect(await settled(cid)).toBe("loaded");
+		expect(fetched).toEqual([]);
+		dom.dispose();
+	} finally {
+		globalThis.fetch = fetch;
+	}
+});
+
 test("window.fetch is resolved against the document, and goes to the listeners and the network", async () => {
 	const server = await serve();
 	const dom = create({url: `${server.origin}/app/`});

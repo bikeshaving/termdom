@@ -76,7 +76,17 @@ export function isWindowFetch(value: unknown): boolean {
 	return typeof value === "function" && windowFetches.has(value);
 }
 
+// The schemes a load goes to the runtime's fetch for. The runtime may
+// answer others, such as Bun's s3: with the program's own credentials, or
+// blob: from the program's own URL.createObjectURL().
+const FETCHED_SCHEMES = new Set(["http:", "https:", "data:", "file:"]);
+
 function networkFetch(request: Request): Promise<Response> {
+	if (!FETCHED_SCHEMES.has(new URL(request.url).protocol)) {
+		return Promise.reject(
+			new TypeError(`${request.url} is not a URL TermDOM fetches`),
+		);
+	}
 	const current = globalThis.fetch;
 	return isWindowFetch(current) ? runtimeFetch(request) : current(request);
 }
@@ -411,6 +421,9 @@ function whileNotAborted<T>(
 	});
 }
 
+// Parsed meta policies by their text, the oldest dropped past the limit,
+// so that markup stating new ones can't grow the cache without end.
+const META_POLICY_LIMIT = 256;
 const metaPolicies = new Map<string, ContentSecurityPolicy>();
 
 // The policies a page stated for itself with <meta> in its head. A meta
@@ -422,6 +435,9 @@ function getDocumentPolicies(document: object): ContentSecurityPolicy[] {
 			policy = parseContentSecurityPolicy(content);
 			for (const directive of ["report-uri", "frame-ancestors", "sandbox"]) {
 				policy.directives.delete(directive);
+			}
+			if (metaPolicies.size >= META_POLICY_LIMIT) {
+				metaPolicies.delete(metaPolicies.keys().next().value!);
 			}
 			metaPolicies.set(content, policy);
 		}
