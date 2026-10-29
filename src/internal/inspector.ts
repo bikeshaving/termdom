@@ -10,6 +10,7 @@ import {
 	NodeList,
 	Text,
 } from "./dom.ts";
+import {showControlBytes} from "./text.ts";
 import {getNodeType} from "./tree.ts";
 
 const colors = {
@@ -149,12 +150,14 @@ function formatAttributes(
 	const attrs: string[] = [];
 
 	if (element.id) {
-		attrs.push(`${c.attr}id${c.reset}=${c.value}"${element.id}"${c.reset}`);
+		attrs.push(
+			`${c.attr}id${c.reset}=${c.value}"${showControlBytes(element.id)}"${c.reset}`,
+		);
 	}
 
 	if (element.className) {
 		attrs.push(
-			`${c.attr}class${c.reset}=${c.value}"${element.className}"${c.reset}`,
+			`${c.attr}class${c.reset}=${c.value}"${showControlBytes(element.className)}"${c.reset}`,
 		);
 	}
 
@@ -177,7 +180,7 @@ function formatAttributes(
 			const value = element.getAttribute(attrName);
 			if (value !== null && value.length < 50) {
 				attrs.push(
-					`${c.attr}${attrName}${c.reset}=${c.value}"${value}"${c.reset}`,
+					`${c.attr}${attrName}${c.reset}=${c.value}"${showControlBytes(value)}"${c.reset}`,
 				);
 			}
 		}
@@ -198,9 +201,9 @@ function formatChildren(
 	if (children.length === 1 && getNodeType(children[0]) === 3) {
 		const text = children[0].textContent || "";
 		if (text.trim() && text.length < 50) {
-			return `${c.text}${text.trim()}${c.reset}`;
+			return `${c.text}${showControlBytes(text.trim())}${c.reset}`;
 		} else if (text.trim()) {
-			return `${c.text}${text.substring(0, 47).trim()}...${c.reset}`;
+			return `${c.text}${showControlBytes(text.substring(0, 47).trim())}...${c.reset}`;
 		}
 		return "";
 	}
@@ -232,10 +235,10 @@ function inspectText(text: Text, options: InspectorOptions = {}): string {
 	}
 
 	if (content.length > 80) {
-		return `${c.text}${content.substring(0, 77).trim()}...${c.reset}`;
+		return `${c.text}${showControlBytes(content.substring(0, 77).trim())}...${c.reset}`;
 	}
 
-	return `${c.text}${content.trim()}${c.reset}`;
+	return `${c.text}${showControlBytes(content.trim())}${c.reset}`;
 }
 
 function inspectComment(
@@ -246,7 +249,7 @@ function inspectComment(
 	const c = getPalette(colorize);
 
 	const content = comment.textContent || "";
-	return `${c.comment}<!--${content}-->${c.reset}`;
+	return `${c.comment}<!--${showControlBytes(content)}-->${c.reset}`;
 }
 
 function inspectFragment(

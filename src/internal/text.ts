@@ -16,6 +16,14 @@ export function isControlByte(code: number): boolean {
 	return code < 0x20 || (code >= 0x7f && code < 0xa0);
 }
 
+// Text with each control byte but tab and line feed written as its code,
+// such as \x1b, so that printing it doesn't make the terminal act.
+export function showControlBytes(text: string): string {
+	return text.replace(/[\0-\x08\x0b-\x1f\x7f-\x9f]/g, (control) =>
+		`\\x${control.charCodeAt(0).toString(16).padStart(2, "0")}`,
+	);
+}
+
 // HTML's ASCII whitespace: tab, line feed, form feed, carriage return and
 // space, and never the other spaces Unicode has.
 export function trimASCIIWhitespace(value: string): string {
