@@ -1,10 +1,9 @@
 /**
- * <script>: when each runs, what the page sees while it does, and the
- * "script" event a program answers to run scripts its own way.
+ * <script>: when each runs, and what the page sees while it does.
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {type ScriptEvent, TermDOM} from "../src/index.ts";
+import {TermDOM} from "../src/index.ts";
 import {canCreateRealms, canRunModules} from "../src/internal/realms.ts";
 import {MockProcess, until} from "./test-utils.js";
 
@@ -20,11 +19,12 @@ interface Page {
 }
 
 // A page whose scripts push to a global log. A "fetch" listener answers
-// each file `files` names, and a 404 for anything else.
+// each file `files` names, once its text settles, and a 404 for anything
+// else.
 function page(
 	html: string,
 	{files = {}, scripting = "enabled", csp, head = "", listen}: {
-		files?: Record<string, string>;
+		files?: Record<string, string | Promise<string>>;
 		scripting?: "enabled" | "none";
 		csp?: string;
 		head?: string;
@@ -43,9 +43,10 @@ function page(
 		const name = new URL(event.request.url).pathname.slice(1);
 		event.respondWith(
 			name in files
-				? new Response(files[name], {
-					headers: {"content-type": "text/javascript"},
-				})
+				? Promise.resolve(files[name])
+					.then((text) =>
+						new Response(text, {headers: {"content-type": "text/javascript"}}),
+					)
 				: new Response("", {status: 404}),
 		);
 	});
@@ -219,141 +220,125 @@ test("the policy decides which scripts run: inline ones and handlers by 'unsafe-
 	await p.dom.dispose();
 });
 
-test("a script listener runs classic scripts its own way, with currentScript set until it settles", async () => {
-	const seen: Array<[string, string | null, string | null]> = [];
-	let finish = () => {};
+test("a string timer runs as a script of the page, even one the program sets", async () => {
 	const p = page(
-		`<script id="mine" src="mine.js" onload="log.push('load')"></script>`,
-		{
-			files: {"app/mine.js": "log.push('default ran')"},
-			listen: (dom) => {
-				dom.addEventListener("script", (event) => {
-					if (!event.url?.endsWith("mine.js")) {
-						return;
-					}
-					seen.push([event.kind, event.url, event.source]);
-					event.respondWith(
-						new Promise<void>((resolve) => {
-							finish = resolve;
-						}),
-					);
-				});
-			},
-		},
+		`<script>setTimeout("var fromPage = 1; log.push('page timer')", 0)</script>`,
 	);
-	await until(() => seen.length === 1);
-	expect(seen[0]).toEqual([
-		"classic",
-		"https://example.com/app/mine.js",
-		"log.push('default ran')",
-	]);
-	expect(p.dom.document.currentScript?.id).toBe("mine");
-	expect(p.log()).toEqual([]);
-	finish();
-	await until(() => p.log().length > 0);
-	expect(p.log()).toEqual(["load"]);
-	expect(p.dom.document.currentScript).toBe(null);
+	await loaded(p);
+	p.window.setTimeout("log.push('program timer ' + typeof fromPage)", 0);
+	await until(() => p.log().length === 2);
+	expect(p.log()).toEqual(["page timer", "program timer number"]);
+	expect(p.window.fromPage).toBe(1);
 	await p.dom.dispose();
 });
 
-test("a listener's rejection is what the script threw, and goes to the window", async () => {
-	const p = page(`<script>log.push("default")</script>`, {
-		listen: (dom) => {
-			dom.addEventListener("script", (event) => {
-				if (event.source?.includes("default")) {
-					event.respondWith(Promise.reject(new TypeError("thrown inside")));
-				}
-			});
-		},
-	});
-	await loaded(p);
-	expect(p.log()).toEqual([]);
-	expect(p.errors).toEqual(["thrown inside"]);
+test("with scripting off a string timer never runs", async () => {
+	const p = page("", {scripting: "none"});
+	p.window.setTimeout("globalThis.ran = true", 0);
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(p.window.ran).toBe(undefined);
 	await p.dom.dispose();
 });
 
-test("the script event reaches only the TermDOM, and answers once, during dispatch", async () => {
-	let late: ScriptEvent | null = null;
-	const errors: string[] = [];
-	const p = page(`<script>log.push("ran")</script>`, {
-		listen: (dom) => {
-			dom.addEventListener("script", (event) => {
-				late = event;
-				try {
-					event.respondWith(Promise.resolve());
-					event.respondWith(Promise.resolve());
-				} catch (error) {
-					errors.push((error as DOMException).name);
-				}
-			});
-		},
-	});
-	const pageHeard: string[] = [];
-	p.dom.document.addEventListener("script", () => pageHeard.push("document"));
-	p.window.addEventListener("script", () => pageHeard.push("window"));
+test("without 'unsafe-eval' a string timer is a violation, and eval and new Function throw", async () => {
+	const p = page(`<script nonce="abc">
+			document.addEventListener("securitypolicyviolation", (event) => log.push(event.blockedURI));
+			setTimeout("log.push('timer')", 0);
+			try { eval("1"); } catch (error) { log.push(error.name); }
+			try { new Function("return 1"); } catch (error) { log.push(error.name); }
+		</script>`, {csp: "script-src 'nonce-abc'"});
 	await loaded(p);
-	expect(pageHeard).toEqual([]);
-	expect(errors).toEqual(["InvalidStateError", "InvalidStateError"]);
-	expect(() => late!.respondWith(Promise.resolve())).toThrow();
+	await until(() => p.log().length === 3);
+	expect(p.log()).toEqual(["EvalError", "EvalError", "eval"]);
+	await p.dom.dispose();
+});
+
+test("with 'unsafe-eval' eval and string timers run", async () => {
+	const p = page(`<script nonce="abc">
+			log.push(eval("'eval'"));
+			setTimeout("log.push('timer')", 0);
+		</script>`, {csp: "script-src 'nonce-abc' 'unsafe-eval'"});
+	await loaded(p);
+	await until(() => p.log().length === 2);
+	expect(p.log()).toEqual(["eval", "timer"]);
+	await p.dom.dispose();
+});
+
+withRealms("a frame whose markup states a policy cannot eval", async () => {
+	const p = page(
+		`<iframe srcdoc="<meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;script-src * 'unsafe-inline' 'unsafe-eval'&quot;><script>try { eval('1'); parent.log.push('ran') } catch (error) { parent.log.push(error.name) }</script>"></iframe>`,
+	);
+	await until(() => p.log().length === 1);
+	expect(p.log()).toEqual(["EvalError"]);
 	await p.dom.dispose();
 });
 
 test("the first script runs after the constructor, so a listener added then hears it", async () => {
-	const kinds: string[] = [];
-	const p = page(`<script>log.push("ran")</script>`);
-	expect(p.window.log).toBe(undefined);
-	p.dom.addEventListener("script", (event) => {
-		kinds.push(event.kind);
-	});
+	const p = page(`<script>throw new Error("first")</script>`);
+	expect(p.errors).toEqual([]);
 	await loaded(p);
-	expect(kinds).toEqual(["classic", "classic"]);
-	expect(p.log()).toEqual(["ran"]);
+	expect(p.errors).toEqual(["first"]);
 	await p.dom.dispose();
 });
 
-test("a script listener gets modules, with the import maps that count", async () => {
-	const requests: Array<[string | null, string | null, string]> = [];
-	const p =
-		page(`<script type="importmap">{"imports": {"lib": "./lib.js"}}</script>
-		<script type="module" src="main.js" onload="log.push('load')"></script>
-		<script type="module">export {};</script>`, {
-			listen: (dom) => {
-				dom.addEventListener("script", (event) => {
-					if (event.kind === "module") {
-						requests.push([event.url, event.source, event.importMaps.join("")]);
-						event.respondWith(Promise.resolve());
-					}
-				});
-			},
-		});
-	await loaded(p);
-	expect(requests).toEqual([
-		[
-			"https://example.com/app/main.js",
-			null,
-			`{"imports": {"lib": "./lib.js"}}`,
-		],
-		[null, "export {};", `{"imports": {"lib": "./lib.js"}}`],
-	]);
-	expect(p.log()).toEqual(["load"]);
-	await p.dom.dispose();
-});
-
-test("a document disposed while a listener runs a script hears nothing after", async () => {
+test("a document disposed while a script's file loads runs nothing after", async () => {
+	let finish = (_text: string) => {};
 	const p = page(`<script src="x.js" onload="log.push('load')"></script>`, {
-		files: {"app/x.js": ""},
-		listen: (dom) => {
-			dom.addEventListener("script", (event) => {
-				if (event.url?.endsWith("x.js")) {
-					event.respondWith(new Promise<void>(() => {}));
-				}
-			});
-		},
+		files: {"app/x.js": new Promise<string>((resolve) => (finish = resolve))},
 	});
-	await until(() => p.dom.document.currentScript !== null);
+	await new Promise((resolve) => setTimeout(resolve, 20));
 	await p.dom.dispose();
+	finish(`log.push("ran")`);
+	await new Promise((resolve) => setTimeout(resolve, 20));
 	expect(p.log()).toEqual([]);
 });
+
+withModules(
+	"an inserted or async script runs while a parsed module is still loading",
+	async () => {
+		let finish = (_text: string) => {};
+		const p = page(`<script type="module" src="slow.js"></script>
+		<script async src="async.js"></script>
+		<script>
+			const inserted = document.createElement("script");
+			inserted.src = "inserted.js";
+			document.body.append(inserted);
+		</script>`, {
+			files: {
+				"app/slow.js": new Promise<string>((resolve) => (finish = resolve)),
+				"app/async.js": `log.push("async")`,
+				"app/inserted.js": `log.push("inserted")`,
+			},
+		});
+		await until(() => p.log().length === 2);
+		expect([...p.log()].sort()).toEqual(["async", "inserted"]);
+		expect(p.dom.document.readyState).toBe("interactive");
+		finish(`log.push("module")`);
+		await loaded(p);
+		expect(p.log().at(-1)).toBe("module");
+		await p.dom.dispose();
+	},
+);
+
+withModules(
+	"modules fetch side by side, and run in order once fetched",
+	async () => {
+		let finish = (_text: string) => {};
+		const p = page(`<script type="module" src="one.js"></script>
+		<script type="module" src="two.js"></script>`, {
+			files: {
+				"app/one.js": new Promise<string>((resolve) => (finish = resolve)),
+				"app/two.js": `log.push("two")`,
+			},
+		});
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(p.log()).toEqual([]);
+		finish(`log.push("one")`);
+		await loaded(p);
+		expect(p.log()).toEqual(["one", "two"]);
+		await p.dom.dispose();
+	},
+);
 
 withModules(
 	"modules run after the parse, with their imports, import maps and import.meta",
@@ -481,24 +466,6 @@ withRealms(
 			"button",
 		) as HTMLButtonElement).click();
 		expect(p.log().slice(-2)).toEqual(["frame handler", "number"]);
-		await p.dom.dispose();
-	},
-);
-
-withRealms(
-	"a frame's scripts reach the TermDOM's script listener, with the frame's document",
-	async () => {
-		const documents: unknown[] = [];
-		const p = page(FRAME, {
-			listen: (dom) => {
-				dom.addEventListener("script", (event) => {
-					documents.push(event.document);
-				});
-			},
-		});
-		await until(() => p.log().includes("frame DOMContentLoaded"));
-		const frame = p.dom.document.querySelector("iframe")!;
-		expect(documents).toEqual([p.dom.document, frame.contentDocument]);
 		await p.dom.dispose();
 	},
 );
@@ -681,39 +648,6 @@ test("a policy an earlier script adds blocks a later file, though it was fetched
 	await p.dom.dispose();
 });
 
-test("an inserted script a listener runs holds DOMContentLoaded, and sees itself as currentScript in dispatch", async () => {
-	let finish = () => {};
-	const seen: string[] = [];
-	const p = page(`<script>
-			document.addEventListener("DOMContentLoaded", () => log.push("DOMContentLoaded"));
-			const inner = document.createElement("script");
-			inner.id = "inner";
-			inner.textContent = "inner";
-			document.body.append(inner);
-		</script>`, {
-		listen: (dom) => {
-			dom.addEventListener("script", (event) => {
-				if (event.source === "inner") {
-					seen.push(event.document.currentScript?.id ?? "none");
-					event.respondWith(
-						new Promise<void>((resolve) => {
-								finish = resolve;
-						}),
-					);
-				}
-			});
-		},
-	});
-	await until(() => seen.length > 0);
-	await new Promise((resolve) => setTimeout(resolve, 30));
-	expect(p.log()).toEqual([]);
-	finish();
-	await loaded(p);
-	expect(seen).toEqual(["inner"]);
-	expect(p.log()).toEqual(["DOMContentLoaded"]);
-	await p.dom.dispose();
-});
-
 test("scripts in a declarative shadow root in the markup run; createContextualFragment's template scripts can", async () => {
 	const p = page(
 		`<div><template shadowrootmode="open"><script>log.push("shadow")</script></template></div>
@@ -815,71 +749,5 @@ test("a script's error says which file it came from, and where", async () => {
 		["https://example.com/app/throws.js", 3, 1],
 		["https://example.com/app/page.html", 3, 1],
 	]);
-	await p.dom.dispose();
-});
-
-test("an inserted or async script runs while a parsed module is still loading", async () => {
-	let link = (_evaluate: () => Promise<void>) => {};
-	const p = page(`<script type="module" src="slow.js"></script>
-		<script async src="async.js"></script>
-		<script>
-			const inserted = document.createElement("script");
-			inserted.src = "inserted.js";
-			document.body.append(inserted);
-		</script>`, {
-		files: {
-			"app/async.js": `log.push("async")`,
-			"app/inserted.js": `log.push("inserted")`,
-		},
-		listen: (dom) => {
-			dom.addEventListener("script", (event) => {
-				if (event.kind === "module") {
-					event.respondWith(
-						new Promise((resolve) => {
-								link = resolve;
-						}),
-					);
-				}
-			});
-		},
-	});
-	await until(() => p.log().length === 2);
-	expect([...p.log()].sort()).toEqual(["async", "inserted"]);
-	expect(p.dom.document.readyState).toBe("interactive");
-	link(async () => {
-		p.window.log.push("module");
-	});
-	await loaded(p);
-	expect(p.log().at(-1)).toBe("module");
-	await p.dom.dispose();
-});
-
-test("modules fetch side by side, and run in order once fetched", async () => {
-	const links: Array<(evaluate: () => Promise<void>) => void> = [];
-	const p = page(`<script type="module" src="one.js"></script>
-		<script type="module" src="two.js"></script>`, {
-		listen: (dom) => {
-			dom.addEventListener("script", (event) => {
-				if (event.kind === "module") {
-					event.respondWith(
-						new Promise((resolve) => {
-							links.push(resolve);
-						}),
-					);
-				}
-			});
-		},
-	});
-	await until(() => links.length === 2);
-	links[1](async () => {
-		p.window.log.push("two");
-	});
-	await new Promise((resolve) => setTimeout(resolve, 20));
-	expect(p.log()).toEqual([]);
-	links[0](async () => {
-		p.window.log.push("one");
-	});
-	await loaded(p);
-	expect(p.log()).toEqual(["one", "two"]);
 	await p.dom.dispose();
 });

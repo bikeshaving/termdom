@@ -332,6 +332,46 @@ function checkInline(
 	return true;
 }
 
+const EVAL_DIRECTIVES = ["script-src", "default-src"];
+
+/**
+ * Whether the policies let the document compile a string as code, as
+ * eval(), new Function() and setTimeout("...") do: a script-src, or a
+ * default-src without one, has to allow 'unsafe-eval'. With "report", a
+ * forbidding policy also reports the violation.
+ */
+export function checkEval(
+	document: Document,
+	policy: RequestPolicy,
+	violations: "report" | "silent",
+): boolean {
+	for (const stated of [...policy.policies, ...getDocumentPolicies(document)]) {
+		const directive = EVAL_DIRECTIVES.find((name) =>
+			stated.directives.has(name),
+		);
+		if (directive === undefined) {
+			continue;
+		}
+		const sources = stated.directives.get(directive)!;
+		if (sources.some((source) => source.toLowerCase() === "'unsafe-eval'")) {
+			continue;
+		}
+		if (violations === "report") {
+			policy.violate(document, {
+				documentURI: stripURLForReport(new URL(document.URL)),
+				blockedURI: "eval",
+				effectiveDirective: "script-src",
+				originalPolicy: stated.text,
+				disposition: "enforce",
+				bubbles: true,
+				composed: true,
+			});
+		}
+		return false;
+	}
+	return true;
+}
+
 /**
  * Whether the policies let an <embed> run its program. An object-src, or
  * a default-src without one, of 'none' forbids it, as it forbids plugins

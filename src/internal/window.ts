@@ -19,6 +19,7 @@ import {
 	createWindowRegistry,
 	type Document,
 	DOMException,
+	getFrameEvaluation,
 	HTMLImageElement,
 	parseHTMLDocument,
 	parseXMLDocument,
@@ -26,6 +27,7 @@ import {
 	processTimers,
 	reportError,
 	runtime,
+	runTimerString,
 	setAttributeByName,
 	setFrameWindowFactory,
 	startPendingImages,
@@ -74,18 +76,21 @@ export function buildWindow(
 	// HTML reports an exception a timer or a microtask lets escape, as it
 	// does a listener's, and the page goes on. The runtime's own would end
 	// the process.
-	const guard = (handler: unknown, args: unknown[]): unknown =>
-		typeof handler !== "function"
-			? handler
-			: () => {
-				runInRealm(realm, () => {
-					try {
-						(handler as (...args: unknown[]) => void)(...args);
-					} catch (error) {
-						reportError(error, document);
-					}
-				});
-			};
+	const guard = (handler: unknown, args: unknown[]): unknown => {
+		if (typeof handler !== "function") {
+			const source = String(handler);
+			return () => runTimerString(document, source);
+		}
+		return () => {
+			runInRealm(realm, () => {
+				try {
+					(handler as (...args: unknown[]) => void)(...args);
+				} catch (error) {
+					reportError(error, document);
+				}
+			});
+		};
+	};
 	// The page's outstanding timers, which stop with the window, by the
 	// number HTML hands the page for each: the runtime's own handle is the
 	// runtime's object.
@@ -235,7 +240,7 @@ export function getInterfaceObjects(): ReadonlyMap<string, Constructor> {
 // its requests are the window's it is in: held to the same policy, and
 // offered to the same fetch listeners.
 setFrameWindowFactory((source, url, registry, parent, frame) => {
-	const realm = createRealm();
+	const realm = createRealm(getFrameEvaluation(parent, source));
 	if (realm === null) {
 		return null;
 	}

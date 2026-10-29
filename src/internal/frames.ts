@@ -102,7 +102,8 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		allowsPlugin: () => false,
 		allowsInlineScript: (element) =>
 			parentSlots.allowsInlineScript?.(element) ?? false,
-		runScript: (request) => parentSlots.runScript?.(request) ?? null,
+		allowsEval: (document, violations) =>
+			parentSlots.allowsEval?.(document, violations) ?? false,
 		loadSignal: AbortSignal.any([parentSlots.loadSignal, unloaded.signal]),
 		render: () => {
 			stale = true;

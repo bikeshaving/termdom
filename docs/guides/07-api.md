@@ -53,9 +53,11 @@ Options:
   the images guide has examples.
 - `scripting?: "none" | "enabled"`: whether the markup's scripts run,
   matching `@media (scripting)`. With `"none"` (default), nothing runs
-  and `<noscript>` content shows. With `"enabled"`, `<script>` elements
-  and handler attributes such as `onclick="..."` run with the page's
-  window as their global, through `node:vm`, as a frame's do. `node:vm`
+  and `<noscript>` content shows. With `"enabled"`, code the page gives
+  as text (`<script>` elements, handler attributes such as
+  `onclick="..."`, and `setTimeout("...")`) runs with the page's window
+  as its global, through `node:vm`, as a frame's does. Functions your
+  program passes run where you wrote them. `node:vm`
   is not a sandbox: a script can reach your program through the objects
   it is given, so enable scripting only for trusted markup. A `csp`
   whose `script-src-attr` (or `script-src`, or `default-src`) is
@@ -84,8 +86,9 @@ Options:
   `true`, the first one restores the terminal, prints the error, and
   closes the transport with status 1. See "Errors" in the events guide.
 
-Invalid values for `colorDepth`, `colorScheme`, and `failFast` throw a
-`TypeError`.
+Invalid values for `url`, `cellSize`, `scripting`, `reducedMotion`,
+`images`, `canvas`, `ptyEmbeds`, `colorDepth`, `colorScheme`, and
+`failFast` throw a `TypeError`.
 
 TermDOM reads no environment variables. It asks the terminal what it
 can, and everything else is an option.
@@ -227,38 +230,12 @@ through `csp` and the `"fetch"` listeners, and must be served as
 JavaScript. `<script type="importmap">` maps bare specifiers, and
 `import()` works in modules and classic scripts. Where a runtime lacks
 what a script needs, the script fires `error` with a message that says
-so, unless a `"script"` listener runs it.
+so.
 
-### `term.addEventListener("script", listener)`
-
-Each script about to run fires a `"script"` event, a `ScriptEvent`, at
-the `TermDOM`. The page never sees it. A listener runs the script
-another way with `respondWith(promise)`:
-
-```ts
-term.addEventListener("script", (event) => {
-  if (event.kind === "classic") {
-    event.respondWith(runElsewhere(event.source, event.url));
-  }
-});
-```
-
-- `kind` is `"classic"` or `"module"`; `element` and `document` say
-  which script it is.
-- A classic script's `source` is its text, inline or fetched, and `url`
-  its URL, or the document's for one inline. `currentScript` stays set
-  until the promise settles. A rejection is what the script threw, and
-  goes to the window's `error` event.
-- A module's event fires as soon as it is prepared, so module graphs
-  load side by side. Its `url` is its resolved `src`, or `null` with its
-  text in `source` for one inline. `base` is the document's base URL
-  and `importMaps` the JSON of the import maps that count. Resolve the
-  promise, once the graph is fetched and linked, to a function that
-  runs it; TermDOM calls that function in the module's turn. A
-  rejection fires `error` on the element, and the function's rejection
-  is what the module threw.
-- `respondWith()` works once, during dispatch. Without it, the script
-  runs the default way.
+Under a `csp` whose `script-src` (or `default-src`) lacks
+`'unsafe-eval'`, `eval()` and `new Function()` throw `EvalError`, and a
+string timer doesn't run and fires `securitypolicyviolation`. A frame
+whose own markup states a policy can't use `eval()` at all.
 
 ### `term.measureCell()`
 

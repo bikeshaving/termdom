@@ -20,7 +20,6 @@ import {
 	clearWindowTimers,
 	constructInternal,
 	controlCheck,
-	createScriptEvent,
 	discardFrames,
 	disconnectObservers,
 	dispatchAsUserAgent,
@@ -33,7 +32,6 @@ import {
 	focusInitialAutofocus,
 	getGraphicsSettings,
 	getProcessTimers,
-	getScriptResponse,
 	type GraphicsSetting,
 	hasFrameCallbacks,
 	HistoryChangeEvent,
@@ -46,7 +44,6 @@ import {
 	runFocusFixup,
 	runFrameCallbacks,
 	runScrollSteps,
-	type ScriptEvent,
 	setDocumentVisible,
 	syncFormControls,
 	syncMediaQueries,
@@ -126,6 +123,7 @@ import {
 import {findSpawner, type PTYSpawner} from "./internal/pty.ts";
 import {
 	answerRequest,
+	checkEval,
 	checkInlineHandler,
 	checkInlineScript,
 	checkPlugin,
@@ -156,9 +154,6 @@ export {
 	type HistoryChangeEventInit,
 	HistoryTraverseEvent,
 	type HistoryTraverseEventInit,
-	ScriptEvent,
-	type ScriptEventInit,
-	type ScriptRequest,
 } from "./internal/dom.ts";
 export {transportFromProcess, transportFromSSH} from "./internal/exchange.ts";
 export {
@@ -261,10 +256,11 @@ export interface TermDOMOptions {
 	/**
 	 * Whether the page's scripts run, with the values of
 	 * `@media (scripting)`. With `"none"`, the default, nothing runs and a
-	 * <noscript>'s markup is shown. With `"enabled"`, <script> elements and
-	 * handler attributes such as `onclick="..."` run with the page's
-	 * window as their global, through node:vm, and a "script" listener on
-	 * the TermDOM can run them another way. node:vm is not a sandbox: a
+	 * <noscript>'s markup is shown. With `"enabled"`, code the page gives
+	 * as text, such as <script> elements, handler attributes like
+	 * `onclick="..."` and setTimeout("..."), runs with the page's window
+	 * as its global, through node:vm. Functions the program passes run
+	 * where they were written. node:vm is not a sandbox: a
 	 * script can reach the program through the objects it is given, so
 	 * only enable it for markup you trust. A `csp` whose script-src-attr,
 	 * or the script-src or default-src it falls back to, is 'none' turns
@@ -498,7 +494,6 @@ export interface TermDOMEventMap {
 	cellchange: CellChangeEvent;
 	fetch: FetchEvent;
 	historychange: HistoryChangeEvent;
-	script: ScriptEvent;
 	historytraverse: HistoryTraverseEvent;
 }
 
@@ -735,11 +730,8 @@ export class TermDOM extends EventTarget {
 				checkPlugin(element, requestPolicy, violations),
 			allowsInlineScript: (element) =>
 				checkInlineScript(element.ownerDocument, element, requestPolicy),
-			runScript: (request) => {
-				const event = createScriptEvent(request);
-				this.dispatchEvent(event);
-				return getScriptResponse(event);
-			},
+			allowsEval: (document, violations) =>
+				checkEval(document, requestPolicy, violations),
 			loadSignal: slots.loads.signal,
 			render: () => render(this),
 			reportUncaught: (error) => {

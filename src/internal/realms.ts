@@ -54,7 +54,10 @@ const INTRINSICS = [
 ];
 
 interface VM {
-	createContext(sandbox?: object): object;
+	createContext(
+		sandbox?: object,
+		options?: {codeGeneration?: {strings?: boolean; wasm?: boolean}},
+	): object;
 	isContext(object: object): boolean;
 	compileFunction(
 		code: string,
@@ -290,11 +293,28 @@ export function compileInWindow(
 	);
 }
 
+type Evaluation = "allowed" | "blocked";
+
+let checkEvaluation: (window: object) => Evaluation = () => "blocked";
+
+export function setEvaluationCheck(
+	check: (window: object) => Evaluation,
+): void {
+	checkEvaluation = check;
+}
+
+function contextOptions(evaluation: Evaluation): {codeGeneration: {
+	strings: boolean;
+	wasm: boolean;
+};} {
+	return {codeGeneration: {strings: evaluation === "allowed", wasm: true}};
+}
+
 function makeContext(vm: VM, window: object): void {
 	if (vm.isContext(window)) {
 		return;
 	}
-	vm.createContext(window);
+	vm.createContext(window, contextOptions(checkEvaluation(window)));
 	const global = vm.runInContext("globalThis", window) as object;
 	// Code in the context sees its global proxy as this, globalThis and
 	// window, so the proxy is the window to the engine too.
@@ -323,13 +343,13 @@ export function canCreateRealms(): boolean {
  * code running in the realm sees as `globalThis`; a frame's window is
  * built onto it.
  */
-export function createRealm(): Realm | null {
+export function createRealm(evaluation: Evaluation): Realm | null {
 	const vm = getVM();
 	if (vm === null) {
 		return null;
 	}
 	const sandbox = {};
-	const context = vm.createContext(sandbox);
+	const context = vm.createContext(sandbox, contextOptions(evaluation));
 	const global = vm.runInContext("globalThis", context) as Record<
 		PropertyKey,
 		unknown
