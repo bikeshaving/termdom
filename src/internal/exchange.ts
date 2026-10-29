@@ -501,7 +501,8 @@ function decodeKeyToken(token: string): WireKey {
 
 // A larger reply is not a clipboard. It is given up as null.
 const REPLY_LIMIT = 1 << 16;
-// A paste this large is delivered as it stands and the fence forgotten.
+// A paste this large is delivered as it stands, and the rest of it as it
+// arrives, up to the end fence: as paste, never as keystrokes.
 const PASTE_LIMIT = 1 << 20;
 // A split sequence longer than this is not one a terminal sends.
 const HOLD_LIMIT = 4096;
@@ -554,19 +555,21 @@ const TMUX_ATTRIBUTES = /^84;/;
  * cut: a split escape (never a bare trailing ESC, which may be the
  * Escape key), an open paste body, and an open clipboard reply. Nothing
  * here may hold the keystrokes that follow it for long: a paste that
- * never closes is delivered at a size, a sequence that never finishes is
+ * grows past a size is delivered in parts, a sequence that never finishes is
  * dropped at a size, and a clipboard reply is only kept open while a
  * query is waiting for it.
  */
 class WireReader {
 	tail: string;
 	pasteBody: string | null;
+	pasteOverflowed: boolean;
 	replyBody: string | null;
 	expectingReply: boolean;
 
 	constructor() {
 		this.tail = "";
 		this.pasteBody = null;
+		this.pasteOverflowed = false;
 		this.replyBody = null;
 		this.expectingReply = false;
 	}
@@ -614,14 +617,21 @@ class WireReader {
 				const end = data.indexOf(PASTE_END, i);
 				if (end === -1) {
 					this.pasteBody += data.slice(i);
-					if (this.pasteBody.length > PASTE_LIMIT) {
-						items.push({kind: "paste", text: this.pasteBody});
-						this.pasteBody = null;
+					if (this.pasteOverflowed || this.pasteBody.length > PASTE_LIMIT) {
+						if (this.pasteBody !== "") {
+							items.push({kind: "paste", text: this.pasteBody});
+						}
+						this.pasteBody = "";
+						this.pasteOverflowed = true;
 					}
 					return items;
 				}
-				items.push({kind: "paste", text: this.pasteBody + data.slice(i, end)});
+				const text = this.pasteBody + data.slice(i, end);
+				if (!this.pasteOverflowed || text !== "") {
+					items.push({kind: "paste", text});
+				}
 				this.pasteBody = null;
+				this.pasteOverflowed = false;
 				i = end + PASTE_END.length;
 				continue;
 			}

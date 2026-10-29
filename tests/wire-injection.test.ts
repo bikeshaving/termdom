@@ -52,12 +52,14 @@ test("an unterminated unsolicited clipboard opener does not swallow keys", async
 	dom.dispose();
 });
 
-test("a paste that never closes is delivered at the cap, and keys resume", async () => {
+test("a paste past the cap is delivered in parts, and none of it as keys", async () => {
 	const {proc, dom, keys} = await mount();
-	let pasted: string | null = null;
+	const pasted: string[] = [];
 	dom.document.addEventListener("paste", (event) => {
-		pasted =
-			(event as ClipboardEvent).clipboardData?.getData("text/plain") ?? "";
+		pasted.push(
+			(event as ClipboardEvent).clipboardData?.getData("text/plain") ?? "",
+		);
+		event.preventDefault();
 	});
 	(dom.document.getElementById("t") as HTMLTextAreaElement).focus();
 	await send(proc, "\x1b[200~");
@@ -65,10 +67,12 @@ test("a paste that never closes is delivered at the cap, and keys resume", async
 	for (let i = 0; i < 17; i++) {
 		await send(proc, chunk);
 	}
+	await send(proc, "b\rls -la\r");
+	await send(proc, "\x1b[201~");
 	await send(proc, "x");
-	expect(pasted).not.toBe(null);
-	expect((pasted as unknown as string).length).toBeGreaterThan(0);
-	expect(keys.at(-1)).toBe("x");
+	expect(pasted.at(-1)).toBe("b\nls -la\n");
+	expect(pasted.join("").length).toBe(17 * (1 << 16) + 9);
+	expect(keys).toEqual(["x"]);
 	dom.dispose();
 });
 
