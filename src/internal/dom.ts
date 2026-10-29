@@ -37570,14 +37570,9 @@ function handleMutationRecords(
 	dropUnfocusableFocus(document);
 }
 
-// An element with `autofocus` gets focused as soon as it connects, as a
-// browser does at initial page load. This generalizes it to any
-// insertion, so a dynamically created element (an edit input that only
-// exists while editing) can autofocus itself. Scoped to newly added
-// nodes, not later attribute changes, matching the spec's "insertion"
-// trigger. If a batch inserts more than one autofocus element, the later
-// one wins, the same ambiguity a real page with more than one already
-// has.
+// An inserted element with `autofocus`, or one inside it, gets the focus
+// as HTML's autofocus candidates do: only while nothing has it, so markup
+// that arrives later never takes it from what the user is typing in.
 function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 	for (const record of mutations) {
 		for (const node of getAddedNodes(record)) {
@@ -37585,30 +37580,45 @@ function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 				continue;
 			}
 			const element = node as Element;
-			const candidate = (element as {autofocus?: boolean}).autofocus
-				? element
-				: element.querySelector("[autofocus]");
-			(candidate as globalThis.HTMLElement | null)?.focus();
+			const document = element.ownerDocument as unknown as
+				globalThis.Document;
+			const candidates = [
+				...((element as {autofocus?: boolean}).autofocus ? [element] : []),
+				...element.querySelectorAll("[autofocus]"),
+			];
+			if (candidates.length > 0 && focusFirst(document, candidates)) {
+				return;
+			}
 		}
 	}
 }
 
-/**
- * HTML's autofocus candidates for a document's own markup, which no
- * insertion brings: the first element with `autofocus`, in tree order,
- * that can take the focus gets it, unless something already has it.
- */
-export function focusInitialAutofocus(document: globalThis.Document): void {
+// Focus the first of `candidates` that takes the focus, unless something
+// already has it. Whether one did.
+function focusFirst(
+	document: globalThis.Document,
+	candidates: Iterable<unknown>,
+): boolean {
 	const active = document.activeElement;
 	if (active !== null && active !== document.body) {
-		return;
+		return true;
 	}
-	for (const candidate of document.querySelectorAll("[autofocus]")) {
-		(candidate as globalThis.HTMLElement).focus?.();
+	for (const candidate of candidates) {
+		(candidate as unknown as globalThis.HTMLElement).focus?.();
 		if (document.activeElement === candidate) {
-			return;
+			return true;
 		}
 	}
+	return false;
+}
+
+/**
+ * HTML's autofocus candidates: the first element with `autofocus`, in
+ * tree order, that can take the focus gets it, unless something already
+ * has it.
+ */
+export function focusInitialAutofocus(document: globalThis.Document): void {
+	focusFirst(document, document.querySelectorAll("[autofocus]"));
 }
 
 /**
