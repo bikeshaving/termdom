@@ -1151,7 +1151,7 @@ test("radios render as ( )/(x); Space checks but never unchecks; groups are excl
 	dom.dispose();
 });
 
-test("an autofocus element focuses itself as soon as it's connected, including nested", async () => {
+test("an inserted autofocus element takes the focus, but only while nothing has it", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
@@ -1164,15 +1164,22 @@ test("an autofocus element focuses itself as soon as it's connected, including n
 	await nextFrame(dom);
 	expect(document.activeElement).toBe(input);
 
-	// Also works via the JS property, and when buried in a subtree added in
-	// one shot (not itself the direct addedNode).
+	// Markup that arrives while the user is in a field leaves them there.
 	const wrapper = document.createElement("div");
 	const nested = document.createElement("input");
 	nested.autofocus = true;
 	wrapper.appendChild(nested);
 	document.body.appendChild(wrapper);
 	await nextFrame(dom);
-	expect(document.activeElement).toBe(nested);
+	expect(document.activeElement).toBe(input);
+
+	// With nothing focused, one buried in an inserted subtree takes it.
+	input.blur();
+	const later = document.createElement("div");
+	later.innerHTML = "<p><input id=\"later\" autofocus></p>";
+	document.body.appendChild(later);
+	await nextFrame(dom);
+	expect(document.activeElement).toBe(document.getElementById("later"));
 
 	dom.dispose();
 });
