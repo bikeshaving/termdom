@@ -583,8 +583,41 @@ function isListItem(element: Element): boolean {
 	);
 }
 
+interface ListNumbering {
+	items: Element[];
+	ordinals: Map<Element, number>;
+}
+
+// A list's items and their numbers are worked out once and kept until
+// something in the list changes, since every item asks for its own.
+// `<ol start>` sets where counting begins, `<ol reversed>` counts down,
+// and a `<li value>` resets the counter mid-list and carries forward.
+function getListNumbering(listParent: Element): ListNumbering {
+	const cascade = documentCascades.get(listParent.ownerDocument);
+	const kept = cascade?.listNumberings.get(listParent);
+	if (kept) {
+		return kept;
+	}
+	const items = Array.from(listParent.children).filter(isListItem);
+	const reversed = hasAttributeByName(listParent, "reversed");
+	const start = parseInt(getAttributeValue(listParent, "start") ?? "", 10);
+	let counter = Number.isFinite(start) ? start : reversed ? items.length : 1;
+	const ordinals = new Map<Element, number>();
+	for (const item of items) {
+		const value = parseInt(getAttributeValue(item, "value") ?? "", 10);
+		if (Number.isFinite(value)) {
+			counter = value;
+		}
+		ordinals.set(item, counter);
+		counter += reversed ? -1 : 1;
+	}
+	const numbering = {items, ordinals};
+	cascade?.listNumberings.set(listParent, numbering);
+	return numbering;
+}
+
 function getListItems(listParent: Element): Element[] {
-	return Array.from(listParent.children).filter(isListItem);
+	return getListNumbering(listParent).items;
 }
 
 function getListNestingDepth(element: Element): number {
@@ -6488,30 +6521,6 @@ export function resolveBorderSides(element: Element): BorderSides {
 	};
 }
 
-// `<ol start>` sets where counting begins, `<ol reversed>` counts down,
-// and a `<li value>` resets the counter mid-list and carries forward.
-function getListItemOrdinal(listItem: Element, listParent: Element): number {
-	const items = getListItems(listParent);
-
-	const reversed = hasAttributeByName(listParent, "reversed");
-	const start = parseInt(getAttributeValue(listParent, "start") ?? "", 10);
-
-	let counter = Number.isFinite(start) ? start : reversed ? items.length : 1;
-
-	for (const item of items) {
-		const value = parseInt(getAttributeValue(item, "value") ?? "", 10);
-		if (Number.isFinite(value)) {
-			counter = value;
-		}
-		if (item === listItem) {
-			return counter;
-		}
-		counter += reversed ? -1 : 1;
-	}
-
-	return counter;
-}
-
 // Keyed by the COMPUTED list-style-type, not the parent's tag name. A
 // ul can be decimal, an ol disc, either none.
 function getListMarker(listItem: Element, listParent: Element): string {
@@ -6527,10 +6536,11 @@ function getListMarker(listItem: Element, listParent: Element): string {
 	}
 
 	if (CSSValues.isCounterStyle(listStyleType)) {
-		if (!getListItems(listParent).includes(listItem)) {
+		const ordinal = getListNumbering(listParent).ordinals.get(listItem);
+		if (ordinal === undefined) {
 			return "";
 		}
-		return `${CSSValues.formatOrdinal(getListItemOrdinal(listItem, listParent), listStyleType)}.`;
+		return `${CSSValues.formatOrdinal(ordinal, listStyleType)}.`;
 	}
 
 	return "";
@@ -6861,6 +6871,9 @@ export class Cascade {
 	counterEnds: WeakMap<Element, CounterEnd>;
 	counterKeys: WeakMap<Element, string>;
 	countersCounted: boolean;
+	// Each list's items and their numbers, dropped when its items, their
+	// display or its numbering attributes change.
+	listNumberings: WeakMap<Element, ListNumbering>;
 
 	// Whether any rule is scoped, which is what adds proximity to the sort.
 	scopedRulesExist: boolean;
@@ -6989,6 +7002,7 @@ export class Cascade {
 		this.counterEnds = new WeakMap();
 		this.counterKeys = new WeakMap();
 		this.countersCounted = false;
+		this.listNumberings = new WeakMap();
 		this.scopedRulesExist = false;
 		this.hasRulesExist = false;
 		this.hasAnchors = new Set();
@@ -7132,6 +7146,7 @@ export function handleMutations(
 	mutations: MutationRecord[],
 ): void {
 	cascade.ancestorFilters = new WeakMap();
+	cascade.listNumberings = new WeakMap();
 	const Node = cascade.window.Node;
 	// A <style> whose text changed holds other rules than the cascade
 	// read. One that joined or left a tree is caught up with alone.
@@ -8138,6 +8153,7 @@ function dropCache(cascade: Cascade): void {
 	cascade.computedStyleCache = new WeakMap();
 	cascade.hasResults = null;
 	cascade.pseudoElementStyleCache = new WeakMap();
+	cascade.listNumberings = new WeakMap();
 	forgetCounters(cascade);
 }
 
@@ -9900,6 +9916,10 @@ function invalidateElementCaches(
 	cascade.pseudoElementStyleCache.delete(element);
 	cascade.counterSets.delete(element);
 	cascade.counterEnds.delete(element);
+	cascade.listNumberings.delete(element);
+	if (element.parentElement) {
+		cascade.listNumberings.delete(element.parentElement);
+	}
 	noteCounterChange(cascade, element);
 }
 
