@@ -1458,7 +1458,9 @@ export function drawLine(
 		const b = Math.max(x1, x2) - 1;
 		const capA = x1 <= x2 ? line.startCap : line.endCap;
 		const capB = x1 <= x2 ? line.endCap : line.startCap;
-		for (let col = a; col <= b; col++) {
+		for (
+			let col = Math.max(a, 0); col <= Math.min(b, context.cols - 1); col++
+		) {
 			let toRight = col < b || capB === "square" ? bits : 0;
 			let toLeft = col > a || capA === "square" ? bits : 0;
 			if (col === a && capA === "round") {
@@ -1480,7 +1482,13 @@ export function drawLine(
 		const b = Math.max(y1, y2) - 1;
 		const capA = y1 <= y2 ? line.startCap : line.endCap;
 		const capB = y1 <= y2 ? line.endCap : line.startCap;
-		for (let row = a; row <= b; row++) {
+		// Rows outside the band can't be written, so skip them up front.
+		const firstRow = Math.max(a, context.bandTop - context.viewportOffset);
+		const lastRow = Math.min(
+			b,
+			context.bandBottom - 1 - context.viewportOffset,
+		);
+		for (let row = firstRow; row <= lastRow; row++) {
 			let down = row < b || capB === "square" ? bits : 0;
 			let up = row > a || capA === "square" ? bits : 0;
 			if (row === a && capA === "round") {

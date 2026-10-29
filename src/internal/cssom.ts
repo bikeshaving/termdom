@@ -228,6 +228,10 @@ export function toCellBorder(
 		: Math.max(1, Math.round(cellsFromPx(value, vertical, node)));
 }
 
+// No terminal is wider than this, and every tab pads out to its stop in
+// spaces, so a bigger value only buys work.
+const MAX_TAB_SIZE = 256;
+
 /**
  * How many cells a tab stop spans: a count of spaces, each a cell, or a
  * length measured across. 8 where the value is neither.
@@ -238,10 +242,12 @@ export function getTabSize(element: Element | null): number {
 	}
 	const value = getComputedValue(element, "tab-size").trim();
 	if (/^\d+(?:\.\d+)?$/.test(value)) {
-		return parseFloat(value);
+		return Math.min(parseFloat(value), MAX_TAB_SIZE);
 	}
 	const length = toCellLength(CSSValues.parseUnitValue(value), false, element);
-	return typeof length === "number" && length >= 0 ? Math.round(length) : 8;
+	return typeof length === "number" && length >= 0
+		? Math.min(Math.round(length), MAX_TAB_SIZE)
+		: 8;
 }
 
 /** A length in whole cells, an exact half rounding toward zero. */
