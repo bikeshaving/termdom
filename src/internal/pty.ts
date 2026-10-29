@@ -398,6 +398,14 @@ export interface PTYSessionListeners {
 	bell(): void;
 }
 
+// A screen's columns or rows, at most a thousand, so that a size the
+// markup asks for can't take all the memory there is.
+const MAX_SIZE = 1000;
+
+function clampSize(size: number): number {
+	return Math.min(MAX_SIZE, Math.max(1, Math.floor(size) || 1));
+}
+
 /**
  * One program on one pseudo-terminal, and the screen it draws. It draws
  * into a box as a frame's document does: fit() gives the cells at the
@@ -426,8 +434,8 @@ export class PTYSession {
 	held: ReturnType<typeof setTimeout> | null;
 
 	constructor(cols: number, rows: number, listeners: PTYSessionListeners) {
-		this.cols = Math.max(1, cols);
-		this.rows = Math.max(1, rows);
+		this.cols = clampSize(cols);
+		this.rows = clampSize(rows);
 		this.version = 0;
 		this.exited = false;
 		this.listeners = listeners;
@@ -697,8 +705,8 @@ export class PTYSession {
 	}
 
 	resize(cols: number, rows: number): void {
-		cols = Math.max(1, cols);
-		rows = Math.max(1, rows);
+		cols = clampSize(cols);
+		rows = clampSize(rows);
 		if (cols === this.cols && rows === this.rows) {
 			return;
 		}
