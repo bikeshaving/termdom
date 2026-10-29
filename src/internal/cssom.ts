@@ -6871,6 +6871,8 @@ export class Cascade {
 	counterEnds: WeakMap<Element, CounterEnd>;
 	counterKeys: WeakMap<Element, string>;
 	countersCounted: boolean;
+	// The flat tree's elements the counts walked, kept until a node moves.
+	flatTree: FlatElementTree | null;
 	// Each list's items and their numbers, dropped when its items, their
 	// display or its numbering attributes change.
 	listNumberings: WeakMap<Element, ListNumbering>;
@@ -7002,6 +7004,7 @@ export class Cascade {
 		this.counterEnds = new WeakMap();
 		this.counterKeys = new WeakMap();
 		this.countersCounted = false;
+		this.flatTree = null;
 		this.listNumberings = new WeakMap();
 		this.scopedRulesExist = false;
 		this.hasRulesExist = false;
@@ -7147,6 +7150,7 @@ export function handleMutations(
 ): void {
 	cascade.ancestorFilters = new WeakMap();
 	cascade.listNumberings = new WeakMap();
+	cascade.flatTree = null;
 	const Node = cascade.window.Node;
 	// A <style> whose text changed holds other rules than the cascade
 	// read. One that joined or left a tree is caught up with alone.
@@ -8593,6 +8597,7 @@ function declaresCounters(cascade: Cascade, root: Element): boolean {
  * from elsewhere, so the counts are made again.
  */
 function noteFlatTreeChange(cascade: Cascade): void {
+	cascade.flatTree = null;
 	if (cascade.countersCounted) {
 		cascade.countersStale = true;
 	}
@@ -8618,6 +8623,7 @@ function refreshCounters(cascade: Cascade): void {
 function forgetCounters(cascade: Cascade): void {
 	cascade.countersStale = false;
 	cascade.countersCounted = false;
+	cascade.flatTree = null;
 	cascade.counterSets = new WeakMap();
 	cascade.counterEnds = new WeakMap();
 	cascade.counterKeys = new WeakMap();
@@ -8703,7 +8709,7 @@ function countCounters(
 	element: Element,
 	part: "start" | "end",
 ): void {
-	const tree = createFlatElementTree();
+	const tree = (cascade.flatTree ??= createFlatElementTree());
 	const isCounted = ([each, which]: [Element, "start" | "end"]) =>
 		which === "start"
 			? cascade.counterSets.has(each)
