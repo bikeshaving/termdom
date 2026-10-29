@@ -142,6 +142,8 @@ import {
 	type CellSize,
 	type CellSizeSetting,
 	getCellSize,
+	getDevicePixelRatio,
+	type PixelRatioSetting,
 	UNIT_CELL,
 } from "./internal/units.ts";
 import {createWindow} from "./internal/window.ts";
@@ -240,6 +242,20 @@ export interface TermDOMOptions {
 	 * - `{width, height}`: that size, each from 0.01 to 1000.
 	 */
 	cellSize?: "unit" | "auto" | CellSize;
+
+	/**
+	 * How many of the terminal's pixels make one CSS pixel, which
+	 * `window.devicePixelRatio` and `@media (resolution)` report. The
+	 * `"auto"` cell is the terminal's reported cell divided by it, and an
+	 * image's pixels are CSS pixels, so it sets how large both are.
+	 *
+	 * - `"auto"` (the default): a guess, since terminals report no ratio.
+	 *   2 when the first cell the terminal reports is taller than 24
+	 *   pixels, as terminals on high-density screens report, and 1
+	 *   otherwise. A font zoom later keeps it.
+	 * - A number from 0.25 to 16.
+	 */
+	devicePixelRatio?: "auto" | number;
 
 	/**
 	 * The Content Security Policy the document's loads are checked against,
@@ -482,6 +498,27 @@ function toCellSizeSetting(
 	);
 }
 
+const MIN_PIXEL_RATIO = 0.25;
+const MAX_PIXEL_RATIO = 16;
+
+function toPixelRatioSetting(
+	option: TermDOMOptions["devicePixelRatio"],
+): PixelRatioSetting {
+	if (option === undefined || option === "auto") {
+		return "auto";
+	}
+	if (
+		typeof option === "number" &&
+		option >= MIN_PIXEL_RATIO &&
+		option <= MAX_PIXEL_RATIO
+	) {
+		return option;
+	}
+	throw new TypeError(
+		`devicePixelRatio must be "auto" or a number from ${MIN_PIXEL_RATIO} to ${MAX_PIXEL_RATIO}`,
+	);
+}
+
 type Lifecycle = "detached" | "attaching" | "attached" | "disposed";
 // About a display's refresh. Changes that come faster share a frame.
 const FRAME_INTERVAL_MS = 16;
@@ -598,6 +635,7 @@ export class TermDOM extends EventTarget {
 	constructor(options: TermDOMOptions = {}) {
 		super();
 		const cellSize = toCellSizeSetting(options.cellSize);
+		const devicePixelRatio = toPixelRatioSetting(options.devicePixelRatio);
 		const images = toGraphicsSetting("images", options.images);
 		const canvas = toGraphicsSetting("canvas", options.canvas);
 		const pty = toPTYSpawner(options.ptyEmbeds);
@@ -711,6 +749,7 @@ export class TermDOM extends EventTarget {
 			exchange: slots.exchange,
 			framebuffer: slots.framebuffer,
 			cellSize,
+			devicePixelRatio,
 			images,
 			canvas,
 			pty,
@@ -1438,6 +1477,8 @@ function cellMeasured(termDOM: TermDOM): void {
 	relayoutReplacedElements(termDOM.document);
 	if (getCellSizeSetting(termDOM.document) === "auto") {
 		cellSizeChanged(termDOM);
+	} else {
+		syncMediaQueries(termDOM.document);
 	}
 	const {width, height} = _(termDOM).framebuffer.cellPixels;
 	termDOM.dispatchEvent(
@@ -1930,6 +1971,7 @@ function renderStaticHTML(
 	const termDOMSlots = _(termDOM);
 	const cols = termDOMSlots.transport.cols;
 	const cell = getCellSize(termDOM.document);
+	const ratio = getDevicePixelRatio(termDOM.document);
 	const colorDepth = termDOMSlots.framebuffer.colorDepth;
 	const graphics = getGraphicsSettings(termDOM.document)!;
 	const colorScheme = termDOMSlots.exchange.colorScheme;
@@ -1942,7 +1984,8 @@ function renderStaticHTML(
 				graphics.images ||
 			getGraphicsSettings(termDOMSlots.staticSibling.document)!.canvas !==
 				graphics.canvas ||
-			!isSameCell(getCellSize(termDOMSlots.staticSibling.document), cell))
+			!isSameCell(getCellSize(termDOMSlots.staticSibling.document), cell) ||
+			getDevicePixelRatio(termDOMSlots.staticSibling.document) !== ratio)
 	) {
 		void termDOMSlots.staticSibling.dispose();
 		termDOMSlots.staticSibling = null;
@@ -1951,6 +1994,7 @@ function renderStaticHTML(
 		...termDOMSlots.staticOptions,
 		colorScheme,
 		cellSize: cell === UNIT_CELL ? "unit" : cell,
+		devicePixelRatio: ratio,
 		images: graphics.images === "none" ? "none" : "cells",
 		canvas: graphics.canvas === "none" ? "none" : "cells",
 		colorDepth,

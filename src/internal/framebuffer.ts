@@ -2128,6 +2128,9 @@ export class Framebuffer {
 	scrollRow: number;
 	documentTopRow: number;
 	cellSize: {width: number; height: number};
+	// Device pixels a CSS pixel, guessed from the first cell the terminal
+	// reports and kept, so a font zoom is not taken for another screen.
+	pixelRatio: number | null;
 	writer: FrameWriter;
 	frameScroll: number;
 	dirty: boolean;
@@ -2159,6 +2162,7 @@ export class Framebuffer {
 		this.scrollRow = 0;
 		this.documentTopRow = 0;
 		this.cellSize = {...GUESSED_CELL_PIXELS};
+		this.pixelRatio = null;
 		this.frameScroll = 0;
 		this.dirty = true;
 		this.wholeDamage = true;
@@ -2199,6 +2203,11 @@ export class Framebuffer {
 	/** The colors the terminal draws: true color, 256 or 8. */
 	get colorDepth(): ColorDepth {
 		return this.writer.colorDepth;
+	}
+
+	/** Device pixels a CSS pixel, 1 until the terminal reports a cell. */
+	get devicePixelRatio(): number {
+		return this.pixelRatio ?? 1;
 	}
 
 	/** One cell in terminal pixels. */
@@ -2264,6 +2273,11 @@ export function scrollTo(framebuffer: Framebuffer, row: number): void {
 	framebuffer.scrollRow = next;
 }
 
+// Terminals report no pixel ratio. Most report cells in device pixels,
+// and text at one device pixel a CSS pixel is rarely set in a cell
+// taller than this.
+const HIGH_DENSITY_CELL_HEIGHT = 24;
+
 /**
  * XTWINOPS answered. Whatever was painted against the guess repaints.
  * Whether the size changed, which images sized from it need to know.
@@ -2273,6 +2287,7 @@ export function adoptCellPixels(
 	width: number,
 	height: number,
 ): boolean {
+	framebuffer.pixelRatio ??= height > HIGH_DENSITY_CELL_HEIGHT ? 2 : 1;
 	const cell = framebuffer.cellSize;
 	if (cell.width === width && cell.height === height) {
 		return false;

@@ -138,7 +138,9 @@ import {
 import {
 	type CellSizeSetting,
 	getCellSize,
+	getDevicePixelRatio,
 	getImageCellSize,
+	type PixelRatioSetting,
 	pxFromCells,
 	UNIT_CELL,
 } from "./units.ts";
@@ -27590,8 +27592,6 @@ class ResizeObserver {
 
 		const borderCells = layout.getRect(target);
 		const border = borderCells && toPixelRect(target, borderCells);
-		// device-pixel-content-box is the content box: devicePixelRatio is 1,
-		// so a CSS pixel is a device pixel.
 		const watched = options?.box === "border-box"
 			? {
 				width: border?.width ?? content.width,
@@ -27605,6 +27605,7 @@ class ResizeObserver {
 			return null;
 		}
 
+		const ratio = getDevicePixelRatio(target as unknown as Node);
 		const box: ResizeObserverSize = {
 			inlineSize: content.width,
 			blockSize: content.height,
@@ -27628,7 +27629,12 @@ class ResizeObserver {
 						blockSize: border?.height ?? content.height,
 					},
 				],
-				devicePixelContentBoxSize: [box],
+				devicePixelContentBoxSize: [
+					{
+						inlineSize: Math.round(content.width * ratio),
+						blockSize: Math.round(content.height * ratio),
+					},
+				],
 			},
 		};
 	}
@@ -27947,6 +27953,9 @@ export interface DocumentExtra extends NodeExtra {
 	framebuffer: Framebuffer;
 	// The program's cellSize option, which getCellSize reads.
 	cellSize: CellSizeSetting;
+	// The program's devicePixelRatio option, which getDevicePixelRatio
+	// reads.
+	devicePixelRatio: PixelRatioSetting;
 	// How the document draws an <img>'s pixels and a 2d canvas's, or
 	// "none" when it draws none.
 	images: GraphicsSetting;
@@ -37195,6 +37204,7 @@ export interface DocumentEngine {
 	exchange: Exchange;
 	framebuffer: Framebuffer;
 	cellSize: CellSizeSetting;
+	devicePixelRatio: PixelRatioSetting;
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
 	pty: PTYSpawner | "none" | "unavailable" | "framed";
@@ -37250,6 +37260,7 @@ export function attachDocument(
 	attachedSlots.extra.exchange = exchange;
 	attachedSlots.extra.framebuffer = framebuffer;
 	attachedSlots.extra.cellSize = cellSize;
+	attachedSlots.extra.devicePixelRatio = engine.devicePixelRatio;
 	attachedSlots.extra.images = images;
 	attachedSlots.extra.canvas = canvas;
 	attachedSlots.extra.pty = engine.pty;
@@ -39725,7 +39736,7 @@ export class Window extends EventTarget {
 	}
 
 	get devicePixelRatio(): number {
-		return 1;
+		return getDevicePixelRatio(this.document as unknown as Node);
 	}
 
 	get event(): globalThis.Event | undefined {

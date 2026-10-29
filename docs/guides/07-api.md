@@ -37,7 +37,7 @@ Options:
   | Value | One cell is |
   | --- | --- |
   | `"unit"` (default) | 1×1 px |
-  | `"auto"` | What the terminal reports, or 8×16 |
+  | `"auto"` | What the terminal reports over `devicePixelRatio`, or 8×16 |
   | `{width, height}` | The given size, 0.01 to 1000 px a side |
 
   With `"auto"`, the first frame waits up to a second for the terminal
@@ -47,6 +47,14 @@ Options:
   least one cell, `1ch` and `1lh` are one cell, and `1ic` is two
   columns. Stylesheets written in `ch` and `lh` look the same at every
   cell size.
+- `devicePixelRatio?: "auto" | number`: how many of the terminal's
+  pixels make one CSS pixel, as `window.devicePixelRatio` and
+  `@media (resolution)` report. An `"auto"` cell is the terminal's cell
+  divided by it, and images, whose pixels are CSS pixels, are sized by
+  it too. With `"auto"` (default) it's a guess, since terminals don't
+  report one: 2 when the first cell the terminal reports is taller than
+  24 pixels, as terminals on Retina and other high-density screens
+  report, and 1 otherwise. A number from 0.25 to 16 sets it.
 
 - `csp?: string`: a `Content-Security-Policy` that limits what markup
   may load. Without it, everything loads. Set one for untrusted markup;

@@ -161,9 +161,9 @@ An image that isn't showing:
 
 An image's natural size in cells is its pixel size divided by the cell
 size. With `cellSize` set, that's the cell size used. With the default
-unit cell, TermDOM uses the terminal's real cell size (XTWINOPS 16),
-assuming 8 by 16 until it answers, so a 400 by 400 image is 50 columns
-by 25 rows. It asks again on resize, so zooming the font resizes
+unit cell, TermDOM uses the terminal's real cell size (XTWINOPS 16)
+divided by `devicePixelRatio`, assuming 8 by 16 until it answers, so a
+400 by 400 image is 50 columns by 25 rows. It asks again on resize, so zooming the font resizes
 images. `term.measureCell()` and the `"cellchange"` event expose the
 same measurement.
 

@@ -771,3 +771,90 @@ test("a font zoom under the unit cell is a cellchange", async () => {
 	expect(await dom.measureCell()).toEqual({width: 5, height: 12});
 	dom.dispose();
 });
+
+test("auto halves a Retina terminal's 15 by 31 device-pixel cell, as a browser at devicePixelRatio 2 does", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;31;15t"}]);
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		colorDepth: "rgb",
+		cellSize: "auto",
+	});
+	await dom.attach();
+	await nextFrame(dom);
+	expect(dom.window.devicePixelRatio).toBe(2);
+	expect(dom.window.innerWidth).toBe(300);
+	expect(dom.window.innerHeight).toBe(155);
+	expect(dom.window.matchMedia("(resolution: 2dppx)").matches).toBe(true);
+	dom.dispose();
+});
+
+test("a 20-pixel cell is taken as one device pixel a CSS pixel", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;20;10t"}]);
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		colorDepth: "rgb",
+		cellSize: "auto",
+	});
+	await dom.attach();
+	await nextFrame(dom);
+	expect(dom.window.devicePixelRatio).toBe(1);
+	expect(dom.window.innerWidth).toBe(400);
+	dom.dispose();
+});
+
+test("a devicePixelRatio the program gives divides the auto cell", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;20;10t"}]);
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		colorDepth: "rgb",
+		cellSize: "auto",
+		devicePixelRatio: 1.25,
+	});
+	await dom.attach();
+	await nextFrame(dom);
+	expect(dom.window.devicePixelRatio).toBe(1.25);
+	expect(dom.window.innerWidth).toBe(320);
+	expect(dom.window.innerHeight).toBe(160);
+	dom.dispose();
+});
+
+test("a devicePixelRatio that is not one throws", () => {
+	for (const devicePixelRatio of [0, -1, 0.1, 17, NaN, Infinity, "2", "high"]) {
+		expect(() =>
+			new TermDOM({
+				transport: new MockProcess().transport,
+				devicePixelRatio: devicePixelRatio as never,
+			}),
+		).toThrow(TypeError);
+	}
+});
+
+test("the guessed ratio stays through a font zoom", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const cell = {ask: "\x1b[16t", reply: "\x1b[6;32;16t"};
+	scriptReplies(terminal, [cell]);
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		colorDepth: "rgb",
+		cellSize: "auto",
+	});
+	await dom.attach();
+	await nextFrame(dom);
+	expect(dom.window.innerWidth).toBe(320);
+	const sizes: Array<[number, number]> = [];
+	dom.window.addEventListener("resize", () => {
+		sizes.push([dom.window.innerWidth, dom.window.innerHeight]);
+	});
+	cell.reply = "\x1b[6;20;10t";
+	terminal.resize(64, 16);
+	(terminal as any).emit("SIGWINCH");
+	for (let waited = 0; sizes.length === 0 && waited < 2000; waited += 25) {
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	expect(dom.window.devicePixelRatio).toBe(2);
+	expect(sizes).toEqual([[320, 160]]);
+	dom.dispose();
+});
