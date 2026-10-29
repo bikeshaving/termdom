@@ -33,3 +33,17 @@ test("a huge tab-size pads a tab to a bounded width", async () => {
 	await renderQuickly("<style>pre{tab-size:1000000}</style><pre>a\tb</pre>");
 	await renderQuickly("<style>pre{tab-size:1000000px}</style><pre>a\tb</pre>");
 });
+
+test("huge grid lines, spans and auto-fill counts are clamped", async () => {
+	for (const css of [
+		".c{grid-row:100000000}",
+		".c{grid-column:100000000}",
+		".c{grid-column:span 1000000}",
+		".c{grid-row:-100000000}",
+		".g{width:1e9px;grid-template-columns:repeat(auto-fill,1px)}",
+	]) {
+		await renderQuickly(
+			`<style>.g{display:grid}${css}</style><div class=g><div class=c>x</div></div>`,
+		);
+	}
+});

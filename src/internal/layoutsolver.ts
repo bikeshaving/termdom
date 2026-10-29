@@ -4176,6 +4176,11 @@ function isIntrinsicBreadth(
 		Number.isNaN(trackLength(breadth, ownerSize));
 }
 
+// CSS Grid lets an engine clamp the lines and spans it resolves, as
+// browsers do, and none past these fits a terminal.
+const MAX_GRID_LINES = 10000;
+const MAX_GRID_SPAN = 1000;
+
 // For counting repeat(auto-fill) repetitions.
 function getDefiniteTrackSize(
 	size: CSSValues.TrackSize,
@@ -4268,7 +4273,10 @@ function expandTrackList(
 			//   fixedSum + n*repeatSum + (fixedCount + n*repeatTracks - 1)*gap
 			// which must not exceed the space; solved for n.
 			const room = availableSpace - fixedSum - fixedCount * gap + gap;
-			repetitions = Math.max(1, Math.floor(room / perRepetition));
+			repetitions = Math.max(
+				1,
+				Math.min(Math.floor(room / perRepetition), MAX_GRID_LINES),
+			);
 		}
 	}
 
@@ -4414,8 +4422,11 @@ function resolveGridLine(
 	explicitCount: number,
 	edge: "start" | "end",
 ): ResolvedLine {
+	const index = placement.index === null
+		? null
+		: Math.max(-MAX_GRID_LINES, Math.min(placement.index, MAX_GRID_LINES));
 	if (placement.span) {
-		const count = Math.max(1, placement.index ?? 1);
+		const count = Math.max(1, Math.min(index ?? 1, MAX_GRID_SPAN));
 		if (placement.name !== null) {
 			return {kind: "spanName", name: placement.name, count};
 		}
@@ -4424,7 +4435,7 @@ function resolveGridLine(
 	if (placement.name !== null) {
 		// A bare name is tried first as an area's edge on the side it is
 		// written on.
-		if (placement.index === null) {
+		if (index === null) {
 			const edgeName = `${placement.name}-${edge}`;
 			if (names.has(edgeName)) {
 				return {
@@ -4435,22 +4446,15 @@ function resolveGridLine(
 		}
 		return {
 			kind: "line",
-			index: getNamedLine(
-				names,
-				placement.name,
-				placement.index ?? 1,
-				explicitCount,
-			),
+			index: getNamedLine(names, placement.name, index ?? 1, explicitCount),
 		};
 	}
-	if (placement.index === null) {
+	if (index === null) {
 		return {kind: "auto"};
 	}
 	return {
 		kind: "line",
-		index: placement.index > 0
-			? placement.index - 1
-			: explicitCount + placement.index + 1,
+		index: index > 0 ? index - 1 : explicitCount + index + 1,
 	};
 }
 
