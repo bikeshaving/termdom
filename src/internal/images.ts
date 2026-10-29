@@ -1787,6 +1787,9 @@ function decodeBMP(data: Uint8Array): Bitmap {
 		? (headerSize >= 40 && view.getUint32(46, true)) || 1 << bits
 		: 0;
 	const stride = Math.ceil((width * bits) / 32) * 4;
+	if (!rle && pixelOffset + stride * height > data.length) {
+		throw new Error("The BMP image ends before its pixels do");
+	}
 	const bitmap = createBitmap(width, height);
 	const channel = (value: number, mask: number): number => {
 		if (mask === 0) {
