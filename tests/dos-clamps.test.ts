@@ -58,3 +58,18 @@ test("a repeating gradient on a huge box colors only the visible rows", async ()
 		"<div style=\"height:1e8px;overflow:auto;background:repeating-linear-gradient(red 0,blue 1px)\">x</div>",
 	);
 });
+
+test("renderANSI paints a page taller than any grid in bands, and stops at 100000 rows", () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 20, rows: 5}).transport,
+	});
+	const started = performance.now();
+	const output = dom.renderANSI(
+		"<table><tr><td height=1000000000>x</td></tr></table><p>after</p>",
+	);
+	expect(performance.now() - started).toBeLessThan(10000);
+	expect(output.split("\n").length).toBe(100001);
+	const short = dom.renderANSI(`<p style="margin-top: 1500px">deep</p>`);
+	expect(short).toContain("deep");
+	dom.dispose();
+});

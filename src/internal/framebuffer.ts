@@ -1343,6 +1343,11 @@ export function drawText(
 	}
 }
 
+// The most rows renderANSI() writes, far past any page meant to be read
+// in a terminal, and the rows it paints at a time.
+const MAX_STATIC_ROWS = 100000;
+const STATIC_BAND_ROWS = 1000;
+
 /**
  * Another grid's cells with its top left at (x, y). An empty cell
  * leaves what is under it, one with no background takes the
@@ -2220,15 +2225,21 @@ export class Framebuffer {
 		lineEnding: "\n" | "\r\n",
 		paint: (context: CellContext) => void,
 	): string {
+		rows = Math.min(rows, MAX_STATIC_ROWS);
 		if (rows <= 0) {
 			return "";
 		}
+		// Painted a band at a time, so a page as tall as it likes never
+		// needs a grid of all its rows at once.
 		const cols = this.colCount;
-		const grid = new CellGrid(rows, cols);
-		paint(new CellContext(grid, rows, cols, 0));
 		const lines: string[] = [];
-		for (let row = 0; row < rows; row++) {
-			lines.push(getGridLine(grid, row, this.writer));
+		for (let top = 0; top < rows; top += STATIC_BAND_ROWS) {
+			const height = Math.min(STATIC_BAND_ROWS, rows - top);
+			const grid = new CellGrid(height, cols);
+			paint(new CellContext(grid, height, cols, -top));
+			for (let row = 0; row < height; row++) {
+				lines.push(getGridLine(grid, row, this.writer));
+			}
 		}
 		return lines.join(lineEnding) + lineEnding;
 	}
