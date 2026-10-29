@@ -22,7 +22,7 @@ import {
 	type Slots,
 } from "./slots.ts";
 import {toASCIILowercase} from "./text.ts";
-import type {CellSizeSetting} from "./units.ts";
+import type {CellSizeSetting, PixelRatioSetting} from "./units.ts";
 
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 export const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
@@ -265,6 +265,22 @@ export function getCellSizeSetting(
 	node: globalThis.Node,
 ): CellSizeSetting | undefined {
 	return _maybe(getAttachedDocument(node))?.extra.cellSize;
+}
+
+/** The devicePixelRatio option of the TermDOM drawing the node's document. */
+export function getPixelRatioSetting(
+	node: globalThis.Node,
+): PixelRatioSetting | undefined {
+	return _maybe(getAttachedDocument(node))?.extra.devicePixelRatio;
+}
+
+/**
+ * The pixel ratio the framebuffer drawing the node's document guessed,
+ * or null for a document no TermDOM draws.
+ */
+export function getGuessedPixelRatio(node: globalThis.Node): number | null {
+	return _maybe(getAttachedDocument(node))?.extra.framebuffer
+		.devicePixelRatio ?? null;
 }
 
 /**

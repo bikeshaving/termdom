@@ -89,6 +89,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		exchange: parentSlots.exchange,
 		framebuffer,
 		cellSize: parentSlots.cellSize,
+		devicePixelRatio: parentSlots.devicePixelRatio,
 		images: parentSlots.images,
 		canvas: parentSlots.canvas,
 		pty: "framed",
@@ -140,6 +141,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 
 	function fitFrame(cols: number, rows: number): CellGrid {
 		const cell = parentSlots.framebuffer.cellPixels;
+		framebuffer.pixelRatio = parentSlots.framebuffer.pixelRatio;
 		if (
 			framebuffer.cellPixels.width !== cell.width ||
 			framebuffer.cellPixels.height !== cell.height

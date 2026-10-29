@@ -3,7 +3,12 @@
  * counts cells; everything a page writes or reads counts CSS pixels. At
  * the default unit size the two are the same number.
  */
-import {getCellPixels, getCellSizeSetting} from "./tree.ts";
+import {
+	getCellPixels,
+	getCellSizeSetting,
+	getGuessedPixelRatio,
+	getPixelRatioSetting,
+} from "./tree.ts";
 
 export interface CellSize {
 	width: number;
@@ -18,12 +23,53 @@ export const UNIT_CELL: Readonly<CellSize> = {width: 1, height: 1};
  */
 export type CellSizeSetting = "unit" | "auto" | Readonly<CellSize>;
 
+/**
+ * How many of the terminal's pixels make a CSS pixel: guessed from the
+ * cell the terminal reports, or a number the program gives.
+ */
+export type PixelRatioSetting = "auto" | number;
+
+/** The node's window's devicePixelRatio. */
+export function getDevicePixelRatio(node: Node | null | undefined): number {
+	const setting = node ? getPixelRatioSetting(node) : undefined;
+	if (typeof setting === "number") {
+		return setting;
+	}
+	return (node && getGuessedPixelRatio(node)) ?? 1;
+}
+
+// The CSS cell of each reported cell and ratio, so a page's cell keeps
+// its identity while neither changes.
+const scaledCells = new WeakMap<
+	Readonly<CellSize>,
+	{ratio: number; cell: Readonly<CellSize>}
+>();
+
+// The terminal's cell in CSS pixels.
+function getScreenCell(node: Node): Readonly<CellSize> | null {
+	const pixels = getCellPixels(node);
+	if (pixels === null) {
+		return null;
+	}
+	const ratio = getDevicePixelRatio(node);
+	if (ratio === 1) {
+		return pixels;
+	}
+	const scaled = scaledCells.get(pixels);
+	if (scaled !== undefined && scaled.ratio === ratio) {
+		return scaled.cell;
+	}
+	const cell = {width: pixels.width / ratio, height: pixels.height / ratio};
+	scaledCells.set(pixels, {ratio, cell});
+	return cell;
+}
+
 export function getCellSize(node: Node | null | undefined): Readonly<CellSize> {
 	const setting = node ? getCellSizeSetting(node) : undefined;
 	if (setting === undefined || setting === "unit") {
 		return UNIT_CELL;
 	}
-	return setting === "auto" ? getCellPixels(node!)! : setting;
+	return setting === "auto" ? getScreenCell(node!)! : setting;
 }
 
 /**
@@ -39,7 +85,7 @@ export function getImageCellSize(
 	if (page !== UNIT_CELL) {
 		return page;
 	}
-	return (node && getCellPixels(node)) ?? page;
+	return (node && getScreenCell(node)) ?? page;
 }
 
 /**
