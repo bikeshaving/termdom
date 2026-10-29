@@ -35512,6 +35512,26 @@ interface ParseAttribute {
 // is running.
 let parseRegistry: CustomElementRegistry | null | undefined = undefined;
 
+// Browsers stop nesting parsed elements past a fixed depth, so a hostile
+// page cannot build a tree that is too deep for the walkers to recurse.
+// Chromium's limit is 512.
+const MAX_PARSE_DEPTH = 512;
+
+// The node a parsed child may go into: the parent, or the nearest
+// ancestor if the parent is already at the depth limit.
+function capParseDepth(parentNode: Node): Node {
+	let depth = 0;
+	let probe: Node | null = parentNode;
+	while (probe !== null && depth < MAX_PARSE_DEPTH) {
+		probe = getObject(_(probe).parent);
+		depth++;
+	}
+	if (probe === null) {
+		return parentNode;
+	}
+	return getObject(_(parentNode).parent) ?? parentNode;
+}
+
 // Every node the adapter creates belongs to the document it was made
 // for, and every insertion runs the same algorithm appendChild runs, so a
 // parsed tree and a scripted tree are the same tree.
@@ -35558,7 +35578,7 @@ function createTreeAdapter(document: Document | null) {
 			return (target as Document).createTextNode(value) as unknown as Text;
 		},
 		appendChild(parentNode: Node, newNode: Node): void {
-			insertNode(newNode, parentNode, null, true);
+			insertNode(newNode, capParseDepth(parentNode), null, true);
 		},
 		insertBefore(parentNode: Node, newNode: Node, referenceNode: Node): void {
 			insertNode(newNode, parentNode, referenceNode, true);
