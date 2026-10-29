@@ -302,3 +302,25 @@ test("without scripting, a handler attribute never runs, even in the live docume
 	expect(flags.__termdomInert).toBe(false);
 	dom.dispose();
 });
+
+test("a CSS name that is a member of every object is an unknown name, not a crash", async () => {
+	for (const name of ["__proto__", "constructor", "toString"]) {
+		const dom = new TermDOM({
+			transport: new MockProcess({rows: 4, cols: 40}).transport,
+			html: `<style>
+				@media (${name}) { p { color: red } }
+				@media (min-${name}: 1px) { p { color: red } }
+				@media (1px < ${name} < 2px) { p { color: red } }
+			</style>
+			<p style="transition: ${name} 1s; transition-property: ${name}; --${name}: 1">text</p>`,
+		});
+		await nextFrame(dom);
+		const p = dom.document.querySelector("p")!;
+		expect(dom.window.getComputedStyle(p).color).not.toBe("rgb(255, 0, 0)");
+		expect(dom.window.getComputedStyle(p).getPropertyValue(name)).toBe("");
+		expect(p.style.getPropertyValue(name)).toBe("");
+		p.style.setProperty(name, "1");
+		expect(p.style.getPropertyValue(name)).toBe("");
+		dom.dispose();
+	}
+});
