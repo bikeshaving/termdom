@@ -7183,7 +7183,10 @@ export function handleMutations(
 	let sheetTextChanged = false;
 	let sheetsMoved = false;
 	let removedElements = false;
-	const changedParents = new Set<Element>();
+	// Each parent whose children came or went, with the first child a
+	// forward sibling test could see differently: the one after the
+	// change, null for every child, or undefined for none.
+	const changedParents = new Map<Element, Element | null | undefined>();
 	// Every record describes the tree as the batch left it, so a subtree
 	// invalidated once is not walked again for a later record, as a page
 	// setting hundreds of custom properties on <html> one at a time sent
@@ -7323,7 +7326,14 @@ export function handleMutations(
 				getNodeType(mutation.target) === Node.ELEMENT_NODE &&
 				getSiblingIndex(cascade, mutation.target as Element)?.reachesSiblings
 			) {
-				changedParents.add(mutation.target as Element);
+				const parent = mutation.target as Element;
+				const from = getFirstChildAfterChange(mutation);
+				changedParents.set(
+					parent,
+					changedParents.has(parent)
+						? earlierChild(changedParents.get(parent), from)
+						: from,
+				);
 			}
 		} else if (mutation.type === "attributes") {
 			const element = mutation.target as Element;
@@ -7443,8 +7453,8 @@ export function handleMutations(
 		syncShadowRoot(cascade, root);
 	}
 
-	for (const parent of changedParents) {
-		invalidateChildren(cascade, parent);
+	for (const [parent, from] of changedParents) {
+		invalidateChildren(cascade, parent, from);
 	}
 	// What left the document is let go: elements given a pseudo-element,
 	// and shadow roots with their rules. A host connected again registers
@@ -9889,11 +9899,51 @@ function recordRestyle(
 // or inherits through one.
 // Only a child a sibling-tested compound could name restyles, with its
 // subtree when such a rule reaches descendants.
-function invalidateChildren(cascade: Cascade, element: Element): void {
+// The parent, and its children from `from` on, or all of them when a
+// test counts from the end. `li:nth-child(2n)` and `li + li` see only
+// what comes before a child, so a child appended changes none of them.
+function invalidateChildren(
+	cascade: Cascade,
+	element: Element,
+	from: Element | null | undefined = null,
+): void {
 	invalidateSibling(cascade, element);
-	for (const child of element.children) {
-		invalidateSibling(cascade, child);
+	let child = getSiblingIndex(cascade, element)?.countsFromEnd || from === null
+		? element.firstElementChild
+		: from;
+	for (; child; child = child.nextElementSibling) {
+		invalidateSibling(cascade, child as Element);
 	}
+}
+
+// The first element child after a childList record's change, read from
+// the tree the batch left, or null when that can't be told.
+function getFirstChildAfterChange(
+	mutation: MutationRecord,
+): Element | null | undefined {
+	const before = mutation.previousSibling;
+	if (before === null || before.parentNode !== mutation.target) {
+		return null;
+	}
+	for (let node = before.nextSibling; node; node = node.nextSibling) {
+		if (getNodeType(node) === 1) {
+			return node as Element;
+		}
+	}
+	return undefined;
+}
+
+function earlierChild(
+	a: Element | null | undefined,
+	b: Element | null | undefined,
+): Element | null | undefined {
+	if (a === null || b === null) {
+		return null;
+	}
+	if (a === undefined || b === undefined) {
+		return a ?? b;
+	}
+	return a.compareDocumentPosition(b) & 4 ? a : b;
 }
 
 // `:focus ~ .card` and `:hover + label` match siblings AFTER the element
@@ -9930,6 +9980,9 @@ interface SiblingIndex {
 	// false positive only widens the rebuild.
 	reachesSiblings: boolean;
 	reachesDescendants: boolean;
+	// Whether a sibling test counts from the end, as :last-child does, so
+	// a child added or removed changes what the children BEFORE it match.
+	countsFromEnd: boolean;
 	// The tag, class, id and attribute keys of every sibling-tested
 	// compound, so a change among an element's children restyles only the
 	// children such a compound could name.
@@ -9968,6 +10021,7 @@ function getOrCreateSiblingIndex(
 		index = {
 			reachesSiblings: ua?.reachesSiblings ?? false,
 			reachesDescendants: ua?.reachesDescendants ?? false,
+			countsFromEnd: ua?.countsFromEnd ?? false,
 			keys: new Set(ua?.keys),
 			universal: ua?.universal ?? false,
 			anchorKeys: new Set(ua?.anchorKeys),
@@ -11202,6 +11256,9 @@ function indexReachingKeys(
 		}
 		if (/:nth-[a-z-]*\([^)]*\bof\b/i.test(selector)) {
 			index.anchorsUniversal = true;
+		}
+		if (/:(?:last-|only-|nth-last-)/i.test(selector)) {
+			index.countsFromEnd = true;
 		}
 		for (const keys of compounds) {
 			if (!keys.precedesSibling) {
