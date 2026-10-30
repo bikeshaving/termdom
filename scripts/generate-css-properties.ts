@@ -178,6 +178,9 @@ for (const name of longhands) {
 	}
 	initials[name] = initial;
 }
+// mdn-data states text-align's initial as a token naming its behaviour.
+// CSS Text gives it as start.
+initials["text-align"] = "start";
 
 /**
  * The descriptors each at-rule's block may hold. A descriptor is not a

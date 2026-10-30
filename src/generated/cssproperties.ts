@@ -1887,6 +1887,7 @@ export const CSS_INITIAL_VALUES: Readonly<Record<string, string>> = {
 	"stroke-width": "1px",
 	"tab-size": "8",
 	"table-layout": "auto",
+	"text-align": "start",
 	"text-align-last": "auto",
 	"text-anchor": "start",
 	"text-autospace": "normal",
