@@ -13,6 +13,7 @@ import {
 	parseSelectorList,
 	selectAllCompiled,
 	type SelectorNamespaces,
+	type SiblingIndexes,
 } from "./cssselectors.ts";
 import * as CSSTree from "./csstree.ts";
 import * as CSSValues from "./cssvalues.ts";
@@ -6682,6 +6683,9 @@ function isSelectedBy(
 		hasResults: cascade === undefined
 			? null
 			: (cascade.hasResults ??= new WeakMap()),
+		siblings: cascade === undefined
+			? null
+			: (cascade.siblingIndexesForMatching ??= new WeakMap()),
 	});
 }
 
@@ -6942,10 +6946,24 @@ export class Cascade {
 	// they are dropped wherever a computed style is.
 	hasResults: HasResults | null;
 
+	// Each parent's element children, with each child's index, for the
+	// selectors that count siblings. Kept until the tree changes, as a
+	// rule asking an element's index once per element counted through its
+	// siblings each time.
+	siblingIndexesForMatching: SiblingIndexes | null;
+
 	// The pseudo-classes named anywhere inside a :has() argument. A change
 	// to one of those states can restyle an anchor's whole subtree, far
 	// from the element whose state changed.
 	hasStates: Set<string>;
+
+	// Every compound a :has() is written in, and whether one can't be
+	// tested on its own. What each anchor answered them last, as a string
+	// of 0s and 1s in their order, so a change under an anchor that leaves
+	// every answer the same restyles nothing.
+	hasCompounds: Set<string>;
+	hasCompoundsUntestable: boolean;
+	hasAnswers: WeakMap<Element, string>;
 
 	// Set by the layout engine when geometry changed under the used values.
 	usedStale: boolean;
@@ -7011,11 +7029,15 @@ export class Cascade {
 		this.hasAnchors = new Set();
 		this.hasSiblingRules = false;
 		this.hasStates = new Set();
+		this.hasCompounds = new Set();
+		this.hasCompoundsUntestable = false;
+		this.hasAnswers = new WeakMap();
 		this.hoverRulesDeclared = false;
 		this.documentSheets = null;
 		this.flushing = false;
 		this.usedValues = new WeakMap();
 		this.hasResults = null;
+		this.siblingIndexesForMatching = null;
 		this.usedStale = true;
 		this.layerPaths = [];
 		this.anonymousLayers = 0;
@@ -7151,6 +7173,7 @@ export function handleMutations(
 	cascade.ancestorFilters = new WeakMap();
 	cascade.listNumberings = new WeakMap();
 	cascade.flatTree = null;
+	cascade.siblingIndexesForMatching = null;
 	const Node = cascade.window.Node;
 	// A <style> whose text changed holds other rules than the cascade
 	// read. One that joined or left a tree is caught up with alone.
@@ -8170,6 +8193,7 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 
 function dropCache(cascade: Cascade): void {
 	// Every computed style ever handed out re-resolves on its next read.
+	cascade.siblingIndexesForMatching = null;
 	cascade.currentDeclarations = new WeakSet<object>();
 	cascade.usedValues = new WeakMap();
 	cascade.computedStyleCache = new WeakMap();

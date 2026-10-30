@@ -352,7 +352,7 @@ interface MatchState {
 	// child's index and the children by type. :nth-child and the of-type
 	// tests read a candidate's siblings, and without the index a query over
 	// a long list counted through the same siblings once per candidate.
-	siblings: Map<Node, SiblingIndex>;
+	siblings: SiblingIndexes;
 
 	// The node `:scope` refers to, or null when the selector uses none.
 	scope: Node | null;
@@ -369,6 +369,9 @@ interface MatchState {
 
 /** `:has()` answers, kept by a caller that knows when they go stale. */
 export type HasResults = WeakMap<Element, Map<object, boolean>>;
+
+/** Each parent's element children, as a caller keeps them across matches. */
+export type SiblingIndexes = WeakMap<Node, SiblingIndex>;
 
 type Predicate = (element: Element, state: MatchState) => boolean;
 
@@ -2149,7 +2152,7 @@ function findHasMatch(
 	return false;
 }
 
-interface SiblingIndex {
+export interface SiblingIndex {
 	elements: Element[];
 	index: Map<Element, number>;
 	byType: Map<string, Element[]>;
@@ -2349,6 +2352,10 @@ interface MatchOptions {
 	// Where `:has()` answers are kept between matches, by a caller that
 	// drops them whenever the document changes.
 	hasResults?: HasResults | null;
+
+	// Where each parent's children are kept between matches, by a caller
+	// that drops them whenever the tree changes.
+	siblings?: SiblingIndexes | null;
 }
 
 interface QueryOptions extends CompileOptions, MatchOptions {}
@@ -2360,7 +2367,7 @@ function createMatchState(options: MatchOptions): MatchState {
 		// A relative selector hangs from the scoping root, which is also what
 		// `:scope` refers to. Inside `:has()` both become the anchor instead.
 		anchor: options.scope ?? null,
-		siblings: new Map(),
+		siblings: options.siblings ?? new WeakMap(),
 		hasResults: options.hasResults ?? null,
 	};
 }
