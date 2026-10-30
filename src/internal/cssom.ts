@@ -4252,15 +4252,21 @@ export function readStyleAgain(element: Element, read: string): string {
 // Layout reads many properties of one element in a row. The last
 // element's declaration is kept with the cache it came from, so those
 // reads skip the lookups. Dropping an element's declaration forgets it.
-let lastRead: {
+const lastRead: {
 	element: Element | null;
 	cache: object | null;
 	slots: Slots<ComputedStyleDeclaration> | null;
 } = {element: null, cache: null, slots: null};
 
+function clearLastRead(): void {
+	lastRead.element = null;
+	lastRead.cache = null;
+	lastRead.slots = null;
+}
+
 function forgetLastRead(element: Element): void {
 	if (lastRead.element === element) {
-		lastRead = {element: null, cache: null, slots: null};
+		clearLastRead();
 	}
 }
 
@@ -4304,7 +4310,9 @@ function readComputedValue(
 		)._computedValue(property);
 	}
 	const slots = computedSlotsFor(cascade, element);
-	lastRead = {element, cache: cascade.computedStyleCache, slots};
+	lastRead.element = element;
+	lastRead.cache = cascade.computedStyleCache;
+	lastRead.slots = slots;
 	return slots._computedValue(property);
 }
 
@@ -7813,7 +7821,7 @@ export function dispose(cascade: Cascade): void {
 	// The last read holds its element, and through the declaration the
 	// cascade and its document, past the document's end.
 	if (lastRead.slots?.cascade === cascade) {
-		lastRead = {element: null, cache: null, slots: null};
+		clearLastRead();
 	}
 	cascade.computedStyleCache = new WeakMap();
 	cascade.hasResults = null;
