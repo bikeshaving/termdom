@@ -8762,10 +8762,14 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 		if (!hop) {
 			continue;
 		}
-		// Border and padding both occupy cells.
+		// Border and padding both occupy cells. A run headed in its own box
+		// starts at its head's origin.
 		originX +=
-			getLineStart(alignContainer, breakResult, hop.line) +
-			hop.segment.x +
+			(ancestor === runHead &&
+					getNodeType(runHead) === runHead.ELEMENT_NODE &&
+					!layout.anonymousBoxes.get(headLayoutNode)
+				? 0
+				: getLineStart(alignContainer, breakResult, hop.line) + hop.segment.x) +
 			hop.segment.leaf.boxModel.paddingLeft +
 			hop.segment.leaf.boxModel.borderLeftWidth;
 		originY +=
@@ -9487,6 +9491,12 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		}
 	}
 
+	// A run an element heads in its own box, as a blockified flex item
+	// does, starts at that element's origin, as the painter draws it. One
+	// it heads in an anonymous box of its parent's lines sits in them.
+	const headsOwnBox =
+		getNodeType(runHead) === runHead.ELEMENT_NODE &&
+		!layout.anonymousBoxes.get(layoutNode);
 	let currentBreakResult = breakResult;
 	let accumulatedOffsetX = 0;
 	let accumulatedOffsetY = 0;
@@ -9515,8 +9525,10 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 					) {
 						// To the CONTENT edge. Border and padding occupy cells.
 						accumulatedOffsetX +=
-							getLineStart(alignContainer, currentBreakResult, line) +
-							segment.x +
+							(parent === runHead && headsOwnBox
+								? 0
+								: getLineStart(alignContainer, currentBreakResult, line) +
+									segment.x) +
 							segment.leaf.boxModel.paddingLeft +
 							segment.leaf.boxModel.borderLeftWidth;
 						accumulatedOffsetY +=
