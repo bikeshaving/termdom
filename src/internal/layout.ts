@@ -4595,12 +4595,15 @@ function breakNodes(
 		? Number.MAX_SAFE_INTEGER
 		: width > 0 ? getDrawnColumns(left, width) + 0.4999 : width;
 
-	// break-word does NOT shrink min-content (the word still measures whole
-	// at the `shrink-to-fit` 0 probe), while anywhere and break-all do.
+	// overflow-wrap: break-word does NOT shrink min-content (the word still
+	// measures whole at the `shrink-to-fit` 0 probe), while anywhere and
+	// break-all do. word-break: break-word is overflow-wrap: anywhere
+	// whatever overflow-wrap says (css-text-3 §5.2).
 	const breakAnywhere =
 		!nowrap &&
 		!split.nowrapLeaf &&
 		(wordBreak === "break-all" ||
+			wordBreak === "break-word" ||
 			overflowWrap === "anywhere" ||
 			(overflowWrap === "break-word" && maxWidth > 0));
 	// The base direction is the block's the lines are in, not whatever

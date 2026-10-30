@@ -1795,6 +1795,31 @@ test("overflow-wrap: normal lets a long word escape its box, as a browser does",
 	dom.dispose();
 });
 
+test("word-break: break-word lets a table cell narrow past a long word, as overflow-wrap: anywhere does", () => {
+	const url = "https://example.com/" + "x".repeat(98);
+	const widthWith = (style: string): number => {
+		const dom = new TermDOM({
+			transport: new MockProcess({cols: 60, rows: 20}).transport,
+			cellSize: {width: 8, height: 16},
+		});
+		dom.document.body.innerHTML =
+			"<table style=\"width: 400px; table-layout: fixed\"><tr><td>" +
+			"<table width=\"100%\"><tr><td class=cell>" +
+			`<p style="${style}"><a href="#">${url}</a></p>` +
+			"</td></tr></table></td></tr></table>";
+		const width = dom.document.querySelector(".cell")!
+			.getBoundingClientRect().width;
+		dom.dispose();
+		return width;
+	};
+	const anywhere = widthWith("overflow-wrap: anywhere");
+	expect(anywhere).toBeLessThanOrEqual(400);
+	expect(widthWith("word-break: break-word")).toBe(anywhere);
+	expect(widthWith("word-break: break-word; overflow-wrap: normal"))
+		.toBe(anywhere);
+	expect(widthWith("overflow-wrap: break-word")).toBeGreaterThan(400);
+});
+
 test("overflow-wrap: break-word wraps the long word inside the box", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
