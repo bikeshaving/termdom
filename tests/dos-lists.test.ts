@@ -74,3 +74,24 @@ test("counters over thousands of siblings count the last one fast", async () => 
 	expect(stripControlCodes(terminal.getStaticANSI())).toContain("10001");
 	expect(performance.now() - start).toBeLessThan(90000);
 });
+
+test("hundreds of custom properties set on the root one at a time restyle the page once", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.head.innerHTML = "<style>.item::before { content: '* ' } .item { color: var(--v799) }</style>";
+	document.body.innerHTML = '<p class="item">x</p>'.repeat(1000);
+	await nextFrame(dom);
+	const start = performance.now();
+	for (let i = 0; i < 800; i++) {
+		document.documentElement.style.setProperty(
+			`--v${i}`,
+			i === 799 ? "red" : String(i),
+		);
+	}
+	const last = document.querySelectorAll(".item")[999];
+	expect(dom.window.getComputedStyle(last).color).toBe("rgb(255, 0, 0)");
+	expect(dom.window.getComputedStyle(last, "::before").content).toBe("\"* \"");
+	expect(performance.now() - start).toBeLessThan(1500);
+	dom.dispose();
+});
