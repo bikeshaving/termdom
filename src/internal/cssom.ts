@@ -389,6 +389,20 @@ export interface StyleGroup<T extends object> {
 // A group read is recorded as one read, by the group it is.
 const GROUP_READ = "group:";
 const styleGroups = new Map<string, StyleGroup<object>>();
+// Each group's read, made once: every measure that reads the group keeps
+// it among its reads.
+const groupReads = new Map<StyleGroup<object>, string>();
+
+function getGroupRead(group: StyleGroup<object>): string {
+	let read = groupReads.get(group);
+	if (read === undefined) {
+		read = GROUP_READ + group.name;
+		groupReads.set(group, read);
+		styleGroups.set(group.name, group);
+	}
+	return read;
+}
+
 const groupCaches = new WeakMap<
 	Map<string, string>,
 	Map<StyleGroup<object>, object>
@@ -404,7 +418,11 @@ export function getStyleGroup<T extends object>(
 	group: StyleGroup<T>,
 ): T {
 	const value = readStyleGroup(element, group);
-	readRecorder?.(element, GROUP_READ + group.name, getGroupId(value));
+	readRecorder?.(
+		element,
+		getGroupRead(group as StyleGroup<object>),
+		getGroupId(value),
+	);
 	return value;
 }
 
@@ -412,7 +430,6 @@ function readStyleGroup<T extends object>(
 	element: Element,
 	group: StyleGroup<T>,
 ): T {
-	styleGroups.set(group.name, group as StyleGroup<object>);
 	const document = getOwnerDocument(element);
 	const cascade = document ? documentCascades.get(document) : undefined;
 	if (cascade === undefined || cascade.getStyleKey(element) === null) {
