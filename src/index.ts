@@ -1924,6 +1924,15 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 			? undefined
 			: damage,
 	});
+	// Drawn in the flow under what came before it, the page fills to the
+	// screen's bottom row and no further: a full screen of rows from its
+	// top would scroll the terminal under the rows it was given.
+	termDOMSlots.painter.canvasRows = fullscreen
+		? null
+		: Math.max(
+			contentHeight,
+			termDOMSlots.framebuffer.scrollTop + termDOMSlots.framebuffer.rows - top,
+		);
 	paint(termDOMSlots.painter, context);
 	if (import.meta.litest && context.partial && partialFrameCheck.enabled) {
 		checkPartialFrame(

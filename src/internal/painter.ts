@@ -484,6 +484,10 @@ export class Painter {
 	// The root, or the body standing in for it, whose background color
 	// fills the whole screen, as a browser paints it across the canvas.
 	canvasElement: Element | null;
+	// The document rows that color fills, down to the screen's bottom row
+	// when the page is drawn in the flow under what came before it, or
+	// null for every row the frame has.
+	canvasRows: number | null;
 
 	constructor(
 		document: Document,
@@ -499,6 +503,7 @@ export class Painter {
 		this.paintedText = new Map();
 		this.inTransparent = new Map();
 		this.canvasElement = null;
+		this.canvasRows = null;
 		this.window = document.defaultView as unknown as Window;
 		this.document = document;
 		this.layout = layout;
@@ -627,7 +632,10 @@ export function paint(painter: Painter, ctx: CellContext): void {
 	for (const [top, bottom] of ctx.bands) {
 		ctx.bandTop = top;
 		ctx.bandBottom = bottom;
-		if (canvasFill !== null) {
+		const fillBottom = painter.canvasRows === null
+			? bottom
+			: Math.min(bottom, painter.canvasRows);
+		if (canvasFill !== null && fillBottom > top) {
 			const clip = ctx.clipRect;
 			ctx.clipRect = null;
 			drawRect(
@@ -635,7 +643,7 @@ export function paint(painter: Painter, ctx: CellContext): void {
 				0,
 				top - ctx.viewportOffset,
 				ctx.cols,
-				bottom - top,
+				fillBottom - top,
 				canvasFill,
 			);
 			ctx.clipRect = clip;

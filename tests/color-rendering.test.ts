@@ -587,3 +587,31 @@ test("a translucent body background is blended once, not twice", async () => {
 	expect(backgroundAt(terminal, 0, 0)).toBe(backgroundAt(terminal, 5, 0));
 	dom.dispose();
 });
+
+test("a filled page under a prompt fills to the bottom row without scrolling, and redraws in place", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 8});
+	(terminal as any).terminal.write("$ one\r\n$ two\r\n$ three\r\n");
+	await new Promise((r) => setTimeout(r, 20));
+	const dom = new TermDOM({
+		transport: terminal.sharedTransport,
+		colorDepth: "rgb",
+		html:
+			"<!DOCTYPE html><html><head><style>body{background:#0000ff;margin:0}</style></head>" +
+			"<body><p id=t>first</p></body></html>",
+	});
+	await dom.attach();
+	await nextFrame(dom);
+	const buffer = (terminal as any).terminal.buffer.active;
+	const line = (row: number) =>
+		buffer.getLine(buffer.viewportY + row).translateToString(true).trimEnd();
+	expect(buffer.baseY).toBe(0);
+	expect(line(0)).toBe("$ one");
+	expect(line(3)).toBe("first");
+	expect(backgroundAt(terminal, 7, 0)).toBe(0x0000ff);
+	dom.document.getElementById("t")!.textContent = "second";
+	await nextFrame(dom);
+	expect(buffer.baseY).toBe(0);
+	expect(line(0)).toBe("$ one");
+	expect(line(3)).toBe("second");
+	dom.dispose();
+});
