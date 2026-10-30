@@ -7448,7 +7448,16 @@ function linkChild(node: Node, parent: Node, before: Node | null): void {
 	}
 }
 
+// How many times a node has left its parent, so a sweep for nodes that
+// left the document can tell when none can have.
+let unlinks = 0;
+
+export function getUnlinkCount(): number {
+	return unlinks;
+}
+
 function unlinkChild(node: Node): void {
+	unlinks++;
 	const nodeSlots = getSlots(node);
 	const parentSlots = nodeSlots.parent!;
 	const previous = nodeSlots.previous;

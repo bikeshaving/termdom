@@ -37,6 +37,7 @@ import {
 	getAddedNodes,
 	getScrollOffset,
 	getShadowRoot,
+	getUnlinkCount,
 	isConnectedNode,
 	isDocumentElement,
 	isInFlatTree,
@@ -6274,6 +6275,8 @@ export class Layout {
 	// reach every box (resize, pruning, disposal) walk. Strong, because
 	// boxes a re-derivation drops must still be dropped.
 	anonymousBoxes: Map<LayoutNode, Box>;
+	// The unlink count when nodes that left the document were last swept.
+	prunedAtUnlinks: number;
 
 	// Containers whose enumeration still describes their children. A
 	// mutation drops the ones it disturbs, so flipping a class on one row
@@ -6355,6 +6358,7 @@ export class Layout {
 		this.laidOutMath = false;
 		this.derivedContainers = new WeakSet<Element>();
 		this.anonymousBoxes = new Map<LayoutNode, Box>();
+		this.prunedAtUnlinks = -1;
 		this.dirtyRunContainers = new Set<Element>();
 		this.restyled = new Set<Element>();
 		this.renderedLeaves = new WeakMap<
@@ -8282,6 +8286,12 @@ function unionRects(layout: Layout, rects: readonly DOMRect[]): DOMRect {
 }
 
 function pruneDisconnectedNodes(layout: Layout): void {
+	// Nothing can have left the document while no node left its parent.
+	const unlinks = getUnlinkCount();
+	if (unlinks === layout.prunedAtUnlinks) {
+		return;
+	}
+	layout.prunedAtUnlinks = unlinks;
 	// A box outlives the nodes that pass through it, but not its
 	// container.
 	for (const box of [...layout.anonymousBoxes.values()]) {
