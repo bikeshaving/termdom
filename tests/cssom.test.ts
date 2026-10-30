@@ -620,3 +620,39 @@ test("elements with the same style text keep their declarations apart", () => {
 	expect(b.style.cssText).toBe("color: red; margin: 1px;");
 	dom.dispose();
 });
+
+test("setting properties one by one writes the style attribute as cssText does", () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const {document} = dom;
+	document.body.innerHTML = "<p style=\"color:red;margin:1px\">a</p>";
+	const p = document.querySelector("p")!;
+	const writes: string[] = [];
+	const write = (name: string, value: string, priority = "") => {
+		p.style.setProperty(name, value, priority);
+		writes.push(p.getAttribute("style")!);
+		expect(p.getAttribute("style")).toBe(p.style.cssText);
+	};
+	write("--a", "1");
+	write("--1st", "x", "important");
+	write("margin-top", "2px");
+	write("--a", "2");
+	write("--b", "var(--a)");
+	p.style.removeProperty("--1st");
+	write("margin-top", "1px");
+	write("--c", "3");
+	expect(writes.at(-1)).toBe(
+		"color: red; margin: 1px; --a: 2; --b: var(--a); --c: 3;",
+	);
+	expect([...Array(p.style.length).keys()].map((i) => p.style[i])).toEqual([
+		"color",
+		"margin-right",
+		"margin-bottom",
+		"margin-left",
+		"--a",
+		"--b",
+		"margin-top",
+		"--c",
+	]);
+	expect(p.style[p.style.length]).toBeUndefined();
+	dom.dispose();
+});

@@ -728,6 +728,10 @@ interface CSSStyleDeclarationSlots {
 	byName: Map<string, CSSValues.CSSDeclaration> | null;
 	// The `style` attribute text CSSStyleDeclaration object last serialized or parsed.
 	attributeText: string | null;
+	// The declarations attributeText serialized, by count and last entry,
+	// or -1 when it was parsed, so one appended can be written after it.
+	serializedLength: number;
+	serializedLast: CSSValues.CSSDeclaration | null;
 	// The declarations expanded to longhands for the cascade.
 	block: CSSValues.DeclarationBlock | null;
 	// How many numeric index properties currently name a declaration.
@@ -764,6 +768,8 @@ class CSSStyleDeclaration {
 		slots.declarations = NO_DECLARATIONS;
 		slots.byName = null;
 		slots.attributeText = null;
+		slots.serializedLength = -1;
+		slots.serializedLast = null;
 		slots.block = null;
 		slots.indexed = 0;
 		slots.element = owner.element ?? null;
@@ -945,6 +951,7 @@ class CSSStyleDeclaration {
 			return;
 		}
 		slots.attributeText = text;
+		slots.serializedLength = -1;
 		slots.declarations = NO_DECLARATIONS;
 		slots.byName?.clear();
 		const parsed = parsedStyleTexts.get(text);
@@ -1155,7 +1162,17 @@ function flushStyleAttribute(declaration: CSSStyleDeclaration): void {
 	invalidateDeclaration(declaration);
 	const declarationSlots = _(declaration);
 	if (declarationSlots.element) {
-		declarationSlots.attributeText = serializeDeclarations(declaration);
+		const declarations = declarationSlots.declarations;
+		const last = declarations.at(-1);
+		declarationSlots.attributeText = appendsToSerialized(declaration)
+			? `${
+				declarations.length === 1 ? "" : `${declarationSlots.attributeText} `
+			}${CSSValues.serializePropertyName(last!.name)}: ${last!.value}${
+				last!.important ? " !important" : ""
+			};`
+			: serializeDeclarations(declaration);
+		declarationSlots.serializedLength = declarations.length;
+		declarationSlots.serializedLast = last ?? null;
 		setAttributeByName(
 			declarationSlots.element,
 			"style",
@@ -1165,16 +1182,36 @@ function flushStyleAttribute(declaration: CSSStyleDeclaration): void {
 	declarationSlots.onChange?.();
 }
 
+// Whether the block is what it last serialized with one declaration after,
+// and that declaration serializes the same at the end of a block as on its
+// own: no shorthand covers it and it waits on no shorthand's value.
+function appendsToSerialized(declaration: CSSStyleDeclaration): boolean {
+	const {declarations, serializedLength, serializedLast} = _(declaration);
+	const last = declarations.at(-1);
+	return last !== undefined &&
+		serializedLength === declarations.length - 1 &&
+		(serializedLength === 0 ||
+			declarations[serializedLength - 1] === serializedLast) &&
+		CSSValues.getShorthands(last.name).length === 0 &&
+		CSSValues.getLonghands(last.name) === undefined &&
+		CSSValues.readPendingValue(last.value) === null;
+}
+
 function invalidateDeclaration(declaration: CSSStyleDeclaration): void {
 	const declarationSlots = _(declaration);
 	declarationSlots.block = null;
-	for (let i = 0; i < declarationSlots.indexed; i++) {
+	const declarations = declarationSlots.declarations;
+	for (let i = declarations.length; i < declarationSlots.indexed; i++) {
 		delete declaration[i];
 	}
-	declarationSlots.indexed = declarationSlots.declarations.length;
-	for (let i = 0; i < declarationSlots.indexed; i++) {
-		declaration[i] = declarationSlots.declarations[i].name;
+	for (let i = 0; i < declarations.length; i++) {
+		if (
+			i >= declarationSlots.indexed || declaration[i] !== declarations[i].name
+		) {
+			declaration[i] = declarations[i].name;
+		}
 	}
+	declarationSlots.indexed = declarations.length;
 }
 
 function findDeclaration(

@@ -382,9 +382,15 @@ export function serializeKeyframesName(name: string): string {
 		: serializeCSSIdentifier(name);
 }
 
+const PLAIN_IDENTIFIER =
+	/^(?:[A-Za-z_\u0080-￿]|-[A-Za-z_\u0080-￿-])[\w\u0080-￿-]*$/;
+
 // The same result CSS.escape produces.
 export function serializeCSSIdentifier(value: string): string {
 	const text = String(value);
+	if (PLAIN_IDENTIFIER.test(text)) {
+		return text;
+	}
 	let out = "";
 	for (let i = 0; i < text.length; i++) {
 		const code = text.charCodeAt(i);
