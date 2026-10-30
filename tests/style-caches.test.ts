@@ -2,6 +2,8 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {getBoxModel, getDeclaredDisplay} from "../src/internal/cssom.ts";
+import {layoutCheck} from "../src/internal/layout.ts";
+import {_} from "../src/internal/slots.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 async function mount(html: string): Promise<{dom: TermDOM; document: any}> {
@@ -205,4 +207,36 @@ test("generated content renumbers when an enclosing element's counter changes", 
 	await nextFrame(dom);
 	expect(text()).toContain("6. c");
 	dom.dispose();
+});
+
+test("a block's color change lays out none of its inlines again, and an inline's padding does", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 5});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	document.head.innerHTML =
+		"<style>p.on { background: navy; color: white } " +
+		"b.wide { padding: 0 2ch }</style>";
+	document.body.innerHTML = "<p>one <b>two</b> three</p>";
+	await nextFrame(dom);
+	const p = document.querySelector("p")!;
+	const b = document.querySelector("b")!;
+	const layout = (_(dom) as unknown as {layout: {solves: number}}).layout;
+	// The check lays a frame out from scratch, which counts as solves.
+	layoutCheck.enabled = false;
+	try {
+		const solves = layout.solves;
+		for (const step of ["add", "remove", "add"] as const) {
+			p.classList[step]("on");
+			await nextFrame(dom);
+		}
+		expect(layout.solves).toBe(solves);
+		expect(window.getComputedStyle(b).color).toBe("rgb(255, 255, 255)");
+		b.classList.add("wide");
+		await nextFrame(dom);
+		expect(layout.solves).toBeGreaterThan(solves);
+		expect(terminal.getPlainText()).toContain("one   two   three");
+	} finally {
+		layoutCheck.enabled = true;
+		dom.dispose();
+	}
 });

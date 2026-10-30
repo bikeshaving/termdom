@@ -8513,6 +8513,9 @@ function applyRestyles(layout: Layout): void {
 					continue;
 				}
 			}
+			if (layoutNode === undefined && keepsInlineStyling(element)) {
+				continue;
+			}
 			invalidateBoxDerivation(layout, element);
 			measured.add(element);
 			touchChildren(layout, element);
@@ -8555,6 +8558,31 @@ function invalidateOutOfFlowDescendants(
 
 // The element's layout style recomputed from the cascade, to compare
 // with what the element's node holds.
+// What an element with no layout node of its own, an inline in its
+// container's lines, was last restyled to, as a node's styling records
+// it. A restyle that leaves everything layout reads as it was, an
+// inherited color, keeps the lines it is in. The first restyle has no
+// record to compare and rebuilds them.
+const inlineStylings = new WeakMap<
+	Element,
+	{style: Style; measureKey: TextStyle; display: string}
+>();
+
+function keepsInlineStyling(element: Element): boolean {
+	if (pseudoElementCount(element) !== 0) {
+		inlineStylings.delete(element);
+		return false;
+	}
+	const {style, measureKey} = probeLayoutStyle(element);
+	const display = getLayoutDisplay(element);
+	const known = inlineStylings.get(element);
+	inlineStylings.set(element, {style, measureKey, display});
+	return known !== undefined &&
+		known.measureKey === measureKey &&
+		known.display === display &&
+		isSameValue(style, known.style);
+}
+
 function probeLayoutStyle(element: Element): {
 	style: Style;
 	measureKey: TextStyle;
