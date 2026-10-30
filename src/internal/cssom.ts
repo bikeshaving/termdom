@@ -6302,7 +6302,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 					slots._baseValue(longhand) || CSS_INITIAL_VALUES[longhand] || "")
 				: CSSValues.getComputedValueEntry(
 					property,
-					slots.pseudoDeclarations[property] ?? "",
+					readPseudoDeclared(slots, property) ?? "",
 				);
 			slots.resolved.set(property, value);
 		}
@@ -6607,7 +6607,37 @@ function getListMarker(listItem: Element, listParent: Element): string {
 // Filled on first use, not at evaluation. cssvalues imports this module
 // back around through cssselectors and dom, so whichever end is imported
 // first runs before the other's tables exist.
-let inheritedProperties: readonly string[] | null = null;
+let inheritedLonghands: ReadonlySet<string> | null = null;
+
+// A pseudo-element INHERITS from its originating element. Rule
+// declarations win, and an inherited property they leave out is read
+// from the element when asked, not copied for every restyle. Longhands
+// only: a shorthand's value is its longhands'.
+function readPseudoDeclared(
+	slots: Slots<PseudoStyleDeclaration>,
+	property: string,
+): string | undefined {
+	const declared = slots.pseudoDeclarations[property];
+	if (
+		declared ||
+		slots.cascade === null ||
+		slots.element === null ||
+		!slots.pseudoElement
+	) {
+		return declared;
+	}
+	inheritedLonghands ??= new Set(
+		CSS_PROPERTIES.filter((name) =>
+			CSSValues.isInheritedProperty(name) &&
+		CSSValues.getLonghands(name) === undefined,
+		),
+	);
+	if (!inheritedLonghands.has(property)) {
+		return declared;
+	}
+	return _(slots.cascade.declarationFor(slots.element))
+		._computedValue(property) || declared;
+}
 
 // TODO: Just use the CSSOM CSSRule interface from the DOM
 interface ParsedCSSRule {
@@ -8177,24 +8207,7 @@ function pseudoDeclarationsFor(
 	const declarations: Record<string, string> = {
 		...computePseudoElementStyle(cascade, element, pseudoElement),
 	};
-	// A pseudo-element INHERITS from its originating element. Rule
-	// declarations win, and inherited values only fill the gaps.
-	const hostStyle = cascade.declarationFor(element);
-	// Longhands only: a shorthand's value is its longhands', and `all`
-	// would serialize every property there is.
-	inheritedProperties ??= CSS_PROPERTIES.filter((property) =>
-		CSSValues.isInheritedProperty(property) &&
-		CSSValues.getLonghands(property) === undefined,
-	);
-	const hostStyleSlots = _(hostStyle);
-	for (const property of inheritedProperties) {
-		if (!declarations[property]) {
-			const inherited = hostStyleSlots._computedValue(property);
-			if (inherited) {
-				declarations[property] = inherited;
-			}
-		}
-	}
+	const hostStyleSlots = _(cascade.declarationFor(element));
 	// A pseudo-element of a flex or grid container is one of its items,
 	// and an item's display isBlockified, including the initial `inline`.
 	if (ITEM_DISPLAYS.has(hostStyleSlots._computedValue("display"))) {
