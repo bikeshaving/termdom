@@ -4684,6 +4684,25 @@ function inheritsReset(
 }
 
 // Every value a declaration has resolved, its own over the shared.
+// What a dropped style resolved, read through rather than copied: its own
+// values over the shared ones. Dropping a style happens on every restyle,
+// and a transition reads this only when one is declared.
+type ResolvedValues = Pick<ReadonlyMap<string, string>, "get" | "size">;
+
+function getDroppedValues(
+	slots: Slots<ComputedStyleDeclaration>,
+): ResolvedValues {
+	const {own, resolved} = slots;
+	if (own.size === 0) {
+		return resolved;
+	}
+	return {
+		size: own.size + resolved.size,
+		get: (property) =>
+			own.has(property) ? own.get(property) : resolved.get(property),
+	};
+}
+
 function getAllResolved(
 	slots: Slots<ComputedStyleDeclaration>,
 ): Map<string, string> {
@@ -5006,7 +5025,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			slots.cascade,
 			slots.element,
 			"",
-			getAllResolved(slots),
+			getDroppedValues(slots),
 		);
 		slots.resolved = getSharedResolved(
 			slots.cascade,
@@ -6958,7 +6977,7 @@ export class Cascade {
 	// the case the snapshot cannot cover. These are the original maps, not
 	// copies. The declaration replacing its memo is what makes the old map
 	// safe to hold.
-	transitionFallback: WeakMap<Element, Map<string, Map<string, string>>>;
+	transitionFallback: WeakMap<Element, Map<string, ResolvedValues>>;
 
 	activeTransitions: Map<
 		Element,
@@ -9326,7 +9345,7 @@ function storeTransitionFallback(
 	cascade: Cascade,
 	element: Element,
 	pseudo: string,
-	resolved: Map<string, string>,
+	resolved: ResolvedValues,
 ): void {
 	if (resolved.size === 0) {
 		return;
@@ -9898,7 +9917,7 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 	const dropped = cascade.computedStyleCache.get(element);
 	if (dropped) {
 		cascade.currentDeclarations.delete(dropped);
-		storeTransitionFallback(cascade, element, "", getAllResolved(dropped));
+		storeTransitionFallback(cascade, element, "", getDroppedValues(dropped));
 	}
 	cascade.computedStyleCache.delete(element);
 	forgetLastRead(element);
@@ -10164,7 +10183,7 @@ function invalidateElementCaches(
 	);
 	if (dropped) {
 		cascade.currentDeclarations.delete(dropped);
-		storeTransitionFallback(cascade, element, "", getAllResolved(dropped));
+		storeTransitionFallback(cascade, element, "", getDroppedValues(dropped));
 	}
 	cascade.computedStyleCache.delete(element);
 	forgetLastRead(element);
