@@ -8587,13 +8587,12 @@ function invalidateOutOfFlowDescendants(
 	}
 }
 
-// The element's layout style recomputed from the cascade, to compare
-// with what the element's node holds.
 // What an element with no layout node of its own, an inline in its
 // container's lines, was last restyled to, as a node's styling records
-// it. A restyle that leaves everything layout reads as it was, an
-// inherited color, keeps the lines it is in. The first restyle has no
-// record to compare and rebuilds them.
+// it, its style shared as a node's is. A restyle that leaves everything
+// layout reads as it was, an inherited color, keeps the lines it is in.
+// The first restyle has no record to compare and rebuilds them. Only an
+// inline is recorded: an element waiting for its first box has none.
 const inlineStylings = new WeakMap<
 	Element,
 	{style: Style; measureKey: TextStyle; display: string}
@@ -8604,16 +8603,22 @@ function keepsInlineStyling(element: Element): boolean {
 		inlineStylings.delete(element);
 		return false;
 	}
-	const {style, measureKey} = probeLayoutStyle(element);
 	const display = getLayoutDisplay(element);
+	if (display !== "inline") {
+		inlineStylings.delete(element);
+		return false;
+	}
+	const probe = probeLayoutStyle(element);
+	const style = shareStyle(probe.style);
 	const known = inlineStylings.get(element);
-	inlineStylings.set(element, {style, measureKey, display});
+	inlineStylings.set(element, {style, measureKey: probe.measureKey, display});
 	return known !== undefined &&
-		known.measureKey === measureKey &&
-		known.display === display &&
-		isSameValue(style, known.style);
+		known.measureKey === probe.measureKey &&
+		(known.style === style || isSameValue(style, known.style));
 }
 
+// The element's layout style recomputed from the cascade, to compare
+// with what the element's node holds.
 function probeLayoutStyle(element: Element): {
 	style: Style;
 	measureKey: TextStyle;
