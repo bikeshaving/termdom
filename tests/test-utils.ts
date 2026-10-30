@@ -114,6 +114,10 @@ type Stdin = NonNullable<ProcessLike["stdin"]>;
 /**
  * Mock WriteStream for testing that implements the stdout ProcessLike takes
  */
+// An OSC no terminal defines, which the mock appends to each write to
+// know where TermDOM's writes end.
+const WRITE_END = 7777;
+
 interface MockWriteStream {
 	[kStdin]: MockReadStream;
 	[kColorDepth]: () => ColorDepth;
@@ -146,6 +150,31 @@ class MockWriteStream extends EventEmitter implements Stdout {
 			// Forward any responses from xterm (like cursor position) to stdin
 			this[kStdin].simulateResponse(data);
 		});
+		// A frame saves the cursor at the page's top row, then draws the rows
+		// it was given. Scrolling the terminal from there means it drew past
+		// them, and every frame after lands lower than the page: what a
+		// background filling a screen of rows under a prompt did. TermDOM's
+		// own scrolls come before the save, and printed output after the
+		// frame's write.
+		let framing = false;
+		this.terminal.parser.registerEscHandler({final: "7"}, () => {
+			framing = true;
+			return false;
+		});
+		this.terminal.parser.registerOscHandler(WRITE_END, () => {
+			framing = false;
+			return true;
+		});
+		this.terminal.onScroll(() => {
+			if (framing) {
+				framing = false;
+				queueMicrotask(() => {
+					throw new Error(
+						"A frame scrolled the terminal under the rows it was given",
+					);
+				});
+			}
+		});
 	}
 
 	write(
@@ -170,7 +199,7 @@ class MockWriteStream extends EventEmitter implements Stdout {
 		}
 
 		// Feed data to xterm terminal - it will handle cursor queries automatically
-		this.terminal.write(data, callback);
+		this.terminal.write(`${data}\x1b]${WRITE_END};\x07`, callback);
 
 		return true;
 	}
