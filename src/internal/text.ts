@@ -164,6 +164,11 @@ const DEFAULT_EMOJI_HIGH = 0x1faf8;
 // differently. Runs once per painted cell and allocates nothing.
 export function isWidthUncertain(cluster: string): boolean {
 	const code = cluster.codePointAt(0)!;
+	// A kitty image placeholder, whose marks number its row and column.
+	// Only a terminal that draws it as one cell of an image is sent one.
+	if (code === 0x10eeee) {
+		return false;
+	}
 	if (cluster.length !== (code > 0xffff ? 2 : 1)) {
 		return true;
 	}

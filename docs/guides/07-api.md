@@ -70,10 +70,12 @@ Options:
 - `reducedMotion?: "no-preference" | "reduce"`: what
   `@media (prefers-reduced-motion)` reports. Defaults to
   `"no-preference"`.
-- `images?: "auto" | "cells" | "none"`: how `<img>` draws. `"auto"`
-  (default) uses the best method available, `"cells"` draws half
-  blocks, and `"none"` loads nothing and shows `alt` text.
-- `canvas?: "auto" | "cells" | "none"`: the same for the `"2d"`
+- `images?: "auto" | "cells" | "kitty" | "none"`: how `<img>` draws.
+  `"auto"` (default) uses the kitty graphics protocol where the
+  terminal supports it and half blocks elsewhere, `"cells"` draws half
+  blocks, `"kitty"` uses the kitty graphics protocol without asking,
+  and `"none"` loads nothing and shows `alt` text.
+- `canvas?: "auto" | "cells" | "kitty" | "none"`: the same for the `"2d"`
   context. With `"none"`, `getContext("2d")` returns `null`. The
   `"termdom-cellgrid"` context always works, but its `drawImage()`
   draws nothing under `"none"`.

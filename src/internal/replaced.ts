@@ -29,6 +29,7 @@ import {
 } from "./framebuffer.ts";
 import {
 	type Bitmap,
+	getFullBitmap,
 	getNaturalHeight,
 	getNaturalWidth,
 	getReplacedContent,
@@ -37,6 +38,12 @@ import {
 	type ReplacedContent,
 	sampleBitmap,
 } from "./images.ts";
+import {
+	getPlaceholder,
+	type KittyImages,
+	MAX_PLACEHOLDER_CELLS,
+	placeKittyImage,
+} from "./kitty.ts";
 import {getStringWidth} from "./text.ts";
 import {getCellSize, getImageCellSize} from "./units.ts";
 
@@ -420,36 +427,7 @@ function getBitmapCells(
 	if (cached !== undefined && cached.key === key) {
 		return cached.cells;
 	}
-	// The part of the image inside the content box, snapped to whole
-	// columns and half rows.
-	const left = Math.max(0, Math.round(place.x));
-	const top = Math.max(0, Math.round(place.y));
-	const right = Math.min(cols, Math.round(place.x + place.width));
-	const bottom = Math.min(rows * 2, Math.round(place.y + place.height));
-	const pixels = new Uint8ClampedArray(cols * rows * 2 * 4);
-	if (right > left && bottom > top && place.width > 0 && place.height > 0) {
-		const scaleX = getNaturalWidth(bitmap) / place.width;
-		const scaleY = getNaturalHeight(bitmap) / place.height;
-		const sampled = sampleBitmap(
-			bitmap,
-			right - left,
-			bottom - top,
-			{
-				x: (left - place.x) * scaleX,
-				y: (top - place.y) * scaleY,
-				width: (right - left) * scaleX,
-				height: (bottom - top) * scaleY,
-			},
-			smooth,
-		);
-		const width = right - left;
-		for (let y = top; y < bottom; y++) {
-			pixels.set(
-				sampled.subarray((y - top) * width * 4, (y - top + 1) * width * 4),
-				(y * cols + left) * 4,
-			);
-		}
-	}
+	const pixels = drawPlaced(bitmap, place, cols, rows * 2, 1, 1, smooth);
 	const cells = new CellContext(new CellGrid(rows, cols), rows, cols, 0);
 	for (let row = 0; row < rows; row++) {
 		for (let col = 0; col < cols; col++) {
@@ -465,6 +443,164 @@ function getBitmapCells(
 		}
 	}
 	bitmapCells.set(bitmap, {key, cells: cells.grid});
+	return cells.grid;
+}
+
+// The image as `width` by `height` pixels of a content box, placed at
+// `place`, whose units are `unitX` and `unitY` of those pixels. What the
+// box does not cover stays transparent.
+function drawPlaced(
+	bitmap: Bitmap,
+	place: Placement,
+	width: number,
+	height: number,
+	unitX: number,
+	unitY: number,
+	smooth: boolean,
+): Uint8ClampedArray {
+	const x = place.x * unitX;
+	const y = place.y * unitY;
+	const placedWidth = place.width * unitX;
+	const placedHeight = place.height * unitY;
+	// The part of the image inside the box, snapped to whole pixels.
+	const left = Math.max(0, Math.round(x));
+	const top = Math.max(0, Math.round(y));
+	const right = Math.min(width, Math.round(x + placedWidth));
+	const bottom = Math.min(height, Math.round(y + placedHeight));
+	const pixels = new Uint8ClampedArray(width * height * 4);
+	if (right <= left || bottom <= top || placedWidth <= 0 || placedHeight <= 0) {
+		return pixels;
+	}
+	const scaleX = getNaturalWidth(bitmap) / placedWidth;
+	const scaleY = getNaturalHeight(bitmap) / placedHeight;
+	const sampled = sampleBitmap(
+		bitmap,
+		right - left,
+		bottom - top,
+		{
+			x: (left - x) * scaleX,
+			y: (top - y) * scaleY,
+			width: (right - left) * scaleX,
+			height: (bottom - top) * scaleY,
+		},
+		smooth,
+	);
+	const rowBytes = (right - left) * 4;
+	for (let row = top; row < bottom; row++) {
+		pixels.set(
+			sampled.subarray((row - top) * rowBytes, (row - top + 1) * rowBytes),
+			(row * width + left) * 4,
+		);
+	}
+	return pixels;
+}
+
+// Each bitmap's token in the keys of the images sent to the terminal.
+const bitmapTokens = new WeakMap<Bitmap, number>();
+let nextBitmapToken = 0;
+
+const placeholderCells = new WeakMap<Bitmap, CellCache>();
+
+// Whether the element's pixels go to the terminal as an image, which
+// needs a box the placeholders can number and pixels an image may hold.
+function drawsKittyImage(
+	element: Element,
+	graphics: KittyImages | null,
+	cols: number,
+	rows: number,
+): graphics is KittyImages {
+	if (
+		graphics === null ||
+		!(element.localName === "canvas" ? graphics.canvas : graphics.images) ||
+		cols > MAX_PLACEHOLDER_CELLS ||
+		rows > MAX_PLACEHOLDER_CELLS
+	) {
+		return false;
+	}
+	const cell = graphics.cellPixels();
+	return cols * cell.width * rows * cell.height <= MAX_IMAGE_PIXELS;
+}
+
+// The bitmap as placeholder cells over a content box `cols` by `rows`,
+// in the color that names the image the terminal holds for them. Pixels
+// at full resolution are drawn and sent once for each placement.
+function getPlaceholderCells(
+	element: Element,
+	content: Extract<ReplacedContent, {kind: "bitmap"}>,
+	cols: number,
+	rows: number,
+	under: number | null,
+	graphics: KittyImages,
+): CellGrid {
+	const {bitmap} = content;
+	const cell = getImageCellSize(element as unknown as Node);
+	const place = placeImage(
+		element,
+		cols,
+		rows,
+		getNaturalWidth(bitmap) / cell.width,
+		getNaturalHeight(bitmap) / cell.height,
+	);
+	const rendering = getComputedValue(element, "image-rendering")
+		.trim()
+		.toLowerCase();
+	const smooth =
+		content.smooth && rendering !== "pixelated" && rendering !== "crisp-edges";
+	const pixels = graphics.cellPixels();
+	let token = bitmapTokens.get(bitmap);
+	if (token === undefined) {
+		token = nextBitmapToken++;
+		bitmapTokens.set(bitmap, token);
+	}
+	const key = [
+		token,
+		content.version,
+		cols,
+		rows,
+		place.x,
+		place.y,
+		place.width,
+		place.height,
+		smooth,
+		pixels.width,
+		pixels.height,
+	].join(",");
+	const width = cols * pixels.width;
+	const height = rows * pixels.height;
+	// Looked up every frame, so the image counts as shown.
+	const id = placeKittyImage(
+		graphics,
+		key,
+		{width, height, cols, rows},
+		() =>
+			drawPlaced(
+				getFullBitmap(bitmap),
+				place,
+				width,
+				height,
+				pixels.width,
+				pixels.height / 2,
+				smooth,
+			),
+	);
+	const cacheKey = `${id},${under}`;
+	const cached = placeholderCells.get(bitmap);
+	if (cached !== undefined && cached.key === cacheKey) {
+		return cached.cells;
+	}
+	const cells = new CellContext(new CellGrid(rows, cols), rows, cols, 0);
+	// Transparent pixels show the cell's background, which is the
+	// element's own where it has one.
+	const style: CellStyle = {
+		fg: CSSValues.toCellColor(id),
+		bg: under ?? undefined,
+	};
+	for (let row = 0; row < rows; row++) {
+		for (let col = 0; col < cols; col++) {
+			drawText(cells, getPlaceholder(row, col), col, row, style);
+		}
+	}
+	placeholderCells.set(bitmap, {key: cacheKey, cells: cells.grid});
 	return cells.grid;
 }
 
@@ -576,7 +712,16 @@ export function renderReplaced(
 			// may hold, and like a canvas past it, the box shows nothing.
 			drawGrid(
 				ctx,
-				getBitmapCells(element, content, cols, rows, under),
+				drawsKittyImage(element, ctx.graphics, cols, rows)
+					? getPlaceholderCells(
+						element,
+						content,
+						cols,
+						rows,
+						under,
+						ctx.graphics,
+					)
+					: getBitmapCells(element, content, cols, rows, under),
 				left,
 				top,
 				style,

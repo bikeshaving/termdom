@@ -1,5 +1,6 @@
 import {blendColor, getColorAlpha, TRANSPARENCY_UNIT} from "./cssvalues.ts";
 import type {ColorDepth, Exchange} from "./exchange.ts";
+import type {KittyImages} from "./kitty.ts";
 import {
 	getGraphemes,
 	getStringWidth,
@@ -1156,6 +1157,9 @@ export class CellContext {
 	bandBottom: number;
 	// Whether the frame started from the last one.
 	partial: boolean;
+	// Where images go when the terminal draws them in pixels. Null for
+	// half blocks.
+	graphics: KittyImages | null;
 
 	constructor(
 		grid: CellGrid,
@@ -1170,6 +1174,7 @@ export class CellContext {
 		this.bandTop = 0;
 		this.bandBottom = rows;
 		this.partial = false;
+		this.graphics = null;
 		this.grid = grid;
 		this.rows = rows;
 		this.cols = cols;
@@ -2137,6 +2142,9 @@ export class Framebuffer {
 	// Whether the next frame repaints every row, because something changed
 	// that names no rows of its own.
 	wholeDamage: boolean;
+	// The images sent in the kitty graphics protocol, once the terminal is
+	// known to draw them.
+	graphics: KittyImages | null;
 
 	constructor(rows: number, cols: number, colorDepth: ColorDepth = "rgb") {
 		this.probesWaiting = false;
@@ -2166,6 +2174,7 @@ export class Framebuffer {
 		this.frameScroll = 0;
 		this.dirty = true;
 		this.wholeDamage = true;
+		this.graphics = null;
 		this.writer = new FrameWriter(colorDepth);
 	}
 
@@ -2542,6 +2551,11 @@ export function beginFrame(
 
 	const context = new CellContext(next, frameRows, cols, offset);
 	context.backdrop = framebuffer.exchange?.terminalBackground ?? null;
+	// Placeholders name their image in a 24-bit color, which a terminal
+	// drawing fewer colors would change.
+	context.graphics = framebuffer.colorDepth === "rgb"
+		? framebuffer.graphics
+		: null;
 	if (partial) {
 		context.partial = true;
 		const prev = framebuffer.prev!;

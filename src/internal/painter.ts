@@ -698,6 +698,7 @@ export function checkPartialFrame(
 		ctx.viewportOffset,
 	);
 	whole.backdrop = ctx.backdrop;
+	whole.graphics = ctx.graphics;
 	paint(painter, whole);
 	const differences: string[] = [];
 	const a = ctx.grid;
