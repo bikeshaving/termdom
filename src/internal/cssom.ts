@@ -8,6 +8,7 @@ import {
 import {
 	type CompiledSelector,
 	compileSelector,
+	type FilteredSiblingIndexes,
 	type HasResults,
 	matchesCompiled,
 	parseSelectorList,
@@ -6745,6 +6746,9 @@ function isSelectedBy(
 		siblings: cascade === undefined
 			? null
 			: (cascade.siblingIndexesForMatching ??= new WeakMap()),
+		filteredSiblings: cascade === undefined
+			? null
+			: (cascade.filteredSiblingsForMatching ??= new WeakMap()),
 	});
 }
 
@@ -7010,6 +7014,9 @@ export class Cascade {
 	// rule asking an element's index once per element counted through its
 	// siblings each time.
 	siblingIndexesForMatching: SiblingIndexes | null;
+	// And the siblings each `of S` list keeps, which an attribute change can
+	// change, so they are dropped with any change.
+	filteredSiblingsForMatching: FilteredSiblingIndexes | null;
 
 	// The pseudo-classes named anywhere inside a :has() argument. A change
 	// to one of those states can restyle an anchor's whole subtree, far
@@ -7097,6 +7104,7 @@ export class Cascade {
 		this.usedValues = new WeakMap();
 		this.hasResults = null;
 		this.siblingIndexesForMatching = null;
+		this.filteredSiblingsForMatching = null;
 		this.usedStale = true;
 		this.layerPaths = [];
 		this.anonymousLayers = 0;
@@ -7232,7 +7240,12 @@ export function handleMutations(
 	cascade.ancestorFilters = new WeakMap();
 	cascade.listNumberings = new WeakMap();
 	cascade.flatTree = null;
-	cascade.siblingIndexesForMatching = null;
+	// Siblings keep their order through an attribute change, which can
+	// change only which of them an `of S` list keeps.
+	if (mutations.some((mutation) => mutation.type === "childList")) {
+		cascade.siblingIndexesForMatching = null;
+	}
+	cascade.filteredSiblingsForMatching = null;
 	const Node = cascade.window.Node;
 	// A <style> whose text changed holds other rules than the cascade
 	// read. One that joined or left a tree is caught up with alone.
@@ -8358,6 +8371,7 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 function dropCache(cascade: Cascade): void {
 	// Every computed style ever handed out re-resolves on its next read.
 	cascade.siblingIndexesForMatching = null;
+	cascade.filteredSiblingsForMatching = null;
 	cascade.currentDeclarations = new WeakSet<object>();
 	cascade.usedValues = new WeakMap();
 	cascade.computedStyleCache = new WeakMap();

@@ -700,3 +700,27 @@ test("a child added or removed restyles the siblings whose sibling tests it chan
 	expect(greens("a", "b", "c", "d")).toEqual([false, true, false, true]);
 	dom.dispose();
 });
+
+test("a class change moves an of-S count, and the plain count stays", () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<style>li:nth-child(odd) { color: rgb(0, 128, 0) } " +
+		"li:nth-child(1 of .x) { background-color: rgb(0, 0, 255) }</style>" +
+		"<ul><li id=a>a</li><li id=b class=x>b</li><li id=c>c</li></ul>";
+	const blue = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!).backgroundColor ===
+			"rgb(0, 0, 255)";
+	const green = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!).color ===
+			"rgb(0, 128, 0)";
+	expect(["a", "b", "c"].map(blue)).toEqual([false, true, false]);
+	document.getElementById("a")!.className = "x";
+	expect(["a", "b", "c"].map(blue)).toEqual([true, false, false]);
+	document.getElementById("a")!.className = "";
+	document.getElementById("b")!.className = "";
+	document.getElementById("c")!.className = "x";
+	expect(["a", "b", "c"].map(blue)).toEqual([false, false, true]);
+	expect(["a", "b", "c"].map(green)).toEqual([true, false, true]);
+	dom.dispose();
+});
