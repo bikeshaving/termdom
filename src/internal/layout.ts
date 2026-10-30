@@ -4744,6 +4744,11 @@ function renderLeaf(
 	return rendered;
 }
 
+// Made once: a regular expression literal is a new object each time it
+// runs, and this runs for every text node measured.
+const LEADING_SPACES = /^[ \t\r\f]*/;
+const TRAILING_SPACES = /[ \t\r\f]*$/;
+
 function processWhitespace(
 	layout: Layout,
 	leafNodes: Leaf[],
@@ -4860,8 +4865,8 @@ function processWhitespace(
 
 		// Never the newline a <br> contributes. That is a forced break, and
 		// trimming it dropped the blank line `<br>text` opens with.
-		const leading = text.match(/^[ \t\r\f]*/)?.[0].length || 0;
-		const trailing = text.match(/[ \t\r\f]*$/)?.[0].length || 0;
+		const leading = text.match(LEADING_SPACES)?.[0].length || 0;
+		const trailing = text.match(TRAILING_SPACES)?.[0].length || 0;
 		const trimStart = Math.min(leading, guardStart);
 		const trimmedEnd = Math.max(text.length - trailing, guardEnd);
 

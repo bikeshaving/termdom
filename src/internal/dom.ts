@@ -90,6 +90,7 @@ import {
 	superStep,
 } from "./slots.ts";
 import {
+	ASCII_WHITESPACE,
 	getNextGraphemeBoundary,
 	getPreviousGraphemeBoundary,
 	getStringWidth,
@@ -9522,7 +9523,7 @@ function validateTokens(tokens: string[]): void {
 		}
 	}
 	for (const token of tokens) {
-		if (/[\t\n\f\r ]/.test(String(token))) {
+		if (ASCII_WHITESPACE.test(String(token))) {
 			throw domError(
 				"InvalidCharacterError",
 				"A token cannot contain ASCII whitespace",

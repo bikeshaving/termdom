@@ -24,15 +24,21 @@ export function showControlBytes(text: string): string {
 	);
 }
 
+// A regular expression literal is a new object each time it runs, so the
+// ones these run for every token and name are made once.
+const ASCII_WHITESPACE_ENDS = /^[\t\n\f\r ]+|[\t\n\f\r ]+$/g;
+export const ASCII_WHITESPACE_RUN = /[\t\n\f\r ]+/;
+export const ASCII_WHITESPACE = /[\t\n\f\r ]/;
+
 // HTML's ASCII whitespace: tab, line feed, form feed, carriage return and
 // space, and never the other spaces Unicode has.
 export function trimASCIIWhitespace(value: string): string {
-	return value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+	return value.replace(ASCII_WHITESPACE_ENDS, "");
 }
 
 export function splitOnASCIIWhitespace(value: string): string[] {
 	const trimmed = trimASCIIWhitespace(value);
-	return trimmed === "" ? [] : trimmed.split(/[\t\n\f\r ]+/);
+	return trimmed === "" ? [] : trimmed.split(ASCII_WHITESPACE_RUN);
 }
 
 // What HTML and CSS case-fold with. Never the locale.
