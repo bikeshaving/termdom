@@ -76,6 +76,7 @@ import {
 	type Step,
 } from "./slots.ts";
 import {
+	ASCII_WHITESPACE_RUN,
 	getStringWidth,
 	splitOnASCIIWhitespace,
 	toASCIILowercase,
@@ -105,6 +106,11 @@ import {
 	UA_ELEMENT_STYLES,
 } from "./useragent.ts";
 import {runInRealm, windowMember} from "./webidl.ts";
+
+// A regular expression literal is a new object each time it runs, so the
+// ones that run for every match and mutation are made once.
+const WHITESPACE_RUN = /\s+/;
+const PART_PSEUDO = /^::part\((.+)\)$/;
 
 // Per-element defaults that are STATE, not stylesheet: the fullscreen
 // element's viewport block, a select sized to its widest option label so
@@ -6564,7 +6570,7 @@ export function resolveBorderSides(element: Element): BorderSides {
 	// off a collapsed ellipse. A cell grid has one size of curve.
 	const roundedCorner = (corner: string): "round" | undefined => {
 		const radii = getComputedValue(element, `border-${corner}-radius`)
-			.split(/\s+/)
+			.split(WHITESPACE_RUN)
 			.filter(Boolean);
 		if (radii.length === 0) {
 			return undefined;
@@ -8477,7 +8483,7 @@ function classChangeSubjects(
 	if (oldValue === null || cascade.reachingAttributes.has("class")) {
 		return null;
 	}
-	const before = new Set(oldValue.split(/\s+/));
+	const before = new Set(oldValue.split(WHITESPACE_RUN));
 	const after = getClassTokens(element);
 	const changed = [
 		...[...after].filter((token) => !before.has(token)),
@@ -8568,7 +8574,7 @@ function attributeReachesDescendants(
 			return hasAttributeByName(element, "class");
 		}
 		// Only the classes that came or went can have changed a match.
-		const before = new Set(oldValue.split(/\s+/));
+		const before = new Set(oldValue.split(WHITESPACE_RUN));
 		const after = getClassTokens(element);
 		for (const token of after) {
 			if (!before.has(token) && cascade.reachingClasses.has(token)) {
@@ -10207,7 +10213,7 @@ function changeReachesLaterSiblings(
 	}
 	const keys = index.anchorKeys;
 	if (attributeName === "class") {
-		const before = new Set((oldValue ?? "").split(/[\t\n\f\r ]+/));
+		const before = new Set((oldValue ?? "").split(ASCII_WHITESPACE_RUN));
 		const after = new Set(getClassTokens(element));
 		for (const token of before) {
 			if (token !== "" && !after.has(token) && keys.has(`.${token}`)) {
@@ -10395,7 +10401,7 @@ function isPaintOnlyChange(
 	}
 	const keys: string[] = [`[${name}]`];
 	if (name === "class") {
-		const before = oldValue === null ? [] : oldValue.split(/\s+/);
+		const before = oldValue === null ? [] : oldValue.split(WHITESPACE_RUN);
 		for (const token of [...before, ...getClassTokens(element)]) {
 			if (token !== "") {
 				keys.push(`.${token}`);
@@ -12092,7 +12098,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	const rootNode = root as unknown as Node;
 	const shadowHost = isShadowRoot(root) ? root.host : null;
 	const partNames = (getAttributeValue(element, "part") ?? "")
-		.split(/\s+/)
+		.split(WHITESPACE_RUN)
 		.filter(Boolean);
 	const filter = getAncestorFilter(cascade, element);
 	const matched = getCandidateRules(cascade, element, shadowHost).filter(
@@ -12107,7 +12113,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 				// every browser, and a page reaches them only through the
 				// pseudo-elements above.
 				const partArg = rule.pseudoElement.startsWith("::part(")
-					? rule.pseudoElement.match(/^::part\((.+)\)$/)
+					? rule.pseudoElement.match(PART_PSEUDO)
 					: null;
 				if (partArg) {
 					return (
@@ -12265,7 +12271,7 @@ function getPartPseudos(element: Element, root: Node): string[] {
 	}
 	const host = getHTMLLocalName((root as unknown as ShadowRoot).host) ?? "";
 	const pseudos: string[] = [];
-	for (const name of part.split(/\s+/)) {
+	for (const name of part.split(WHITESPACE_RUN)) {
 		pseudos.push(
 			...(PART_PSEUDOS["*"][name] ?? PART_PSEUDOS[host]?.[name] ?? []),
 		);

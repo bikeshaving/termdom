@@ -21,6 +21,13 @@ import {
 } from "./cssselectors.ts";
 import * as CSSTree from "./csstree.ts";
 
+// A regular expression literal is a new object each time it runs, so the
+// ones that run for every value are made once.
+const WHITESPACE_RUN = /\s+/;
+const HEX_DIGITS = /^[0-9a-f]+$/;
+const COLOR_FUNCTION = /^(rgba?|hsla?)\(\s*(.*?)\s*\)$/;
+const SUBSTITUTION_FUNCTION = /\b(?:var|env|attr)\(/i;
+
 type Unit = "undefined" | "cell" | "percent" | "auto";
 
 /**
@@ -518,7 +525,7 @@ export function parseColor(
 
 	if (color.startsWith("#")) {
 		const hex = color.slice(1);
-		if (!/^[0-9a-f]+$/.test(hex)) {
+		if (!HEX_DIGITS.test(hex)) {
 			return null;
 		}
 		const short = hex.length === 3 || hex.length === 4;
@@ -535,7 +542,7 @@ export function parseColor(
 		return {color: packed, alpha};
 	}
 
-	const functionMatch = color.match(/^(rgba?|hsla?)\(\s*(.*?)\s*\)$/);
+	const functionMatch = color.match(COLOR_FUNCTION);
 	if (functionMatch) {
 		return parseColorFunction(functionMatch[1], functionMatch[2]);
 	}
@@ -564,7 +571,7 @@ function parseColorFunction(
 		if (extra !== undefined || head === "") {
 			return null;
 		}
-		channels = head.split(/\s+/);
+		channels = head.split(WHITESPACE_RUN);
 		alpha = tail;
 	}
 	if (channels.length !== 3 || (alpha !== undefined && alpha === "")) {
@@ -2208,7 +2215,11 @@ export function parseEdgeLengths(
  * `first baseline` name center and baseline.
  */
 export function parseAlignmentKeyword(value: string): string {
-	const tokens = value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+	const tokens = value
+		.trim()
+		.toLowerCase()
+		.split(WHITESPACE_RUN)
+		.filter(Boolean);
 	while (tokens.length > 1 && ALIGNMENT_QUALIFIERS.has(tokens[0])) {
 		tokens.shift();
 	}
@@ -2219,7 +2230,7 @@ export function parseGridAutoFlow(value: string): {
 	column: boolean;
 	dense: boolean;
 } {
-	const tokens = value.toLowerCase().split(/\s+/);
+	const tokens = value.toLowerCase().split(WHITESPACE_RUN);
 	return {column: tokens.includes("column"), dense: tokens.includes("dense")};
 }
 
@@ -2249,7 +2260,7 @@ export function parseTextDecorationLine(value: string): {
 	overline: boolean;
 	lineThrough: boolean;
 } {
-	const tokens = new Set(value.toLowerCase().split(/\s+/));
+	const tokens = new Set(value.toLowerCase().split(WHITESPACE_RUN));
 	return {
 		underline: tokens.has("underline"),
 		overline: tokens.has("overline"),
@@ -2434,7 +2445,7 @@ function isValidByGrammar(
 	if (!text || CSS_WIDE_KEYWORDS.has(text.toLowerCase())) {
 		return true;
 	}
-	if (/\b(?:var|env|attr)\(/i.test(text)) {
+	if (SUBSTITUTION_FUNCTION.test(text)) {
 		return true;
 	}
 	const key = `${atRule}|${property}|${text}`;
@@ -2589,7 +2600,7 @@ export function collapseRadius(property: string, value: string): string {
 	if (!RADIUS_LONGHANDS.has(property)) {
 		return value;
 	}
-	const parts = value.split(/\s+/).filter(Boolean);
+	const parts = value.split(WHITESPACE_RUN).filter(Boolean);
 	return parts.length === 2 && parts[0] === parts[1] ? parts[0] : value;
 }
 
@@ -2606,7 +2617,9 @@ function normalizeGridAreas(value: string): string {
 		return value;
 	}
 	return children
-		.map((node) => `"${(node.value ?? "").trim().split(/\s+/).join(" ")}"`)
+		.map((node) =>
+			`"${(node.value ?? "").trim().split(WHITESPACE_RUN).join(" ")}"`,
+		)
 		.join(" ");
 }
 
@@ -2626,7 +2639,10 @@ function normalizeValue(property: string, declared: string): string {
 		return serializeCSSColor(value) ?? value;
 	}
 	if (LENGTH_PROPERTIES.has(property)) {
-		const lengths = value.split(/\s+/).map(getComputedNumber).join(" ");
+		const lengths = value
+			.split(WHITESPACE_RUN)
+			.map(getComputedNumber)
+			.join(" ");
 		return collapseRadius(property, lengths);
 	}
 	return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
@@ -3457,7 +3473,7 @@ function readShorthandValue(
 
 function getRadiusAxes(value: string): [string, string] {
 	const [horizontal, vertical = horizontal] = value
-		.split(/\s+/)
+		.split(WHITESPACE_RUN)
 		.filter(Boolean);
 	return [horizontal ?? "0px", vertical ?? "0px"];
 }
@@ -6288,7 +6304,7 @@ function parseGridAreasValue(value: string): GridAreaMap | null {
 		}
 		const cells = (node.value ?? "")
 			.trim()
-			.split(/\s+/)
+			.split(WHITESPACE_RUN)
 			.filter((cell) => cell.length > 0)
 			// A run of dots is one null cell, however many dots it has.
 			.map((cell) => (/^\.+$/.test(cell) ? null : cell));

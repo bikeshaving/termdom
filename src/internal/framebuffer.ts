@@ -757,7 +757,8 @@ export class CellGrid {
 	setCell(
 		index: number,
 		grapheme: string,
-		{style, background}: {style?: CellStyle; background?: number} = {},
+		style?: CellStyle,
+		background?: number,
 	): void {
 		const width = getGraphemeColumns(grapheme);
 		this.cluster[index] = encodeGrapheme(grapheme);
@@ -1627,7 +1628,7 @@ function setCell(
 		bgColor = blendOntoCell(context, index, style.bg);
 	}
 
-	grid.setCell(index, char, {style, background: bgColor});
+	grid.setCell(index, char, style, bgColor);
 }
 
 // A translucent color over what the cell already shows, or over the

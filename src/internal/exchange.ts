@@ -36,6 +36,10 @@ import {
 	setTimeout,
 } from "./timers.ts";
 
+// Made once: a regular expression literal is a new object each time it
+// runs, and this runs for every chunk the terminal writes.
+const CURSOR_STYLE = /\x1b\[(\d) q/g;
+
 export type ColorDepth = "ansi" | "rgb" | "256";
 
 export interface TerminalSize {
@@ -2520,7 +2524,7 @@ function noteCursorStyle(proc: ProcessLike, chunk: string): void {
 		return;
 	}
 	const styled = styledCursors.get(proc) ?? {shape: false, color: false};
-	for (const match of chunk.matchAll(/\x1b\[(\d) q/g)) {
+	for (const match of chunk.matchAll(CURSOR_STYLE)) {
 		styled.shape = match[1] !== "0";
 	}
 	const colorSet = chunk.lastIndexOf("\x1b]12;");
