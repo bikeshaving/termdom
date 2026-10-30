@@ -288,3 +288,19 @@ test("a linear() stop list eases by its stops", async () => {
 	expect(window.getComputedStyle(box).color).toBe("rgb(50, 50, 50)");
 	await dom.dispose();
 });
+
+test("a class that brings its own transition transitions from the old style", async () => {
+	const {dom, document, window} = attached(
+		"<style>#other { transition: width 1s; } " +
+		"#box { color: rgb(0, 0, 0); } " +
+		"#box.on { color: rgb(255, 255, 255); " +
+		"transition: color 100s steps(1, jump-both); }</style>" +
+		"<div id='other'></div><div id='box'>x</div>",
+	);
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	box.className = "on";
+	await nextFrame(dom);
+	expect(window.getComputedStyle(box).color).toBe("rgb(128, 128, 128)");
+	await dom.dispose();
+});
