@@ -7251,7 +7251,7 @@ export function handleMutations(
 			// later overran the gutter the original items set. A change
 			// inside an item's content moves no marker.
 			if (mutationChangesListItems(mutation)) {
-				invalidateEnclosingList(cascade, mutation.target);
+				invalidateEnclosingList(cascade, mutation);
 			}
 
 			for (const node of getAddedNodes(mutation)) {
@@ -10212,7 +10212,11 @@ function isPaintOnlyChange(
 // The list's padding-left is a function of its items' markers and
 // their ordinals. Only the NEAREST list is affected. See
 // mutationChangesListItems for why this lives in the cascade.
-function invalidateEnclosingList(cascade: Cascade, target: Node): void {
+function invalidateEnclosingList(
+	cascade: Cascade,
+	mutation: MutationRecord,
+): void {
+	const target = mutation.target;
 	let element: Element | null =
 		getNodeType(target) ===
 		cascade.window.Node.ELEMENT_NODE
@@ -10223,6 +10227,9 @@ function invalidateEnclosingList(cascade: Cascade, target: Node): void {
 		if (!isListElement(element)) {
 			continue;
 		}
+		if (!couldChangeMarkers(element, mutation)) {
+			return;
+		}
 
 		invalidateElementCaches(cascade, element);
 		cascade.layout.invalidate(element);
@@ -10231,6 +10238,35 @@ function invalidateEnclosingList(cascade: Cascade, target: Node): void {
 		}
 		return;
 	}
+}
+
+// Whether a list's markers, and so its gutter, can be what the change
+// touched: an item has a marker, or one came or went that has or could
+// have one. A list of results styled as blocks has none to renumber,
+// and restyling all of it for each item added cost a page its frames.
+function couldChangeMarkers(list: Element, mutation: MutationRecord): boolean {
+	for (const item of list.children) {
+		if (pseudoElement(item, "::marker") !== null) {
+			return true;
+		}
+	}
+	for (const nodes of [getAddedNodes(mutation), getRemovedNodes(mutation)]) {
+		for (const node of nodes) {
+			if (getNodeType(node) !== 1) {
+				continue;
+			}
+			const element = node as Element;
+			if (
+				pseudoElement(element, "::marker") !== null ||
+				element.querySelector("li") !== null ||
+				(element.isConnected &&
+					getComputedValue(element, "display").includes("list-item"))
+			) {
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 // Every style cached against the previous rule set is dropped. A
