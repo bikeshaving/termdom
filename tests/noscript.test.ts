@@ -53,3 +53,24 @@ test("markup set later parses as its document does", () => {
 	expect(on.document.getElementById("m")).toBe(null);
 	expect(render(on)).not.toContain("later");
 });
+
+test("with scripting, a page's own display can't show a noscript", () => {
+	const dom = new TermDOM({
+		html:
+			"<style>noscript { display: flex }</style><p>page</p>" +
+			"<noscript>please enable scripts</noscript>",
+		scripting: "enabled",
+	});
+	const text = render(dom);
+	expect(text).toContain("page");
+	expect(text).not.toContain("please enable scripts");
+});
+
+test("without scripting, a page's display shows a noscript", () => {
+	const dom = new TermDOM({
+		html:
+			"<style>noscript { display: flex }</style>" +
+			"<noscript>please enable scripts</noscript>",
+	});
+	expect(render(dom)).toContain("please enable scripts");
+});
