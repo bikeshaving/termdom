@@ -2403,12 +2403,7 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 				if (styledFrom) {
 					styleLayoutNode(styledFrom, layoutNode, layout.positionedElements);
 				}
-				layoutNode.measure = recordReads(
-					layout,
-					layoutNode,
-					(width, widthSpace, placing, left) =>
-						measureInlineRun(layout, entry, width, widthSpace, placing, left),
-				);
+				setMeasure(layoutNode, {layout, kind: "run", box: entry});
 				layout.measureNodes.add(layoutNode);
 				layout.anonymousBoxes.set(layoutNode, entry);
 				layoutNode.owner = entry.head;
@@ -2761,32 +2756,25 @@ function addElementNode(
 		return;
 	} else if (isReplacedBox(element)) {
 		layoutNode.measuresText = false;
-		layoutNode.measure = recordReads(layout, layoutNode, (width, widthSpace) =>
-			measureReplaced(element, width, widthSpace),
-		);
+		setMeasure(layoutNode, {layout, kind: "replaced", element});
 		layout.measureNodes.add(layoutNode);
 		if (parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
 		return;
 	} else if (isMathRoot(element)) {
-		layoutNode.measure = recordReads(layout, layoutNode, () => {
-			const box = measureMath(layout, element);
-			return {width: box.width, height: box.height};
-		});
+		setMeasure(layoutNode, {layout, kind: "math", element});
 		layout.measureNodes.add(layoutNode);
 		if (parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
 		return;
 	} else if (asRun) {
-		const box = getPrincipalBox(layout, element);
-		layoutNode.measure = recordReads(
+		setMeasure(layoutNode, {
 			layout,
-			layoutNode,
-			(width, widthSpace, placing, left) =>
-				measureInlineRun(layout, box, width, widthSpace, placing, left),
-		);
+			kind: "run",
+			box: getPrincipalBox(layout, element),
+		});
 		layout.measureNodes.add(layoutNode);
 
 		if (layoutNode && parentLayoutNode) {
@@ -2868,13 +2856,11 @@ function addTextNode(
 		trackNode(layout, text, layoutNode);
 	}
 
-	const own = getPrincipalBox(layout, text);
-	layoutNode.measure = recordReads(
+	setMeasure(layoutNode, {
 		layout,
-		layoutNode,
-		(width, widthSpace, placing, left) =>
-			measureInlineRun(layout, own, width, widthSpace, placing, left),
-	);
+		kind: "run",
+		box: getPrincipalBox(layout, text),
+	});
 	layout.measureNodes.add(layoutNode);
 
 	insertChild(parentLayoutNode, layoutNode, parentLayoutNode.children.length);
@@ -8356,46 +8342,86 @@ function removeMeasureReader(element: Element, node: LayoutNode): void {
 	}
 }
 
-// The readers are registered once the measure has returned, and only
-// while the layout still measures the box: a measure can drop its own box
-// on the way, and a reader dropped would be held by every element it read.
-function recordReads(
-	layout: Layout,
-	node: LayoutNode,
-	measure: Measure,
-): Measure {
-	return (width, widthSpace, placing, left) => {
-		const contextLayoutsBefore = contextLayouts;
-		const reads: Array<Element | string> = [];
-		// Reads come in runs on one element, and a run reads few
-		// properties, so a read is looked for only in its own run.
-		let runStart = 0;
-		const size = recordStyleReads((element, read, value) => {
-			if (reads[runStart] !== element) {
-				runStart = reads.length;
-			}
-			for (let i = runStart; i < reads.length; i += 3) {
-				if (reads[i + 1] === read) {
-					reads[i + 2] = value;
-					return;
-				}
-			}
-			reads.push(element, read, value);
-		}, () => measure(width, widthSpace, placing, left));
-		if (!placing && contextLayouts !== contextLayoutsBefore) {
-			node.hasCachedLayout = false;
+// What a node measures: a run's lines, a replaced element or a math root.
+type MeasureSubject =
+	{layout: Layout; kind: "run"; box: Box} |
+	{layout: Layout; kind: "replaced" | "math"; element: Element};
+
+function setMeasure(node: LayoutNode, subject: MeasureSubject): void {
+	node.measureSubject = subject;
+	node.measure = measureNode as unknown as Measure;
+}
+
+function measureSubject(
+	subject: MeasureSubject,
+	width: number,
+	widthSpace: AvailableSpace,
+	placing: boolean,
+	left: number,
+): Size {
+	switch (subject.kind) {
+		case "run":
+			return measureInlineRun(
+				subject.layout,
+				subject.box,
+				width,
+				widthSpace,
+				placing,
+				left,
+			);
+		case "replaced":
+			return measureReplaced(subject.element, width, widthSpace);
+		case "math": {
+			const box = measureMath(subject.layout, subject.element);
+			return {width: box.width, height: box.height};
 		}
-		forgetReads(node);
-		if (layout.measureNodes.has(node)) {
-			for (let i = 0; i < reads.length; i += 3) {
-				if (reads[i] !== reads[i - 3]) {
-					addMeasureReader(reads[i] as Element, node);
-				}
-			}
-			measureReads.set(node, fitToLength(reads));
+	}
+}
+
+// Every node's measure, called on the node. The readers are registered
+// once the measure has returned, and only while the layout still measures
+// the box: a measure can drop its own box on the way, and a reader dropped
+// would be held by every element it read.
+function measureNode(
+	this: LayoutNode,
+	width: number,
+	widthSpace: AvailableSpace,
+	placing: boolean,
+	left: number,
+): Size {
+	const node = this;
+	const subject = node.measureSubject as MeasureSubject;
+	const layout = subject.layout;
+	const contextLayoutsBefore = contextLayouts;
+	const reads: Array<Element | string> = [];
+	// Reads come in runs on one element, and a run reads few
+	// properties, so a read is looked for only in its own run.
+	let runStart = 0;
+	const size = recordStyleReads((element, read, value) => {
+		if (reads[runStart] !== element) {
+			runStart = reads.length;
 		}
-		return size;
-	};
+		for (let i = runStart; i < reads.length; i += 3) {
+			if (reads[i + 1] === read) {
+				reads[i + 2] = value;
+				return;
+			}
+		}
+		reads.push(element, read, value);
+	}, () => measureSubject(subject, width, widthSpace, placing, left));
+	if (!placing && contextLayouts !== contextLayoutsBefore) {
+		node.hasCachedLayout = false;
+	}
+	forgetReads(node);
+	if (layout.measureNodes.has(node)) {
+		for (let i = 0; i < reads.length; i += 3) {
+			if (reads[i] !== reads[i - 3]) {
+				addMeasureReader(reads[i] as Element, node);
+			}
+		}
+		measureReads.set(node, fitToLength(reads));
+	}
+	return size;
 }
 
 // A box that leaves takes its reads with it, so no element it read keeps
