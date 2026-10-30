@@ -4856,12 +4856,11 @@ interface ComputedStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	// memoized for this element alone, so the shared ones follow from the
 	// parent's inherited values: display, blockified inside a flex or grid
 	// container, and flex-basis, whose lengths run along the container.
-	own: Map<string, string>;
-	// Replaced whenever ComputedStyleDeclaration declaration is resolved again. What the
-	// painter keys its styles by, since the resolved values themselves may
-	// be shared, and a restyle that finds the same shared values still asks
+	// Made anew whenever the declaration is resolved again, so it is also
+	// what the painter keys its styles by: the resolved values may be
+	// shared, and a restyle that finds the same shared values still asks
 	// for the paint style to be derived again.
-	styleVersion: object;
+	own: Map<string, string>;
 	custom: string[] | null;
 	_usedValue: Step<ComputedStyleDeclaration["_usedValue"]>;
 	_baseValue: Step<ComputedStyleDeclaration["_baseValue"]>;
@@ -4884,7 +4883,6 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		slots.cascade = null;
 		slots.resolved = new Map<string, string>();
 		slots.own = new Map<string, string>();
-		slots.styleVersion = {};
 		slots.custom = null;
 		slots.element = element;
 		slots.cssRules = cssRules;
@@ -5053,7 +5051,6 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			slots.cssRules,
 		);
 		slots.own = new Map();
-		slots.styleVersion = {};
 		dropUsedValues(slots.cascade, getOwner(this));
 		if ((this as IndexedSlots).indexCount !== undefined) {
 			syncIndexed(getOwner(this));
@@ -7297,7 +7294,7 @@ export class Cascade {
 		if (!this.currentDeclarations.has(declarationSlots)) {
 			declarationSlots._syncResolved();
 		}
-		return declarationSlots.styleVersion;
+		return declarationSlots.own;
 	}
 
 	syncStylesheets(): void {
@@ -10057,7 +10054,7 @@ function recordRestyle(
 	if (!cascade.layout.restyledForPaint.has(element)) {
 		cascade.layout.restyledForPaint.set(
 			element,
-			dropped && !hadPseudoStyles ? dropped.styleVersion : null,
+			dropped && !hadPseudoStyles ? dropped.own : null,
 		);
 	}
 }
