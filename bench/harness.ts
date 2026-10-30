@@ -4,7 +4,7 @@
  * checkouts, and prints one JSON line per measurement.
  */
 import {spawn} from "node:child_process";
-import {readFileSync} from "node:fs";
+import {readFileSync, writeFileSync} from "node:fs";
 import {availableParallelism} from "node:os";
 
 export const root = process.argv[2];
@@ -64,16 +64,58 @@ export function silence(proc: any): void {
 	};
 }
 
-// With --allocated, a scenario runs under Bun with its collector off, so
-// nothing allocated is freed, and a measurement is the memory its steps
-// committed, in KB a step: what each would leave a collector to do.
-// Times a scenario reports itself mean nothing then and are skipped.
+// With --allocated, a measurement is the memory its steps allocated, in
+// KB a step, collected or not: what each leaves a collector to do. V8's
+// sampling heap profiler counts it, and with a profile directory the
+// profile is kept, to say which functions allocated it. Times a scenario
+// reports itself mean nothing then and are skipped.
 const allocatedMode = process.env.TERMDOM_BENCH_MEASURE === "allocated";
-const jsc = allocatedMode
-	? await import("bun:jsc" as string) as {
-		memoryUsage(): {currentCommit: number};
-	}
+const profileDirectory = process.env.TERMDOM_BENCH_PROFILE_DIR;
+const inspector = allocatedMode
+	? new (await import("node:inspector/promises")).Session()
 	: null;
+inspector?.connect();
+await inspector?.post("HeapProfiler.enable");
+
+interface SampledNode {
+	selfSize: number;
+	children: SampledNode[];
+}
+
+function sampledBytes(node: SampledNode): number {
+	let bytes = node.selfSize;
+	for (const child of node.children) {
+		bytes += sampledBytes(child);
+	}
+	return bytes;
+}
+
+async function measureAllocated(
+	label: string,
+	steps: number,
+	step: (i: number) => Promise<void> | void,
+	warm: number,
+): Promise<void> {
+	await inspector!.post("HeapProfiler.startSampling", {
+		samplingInterval: 1024,
+		includeObjectsCollectedByMajorGC: true,
+		includeObjectsCollectedByMinorGC: true,
+	});
+	for (let i = warm; i < warm + steps; i++) {
+		await step(i);
+	}
+	const {profile} = await inspector!.post("HeapProfiler.stopSampling");
+	const median =
+		sampledBytes(profile.head as unknown as SampledNode) / steps / 1024;
+	console.log(JSON.stringify({label, median}));
+	if (profileDirectory !== undefined) {
+		const name = label.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
+		writeFileSync(
+			`${profileDirectory}/${name}.heapprofile`,
+			JSON.stringify(profile),
+		);
+	}
+}
 
 /** CPU time, so the time a frame waits for its turn is not counted. */
 export function cpuMs(): number {
@@ -99,15 +141,8 @@ export async function measure(
 	for (let i = 0; i < warm; i++) {
 		await step(i);
 	}
-	if (jsc !== null) {
-		// Committed memory moves a page at a time, so the steps are taken
-		// together.
-		const before = jsc.memoryUsage().currentCommit;
-		for (let i = warm; i < warm + steps; i++) {
-			await step(i);
-		}
-		const median = (jsc.memoryUsage().currentCommit - before) / steps / 1024;
-		console.log(JSON.stringify({label, median}));
+	if (inspector !== null) {
+		await measureAllocated(label, steps, step, warm);
 		return;
 	}
 	const times: number[] = [];

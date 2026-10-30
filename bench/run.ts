@@ -3,21 +3,28 @@
  * and prints the median CPU time of each measurement.
  *
  *   node bench/run.ts [--runs N] [--only a,b] [--against REF] [--markdown]
- *     [--allocated]
+ *     [--allocated [--profile-dir DIR]]
  *
  * --against checks REF out into a temporary worktree and runs the same
  * scenarios against it, alternating with this checkout, so both sides
  * share whatever the machine was doing.
  *
- * --allocated runs the scenarios under Bun with its collector off and
- * reports the KB each step allocates, where CPU time is reported
- * otherwise. Under load, collecting what a step left behind is the cost
- * that grows: a heap swapped out comes back in to be collected.
+ * --allocated reports the KB each step allocates, collected or not, where
+ * CPU time is reported otherwise. Under load, collecting what a step left
+ * behind is the cost that grows: a heap swapped out comes back in to be
+ * collected. --profile-dir keeps each measurement's heap profile, which
+ * names the functions that allocated it.
  */
 import {spawnSync} from "node:child_process";
-import {mkdtempSync, readdirSync, rmSync, symlinkSync} from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	rmSync,
+	symlinkSync,
+} from "node:fs";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {basename, join} from "node:path";
 
 const benchRoot = new URL("..", import.meta.url).pathname;
 const scenarioDirectory = new URL("scenarios/", import.meta.url).pathname;
@@ -32,6 +39,7 @@ const only = option("--only")?.split(",");
 const against = option("--against");
 const markdown = process.argv.includes("--markdown");
 const allocated = process.argv.includes("--allocated");
+const profileDirectory = option("--profile-dir");
 
 const scenarios = readdirSync(scenarioDirectory)
 	.filter((name) => name.endsWith(".ts"))
@@ -46,13 +54,16 @@ function git(...args: string[]): void {
 }
 
 function runScenario(name: string, root: string): Map<string, number> {
+	// Each checkout's profiles apart, under the name of its directory.
+	const profiles = profileDirectory === undefined
+		? undefined
+		: join(profileDirectory, basename(root));
+	if (profiles !== undefined) {
+		mkdirSync(profiles, {recursive: true});
+	}
 	const result = spawnSync(
-		allocated ? "bun" : process.execPath,
-		[
-			...(allocated ? [] : process.execArgv),
-			join(scenarioDirectory, `${name}.ts`),
-			root,
-		],
+		process.execPath,
+		[...process.execArgv, join(scenarioDirectory, `${name}.ts`), root],
 		{
 			cwd: root,
 			encoding: "utf8",
@@ -61,8 +72,10 @@ function runScenario(name: string, root: string): Map<string, number> {
 			env: allocated
 				? {
 					...process.env,
-					BUN_JSC_useGC: "false",
 					TERMDOM_BENCH_MEASURE: "allocated",
+					...(profiles === undefined
+						? {}
+						: {TERMDOM_BENCH_PROFILE_DIR: profiles}),
 				}
 				: process.env,
 		},
