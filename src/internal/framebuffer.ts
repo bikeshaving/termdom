@@ -2495,6 +2495,20 @@ export function beginFrame(
 			moveRange(prev, start + shift, start, stop - shift);
 			clearRange(prev, start, start + shift);
 		}
+		// The joined borders shift with the cells, for a frame that paints
+		// only what the shift exposed.
+		const borders = framebuffer.prevBorders;
+		if (borders !== null && stop <= borders.length) {
+			if (shift >= stop - start) {
+				borders.fill(0, start, stop);
+			} else if (delta > 0) {
+				borders.copyWithin(start, start + shift, stop);
+				borders.fill(0, stop - shift, stop);
+			} else {
+				borders.copyWithin(start + shift, start, stop - shift);
+				borders.fill(0, start, start + shift);
+			}
+		}
 		const shiftedLines = new Set<number>();
 		for (const row of framebuffer.renderedLines) {
 			if (row < viewportTop || row >= bandEnd) {
@@ -2529,8 +2543,9 @@ export function beginFrame(
 		framebuffer.prev !== null &&
 		prevBorders !== null &&
 		prevFrame !== null &&
-		!scrolling &&
-		delta === 0 &&
+		// A box's shift the terminal performed leaves the rest as it was,
+		// which a frame given bands paints over.
+		(delta === 0 ? !scrolling : scrolling && shift !== undefined) &&
 		!overflowing &&
 		framebuffer.prev.rows === frameRows &&
 		framebuffer.prev.cols === cols &&
