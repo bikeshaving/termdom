@@ -7158,6 +7158,17 @@ export function handleMutations(
 	let sheetsMoved = false;
 	let removedElements = false;
 	const changedParents = new Set<Element>();
+	// Every record describes the tree as the batch left it, so a subtree
+	// invalidated once is not walked again for a later record, as a page
+	// setting hundreds of custom properties on <html> one at a time sent
+	// a record for each.
+	const invalidated = new Map<Element, boolean>();
+	const invalidateOnce = (element: Element, notifyLayout = true): void => {
+		if (!isInvalidatedUnder(invalidated, element, notifyLayout)) {
+			invalidated.set(element, notifyLayout);
+			invalidateSubtree(cascade, element, notifyLayout);
+		}
+	};
 
 	// A :has() anchor sits above what changed it, or before it among its
 	// siblings for :has(+ x) and :has(~ x), and the rule can style the
@@ -7183,7 +7194,7 @@ export function handleMutations(
 				) {
 					if (!anchors.has(element) && couldAnchorHas(cascade, element)) {
 						anchors.add(element);
-						invalidateSubtree(cascade, element);
+						invalidateOnce(element);
 					}
 				}
 			}
@@ -7308,20 +7319,27 @@ export function handleMutations(
 			// A change to keys whose rules declare only paint properties
 			// leaves every box where it was. The styles are dropped so the
 			// next read resolves them, and layout is not told.
-			const notifyLayout = !isPaintOnlyChange(
-				cascade,
-				element,
-				mutation.attributeName!,
-				mutation.oldValue,
-			);
+			// Under a subtree the batch has already restyled and told layout
+			// of, there is nothing left to work out.
+			const covered = isInvalidatedUnder(invalidated, element, true);
+			const notifyLayout =
+				covered ||
+				!isPaintOnlyChange(
+					cascade,
+					element,
+					mutation.attributeName!,
+					mutation.oldValue,
+				);
 			// Only a change the sheets USE that way reaches descendants.
 			// When no rule tests the class outside its own subject and none
 			// declares an inherited property, descendant styles are
 			// unchanged.
-			const subjects = mutation.attributeName === "class"
+			const subjects = !covered && mutation.attributeName === "class"
 				? classChangeSubjects(cascade, element, mutation.oldValue)
 				: null;
-			if (subjects !== null) {
+			if (covered) {
+				// Restyled with the subtree it is in.
+			} else if (subjects !== null) {
 				invalidateElementCaches(cascade, element, notifyLayout);
 				attachPseudoElementsToElement(cascade, element);
 				if (subjects.length > 0) {
@@ -7353,7 +7371,7 @@ export function handleMutations(
 					mutation.oldValue,
 				)
 			) {
-				invalidateSubtree(cascade, element, notifyLayout);
+				invalidateOnce(element, notifyLayout);
 			} else {
 				invalidateElementCaches(cascade, element, notifyLayout);
 				attachPseudoElementsToElement(cascade, element);
@@ -9629,6 +9647,31 @@ function mayChangePseudoElements(rule: ParsedCSSRule): boolean {
 		declarations.display !== undefined ||
 		declarations["list-style-position"] !== undefined ||
 		declarations.all !== undefined;
+}
+
+// Whether a batch already invalidated the element's subtree, as itself
+// or under an ancestor, with layout told when this asks for that. The
+// walk up is the one invalidateSubtree walks down: parents, and from a
+// shadow root to its host.
+function isInvalidatedUnder(
+	invalidated: Map<Element, boolean>,
+	element: Element,
+	notifyLayout: boolean,
+): boolean {
+	if (invalidated.size === 0) {
+		return false;
+	}
+	for (let at: Element | null = element; at !== null;) {
+		const notified = invalidated.get(at);
+		if (notified !== undefined && (notified || !notifyLayout)) {
+			return true;
+		}
+		const parent: Node | null = at.parentNode;
+		at = parent !== null && isShadowRoot(parent)
+			? parent.host as Element
+			: at.parentElement as Element | null;
+	}
+	return false;
 }
 
 // Descendants and the hosted shadow tree too, since inheritance crosses
