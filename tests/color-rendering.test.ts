@@ -526,13 +526,21 @@ function backgroundAt(terminal: MockProcess, row: number, col: number): number {
 	return cell.isBgRGB() ? cell.getBgColor() : -1;
 }
 
+// Each canvas test runs at the top of the screen, and again under two
+// rows a shell wrote, where the page is drawn in the flow below them and
+// its fill must stop at the screen's bottom row.
 async function mountPage(
 	css: string,
 	body = "<p>hi</p>",
+	above = 0,
 ): Promise<{dom: TermDOM; terminal: MockProcess}> {
 	const terminal = new MockProcess({cols: 20, rows: 6});
+	if (above > 0) {
+		(terminal as any).terminal.write("$ shell\r\n".repeat(above));
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
 	const dom = new TermDOM({
-		transport: terminal.transport,
+		transport: above > 0 ? terminal.sharedTransport : terminal.transport,
 		colorDepth: "rgb",
 		html:
 			`<!DOCTYPE html><html><head><style>${css}</style></head>` +
@@ -543,50 +551,77 @@ async function mountPage(
 	return {dom, terminal};
 }
 
-test("the root's background fills the whole screen, past its content", async () => {
-	const {dom, terminal} = await mountPage("html{background:#ff0000}");
-	expect(backgroundAt(terminal, 0, 19)).toBe(0xff0000);
-	expect(backgroundAt(terminal, 5, 0)).toBe(0xff0000);
-	dom.dispose();
-});
+for (const above of [0, 2]) {
+	const where = above === 0 ? "" : ", under a prompt";
+	// The page's first row, and the screen's last.
+	const top = above;
+	const bottom = 5;
 
-test("a body's background fills the screen when the root has none", async () => {
-	const {dom, terminal} =
-		await mountPage("body{background:#0000ff;margin:2ch;height:2px}");
-	expect(backgroundAt(terminal, 0, 0)).toBe(0x0000ff);
-	expect(backgroundAt(terminal, 5, 19)).toBe(0x0000ff);
-	dom.dispose();
-});
+	test(`the root's background fills the whole screen, past its content${where}`, async () => {
+		const {dom, terminal} = await mountPage(
+			"html{background:#ff0000}",
+			undefined,
+			above,
+		);
+		expect(backgroundAt(terminal, top, 19)).toBe(0xff0000);
+		expect(backgroundAt(terminal, bottom, 0)).toBe(0xff0000);
+		if (above > 0) {
+			expect(backgroundAt(terminal, top - 1, 0)).toBe(-1);
+		}
+		dom.dispose();
+	});
 
-test("with both set, the root fills the screen and the body its own box", async () => {
-	const {dom, terminal} = await mountPage(
-		"html{background:#ff0000} body{background:#0000ff;margin:0}",
-	);
-	expect(backgroundAt(terminal, 0, 0)).toBe(0x0000ff);
-	expect(backgroundAt(terminal, 5, 0)).toBe(0xff0000);
-	dom.dispose();
-});
+	test(`a body's background fills the screen when the root has none${where}`, async () => {
+		const {dom, terminal} = await mountPage(
+			"body{background:#0000ff;margin:2ch;height:2px}",
+			undefined,
+			above,
+		);
+		expect(backgroundAt(terminal, top, 0)).toBe(0x0000ff);
+		expect(backgroundAt(terminal, bottom, 19)).toBe(0x0000ff);
+		dom.dispose();
+	});
 
-test("a body that changes its background repaints the whole screen", async () => {
-	const {dom, terminal} = await mountPage("body{background:#0000ff}");
-	expect(backgroundAt(terminal, 5, 10)).toBe(0x0000ff);
-	dom.document.body.style.background = "#00ff00";
-	await nextFrame(dom);
-	expect(backgroundAt(terminal, 0, 0)).toBe(0x00ff00);
-	expect(backgroundAt(terminal, 5, 10)).toBe(0x00ff00);
-	dom.document.body.style.background = "transparent";
-	await nextFrame(dom);
-	expect(backgroundAt(terminal, 5, 10)).toBe(-1);
-	dom.dispose();
-});
+	test(`with both set, the root fills the screen and the body its own box${where}`, async () => {
+		const {dom, terminal} = await mountPage(
+			"html{background:#ff0000} body{background:#0000ff;margin:0}",
+			undefined,
+			above,
+		);
+		expect(backgroundAt(terminal, top, 0)).toBe(0x0000ff);
+		expect(backgroundAt(terminal, bottom, 0)).toBe(0xff0000);
+		dom.dispose();
+	});
 
-test("a translucent body background is blended once, not twice", async () => {
-	const {dom, terminal} = await mountPage(
-		"html{background:transparent} body{background:rgb(0 0 255 / 50%)}",
-	);
-	expect(backgroundAt(terminal, 0, 0)).toBe(backgroundAt(terminal, 5, 0));
-	dom.dispose();
-});
+	test(`a body that changes its background repaints the whole screen${where}`, async () => {
+		const {dom, terminal} = await mountPage(
+			"body{background:#0000ff}",
+			undefined,
+			above,
+		);
+		expect(backgroundAt(terminal, bottom, 10)).toBe(0x0000ff);
+		dom.document.body.style.background = "#00ff00";
+		await nextFrame(dom);
+		expect(backgroundAt(terminal, top, 0)).toBe(0x00ff00);
+		expect(backgroundAt(terminal, bottom, 10)).toBe(0x00ff00);
+		dom.document.body.style.background = "transparent";
+		await nextFrame(dom);
+		expect(backgroundAt(terminal, bottom, 10)).toBe(-1);
+		dom.dispose();
+	});
+
+	test(`a translucent body background is blended once, not twice${where}`, async () => {
+		const {dom, terminal} = await mountPage(
+			"html{background:transparent} body{background:rgb(0 0 255 / 50%)}",
+			undefined,
+			above,
+		);
+		expect(backgroundAt(terminal, top, 0)).toBe(
+			backgroundAt(terminal, bottom, 0),
+		);
+		dom.dispose();
+	});
+}
 
 test("a filled page under a prompt fills to the bottom row without scrolling, and redraws in place", async () => {
 	const terminal = new MockProcess({cols: 20, rows: 8});
