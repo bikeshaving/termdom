@@ -1408,7 +1408,7 @@ function paintCaret(
 	const focus = record.direction === "backward" ? record.start : record.end;
 	const node = getTextControlValueText(element) ?? getGlyphText(element);
 	let caret: {x: number; y: number} | null = null;
-	if (node) {
+	if (node && node.data.length > 0) {
 		const range = element.ownerDocument.createRange();
 		range.setStart(node, Math.min(focus, node.data.length));
 		range.collapse(true);
@@ -1417,10 +1417,18 @@ function paintCaret(
 			caret = {x: Math.round(rects[0].x), y: Math.round(rects[0].y)};
 		}
 	}
+	// An empty field's caret is where its line would start, so a centered
+	// field's sits in the middle, as its text will. The last column holds
+	// it at the end edge, since it can't stand past the box.
 	if (caret === null) {
 		const content = painter.layout.contentRect(element);
 		if (content) {
-			caret = {x: Math.round(content.x), y: Math.round(content.y)};
+			const width = Math.round(content.width);
+			const offset = Math.min(
+				getLineAlignOffset(element, width, 0),
+				Math.max(0, width - 1),
+			);
+			caret = {x: Math.round(content.x) + offset, y: Math.round(content.y)};
 		}
 	}
 	if (caret !== null) {

@@ -540,3 +540,32 @@ test("a field doesn't inherit its parent's text-align, as HTML's rendering rules
 		.toEqual(["start", "start", "start", "center", "start"]);
 	dom.dispose();
 });
+
+test("an empty field's cursor stands where its aligned text will start", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+	document.body.innerHTML =
+		"<style>body { margin: 0; } input { width: 20px; border: 0; padding: 0; }</style>" +
+		"<input id=center style=\"text-align: center\"><br>" +
+		"<input id=right style=\"text-align: right\"><p>below</p>";
+	const buffer = (terminal as any).terminal.buffer.active;
+	const cursor = async (id: string) => {
+		(document.getElementById(id) as HTMLInputElement).focus();
+		await nextFrame(dom);
+		await nextFrame(dom);
+		return [buffer.cursorX, buffer.cursorY];
+	};
+	expect(await cursor("center")).toEqual([10, 0]);
+	expect(await cursor("right")).toEqual([19, 1]);
+	const center = document.getElementById("center") as HTMLInputElement;
+	center.focus();
+	await type(terminal, "ab");
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(center.value).toBe("ab");
+	expect([buffer.cursorX, buffer.cursorY]).toEqual([11, 0]);
+	dom.dispose();
+});
