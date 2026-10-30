@@ -574,6 +574,82 @@ export function resolveScrollShift(
 }
 
 /**
+ * Whether a frame can paint only the rows a box's scroll exposed, and
+ * those that changed, the rest carried by the shift: the shift spans the
+ * width, and nothing over the shifted rows stays put while the box's
+ * content moves. A background drawn as a gradient stays put too.
+ */
+export function scrollShiftCarriesPaint(
+	painter: Painter,
+	element: Element,
+	shift: {top: number; end: number},
+): boolean {
+	const layout = painter.layout;
+	const framebuffer = painter.framebuffer;
+	if (renderedTopLayer(painter.document).length > 0) {
+		return false;
+	}
+	const rect = layout.getRect(element);
+	if (rect === null) {
+		return false;
+	}
+	const border = getCellBorderWidths(element);
+	if (
+		rect.left + border.left > 0 ||
+		rect.left + rect.width - border.right < framebuffer.cols
+	) {
+		return false;
+	}
+	const around = new Set<Element>();
+	for (
+		let box: Element | null = element;
+		box !== null;
+		box = flatParentElement(box)
+	) {
+		if (getPaintStyle(painter, box).gradient !== null) {
+			return false;
+		}
+		around.add(box);
+	}
+	for (const positioned of layout.positionedElements) {
+		if (around.has(positioned) || !positioned.isConnected) {
+			continue;
+		}
+		let inside = false;
+		for (
+			let box = flatParentElement(positioned);
+			box !== null;
+			box = flatParentElement(box)
+		) {
+			if (box === element) {
+				inside = true;
+				break;
+			}
+		}
+		if (inside) {
+			// What is positioned in the box moves with its content, unless it
+			// sticks or is placed against something outside it.
+			const position = getComputedValue(positioned, "position");
+			if (position === "relative" || position === "static") {
+				continue;
+			}
+			return false;
+		}
+		const box = layout.getRect(positioned);
+		if (box === null) {
+			continue;
+		}
+		const lift = layout.isInFixedSpace(positioned) ? 0 : framebuffer.scrollTop;
+		const top = Math.round(box.top) - lift;
+		const bottom = Math.round(box.top + box.height) - lift;
+		if (bottom > shift.top && top < shift.end) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
  * The rows a document scroll shifts: the region, less the full-width
  * fixed bars at its top and bottom edges, which stay where they are on
  * screen. Null when no bar trims it.
@@ -1694,6 +1770,25 @@ function paintAtomic(
 	paintOutline(element, style, rect, ctx);
 }
 
+// Most nodes in a run are not moved by relative positioning, and share
+// this.
+const NO_SHIFT: Origin = Object.freeze({x: 0, y: 0});
+
+// The text a line spans, by node, cleared for each line and after the
+// last, so it holds no node past the run. A run resolves its lines one at
+// a time and never inside another's.
+const lineTextSpans = new Map<
+	Text,
+	{
+		left: number;
+		right: number;
+		column: number;
+		start: number;
+		end: number;
+		visualBase: "ltr" | "rtl" | null;
+	}
+>();
+
 function resolveRun(
 	painter: Painter,
 	lines: BreakResult,
@@ -1711,7 +1806,8 @@ function resolveRun(
 	const getShift = (node: Node): Origin => {
 		let shift = shifts.get(node);
 		if (shift === undefined) {
-			shift = {x: 0, y: 0};
+			let x = 0;
+			let y = 0;
 			for (
 				let ancestor = getNodeType(node) === node.ELEMENT_NODE
 					? (node as Element)
@@ -1720,9 +1816,10 @@ function resolveRun(
 				ancestor = flatParentElement(ancestor)
 			) {
 				const style = getPaintStyle(painter, ancestor);
-				shift.x += style.shiftX;
-				shift.y += style.shiftY;
+				x += style.shiftX;
+				y += style.shiftY;
 			}
+			shift = x === 0 && y === 0 ? NO_SHIFT : {x, y};
 			shifts.set(node, shift);
 		}
 		return shift;
@@ -1741,17 +1838,8 @@ function resolveRun(
 		);
 		const lineX = origin.x + alignOffset + indent;
 		const lineY = origin.y + line.y;
-		const textSpans = new Map<
-			Text,
-			{
-				left: number;
-				right: number;
-				column: number;
-				start: number;
-				end: number;
-				visualBase: "ltr" | "rtl" | null;
-			}
-		>();
+		const textSpans = lineTextSpans;
+		textSpans.clear();
 		for (const segment of line.segments) {
 			const {leaf} = segment;
 			if (leaf.type === "text") {
@@ -1823,6 +1911,7 @@ function resolveRun(
 			coverAncestors(boxLines, textNode, container, lineY, rect);
 		}
 	}
+	lineTextSpans.clear();
 	for (const [element, byLine] of boxLines) {
 		run.boxes.set(element, [...byLine.values()]);
 	}

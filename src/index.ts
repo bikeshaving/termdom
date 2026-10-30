@@ -120,6 +120,7 @@ import {
 	partialFrameCheck,
 	resolveDocumentScrollBand,
 	resolveScrollShift,
+	scrollShiftCarriesPaint,
 } from "./internal/painter.ts";
 import {findSpawner, type PTYSpawner} from "./internal/pty.ts";
 import {
@@ -1809,6 +1810,36 @@ function renderStatic(termDOM: TermDOM, lineEnding: "\n" | "\r\n"): string {
  * anchor. Needing more rows scrolls earlier output into the
  * scrollback. Nothing on screen before us is painted over.
  */
+// The rows a frame paints over the last one, or undefined for all of them.
+// A box scrolled moves rows no box reports, so after one the frame paints
+// all, unless the terminal shifted the box's rows and nothing over them
+// stays put: then the rows the shift exposed are all it adds.
+function chooseBands(
+	termDOM: TermDOM,
+	damage: Array<[number, number]> | undefined,
+	journalled: {element: Element; delta: number} | null,
+	boxShift: {delta: number; top: number; end: number} | null,
+): Array<[number, number]> | undefined {
+	const termDOMSlots = _(termDOM);
+	if (termDOMSlots.framebuffer.wholeDamage || damage === undefined) {
+		return undefined;
+	}
+	if (journalled === null) {
+		return termDOMSlots.framebuffer.journal.frameScroll === 0 ||
+				isFullscreen(termDOM)
+			? damage
+			: undefined;
+	}
+	if (
+		boxShift === null ||
+		!scrollShiftCarriesPaint(termDOMSlots.painter, journalled.element, boxShift)
+	) {
+		return undefined;
+	}
+	const {delta, top, end} = boxShift;
+	return [...damage, delta > 0 ? [end - delta, end] : [top, top - delta]];
+}
+
 async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// close() sealed the previous document. Start a fresh one below it.
 	const termDOMSlots = _(termDOM);
@@ -1921,8 +1952,13 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 
 	// The document scroll has nothing to move in fullscreen. A scroll box
 	// inside it still does, under DECSTBM margins.
+	const boxShift = resolveScrollShift(
+		termDOMSlots.painter,
+		regionHeight,
+		journalled,
+	);
 	const shift =
-		resolveScrollShift(termDOMSlots.painter, regionHeight, journalled) ??
+		boxShift ??
 		(fullscreen || termDOMSlots.framebuffer.journal.frameScroll === 0
 			? null
 			: resolveDocumentScrollBand(
@@ -1943,10 +1979,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		regionRows: top + regionHeight,
 		delta: shift ? shift.delta : fullscreen ? 0 : clamped.frameScroll,
 		shift: shift ?? undefined,
-		// A box scrolled moves rows no box reports.
-		bands: termDOMSlots.framebuffer.wholeDamage || journalled !== null
-			? undefined
-			: damage,
+		bands: chooseBands(termDOM, damage, journalled, boxShift),
 	});
 	// Drawn in the flow under what came before it, the page fills to the
 	// screen's bottom row and no further: a full screen of rows from its
