@@ -222,14 +222,6 @@ export function getPresentationalHints(element: Element): Hints | null {
 		element.getAttribute(attribute);
 	const hints: Hints = Object.create(null);
 
-	if (
-		name === "noscript" &&
-		element.ownerDocument !== null &&
-		isScriptedDocument(element.ownerDocument)
-	) {
-		hints.display = "none";
-	}
-
 	if (TABLE_PARTS.has(name) || name === "body") {
 		setColor(hints, "background-color", get("bgcolor"));
 	}

@@ -12,6 +12,7 @@ export const UA_ELEMENT_STYLES = `
 	script { display: none; }
 	style { display: none; }
 	title { display: none; }
+	@media (scripting: enabled) { noscript { display: none !important; } }
 	article { display: block; }
 	aside { display: block; }
 	blockquote { display: block; border-left: 1px solid; padding-left: 1ch; }
