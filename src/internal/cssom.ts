@@ -410,10 +410,7 @@ function readStyleGroup<T extends object>(
 	const document = getOwnerDocument(element);
 	const cascade = document ? documentCascades.get(document) : undefined;
 	if (cascade === undefined || cascade.getStyleKey(element) === null) {
-		return internGroup(
-			group,
-			recordStyleReads(() => {}, () => group.read(element)),
-		);
+		return readUnsharedGroup(element, group);
 	}
 	const values = computedSlotsFor(cascade, element).resolved;
 	let cache = groupCaches.get(values);
@@ -423,26 +420,45 @@ function readStyleGroup<T extends object>(
 	}
 	let value = cache.get(group as StyleGroup<object>) as T | undefined;
 	if (value === undefined) {
-		const depth = valueDepth;
-		value = internGroup(
-			group,
-			// What resolving the element's values reads, of its parent or of
-			// its children, is theirs to read. The group's own reads are the
-			// element's.
-			recordStyleReads((reader, read) => {
-				if (
-					valueDepth === depth &&
-					reader === element &&
-					!read.startsWith(GROUP_READ) &&
-					(read.includes("|") || isOwnProperty(read))
-				) {
-					throw new Error(`The ${group.name} group read ${read}, not shared`);
-				}
-			}, () => group.read(element)),
-		);
+		value = readSharedGroup(element, group);
 		cache.set(group as StyleGroup<object>, value);
 	}
 	return value;
+}
+
+function readUnsharedGroup<T extends object>(
+	element: Element,
+	group: StyleGroup<T>,
+): T {
+	return internGroup(
+		group,
+		recordStyleReads(() => {}, () => group.read(element)),
+	);
+}
+
+// Apart from readStyleGroup's lookups, which run for every group read: the
+// closures here would otherwise make each call allocate a scope for them.
+function readSharedGroup<T extends object>(
+	element: Element,
+	group: StyleGroup<T>,
+): T {
+	const depth = valueDepth;
+	return internGroup(
+		group,
+		// What resolving the element's values reads, of its parent or of its
+		// children, is theirs to read. The group's own reads are the
+		// element's.
+		recordStyleReads((reader, read) => {
+			if (
+				valueDepth === depth &&
+				reader === element &&
+				!read.startsWith(GROUP_READ) &&
+				(read.includes("|") || isOwnProperty(read))
+			) {
+				throw new Error(`The ${group.name} group read ${read}, not shared`);
+			}
+		}, () => group.read(element)),
+	);
 }
 
 // Fields alike when they serialize alike, with NaN, the infinities and
@@ -4986,24 +5002,10 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 	// the after-change style. An interpolated value moves every frame and
 	// must never enter the memo.
 	_baseValue(this: Slots<ComputedStyleDeclaration>, property: string): string {
-		const slots = this;
-		const values = isOwnProperty(property) ? slots.own : slots.resolved;
+		const values = isOwnProperty(property) ? this.own : this.resolved;
 		let value = values.get(property);
 		if (value === undefined) {
-			const longhands = CSSValues.getLonghands(property);
-			valueDepth++;
-			try {
-				value = longhands
-					? CSSValues.resolveShorthand(property, longhands, (longhand) =>
-						slots._baseValue(longhand),
-					)
-					: getAbsolutizedValue(
-						getOwner(this),
-						toPhysicalProperty(getOwner(this), property),
-					);
-			} finally {
-				valueDepth--;
-			}
+			value = resolveBaseValue(this, property);
 			values.set(property, value);
 		}
 		return value;
@@ -5965,6 +5967,25 @@ function getRuleListIndex(rules: readonly ParsedCSSRule[]): RuleListIndex {
 	return index;
 }
 
+function mapsAlone(): boolean {
+	return true;
+}
+
+// Which of a slot's names a block's declaration fills the property
+// through, reading the direction only if a flow-relative name is declared.
+function getSlotMatcher(
+	declarationSlots: Slots<ComputedStyleDeclaration>,
+	property: string,
+): (name: string) => boolean {
+	let direction: string | null = null;
+	return (name) =>
+		name === property ||
+		CSSValues.getPhysicalProperty(
+			name,
+			(direction ??= declarationSlots._computedValue("direction")),
+		) === property;
+}
+
 function resolvePropertyValueRaw(
 	declaration: ComputedStyleDeclaration,
 	property: string,
@@ -5973,16 +5994,10 @@ function resolvePropertyValueRaw(
 	// (css-logical-1 §2.1). The slot widens to both inline edges and narrows
 	// by `direction` only once a block actually declares one of them.
 	const names = CSSValues.getSlotCandidates(property);
-	let direction: string | null = null;
 	const declarationSlots = _(declaration);
 	const mapsHere = names.length === 1
-		? () => true
-		: (name: string): boolean =>
-			name === property ||
-			CSSValues.getPhysicalProperty(
-				name,
-				(direction ??= declarationSlots._computedValue("direction")),
-			) === property;
+		? mapsAlone
+		: getSlotMatcher(declarationSlots, property);
 
 	const inline = getInlineDeclarations(declaration);
 	const inlineName = CSSValues.getDeclaredName(inline, names, false, mapsHere);
@@ -6293,18 +6308,10 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 
 	// The cascade's declarations alone, with no transition overriding them.
 	_baseValue(this: Slots<PseudoStyleDeclaration>, property: string): string {
-		const slots = this;
-		let value = slots.resolved.get(property);
+		let value = this.resolved.get(property);
 		if (value === undefined) {
-			const longhands = CSSValues.getLonghands(property);
-			value = longhands && slots.pseudoDeclarations[property] === undefined
-				? CSSValues.serializeShorthandValue(property, longhands, (longhand) =>
-					slots._baseValue(longhand) || CSS_INITIAL_VALUES[longhand] || "")
-				: CSSValues.getComputedValueEntry(
-					property,
-					readPseudoDeclared(slots, property) ?? "",
-				);
-			slots.resolved.set(property, value);
+			value = resolvePseudoBaseValue(this, property);
+			this.resolved.set(property, value);
 		}
 		return value;
 	}
@@ -6608,6 +6615,43 @@ function getListMarker(listItem: Element, listParent: Element): string {
 // back around through cssselectors and dom, so whichever end is imported
 // first runs before the other's tables exist.
 let inheritedLonghands: ReadonlySet<string> | null = null;
+
+// What a value read finds missing from the memo, apart from the lookup,
+// which runs for every read: a closure in the lookup would make each call
+// allocate a scope for it.
+function resolveBaseValue(
+	slots: Slots<ComputedStyleDeclaration>,
+	property: string,
+): string {
+	const longhands = CSSValues.getLonghands(property);
+	valueDepth++;
+	try {
+		return longhands
+			? CSSValues.resolveShorthand(property, longhands, (longhand) =>
+				slots._baseValue(longhand),
+			)
+			: getAbsolutizedValue(
+				getOwner(slots),
+				toPhysicalProperty(getOwner(slots), property),
+			);
+	} finally {
+		valueDepth--;
+	}
+}
+
+function resolvePseudoBaseValue(
+	slots: Slots<PseudoStyleDeclaration>,
+	property: string,
+): string {
+	const longhands = CSSValues.getLonghands(property);
+	return longhands && slots.pseudoDeclarations[property] === undefined
+		? CSSValues.serializeShorthandValue(property, longhands, (longhand) =>
+			slots._baseValue(longhand) || CSS_INITIAL_VALUES[longhand] || "")
+		: CSSValues.getComputedValueEntry(
+			property,
+			readPseudoDeclared(slots, property) ?? "",
+		);
+}
 
 // A pseudo-element INHERITS from its originating element. Rule
 // declarations win, and an inherited property they leave out is read
@@ -7666,30 +7710,36 @@ function computedSlotsFor(
 	cascade: Cascade,
 	element: Element,
 ): Slots<ComputedStyleDeclaration> {
-	let slots = cascade.computedStyleCache.get(element);
-	if (!slots) {
-		parseStylesheetsIfStale(cascade);
-		const fresh = _(
-			runInRealm(null, () =>
-				new ComputedStyleDeclaration(
-					element,
-					getCascadeRules(cascade, element),
-					cascade,
-				),
+	return cascade.computedStyleCache.get(element) ??
+		buildComputedSlots(cascade, element);
+}
+
+// Apart from the lookup above, which runs for every value read: the
+// closures here would otherwise make each call allocate a scope for them.
+function buildComputedSlots(
+	cascade: Cascade,
+	element: Element,
+): Slots<ComputedStyleDeclaration> {
+	parseStylesheetsIfStale(cascade);
+	const fresh = _(
+		runInRealm(null, () =>
+			new ComputedStyleDeclaration(
+				element,
+				getCascadeRules(cascade, element),
+				cascade,
 			),
-		);
-		slots = fresh;
-		cascade.computedStyleCache.set(element, fresh);
-		// Building a fresh declaration is the other form of the style
-		// change event _syncResolved sees.
-		processTransitionStyle(
-			cascade,
-			element,
-			(property) => fresh._baseValue(property),
-			"",
-		);
-	}
-	return slots;
+		),
+	);
+	cascade.computedStyleCache.set(element, fresh);
+	// Building a fresh declaration is the other form of the style change
+	// event _syncResolved sees.
+	processTransitionStyle(
+		cascade,
+		element,
+		(property) => fresh._baseValue(property),
+		"",
+	);
+	return fresh;
 }
 
 /**
