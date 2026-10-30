@@ -21381,7 +21381,7 @@ Object.defineProperties(HTMLMediaElement.prototype, {
 	HAVE_ENOUGH_DATA: {value: HAVE_ENOUGH_DATA, enumerable: true},
 });
 
-class HTMLAudioElement extends HTMLMediaElement {}
+export class HTMLAudioElement extends HTMLMediaElement {}
 
 class HTMLVideoElement extends HTMLMediaElement {
 	declare playsInline: globalThis.HTMLVideoElement["playsInline"];
@@ -40839,7 +40839,6 @@ export type {
 	HTMLMapElement,
 	HTMLMarqueeElement,
 	HTMLMediaElement,
-	HTMLAudioElement,
 	HTMLVideoElement,
 	HTMLMenuElement,
 	HTMLMetaElement,

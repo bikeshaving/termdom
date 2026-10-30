@@ -333,3 +333,16 @@ test("a rel's relList answers supports() for the link types TermDOM knows", () =
 		expect(element.relList.supports("stylesheet")).toBe(false);
 	}
 });
+
+test("new Audio(src) makes an <audio> that preloads", () => {
+	const dom = new TermDOM({url: "https://example.com/"});
+	const Audio = (dom.window as unknown as {
+		Audio: new (src?: string) => HTMLAudioElement;
+	}).Audio;
+	const audio = new Audio("ding.mp3");
+	expect(audio).toBeInstanceOf(dom.window.HTMLAudioElement);
+	expect(audio.getAttribute("preload")).toBe("auto");
+	expect(audio.src).toBe("https://example.com/ding.mp3");
+	expect(new Audio().hasAttribute("src")).toBe(false);
+	expect(() => (Audio as unknown as () => void)()).toThrow(TypeError);
+});
