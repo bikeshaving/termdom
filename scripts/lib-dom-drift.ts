@@ -118,7 +118,6 @@ const AHEAD_OF_LIB_DOM: Record<string, Record<string, string>> = {
 		type: "https://html.spec.whatwg.org/#dom-area-type",
 	},
 	Window: {
-		PerformanceLongAnimationFrameTiming: "https://w3c.github.io/long-animation-frames/#performancelonganimationframetiming",
 		trustedTypes: "https://w3c.github.io/trusted-types/dist/spec/#dom-windoworworkerglobalscope-trustedtypes",
 		TrustedHTML: "https://w3c.github.io/trusted-types/dist/spec/#trustedhtml",
 		TrustedScript: "https://w3c.github.io/trusted-types/dist/spec/#trustedscript",
@@ -278,7 +277,7 @@ for (const key of Object.getOwnPropertyNames(window)) {
 		continue;
 	}
 	if (!globals.has(key)) {
-		if (!globalNames.has(key) && !(key in AHEAD_OF_LIB_DOM.Window)) {
+		if (!globalNames.has(key)) {
 			extras.push(key);
 		}
 		continue;

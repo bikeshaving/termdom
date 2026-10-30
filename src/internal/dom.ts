@@ -98,7 +98,7 @@ import {
 	toASCIILowercase,
 	trimASCIIWhitespace,
 } from "./text.ts";
-import {clearTimeout, queueMicrotask, queueTask, setTimeout} from "./timers.ts";
+import {clearTimeout, queueMicrotask, setTimeout} from "./timers.ts";
 import {
 	type AttachedDocument,
 	ATTRIBUTE_NODE,
@@ -113,7 +113,6 @@ import {
 	getAttachedDocument,
 	getAttributeByName,
 	getAttributeValue,
-	getDefaultView,
 	getElementChildren,
 	getLocalName,
 	getNamespace,
@@ -5530,20 +5529,18 @@ export function dispatchAsUserAgent(
 	target: globalThis.EventTarget,
 	event: globalThis.Event,
 ): boolean {
-	return timeEventDispatch(target, event, () => {
-		const document = getActivationDocument(target as EventTarget);
-		if (document === null || !isActivationTriggering(event)) {
-			return dispatchFromOutside(target as EventTarget, event as Event, true);
-		}
-		activationDepths.set(document, (activationDepths.get(document) ?? 0) + 1);
-		everActivatedDocuments.add(document);
-		lastActivations.set(document, performance.now());
-		try {
-			return dispatchFromOutside(target as EventTarget, event as Event, true);
-		} finally {
-			activationDepths.set(document, activationDepths.get(document)! - 1);
-		}
-	});
+	const document = getActivationDocument(target as EventTarget);
+	if (document === null || !isActivationTriggering(event)) {
+		return dispatchFromOutside(target as EventTarget, event as Event, true);
+	}
+	activationDepths.set(document, (activationDepths.get(document) ?? 0) + 1);
+	everActivatedDocuments.add(document);
+	lastActivations.set(document, performance.now());
+	try {
+		return dispatchFromOutside(target as EventTarget, event as Event, true);
+	} finally {
+		activationDepths.set(document, activationDepths.get(document)! - 1);
+	}
 }
 
 // Builds the path once, from the target outward, then walks it twice:
@@ -39122,20 +39119,7 @@ export class PerformanceMeasure extends PerformanceEntry {
 }
 
 export interface PerformanceSlots extends EventTargetSlots {
-	window: Window | null;
 	entries: PerformanceEntry[];
-	observers: Set<PerformanceObserver>;
-	// The entries an observer registered with `buffered` is first handed,
-	// by type, for the types the timeline itself does not hold.
-	buffers: Map<string, PerformanceEntry[]>;
-	// Event Timing: the entries whose events wait for the paint that ends
-	// their duration, and how far the interactions have counted.
-	awaitingPaint: PerformanceEventTiming[];
-	firstInputReported: boolean;
-	interactionCount: number;
-	interactionIds: Map<string, number>;
-	// Long Animation Frames: the first UI event since the last frame.
-	firstUIEventTimestamp: number;
 }
 
 export interface Performance {
@@ -39152,20 +39136,7 @@ export class Performance extends EventTarget {
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
-		const slots = _(this);
-		slots.window = null;
-		slots.entries = [];
-		slots.observers = new Set();
-		slots.buffers = new Map();
-		slots.awaitingPaint = [];
-		slots.firstInputReported = false;
-		slots.interactionCount = 0;
-		slots.interactionIds = new Map();
-		slots.firstUIEventTimestamp = 0;
-	}
-
-	get interactionCount(): number {
-		return _(this).interactionCount;
+		_(this).entries = [];
 	}
 
 	get timeOrigin(): number {
@@ -39188,7 +39159,6 @@ export class Performance extends EventTarget {
 	): PerformanceMark {
 		const mark = new PerformanceMark(markName, markOptions);
 		_(this).entries.push(mark);
-		queuePerformanceEntry(this, mark);
 		return mark;
 	}
 
@@ -39273,7 +39243,6 @@ export class Performance extends EventTarget {
 			"execute 'measure' on 'Performance'",
 		);
 		entries.push(measure);
-		queuePerformanceEntry(this, measure);
 		return measure;
 	}
 
@@ -39313,599 +39282,6 @@ function clearEntries(
 		entry.entryType !== type ||
 		(name !== undefined && entry.name !== String(name)),
 	);
-}
-
-const SUPPORTED_ENTRY_TYPES = Object.freeze([
-	"event",
-	"first-input",
-	"long-animation-frame",
-	"mark",
-	"measure",
-]);
-
-// How many entries of each type wait for an observer registered with
-// `buffered`, as each type's spec registers. Marks, measures and the
-// first input are on the timeline itself.
-const ENTRY_BUFFER_SIZES = new Map([
-	["event", 150],
-	["long-animation-frame", 200],
-]);
-
-// Event Timing §3.1: the events an entry is made for.
-const TIMED_EVENT_TYPES = new Set([
-	"auxclick",
-	"beforeinput",
-	"click",
-	"compositionend",
-	"compositionstart",
-	"compositionupdate",
-	"contextmenu",
-	"dblclick",
-	"dragend",
-	"dragenter",
-	"dragleave",
-	"dragover",
-	"dragstart",
-	"drop",
-	"gotpointercapture",
-	"input",
-	"keydown",
-	"keypress",
-	"keyup",
-	"lostpointercapture",
-	"mousedown",
-	"mouseenter",
-	"mouseleave",
-	"mouseout",
-	"mouseover",
-	"mouseup",
-	"pointercancel",
-	"pointerdown",
-	"pointerenter",
-	"pointerleave",
-	"pointerout",
-	"pointerover",
-	"pointerup",
-]);
-
-const FIRST_INPUT_TYPES = new Set([
-	"click",
-	"keydown",
-	"mousedown",
-	"pointerdown",
-	"pointerup",
-]);
-
-// Event Timing's default threshold, and the least an observer can ask
-// for. An event entry joins the buffer only at the default.
-const DEFAULT_DURATION_THRESHOLD = 104;
-const MIN_DURATION_THRESHOLD = 16;
-
-// Long Animation Frames §2: a frame is long from 50 ms.
-const LONG_FRAME_MS = 50;
-
-export interface PerformanceEventTimingSlots extends PerformanceEntrySlots {
-	processingStart: number;
-	processingEnd: number;
-	cancelable: boolean;
-	target: globalThis.Node | null;
-	interactionId: number;
-}
-
-export interface PerformanceEventTiming {
-	readonly [internals]: PerformanceEventTimingSlots;
-}
-
-/**
- * Event Timing: how long a UI event waited to be handled, how long its
- * handlers ran, and when the frame after it was painted.
- */
-export class PerformanceEventTiming extends PerformanceEntry {
-	constructor() {
-		super();
-		if (!internalConstruction) {
-			throw new TypeError("Illegal constructor");
-		}
-	}
-
-	get processingStart(): number {
-		return _(this).processingStart;
-	}
-
-	get processingEnd(): number {
-		return _(this).processingEnd;
-	}
-
-	get cancelable(): boolean {
-		return _(this).cancelable;
-	}
-
-	get target(): globalThis.Node | null {
-		const target = _(this).target;
-		return target !== null && isConnectedNode(target) ? target : null;
-	}
-
-	get interactionId(): number {
-		return _(this).interactionId;
-	}
-
-	override toJSON(): Record<string, unknown> {
-		const slots = _(this);
-		return {
-			...super.toJSON(),
-			processingStart: slots.processingStart,
-			processingEnd: slots.processingEnd,
-			cancelable: slots.cancelable,
-			interactionId: slots.interactionId,
-		};
-	}
-}
-
-export interface PerformanceLongAnimationFrameTimingSlots
-	extends PerformanceEntrySlots {
-	renderStart: number;
-	styleAndLayoutStart: number;
-	blockingDuration: number;
-	firstUIEventTimestamp: number;
-}
-
-export interface PerformanceLongAnimationFrameTiming {
-	readonly [internals]: PerformanceLongAnimationFrameTimingSlots;
-}
-
-/**
- * Long Animation Frames: a frame that took 50 ms or more from the work
- * that asked for it to its paint, and where that time went. No script is
- * attributed, so `scripts` is empty.
- */
-export class PerformanceLongAnimationFrameTiming extends PerformanceEntry {
-	constructor() {
-		super();
-		if (!internalConstruction) {
-			throw new TypeError("Illegal constructor");
-		}
-	}
-
-	get renderStart(): number {
-		return _(this).renderStart;
-	}
-
-	get styleAndLayoutStart(): number {
-		return _(this).styleAndLayoutStart;
-	}
-
-	get blockingDuration(): number {
-		return _(this).blockingDuration;
-	}
-
-	get firstUIEventTimestamp(): number {
-		return _(this).firstUIEventTimestamp;
-	}
-
-	get scripts(): readonly unknown[] {
-		return [];
-	}
-
-	override toJSON(): Record<string, unknown> {
-		const slots = _(this);
-		return {
-			...super.toJSON(),
-			renderStart: slots.renderStart,
-			styleAndLayoutStart: slots.styleAndLayoutStart,
-			blockingDuration: slots.blockingDuration,
-			firstUIEventTimestamp: slots.firstUIEventTimestamp,
-			scripts: [],
-		};
-	}
-}
-
-export interface PerformanceObserverEntryListSlots {
-	list: PerformanceEntry[];
-}
-
-export interface PerformanceObserverEntryList {
-	readonly [internals]: PerformanceObserverEntryListSlots;
-}
-
-/** The entries one call of an observer's callback is handed. */
-export class PerformanceObserverEntryList {
-	constructor() {
-		seal(this, new.target, PerformanceObserverEntryList);
-		if (!internalConstruction) {
-			throw new TypeError("Illegal constructor");
-		}
-	}
-
-	getEntries(): PerformanceEntry[] {
-		return [..._(this).list];
-	}
-
-	getEntriesByType(type: string): PerformanceEntry[] {
-		return _(this).list.filter((entry) => entry.entryType === String(type));
-	}
-
-	getEntriesByName(name: string, type?: string): PerformanceEntry[] {
-		return _(this).list.filter((entry) =>
-			entry.name === String(name) &&
-			(type === undefined || entry.entryType === String(type)),
-		);
-	}
-}
-
-declareSealedRoot(PerformanceObserverEntryList);
-
-type PerformanceObserverCallback = (
-	entries: PerformanceObserverEntryList,
-	observer: PerformanceObserver,
-) => void;
-
-// lib.dom predates Event Timing's threshold.
-interface PerformanceObserverInit extends globalThis.PerformanceObserverInit {
-	durationThreshold?: number;
-}
-
-export interface PerformanceObserverSlots {
-	callback: PerformanceObserverCallback;
-	performance: Performance | null;
-	// The types observed, each with its duration threshold, and how they
-	// were given: as entryTypes, all at once, or one type per observe().
-	types: Map<string, number>;
-	mode: "entryTypes" | "type" | null;
-	queued: PerformanceEntry[];
-	taskQueued: boolean;
-}
-
-export interface PerformanceObserver {
-	readonly [internals]: PerformanceObserverSlots;
-}
-
-/**
- * Performance Timeline §5: hears the entries of the types it observes
- * as the window records them, in a task after.
- */
-export class PerformanceObserver {
-	constructor(callback: PerformanceObserverCallback) {
-		seal(this, new.target, PerformanceObserver);
-		if (typeof callback !== "function") {
-			throw new TypeError("PerformanceObserver needs a callback");
-		}
-		const slots = _(this);
-		slots.callback = callback;
-		slots.performance = null;
-		slots.types = new Map();
-		slots.mode = null;
-		slots.queued = [];
-		slots.taskQueued = false;
-	}
-
-	static get supportedEntryTypes(): readonly string[] {
-		return SUPPORTED_ENTRY_TYPES;
-	}
-
-	observe(options: PerformanceObserverInit = {}): void {
-		const slots = _(this);
-		const init = toDictionary<PerformanceObserverInit>(
-			options,
-			"Observer options",
-		);
-		if (init.entryTypes === undefined && init.type === undefined) {
-			throw new TypeError("observe() needs entryTypes or a type");
-		}
-		if (
-			init.entryTypes !== undefined &&
-			(init.type !== undefined || init.buffered !== undefined)
-		) {
-			throw new TypeError("entryTypes does not mix with type or buffered");
-		}
-		const mode = init.entryTypes === undefined ? "type" : "entryTypes";
-		if (slots.mode !== null && slots.mode !== mode) {
-			throw domError(
-				"InvalidModificationError",
-				"An observer takes entryTypes or one type at a time, not both",
-			);
-		}
-		const performance = slots.performance;
-		if (performance === null) {
-			return;
-		}
-		if (mode === "entryTypes") {
-			const types = [...init.entryTypes!].map(String)
-				.filter((type) => SUPPORTED_ENTRY_TYPES.includes(type));
-			if (types.length === 0) {
-				return;
-			}
-			slots.mode = mode;
-			slots.types = new Map(
-				types.map((type) => [type, DEFAULT_DURATION_THRESHOLD]),
-			);
-		} else {
-			const type = String(init.type);
-			if (!SUPPORTED_ENTRY_TYPES.includes(type)) {
-				return;
-			}
-			slots.mode = mode;
-			const threshold = init.durationThreshold === undefined
-				? DEFAULT_DURATION_THRESHOLD
-				: Math.max(MIN_DURATION_THRESHOLD, Number(init.durationThreshold));
-			slots.types.set(type, threshold);
-			if (init.buffered) {
-				const buffered = ENTRY_BUFFER_SIZES.has(type)
-					? _(performance).buffers.get(type) ?? []
-					: _(performance).entries.filter((entry) =>
-						entry.entryType === type,
-					);
-				for (const entry of buffered) {
-					if (observesEntry(this, entry)) {
-						slots.queued.push(entry);
-					}
-				}
-				queueObserverTask(this);
-			}
-		}
-		_(performance).observers.add(this);
-	}
-
-	disconnect(): void {
-		const slots = _(this);
-		if (slots.performance !== null) {
-			_(slots.performance).observers.delete(this);
-		}
-		slots.types = new Map();
-		slots.mode = null;
-		slots.queued = [];
-	}
-
-	takeRecords(): PerformanceEntry[] {
-		const slots = _(this);
-		const records = slots.queued;
-		slots.queued = [];
-		return records;
-	}
-}
-
-declareSealedRoot(PerformanceObserver);
-
-// A window's PerformanceObserver is this class bound to that window's
-// performance timeline, as new Image() is bound to its document.
-export function constructPerformanceObserver(
-	window: Window,
-	callback: PerformanceObserverCallback,
-): PerformanceObserver {
-	const observer = new PerformanceObserver(callback);
-	_(observer).performance = window.performance as unknown as Performance;
-	return observer;
-}
-
-function observesEntry(
-	observer: PerformanceObserver,
-	entry: PerformanceEntry,
-): boolean {
-	const threshold = _(observer).types.get(entry.entryType);
-	return threshold !== undefined &&
-		(entry.entryType !== "event" || entry.duration >= threshold);
-}
-
-function queueObserverTask(observer: PerformanceObserver): void {
-	const slots = _(observer);
-	if (slots.taskQueued || slots.queued.length === 0) {
-		return;
-	}
-	slots.taskQueued = true;
-	queueTask(() => {
-		slots.taskQueued = false;
-		const records = slots.queued;
-		if (records.length === 0) {
-			return;
-		}
-		slots.queued = [];
-		const list = constructInternal(() => new PerformanceObserverEntryList());
-		_(list).list = records;
-		callInRealm(slots.callback, observer, list, observer);
-	});
-}
-
-// Performance Timeline's "queue a PerformanceEntry": into the buffer for
-// its type while there is room, and to every observer of it.
-function queuePerformanceEntry(
-	performance: Performance,
-	entry: PerformanceEntry,
-): void {
-	const slots = _(performance);
-	const size = ENTRY_BUFFER_SIZES.get(entry.entryType);
-	if (
-		size !== undefined &&
-		(entry.entryType !== "event" ||
-			entry.duration >= DEFAULT_DURATION_THRESHOLD)
-	) {
-		let buffer = slots.buffers.get(entry.entryType);
-		if (buffer === undefined) {
-			buffer = [];
-			slots.buffers.set(entry.entryType, buffer);
-		}
-		if (buffer.length < size) {
-			buffer.push(entry);
-		}
-	}
-	for (const observer of slots.observers) {
-		if (observesEntry(observer, entry)) {
-			_(observer).queued.push(entry);
-			queueObserverTask(observer);
-		}
-	}
-}
-
-// The window an event's entry is reported to, and the one whose frames
-// paint it: the window of the document its target is in, and the top
-// window above that one's frames.
-function getEventPerformance(
-	target: globalThis.EventTarget,
-): Performance | null {
-	const node = target as unknown as Node;
-	const document = isSealed(node) && "nodeType" in node
-		? getOwnerDocument(node) ?? (node as unknown as Document)
-		: null;
-	const window = document === null
-		? null
-		: getDefaultView(document as unknown as globalThis.Document);
-	return window === null ? null : window.performance as unknown as Performance;
-}
-
-function getTopPerformance(performance: Performance): Performance {
-	const owner = _(performance).window === null
-		? null
-		: _(_(performance).window!).frameOwner;
-	const parent = owner === null
-		? null
-		: getDefaultView(getOwnerDocument(owner) as unknown as globalThis.Document);
-	return parent === null
-		? performance
-		: getTopPerformance(parent.performance as unknown as Performance);
-}
-
-// Event Timing: an entry for a UI event a user's input dispatched, its
-// duration ending at the next paint.
-export function timeEventDispatch(
-	target: globalThis.EventTarget,
-	event: globalThis.Event,
-	dispatch: () => boolean,
-): boolean {
-	const performance = TIMED_EVENT_TYPES.has(event.type)
-		? getEventPerformance(target)
-		: null;
-	if (performance === null) {
-		return dispatch();
-	}
-	const top = _(getTopPerformance(performance));
-	if (top.firstUIEventTimestamp === 0) {
-		top.firstUIEventTimestamp = event.timeStamp;
-	}
-	const processingStart = runtimePerformance.now();
-	try {
-		return dispatch();
-	} finally {
-		const entry = constructInternal(() => new PerformanceEventTiming());
-		const slots = _(entry);
-		slots.entryName = event.type;
-		slots.entryType = "event";
-		slots.startTime = event.timeStamp;
-		slots.duration = 0;
-		slots.processingStart = processingStart;
-		slots.processingEnd = runtimePerformance.now();
-		slots.cancelable = event.cancelable;
-		slots.target = target instanceof Node ? target : null;
-		slots.interactionId = assignInteractionId(performance, event);
-		top.awaitingPaint.push(entry);
-	}
-}
-
-// A key's down, press and up are one interaction, and so are a pointer's
-// down, up and the click after.
-function assignInteractionId(
-	performance: Performance,
-	event: globalThis.Event,
-): number {
-	const slots = _(performance);
-	const key = (event as globalThis.KeyboardEvent).code ?? "";
-	switch (event.type) {
-		case "keydown":
-		case "pointerdown": {
-			const id = ++slots.interactionCount;
-			slots.interactionIds.set(
-				event.type === "keydown" ? `key:${key}` : "pointer",
-				id,
-			);
-			return id;
-		}
-		case "keypress":
-			return slots.interactionIds.get(`key:${key}`) ?? 0;
-		case "keyup": {
-			const id = slots.interactionIds.get(`key:${key}`) ?? 0;
-			slots.interactionIds.delete(`key:${key}`);
-			return id;
-		}
-		case "pointerup":
-			return slots.interactionIds.get("pointer") ?? 0;
-		case "click": {
-			const id = slots.interactionIds.get("pointer") ?? 0;
-			slots.interactionIds.delete("pointer");
-			return id;
-		}
-		default:
-			return 0;
-	}
-}
-
-/** What one frame's timing was, from the work that asked for it. */
-export interface FrameTiming {
-	requestedAt: number;
-	renderStart: number;
-	styleAndLayoutStart: number;
-	paintEnd: number;
-}
-
-// A frame painted: every event waiting on a paint gets its duration, and
-// a frame of 50 ms or more is a long animation frame.
-export function reportFrameTiming(
-	document: globalThis.Document,
-	timing: FrameTiming,
-): void {
-	const window = getDefaultView(document);
-	if (window === null) {
-		return;
-	}
-	const performance = window.performance as unknown as Performance;
-	const slots = _(performance);
-	const firstUIEvent = slots.firstUIEventTimestamp;
-	slots.firstUIEventTimestamp = 0;
-	const waiting = slots.awaitingPaint;
-	slots.awaitingPaint = [];
-	for (const entry of waiting) {
-		const entrySlots = _(entry);
-		// Event Timing rounds a duration to 8 ms, so it says less about
-		// when the frame was painted.
-		entrySlots.duration =
-			Math.round(
-				(Math.max(timing.paintEnd, entrySlots.processingEnd) -
-				entrySlots.startTime) / 8,
-			) * 8;
-		const owner =
-			getEventPerformance(
-				entrySlots.target ?? (document as unknown as globalThis.Node),
-			) ?? performance;
-		queuePerformanceEntry(owner, entry);
-		const ownerSlots = _(owner);
-		if (!ownerSlots.firstInputReported && FIRST_INPUT_TYPES.has(entry.name)) {
-			ownerSlots.firstInputReported = true;
-			const first = constructInternal(() => new PerformanceEventTiming());
-			Object.assign(_(first), {...entrySlots, entryType: "first-input"});
-			ownerSlots.entries.push(first);
-			queuePerformanceEntry(owner, first);
-		}
-	}
-	const startTime = firstUIEvent === 0
-		? timing.requestedAt
-		: Math.min(timing.requestedAt, firstUIEvent);
-	const duration = timing.paintEnd - startTime;
-	if (duration < LONG_FRAME_MS) {
-		return;
-	}
-	const frame = constructInternal(() =>
-		new PerformanceLongAnimationFrameTiming(),
-	);
-	const frameSlots = _(frame);
-	frameSlots.entryName = "long-animation-frame";
-	frameSlots.entryType = "long-animation-frame";
-	frameSlots.startTime = startTime;
-	frameSlots.duration = duration;
-	frameSlots.renderStart = timing.renderStart;
-	frameSlots.styleAndLayoutStart = timing.styleAndLayoutStart;
-	// The rendering is one task here, long for what it runs past 50 ms.
-	frameSlots.blockingDuration = Math.max(
-		0,
-		timing.paintEnd - timing.renderStart - LONG_FRAME_MS,
-	);
-	frameSlots.firstUIEventTimestamp = firstUIEvent;
-	queuePerformanceEntry(performance, frame);
 }
 
 const RANDOM_VALUE_ARRAYS = [
@@ -40580,10 +39956,7 @@ export class Window extends EventTarget {
 
 	get performance(): globalThis.Performance {
 		const slots = _(this);
-		if (slots.performance === undefined) {
-			slots.performance = constructInternal(() => new Performance());
-			_(slots.performance).window = this;
-		}
+		slots.performance ??= constructInternal(() => new Performance());
 		return slots.performance as unknown as globalThis.Performance;
 	}
 
@@ -41083,12 +40456,8 @@ export const platform = {
 	NodeList,
 	Performance,
 	PerformanceEntry,
-	PerformanceEventTiming,
-	PerformanceLongAnimationFrameTiming,
 	PerformanceMark,
 	PerformanceMeasure,
-	PerformanceObserver,
-	PerformanceObserverEntryList,
 	Permissions,
 	PermissionStatus,
 	PointerEvent,
