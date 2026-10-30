@@ -979,16 +979,24 @@ export function readCell(
 }
 
 // Returns the borders as painted, before joining, which a frame painted
-// over this one starts from. Given the rows a frame repainted and the
-// borders the last frame joined, only those rows and their neighbours
-// join again, and the rest keep what the last frame joined.
+// over this one starts from, written into `spare` when it fits: the last
+// frame's, which its own start has read. Given the rows a frame repainted
+// and the borders the last frame joined, only those rows and their
+// neighbours join again, and the rest keep what the last frame joined.
 function joinTouchingBorders(
 	grid: CellGrid,
 	ranges: Array<[number, number]> = [[0, grid.rows]],
 	joinedBefore: Uint32Array | null = null,
+	spare: Uint32Array | null = null,
 ): Uint32Array {
 	const {rows, cols, border} = grid;
-	const painted = border.slice();
+	let painted: Uint32Array;
+	if (spare !== null && spare.length === border.length) {
+		spare.set(border);
+		painted = spare;
+	} else {
+		painted = border.slice();
+	}
 	if (joinedBefore !== null) {
 		border.set(joinedBefore);
 		for (const [from, to] of ranges) {
@@ -2597,6 +2605,7 @@ export function beginFrame(
 			next,
 			changedRows,
 			partial ? framebuffer.prev!.border : null,
+			framebuffer.prevBorders,
 		);
 		let unchangedRows: Uint8Array | null = null;
 		if (changedRows !== undefined) {

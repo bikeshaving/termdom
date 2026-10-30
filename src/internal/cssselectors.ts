@@ -2390,8 +2390,9 @@ function matchesAny(
 	element: Element,
 	state: MatchState,
 ): boolean {
-	for (const complex of selector.list) {
-		if (matchComplex(complex, element, state, false)) {
+	const list = selector.list;
+	for (let index = 0; index < list.length; index++) {
+		if (matchComplex(list[index], element, state, false)) {
 			return true;
 		}
 	}
