@@ -9362,14 +9362,9 @@ function processTransitionStyle(
 	// `all 0s` would otherwise snapshot every transitionable property of
 	// every element. A transition declared later starts from the values
 	// its declaration dropped, which the fallback keeps.
-	let candidates = CSSValues.getMatchedTransitions(read);
-	if (
-		candidates && !active && ![...candidates.values()].some((timing) =>
-			timing.duration + Math.max(timing.delay, 0) > 0,
-		)
-	) {
-		candidates = null;
-	}
+	const candidates = active || CSSValues.mayStartTransition(read)
+		? CSSValues.getMatchedTransitions(read)
+		: null;
 	let snapshots = cascade.transitionSnapshots.get(element);
 	const previous = snapshots?.get(pseudo);
 	const fallbacks = cascade.transitionFallback.get(element);
