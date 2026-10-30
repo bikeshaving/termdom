@@ -8167,7 +8167,12 @@ function pseudoDeclarationsFor(
 	// A pseudo-element INHERITS from its originating element. Rule
 	// declarations win, and inherited values only fill the gaps.
 	const hostStyle = cascade.declarationFor(element);
-	inheritedProperties ??= CSS_PROPERTIES.filter(CSSValues.isInheritedProperty);
+	// Longhands only: a shorthand's value is its longhands', and `all`
+	// would serialize every property there is.
+	inheritedProperties ??= CSS_PROPERTIES.filter((property) =>
+		CSSValues.isInheritedProperty(property) &&
+		CSSValues.getLonghands(property) === undefined,
+	);
 	const hostStyleSlots = _(hostStyle);
 	for (const property of inheritedProperties) {
 		if (!declarations[property]) {
