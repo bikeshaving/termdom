@@ -16,11 +16,9 @@ import {CSSOM_INTERFACES} from "./cssom.ts";
 import {
 	cloneStructured,
 	constructOnto,
-	constructPerformanceObserver,
 	createWindowRegistry,
 	type Document,
 	DOMException,
-	PerformanceObserver as DOMPerformanceObserver,
 	HTMLAudioElement,
 	HTMLImageElement,
 	parseHTMLDocument,
@@ -207,31 +205,6 @@ export function buildWindow(
 		Object.setPrototypeOf(Audio, realm.functionPrototype);
 	}
 	window.Audio = Audio;
-	// And a PerformanceObserver reports this window's timeline.
-	const PerformanceObserver = function PerformanceObserver(
-		this: unknown,
-		callback: never,
-	) {
-		if (new.target === undefined) {
-			throw new TypeError("PerformanceObserver is a constructor");
-		}
-		return constructPerformanceObserver(window as never, callback);
-	} as unknown as typeof DOMPerformanceObserver;
-	Object.defineProperties(PerformanceObserver, {
-		prototype: {
-			value:
-				realm?.prototypes.get(DOMPerformanceObserver) ??
-				DOMPerformanceObserver.prototype,
-		},
-		supportedEntryTypes: {
-			get: () => DOMPerformanceObserver.supportedEntryTypes,
-			configurable: true,
-		},
-	});
-	if (realm !== null) {
-		Object.setPrototypeOf(PerformanceObserver, realm.functionPrototype);
-	}
-	window.PerformanceObserver = PerformanceObserver;
 	window.window = window;
 	window.self = window;
 	for (const name of Object.keys(window)) {

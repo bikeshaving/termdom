@@ -127,26 +127,6 @@ reflect the terminal:
 - `navigator.userActivation`: `hasBeenActive` and `isActive`.
 - `MutationObserver`, `ResizeObserver`, `IntersectionObserver`: entries
   are delivered once per frame.
-- `PerformanceObserver`: how slow input and frames were, through the
-  browser's own entry types. `"event"` (Event Timing) times each key
-  and mouse event: `startTime` when the input was read,
-  `processingStart` and `processingEnd` around its handlers, and
-  `duration` to the end of the next paint, rounded to 8 ms. Pass
-  `durationThreshold` (16 at least, 104 by default) to hear faster
-  ones. `"first-input"` is the first key or press. `"long-animation-frame"`
-  reports each frame of 50 ms or more, from the work that asked for it
-  to the end of its paint, with `renderStart` (frame callbacks),
-  `styleAndLayoutStart`, `blockingDuration` and `firstUIEventTimestamp`.
-  `scripts` is always empty. Writing the frame to the terminal comes
-  after the paint and isn't counted.
-
-  ```ts
-  new term.window.PerformanceObserver((list) => {
-  	for (const entry of list.getEntries()) {
-  		console.error(entry.name, entry.duration);
-  	}
-  }).observe({type: "event", durationThreshold: 16});
-  ```
 - `close()`: quits. It fires `beforeunload`, leaves the last frame in
   the scrollback, restores the terminal, disposes, and calls
   `transport.close({status})`, which exits the process on the default

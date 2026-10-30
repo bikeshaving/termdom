@@ -39,7 +39,6 @@ import {
 	HistoryTraverseEvent,
 	hoverListenerCount,
 	relayoutReplacedElements,
-	reportFrameTiming,
 	revealPendingCaret,
 	revealPendingEditingCaret,
 	revealTextControlCaret,
@@ -548,12 +547,6 @@ interface TermDOMSlots extends EventTargetSlots {
 	// mutation starts a fresh one below it.
 	sealed: boolean;
 	renderQueued: boolean;
-	// When the work drawn by the next frame first asked for it, and when
-	// this frame's style and layout began and its paint ended, which the
-	// window's performance timeline reports.
-	frameRequestedAt: number | null;
-	styleAndLayoutStart: number;
-	paintEnd: number;
 	// How many frames the loop has begun, and the render() calls waiting
 	// for the frame after the one under way when they were made.
 	framesStarted: number;
@@ -654,9 +647,6 @@ export class TermDOM extends EventTarget {
 		slots.sealed = false;
 
 		slots.renderQueued = false;
-		slots.frameRequestedAt = null;
-		slots.styleAndLayoutStart = 0;
-		slots.paintEnd = 0;
 		slots.framesStarted = 0;
 		slots.frameWaiters = [];
 		slots.onAlternateScreen = false;
@@ -1556,7 +1546,6 @@ async function render(termDOM: TermDOM): Promise<void> {
 	// into a trailing frame, so awaiting render() means they are painted.
 	// It waits for that frame, not for the loop to go idle, which a
 	// requestAnimationFrame chain never lets it do.
-	termDOMSlots.frameRequestedAt ??= performance.now();
 	if (termDOMSlots.renderInFlight !== null) {
 		termDOMSlots.renderQueued = true;
 		return waitForFrame(termDOM);
@@ -1620,11 +1609,6 @@ async function render(termDOM: TermDOM): Promise<void> {
 					break;
 				}
 				termDOMSlots.lastFrameAt = performance.now();
-				const requestedAt =
-					termDOMSlots.frameRequestedAt ?? termDOMSlots.lastFrameAt;
-				termDOMSlots.frameRequestedAt = null;
-				termDOMSlots.styleAndLayoutStart = 0;
-				termDOMSlots.paintEnd = 0;
 				const frame = ++termDOMSlots.framesStarted;
 				// The order of "update the rendering": the frame callbacks
 				// first, then style, layout and paint, so what a callback
@@ -1639,13 +1623,6 @@ async function render(termDOM: TermDOM): Promise<void> {
 					framesAwaiting = runFrameCallbacks(termDOM.document);
 				}
 				await renderOnce(termDOM);
-				const now = performance.now();
-				reportFrameTiming(termDOM.document, {
-					requestedAt,
-					renderStart: termDOMSlots.lastFrameAt,
-					styleAndLayoutStart: termDOMSlots.styleAndLayoutStart || now,
-					paintEnd: termDOMSlots.paintEnd || now,
-				});
 				// After the paint, never inside the scrollTo() that asked
 				// for it. A listener's mutations queue the next frame.
 				runScrollSteps(termDOM.document);
@@ -1895,7 +1872,6 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	if (import.meta.litest && controlCheck.enabled) {
 		checkFormControls(termDOM.document);
 	}
-	termDOMSlots.styleAndLayoutStart = performance.now();
 	syncFormControls(termDOM.document);
 	applyMutations(termDOM.document);
 	runFocusFixup(termDOM.document);
@@ -2004,7 +1980,6 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	}
 	const ansi = endFrame(termDOMSlots.framebuffer);
 	framePainted(termDOMSlots.layout);
-	termDOMSlots.paintEnd = performance.now();
 
 	// The cursor stays hidden while a frame paints and between frames. It
 	// is parked for resize bookkeeping, and a cursor blinking there is not
