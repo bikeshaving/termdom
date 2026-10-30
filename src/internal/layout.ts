@@ -1860,6 +1860,10 @@ type BoxKind = "node" | "anonymous" | "table";
 // its container's runs, and a rebuild syncs against the boxes it
 // replaces. That is what lets layout nodes and fragments be keyed by
 // box.
+// What a principal box lays out of its own: nothing, as only an anonymous
+// box holds members, which are a list of its own once a run takes it.
+const NO_MEMBERS: Node[] = Object.freeze([]) as unknown as Node[];
+
 export class Box {
 	readonly kind: BoxKind;
 
@@ -1909,7 +1913,7 @@ export class Box {
 
 	constructor(kind: BoxKind, node: Node | null, parent: Box | null = null) {
 		this.parent = null;
-		this.members = [];
+		this.members = NO_MEMBERS;
 		this.children = null;
 		this.heads = null;
 		this.tables = null;
