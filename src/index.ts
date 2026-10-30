@@ -34,6 +34,7 @@ import {
 	getProcessTimers,
 	type GraphicsSetting,
 	hasFrameCallbacks,
+	hasObservers,
 	HistoryChangeEvent,
 	HistoryTraverseEvent,
 	hoverListenerCount,
@@ -1711,16 +1712,19 @@ async function renderOnce(termDOM: TermDOM): Promise<void> {
 function afterRender(termDOM: TermDOM): void {
 	const termDOMSlots = _(termDOM);
 	termDOMSlots.renderCount++;
-	// The viewport in document coordinates, for IntersectionObserver.
-	const viewport = new termDOM.window.DOMRect(
-		0,
-		termDOMSlots.framebuffer.scrollTop,
-		termDOMSlots.framebuffer.cols,
-		termDOMSlots.framebuffer.rows,
-	);
 	// A hidden document gets no observer entries, as a background tab
 	// gets none; they are delivered with the first frame after it shows.
-	if (termDOM.document.visibilityState === "visible") {
+	if (
+		hasObservers(termDOM.document) &&
+		termDOM.document.visibilityState === "visible"
+	) {
+		// The viewport in document coordinates, for IntersectionObserver.
+		const viewport = new termDOM.window.DOMRect(
+			0,
+			termDOMSlots.framebuffer.scrollTop,
+			termDOMSlots.framebuffer.cols,
+			termDOMSlots.framebuffer.rows,
+		);
 		flushObservers(
 			termDOM.document,
 			termDOMSlots.layout,
