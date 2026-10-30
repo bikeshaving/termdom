@@ -240,3 +240,21 @@ test("a block's color change lays out none of its inlines again, and an inline's
 		dom.dispose();
 	}
 });
+
+test("a class that sets the background shorthand sends nothing to layout", async () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 30, rows: 5}).transport,
+	});
+	const {document, window} = dom;
+	document.head.innerHTML =
+		"<style>p.on { background: navy url(x.png) 1px 2px; color: white }</style>";
+	document.body.innerHTML = "<p>one <b>two</b> three</p>";
+	await nextFrame(dom);
+	const p = document.querySelector("p")!;
+	const layout = (_(dom) as unknown as {layout: {restyled: Set<Element>}})
+		.layout;
+	p.classList.add("on");
+	expect(window.getComputedStyle(p).backgroundColor).toBe("rgb(0, 0, 128)");
+	expect(layout.restyled.size).toBe(0);
+	dom.dispose();
+});
