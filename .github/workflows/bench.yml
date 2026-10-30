@@ -1,7 +1,6 @@
 name: Benchmarks
 
 on:
-  pull_request:
   # An experiment on a perf/ branch is compared with the commit before it,
   # or with main when the push starts the branch.
   push:
@@ -45,13 +44,11 @@ jobs:
         id: base
         env:
           EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
           BEFORE: ${{ github.event.before }}
           AGAINST: ${{ inputs.against }}
           RUNS: ${{ inputs.runs }}
         run: |
           case "$EVENT" in
-            pull_request) ref="origin/$BASE_REF"; runs=3 ;;
             workflow_dispatch) ref="$AGAINST"; runs="$RUNS" ;;
             *)
               if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
