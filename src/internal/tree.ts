@@ -145,9 +145,11 @@ export function getAttributeByName(
 	) {
 		name = toASCIILowercase(name);
 	}
-	for (const attribute of elementSlots.attributeList) {
-		if (attribute._qualifiedName === name) {
-			return getObject(attribute);
+	// Indexed: every attribute read in the engine comes through here.
+	const attributes = elementSlots.attributeList;
+	for (let index = 0; index < attributes.length; index++) {
+		if (attributes[index]._qualifiedName === name) {
+			return getObject(attributes[index]);
 		}
 	}
 	return null;

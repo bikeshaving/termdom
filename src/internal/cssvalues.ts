@@ -3029,7 +3029,8 @@ export function getDeclaredName(
 ): string | null {
 	let winner: string | null = null;
 	let winningOrder = -1;
-	for (const name of names) {
+	for (let index = 0; index < names.length; index++) {
+		const name = names[index];
 		if (block.declarations[name] === undefined) {
 			continue;
 		}

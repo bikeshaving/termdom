@@ -1865,7 +1865,8 @@ function resolveRun(
 ): void {
 	const boxLines = run.boxLines;
 	const first = lines.lines[0];
-	for (const line of lines.lines) {
+	for (let lineIndex = 0; lineIndex < lines.lines.length; lineIndex++) {
+		const line = lines.lines[lineIndex];
 		const alignOffset = getLineAlignOffset(
 			alignContainer,
 			lines.containerWidth,
@@ -1880,7 +1881,8 @@ function resolveRun(
 		const lineY = origin.y + line.y;
 		const textSpans = lineTextSpans;
 		textSpans.clear();
-		for (const segment of line.segments) {
+		for (let index = 0; index < line.segments.length; index++) {
+			const segment = line.segments[index];
 			const {leaf} = segment;
 			if (leaf.type === "text") {
 				const span = textSpans.get(leaf.node);
@@ -2016,7 +2018,8 @@ function paintText(
 		return;
 	}
 	let painted = false;
-	for (const fragment of fragments) {
+	for (let index = 0; index < fragments.length; index++) {
+		const fragment = fragments[index];
 		if (fragment.endOffset <= fragment.startOffset) {
 			continue;
 		}
