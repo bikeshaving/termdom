@@ -569,3 +569,31 @@ test("an empty field's cursor stands where its aligned text will start", async (
 	expect([buffer.cursorX, buffer.cursorY]).toEqual([11, 0]);
 	dom.dispose();
 });
+
+test("a flex item field in a centered flex container has its cursor after its text", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 80});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		cellSize: {width: 8, height: 16},
+	});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+	document.body.innerHTML =
+		"<style>body { margin: 0; }</style>" +
+		"<div style=\"display: flex; width: 400px; text-align: center\">" +
+		"<textarea rows=1 style=\"flex: 1 0%; height: 16px; border: 0; padding: 0\"></textarea>" +
+		"</div><p>below</p>";
+	const textarea = document.querySelector("textarea")!;
+	textarea.focus();
+	await nextFrame(dom);
+	await type(terminal, "asdf");
+	await nextFrame(dom);
+	await nextFrame(dom);
+	const buffer = (terminal as any).terminal.buffer.active;
+	const row = buffer.getLine(buffer.viewportY).translateToString(true);
+	expect(textarea.value).toBe("asdf");
+	expect(row.indexOf("asdf")).toBe(0);
+	expect([buffer.cursorX, buffer.cursorY]).toEqual([4, 0]);
+	dom.dispose();
+});
