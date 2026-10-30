@@ -482,14 +482,16 @@ function wrapAttribute(
 }
 
 // The classes a class takes its slots from, nearest first.
-function *ancestors(type: Constructor): Generator<Constructor> {
+function ancestors(type: Constructor): Constructor[] {
+	const found: Constructor[] = [];
 	for (
 		let current: unknown = getParentClass(type);
 		typeof current === "function" && current !== Function.prototype;
 		current = getParentClass(current as Constructor)
 	) {
-		yield current as Constructor;
+		found.push(current as Constructor);
 	}
+	return found;
 }
 
 const interfaceObjects = new Map<string, Constructor>();

@@ -26962,18 +26962,18 @@ function isElementOrText(node: Node): boolean {
 }
 
 /** The flat children that are elements or text. */
-export function *flatChildren(
-	parent: globalThis.Node,
-): Generator<globalThis.Node> {
+export function flatChildren(parent: globalThis.Node): globalThis.Node[] {
+	const children: globalThis.Node[] = [];
 	for (
 		let child = flatFirstChild(parent as Node);
 		child !== null;
 		child = flatNextSibling(child)
 	) {
 		if (isElementOrText(child)) {
-			yield child as unknown as globalThis.Node;
+			children.push(child as unknown as globalThis.Node);
 		}
 	}
+	return children;
 }
 
 /**
@@ -27030,29 +27030,30 @@ function isDisplayContents(node: globalThis.Node): boolean {
  * elements or text, with a `display: contents` element dissolved into
  * its own children.
  */
-export function *flowContent(
-	parent: globalThis.Node,
-): Generator<globalThis.Node> {
-	for (const child of flatChildren(parent)) {
-		if (getNodeType(child) === ELEMENT_NODE && isDisplayContents(child)) {
-			yield *flowContent(child);
-		} else {
-			yield child;
-		}
-	}
+export function flowContent(parent: globalThis.Node): globalThis.Node[] {
+	return addFlowContent(parent, []);
 }
 
-/** Every node under `root` in flow order. */
-export function *flowDescendants(
-	root: globalThis.Node,
-): Generator<globalThis.Node> {
+function addFlowContent(
+	parent: globalThis.Node,
+	content: globalThis.Node[],
+): globalThis.Node[] {
 	for (
-		let node = flowNext(root, root, false);
-		node !== null;
-		node = flowNext(node, root, false)
+		let child = flatFirstChild(parent as Node);
+		child !== null;
+		child = flatNextSibling(child)
 	) {
-		yield node;
+		if (!isElementOrText(child)) {
+			continue;
+		}
+		const node = child as unknown as globalThis.Node;
+		if (getNodeType(child) === ELEMENT_NODE && isDisplayContents(node)) {
+			addFlowContent(node, content);
+		} else {
+			content.push(node);
+		}
 	}
+	return content;
 }
 
 /**
