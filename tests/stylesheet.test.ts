@@ -669,3 +669,36 @@ test("a style element inside an added subtree applies its rules", async () => {
 		.toBe(10);
 	dom.dispose();
 });
+
+test("a child added or removed restyles the siblings whose sibling tests it changes", () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<style>li:nth-child(2n) { color: rgb(0, 128, 0) } li:last-child { background-color: rgb(0, 0, 255) }</style>" +
+		"<ul><li id=a>a</li><li id=b>b</li><li id=c>c</li></ul>";
+	const color = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!).color;
+	const background = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!).backgroundColor;
+	const green = "rgb(0, 128, 0)";
+	expect([color("a"), color("b"), color("c")].map((c) => c === green))
+		.toEqual([false, true, false]);
+	expect(background("c")).toBe("rgb(0, 0, 255)");
+
+	const inserted = document.createElement("li");
+	inserted.id = "x";
+	document.getElementById("a")!.after(inserted);
+	expect([color("a"), color("x"), color("b"), color("c")].map((c) => c === green))
+		.toEqual([false, true, false, true]);
+
+	const appended = document.createElement("li");
+	appended.id = "d";
+	document.querySelector("ul")!.append(appended);
+	expect(background("c")).not.toBe("rgb(0, 0, 255)");
+	expect(background("d")).toBe("rgb(0, 0, 255)");
+
+	document.getElementById("x")!.remove();
+	expect([color("a"), color("b"), color("c"), color("d")].map((c) => c === green))
+		.toEqual([false, true, false, true]);
+	dom.dispose();
+});
