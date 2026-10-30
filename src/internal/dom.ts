@@ -6939,17 +6939,53 @@ function *shadowIncludingInclusiveDescendants(node: Node): Generator<Node> {
 	}
 }
 
+// One walk, read as it goes, as the steps run for each node can change
+// what comes after it. A generator for each node would make one per node
+// and pass each node up through all of them.
 function *shadowIncludingInclusiveDescendantSlots(
 	node: Slots<Node>,
 ): Generator<Slots<Node>> {
-	yield node;
+	for (
+		let current: Slots<Node> | null = node;
+		current !== null;
+		current = nextShadowIncluding(current, node)
+	) {
+		yield current;
+	}
+}
+
+// After a node: its shadow root, then its children, then what follows it.
+// A shadow root walked to the end goes on to its host's children.
+function nextShadowIncluding(
+	node: Slots<Node>,
+	root: Slots<Node>,
+): Slots<Node> | null {
 	const shadow = (node as Slots<Element>).shadowRoot;
 	if (shadow != null) {
-		yield *shadowIncludingInclusiveDescendantSlots(getSlots(shadow));
+		return getSlots(shadow);
 	}
-	for (let child = node.firstChild; child !== null; child = child.next) {
-		yield *shadowIncludingInclusiveDescendantSlots(child);
+	if (node.firstChild !== null) {
+		return node.firstChild;
 	}
+	let at = node;
+	while (at !== root) {
+		if (at.next !== null) {
+			return at.next;
+		}
+		if (at.parent !== null) {
+			at = at.parent;
+			continue;
+		}
+		const host = (at as Slots<ShadowRoot>).extra.host;
+		if (host === null) {
+			return null;
+		}
+		at = getSlots(host as Node);
+		if (at.firstChild !== null) {
+			return at.firstChild;
+		}
+	}
+	return null;
 }
 
 function *inclusiveDescendants(node: Node): Generator<Node> {
