@@ -6610,6 +6610,9 @@ interface ParsedCSSRule {
 	hasAnchors?: readonly string[];
 	hasStates?: readonly string[];
 	hasSiblings?: boolean;
+	// The compounds the :has()es are written in, or null for one that can
+	// only be tested in its tree, as a :host's is.
+	hasCompounds?: ReadonlyArray<string | null>;
 
 	// The bits, in an element's ancestor filter, of the names, ids and
 	// classes the rule's compounds left of a descendant or child
@@ -7217,7 +7220,9 @@ export function handleMutations(
 				) {
 					if (!anchors.has(element) && couldAnchorHas(cascade, element)) {
 						anchors.add(element);
-						invalidateOnce(element);
+						if (hasAnswersChanged(cascade, element)) {
+							invalidateOnce(element);
+						}
 					}
 				}
 			}
@@ -7705,8 +7710,17 @@ function noteHasRule(
 	anchors: readonly string[],
 	states: readonly string[],
 	siblings: boolean,
+	compounds: ReadonlyArray<string | null>,
 ): void {
 	cascade.hasRulesExist = true;
+	for (const compound of compounds) {
+		if (compound === null) {
+			cascade.hasCompoundsUntestable = true;
+		} else if (!cascade.hasCompounds.has(compound)) {
+			cascade.hasCompounds.add(compound);
+			cascade.hasAnswers = new WeakMap();
+		}
+	}
 	if (siblings) {
 		cascade.hasSiblingRules = true;
 	}
@@ -7802,6 +7816,59 @@ function getHasAnchors(selector: string): string[] {
 	return anchors;
 }
 
+// For each :has() in a selector, the whole compound it is written in, as
+// `.a:has(> .b):not(.c)`, which tested on an anchor says whether that
+// part of the rule holds there. Null for a compound that only means
+// something in its tree.
+function getHasCompounds(selector: string): Array<string | null> {
+	const compounds: Array<string | null> = [];
+	for (
+		let at = selector.indexOf(":has(");
+		at !== -1;
+		at = selector.indexOf(":has(", at + 5)
+	) {
+		let start = at;
+		let depth = 0;
+		while (start > 0) {
+			const char = selector[start - 1];
+			if (char === ")" || char === "]") {
+				depth++;
+			} else if (char === "(" || char === "[") {
+				if (depth === 0) {
+					break;
+				}
+				depth--;
+			} else if (depth === 0 && /[\s>+~,]/.test(char)) {
+				break;
+			}
+			start--;
+		}
+		let end = at;
+		depth = 0;
+		for (; end < selector.length; end++) {
+			const char = selector[end];
+			if (char === "(" || char === "[") {
+				depth++;
+			} else if (char === ")" || char === "]") {
+				if (depth === 0) {
+					break;
+				}
+				depth--;
+			} else if (depth === 0 && /[\s>+~,]/.test(char)) {
+				break;
+			}
+		}
+		const compound = selector.slice(start, end);
+		compounds.push(
+			/::|:host|[\\|]/.test(compound) ||
+			compound.indexOf(":has(") !== compound.lastIndexOf(":has(")
+				? null
+				: compound,
+		);
+	}
+	return compounds;
+}
+
 function couldAnchorHas(cascade: Cascade, element: Element): boolean {
 	const anchors = cascade.hasAnchors;
 	if (anchors.has("*") || anchors.has(getLocalName(element).toLowerCase())) {
@@ -7819,6 +7886,27 @@ function couldAnchorHas(cascade: Cascade, element: Element): boolean {
 	return false;
 }
 
+// Whether the element answers any :has() compound otherwise than it did
+// when last asked, which a first ask always counts as.
+function hasAnswersChanged(cascade: Cascade, element: Element): boolean {
+	if (cascade.hasCompoundsUntestable) {
+		return true;
+	}
+	let answers = "";
+	for (const compound of cascade.hasCompounds) {
+		answers += matchesCompiled(
+			element as unknown as DOMElement,
+			compileSelector(compound),
+			{hasResults: null},
+		)
+			? "1"
+			: "0";
+	}
+	const previous = cascade.hasAnswers.get(element);
+	cascade.hasAnswers.set(element, answers);
+	return previous !== answers;
+}
+
 function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	dropScopedRules(cascade, root);
 	cascade.siblingIndexes.delete(root);
@@ -7827,6 +7915,9 @@ function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	cascade.hasAnchors = new Set();
 	cascade.hasSiblingRules = false;
 	cascade.hasStates = new Set();
+	cascade.hasCompounds = new Set();
+	cascade.hasCompoundsUntestable = false;
+	cascade.hasAnswers = new WeakMap();
 	for (const rule of cascade.parsedRules) {
 		if (rule.hasAnchors !== undefined) {
 			noteHasRule(
@@ -7834,6 +7925,7 @@ function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 				rule.hasAnchors,
 				rule.hasStates ?? [],
 				rule.hasSiblings === true,
+				rule.hasCompounds ?? [null],
 			);
 		}
 	}
@@ -7895,6 +7987,7 @@ function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 // Everything restyles, as it does when a stylesheet changes.
 function restyleAll(cascade: Cascade): void {
 	dropCache(cascade);
+	cascade.hasAnswers = new WeakMap();
 	const root = cascade.document.documentElement;
 	if (root) {
 		cascade.layout.invalidate(root);
@@ -10193,6 +10286,9 @@ function parseAllStylesheets(cascade: Cascade): void {
 	cascade.hasAnchors = new Set();
 	cascade.hasSiblingRules = false;
 	cascade.hasStates = new Set();
+	cascade.hasCompounds = new Set();
+	cascade.hasCompoundsUntestable = false;
+	cascade.hasAnswers = new WeakMap();
 	cascade.hoverRulesDeclared = false;
 	cascade.stylesheetsDirty = false;
 	cascade.layerPaths = [];
@@ -11245,14 +11341,16 @@ function parseSelector(
 	let hasAnchors: string[] | undefined;
 	let hasStates: string[] | undefined;
 	let hasSiblings: boolean | undefined;
+	let hasCompounds: Array<string | null> | undefined;
 	if (selector.includes(":has(")) {
 		hasAnchors = getHasAnchors(selector);
+		hasCompounds = getHasCompounds(selector);
 		const inside = selector.slice(selector.indexOf(":has(") + 5);
 		hasStates = Array.from(inside.matchAll(/:([a-zA-Z-]+)/g), (match) =>
 			match[1].toLowerCase(),
 		);
 		hasSiblings = hasSiblingArgument(selector);
-		noteHasRule(cascade, hasAnchors, hasStates, hasSiblings);
+		noteHasRule(cascade, hasAnchors, hasStates, hasSiblings, hasCompounds);
 	}
 	if (selector.includes(":hover")) {
 		cascade.hoverRulesDeclared = true;
@@ -11357,6 +11455,7 @@ function parseSelector(
 			hasAnchors,
 			hasStates,
 			hasSiblings,
+			hasCompounds,
 			layer,
 			layerRank: 0,
 			scopes,
@@ -11386,6 +11485,7 @@ function parseSelector(
 			hasAnchors,
 			hasStates,
 			hasSiblings,
+			hasCompounds,
 			layer,
 			layerRank: 0,
 			scopes,
