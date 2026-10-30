@@ -354,6 +354,10 @@ interface MatchState {
 	// a long list counted through the same siblings once per candidate.
 	siblings: SiblingIndexes;
 
+	// The siblings each `of S` list keeps, apart from the indexes, since
+	// an attribute that changes which siblings match S leaves their order.
+	filteredSiblings: FilteredSiblingIndexes;
+
 	// The node `:scope` refers to, or null when the selector uses none.
 	scope: Node | null;
 
@@ -372,6 +376,10 @@ export type HasResults = WeakMap<Element, Map<object, boolean>>;
 
 /** Each parent's element children, as a caller keeps them across matches. */
 export type SiblingIndexes = WeakMap<Node, SiblingIndex>;
+export type FilteredSiblingIndexes = WeakMap<
+	SiblingIndex,
+	Map<CompiledComplex[], FilteredSiblings>
+>;
 
 type Predicate = (element: Element, state: MatchState) => boolean;
 
@@ -2156,10 +2164,6 @@ export interface SiblingIndex {
 	elements: Element[];
 	index: Map<Element, number>;
 	byType: Map<string, Element[]>;
-	// The siblings an `of S` list keeps, by the list's compiled selector.
-	// Which siblings match S is only known by trying each, so it is done
-	// once a query and not once a candidate.
-	filtered: Map<CompiledComplex[], FilteredSiblings>;
 }
 
 interface FilteredSiblings {
@@ -2180,7 +2184,6 @@ function getSiblingIndex(element: Element, state: MatchState): SiblingIndex {
 			elements,
 			index: new Map(elements.map((child, i) => [child, i])),
 			byType: new Map(),
-			filtered: new Map(),
 		};
 		state.siblings.set(key, siblings);
 	}
@@ -2194,7 +2197,12 @@ function getFilteredSiblings(
 	state: MatchState,
 ): FilteredSiblings {
 	const siblings = getSiblingIndex(element, state);
-	let counted = siblings.filtered.get(filter);
+	let filtered = state.filteredSiblings.get(siblings);
+	if (filtered === undefined) {
+		filtered = new Map();
+		state.filteredSiblings.set(siblings, filtered);
+	}
+	let counted = filtered.get(filter);
 	if (
 		counted === undefined ||
 		counted.scope !== state.scope ||
@@ -2209,7 +2217,7 @@ function getFilteredSiblings(
 			scope: state.scope,
 			anchor: state.anchor,
 		};
-		siblings.filtered.set(filter, counted);
+		filtered.set(filter, counted);
 	}
 	return counted;
 }
@@ -2356,6 +2364,10 @@ interface MatchOptions {
 	// Where each parent's children are kept between matches, by a caller
 	// that drops them whenever the tree changes.
 	siblings?: SiblingIndexes | null;
+
+	// Where the siblings `of S` lists keep are, by a caller that drops them
+	// whenever the document changes.
+	filteredSiblings?: FilteredSiblingIndexes | null;
 }
 
 interface QueryOptions extends CompileOptions, MatchOptions {}
@@ -2368,6 +2380,7 @@ function createMatchState(options: MatchOptions): MatchState {
 		// `:scope` refers to. Inside `:has()` both become the anchor instead.
 		anchor: options.scope ?? null,
 		siblings: options.siblings ?? new WeakMap(),
+		filteredSiblings: options.filteredSiblings ?? new WeakMap(),
 		hasResults: options.hasResults ?? null,
 	};
 }
