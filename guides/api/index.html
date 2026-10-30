@@ -19,11 +19,18 @@ page. Defaults to an empty document.</p><pre class="language-typescript"><code c
 <code>location.href</code>.</p></li><li><p><code>cellSize?: &quot;unit&quot; | &quot;auto&quot; | {width, height}</code>: the size of a cell in
 CSS pixels. Keep the default for terminal programs. Use <code>&quot;auto&quot;</code> to
 show pages written for a browser, such as a 600px-wide email, at
-roughly browser size.</p><table><thead><tr><th>Value</th><th>One cell is</th></tr></thead><tbody><tr><td><code>&quot;unit&quot;</code> (default)</td><td>1×1 px</td></tr><tr><td><code>&quot;auto&quot;</code></td><td>What the terminal reports, or 8×16</td></tr><tr><td><code>{width, height}</code></td><td>The given size, 0.01 to 1000 px a side</td></tr></tbody></table><p>With <code>&quot;auto&quot;</code>, the first frame waits up to a second for the terminal
+roughly browser size.</p><table><thead><tr><th>Value</th><th>One cell is</th></tr></thead><tbody><tr><td><code>&quot;unit&quot;</code> (default)</td><td>1×1 px</td></tr><tr><td><code>&quot;auto&quot;</code></td><td>What the terminal reports over <code>devicePixelRatio</code>, or 8×16</td></tr><tr><td><code>{width, height}</code></td><td>The given size, 0.01 to 1000 px a side</td></tr></tbody></table><p>With <code>&quot;auto&quot;</code>, the first frame waits up to a second for the terminal
 to answer, and TermDOM asks again when the font is zoomed.</p><p>At any cell size, box edges round to the nearest cell, borders are at
 least one cell, <code>1ch</code> and <code>1lh</code> are one cell, and <code>1ic</code> is two
 columns. Stylesheets written in <code>ch</code> and <code>lh</code> look the same at every
-cell size.</p></li><li><p><code>csp?: string</code>: a <code>Content-Security-Policy</code> that limits what markup
+cell size.</p></li><li><p><code>devicePixelRatio?: &quot;auto&quot; | number</code>: how many of the terminal&#039;s
+pixels make one CSS pixel, as <code>window.devicePixelRatio</code> and
+<code>@media (resolution)</code> report. An <code>&quot;auto&quot;</code> cell is the terminal&#039;s cell
+divided by it, and images, whose pixels are CSS pixels, are sized by
+it too. With <code>&quot;auto&quot;</code> (default) it&#039;s a guess, since terminals don&#039;t
+report one: 2 when the first cell the terminal reports is taller than
+24 pixels, as terminals on Retina and other high-density screens
+report, and 1 otherwise. A number from 0.25 to 16 sets it.</p></li><li><p><code>csp?: string</code>: a <code>Content-Security-Policy</code> that limits what markup
 may load. Without it, everything loads. Set one for untrusted markup;
 the images guide has examples.</p></li><li><p><code>scripting?: &quot;none&quot; | &quot;enabled&quot;</code>: what the markup treats as the
 scripting state, matching <code>@media (scripting)</code>. TermDOM never runs
