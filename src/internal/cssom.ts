@@ -6955,7 +6955,8 @@ export class Cascade {
 	// The tokens of the values parents pass down, by what those values are,
 	// emptied with the root so the tables under them go too.
 	passedTokens: Map<string, PassedToken>;
-	// Each element's ancestor filter, dropped with every mutation.
+	// The ancestor filter each element's children share, by the element,
+	// dropped with every mutation.
 	ancestorFilters: WeakMap<Element, Uint32Array>;
 	pseudoElementStyleCache: WeakMap<
 		Element,
@@ -11991,40 +11992,45 @@ const FILTER_WORDS = 8;
 const EMPTY_FILTER = new Uint32Array(FILTER_WORDS);
 
 function getAncestorFilter(cascade: Cascade, element: Element): Uint32Array {
+	const above = getFilterParent(element);
+	return above === null ? EMPTY_FILTER : getChildFilter(cascade, above);
+}
+
+// The element a filter takes keys from above `element`: its parent, or a
+// shadow tree's host.
+function getFilterParent(element: Element): Element | null {
+	const parent: Node | null = element.parentNode;
+	return parent === null
+		? null
+		: isShadowRoot(parent)
+		? parent.host as Element
+		: getNodeType(parent) === ELEMENT_NODE ? parent as Element : null;
+}
+
+// What every child of `parent` has above it, which its children share
+// rather than each keep a copy of: the parent's own keys over its
+// ancestors'.
+function getChildFilter(cascade: Cascade, parent: Element): Uint32Array {
 	const filters = cascade.ancestorFilters;
 	const chain: Element[] = [];
 	let filter: Uint32Array | undefined;
-	for (let at: Element | null = element; at !== null;) {
+	for (let at: Element | null = parent; at !== null; at = getFilterParent(at)) {
 		filter = filters.get(at);
 		if (filter !== undefined) {
 			break;
 		}
 		chain.push(at);
-		const parent: Node | null = at.parentNode;
-		at = parent === null
-			? null
-			: isShadowRoot(parent)
-			? parent.host as Element
-			: getNodeType(parent) === ELEMENT_NODE ? parent as Element : null;
 	}
 	for (let i = chain.length - 1; i >= 0; i--) {
 		const at = chain[i];
-		const parent: Node | null = at.parentNode;
-		const above = parent === null
-			? null
-			: isShadowRoot(parent)
-			? parent.host as Element
-			: getNodeType(parent) === ELEMENT_NODE ? parent as Element : null;
-		const next = new Uint32Array(above === null ? EMPTY_FILTER : filter!);
-		if (above !== null) {
-			addFilterKey(next, `<${toASCIILowercase(getLocalName(above))}`);
-			const id = getIdValue(above);
-			if (id !== null) {
-				addFilterKey(next, `#${toASCIILowercase(id)}`);
-			}
-			for (const name of getClassTokens(above)) {
-				addFilterKey(next, `.${toASCIILowercase(name)}`);
-			}
+		const next = new Uint32Array(filter ?? EMPTY_FILTER);
+		addFilterKey(next, `<${toASCIILowercase(getLocalName(at))}`);
+		const id = getIdValue(at);
+		if (id !== null) {
+			addFilterKey(next, `#${toASCIILowercase(id)}`);
+		}
+		for (const name of getClassTokens(at)) {
+			addFilterKey(next, `.${toASCIILowercase(name)}`);
 		}
 		filters.set(at, next);
 		filter = next;
