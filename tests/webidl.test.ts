@@ -321,3 +321,15 @@ test("an attribute that forwards assignment takes a string, whatever its own typ
 	(link as {style: unknown}).style = "color: red";
 	expect(link.style.color).toBe("red");
 });
+
+test("a rel's relList answers supports() for the link types TermDOM knows", () => {
+	const {document} = setup();
+	const link = document.createElement("link") as HTMLLinkElement;
+	expect(link.relList.supports("stylesheet")).toBe(true);
+	expect(link.relList.supports("modulepreload")).toBe(false);
+	for (const tag of ["a", "area", "form"]) {
+		const element = document.createElement(tag) as HTMLAnchorElement;
+		expect(element.relList.supports("noopener")).toBe(true);
+		expect(element.relList.supports("stylesheet")).toBe(false);
+	}
+});

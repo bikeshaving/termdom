@@ -101,6 +101,10 @@ function tokens(
 	return {property, attribute, kind: "tokenlist", supported};
 }
 
+// The link types a hyperlink's or a form's rel supports, as in every
+// browser. A <link>'s supports only what TermDOM loads.
+const HYPERLINK_RELS = ["noreferrer", "noopener", "opener"];
+
 const REFERRER_POLICIES = [
 	"",
 	"no-referrer",
@@ -212,8 +216,11 @@ const HAND_REFLECTIONS: Readonly<Record<string, readonly ReflectSpec[]>> = {
 			"true",
 		),
 	],
-	HTMLAnchorElement: [referrerPolicy()],
-	HTMLAreaElement: [referrerPolicy()],
+	HTMLAnchorElement: [
+		referrerPolicy(),
+		tokens("relList", "rel", HYPERLINK_RELS),
+	],
+	HTMLAreaElement: [referrerPolicy(), tokens("relList", "rel", HYPERLINK_RELS)],
 	HTMLButtonElement: [
 		...FORM_SUBMISSION,
 		keyword("type", "type", ["submit", "reset", "button"], "submit", "submit"),
@@ -248,6 +255,7 @@ const HAND_REFLECTIONS: Readonly<Record<string, readonly ReflectSpec[]>> = {
 			"application/x-www-form-urlencoded",
 		),
 		keyword("method", "method", ["get", "post", "dialog"], "get", "get"),
+		tokens("relList", "rel", HYPERLINK_RELS),
 	],
 	HTMLIFrameElement: [
 		str("srcdoc"),
@@ -319,6 +327,7 @@ const HAND_REFLECTIONS: Readonly<Record<string, readonly ReflectSpec[]>> = {
 		popoverTargetAction(),
 	],
 	HTMLLinkElement: [
+		tokens("relList", "rel", ["stylesheet"]),
 		crossOrigin(),
 		keyword(
 			"as",
