@@ -19,6 +19,7 @@ import {
 	createWindowRegistry,
 	type Document,
 	DOMException,
+	HTMLAudioElement,
 	HTMLImageElement,
 	parseHTMLDocument,
 	parseXMLDocument,
@@ -184,6 +185,26 @@ export function buildWindow(
 		Object.setPrototypeOf(Image, realm.functionPrototype);
 	}
 	window.Image = Image;
+	// And new Audio(src) is an <audio> that preloads.
+	const Audio = function Audio(this: unknown, src?: unknown) {
+		if (new.target === undefined) {
+			throw new TypeError("Audio is a constructor");
+		}
+		const audio = document.createElement("audio");
+		setAttributeByName(audio, "preload", "auto");
+		if (src !== undefined) {
+			setAttributeByName(audio, "src", String(src));
+		}
+		return audio;
+	} as unknown as typeof HTMLAudioElement;
+	Object.defineProperty(Audio, "prototype", {
+		value:
+			realm?.prototypes.get(HTMLAudioElement) ?? HTMLAudioElement.prototype,
+	});
+	if (realm !== null) {
+		Object.setPrototypeOf(Audio, realm.functionPrototype);
+	}
+	window.Audio = Audio;
 	window.window = window;
 	window.self = window;
 	for (const name of Object.keys(window)) {
