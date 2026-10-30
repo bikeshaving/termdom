@@ -10308,6 +10308,8 @@ const PAINT_ONLY_PROPERTIES = new Set([
 	"background-color",
 	"background-image",
 	"background-position",
+	"background-position-x",
+	"background-position-y",
 	"background-repeat",
 	"background-size",
 	"background-attachment",
