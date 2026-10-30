@@ -64,6 +64,17 @@ export function silence(proc: any): void {
 	};
 }
 
+// With --allocated, a scenario runs under Bun with its collector off, so
+// nothing allocated is freed, and a measurement is the memory its steps
+// committed, in KB a step: what each would leave a collector to do.
+// Times a scenario reports itself mean nothing then and are skipped.
+const allocatedMode = process.env.TERMDOM_BENCH_MEASURE === "allocated";
+const jsc = allocatedMode
+	? await import("bun:jsc" as string) as {
+		memoryUsage(): {currentCommit: number};
+	}
+	: null;
+
 /** CPU time, so the time a frame waits for its turn is not counted. */
 export function cpuMs(): number {
 	const {user, system} = process.cpuUsage();
@@ -71,6 +82,9 @@ export function cpuMs(): number {
 }
 
 export function report(label: string, times: number[]): void {
+	if (allocatedMode) {
+		return;
+	}
 	const sorted = [...times].sort((a, b) => a - b);
 	const median = sorted[Math.floor(sorted.length / 2)];
 	console.log(JSON.stringify({label, median}));
@@ -84,6 +98,17 @@ export async function measure(
 ): Promise<void> {
 	for (let i = 0; i < warm; i++) {
 		await step(i);
+	}
+	if (jsc !== null) {
+		// Committed memory moves a page at a time, so the steps are taken
+		// together.
+		const before = jsc.memoryUsage().currentCommit;
+		for (let i = warm; i < warm + steps; i++) {
+			await step(i);
+		}
+		const median = (jsc.memoryUsage().currentCommit - before) / steps / 1024;
+		console.log(JSON.stringify({label, median}));
+		return;
 	}
 	const times: number[] = [];
 	for (let i = warm; i < warm + steps; i++) {
@@ -99,6 +124,9 @@ export async function measure(
  * a median alone hides, to stderr.
  */
 export function describeLatency(label: string, times: number[]): void {
+	if (allocatedMode) {
+		return;
+	}
 	report(label, times);
 	const sorted = [...times].sort((a, b) => a - b);
 	const at = (q: number): string =>
@@ -140,6 +168,9 @@ export async function underLoad(
 	label: string,
 	work: () => Promise<number[]>,
 ): Promise<void> {
+	if (allocatedMode) {
+		return;
+	}
 	describeLatency(`${label}, idle`, await work());
 	for (const [load, perCore] of [
 		["every core busy", 1],

@@ -3,10 +3,16 @@
  * and prints the median CPU time of each measurement.
  *
  *   node bench/run.ts [--runs N] [--only a,b] [--against REF] [--markdown]
+ *     [--allocated]
  *
  * --against checks REF out into a temporary worktree and runs the same
  * scenarios against it, alternating with this checkout, so both sides
  * share whatever the machine was doing.
+ *
+ * --allocated runs the scenarios under Bun with its collector off and
+ * reports the KB each step allocates, where CPU time is reported
+ * otherwise. Under load, collecting what a step left behind is the cost
+ * that grows: a heap swapped out comes back in to be collected.
  */
 import {spawnSync} from "node:child_process";
 import {mkdtempSync, readdirSync, rmSync, symlinkSync} from "node:fs";
@@ -25,6 +31,7 @@ const runs = Number(option("--runs") ?? 3);
 const only = option("--only")?.split(",");
 const against = option("--against");
 const markdown = process.argv.includes("--markdown");
+const allocated = process.argv.includes("--allocated");
 
 const scenarios = readdirSync(scenarioDirectory)
 	.filter((name) => name.endsWith(".ts"))
@@ -40,13 +47,24 @@ function git(...args: string[]): void {
 
 function runScenario(name: string, root: string): Map<string, number> {
 	const result = spawnSync(
-		process.execPath,
-		[...process.execArgv, join(scenarioDirectory, `${name}.ts`), root],
+		allocated ? "bun" : process.execPath,
+		[
+			...(allocated ? [] : process.execArgv),
+			join(scenarioDirectory, `${name}.ts`),
+			root,
+		],
 		{
 			cwd: root,
 			encoding: "utf8",
 			timeout: 600_000,
 			stdio: ["ignore", "pipe", "pipe"],
+			env: allocated
+				? {
+					...process.env,
+					BUN_JSC_useGC: "false",
+					TERMDOM_BENCH_MEASURE: "allocated",
+				}
+				: process.env,
 		},
 	);
 	const medians = new Map<string, number>();
@@ -105,7 +123,7 @@ try {
 
 const header = [
 	"Measurement",
-	...roots.map((root) => `${root.name} (ms)`),
+	...roots.map((root) => `${root.name} (${allocated ? "KB" : "ms"})`),
 	...(roots.length === 2 ? ["Change"] : []),
 ];
 const rows = [...samples].map(([label, byRoot]) => {
