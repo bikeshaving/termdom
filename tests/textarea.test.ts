@@ -527,3 +527,16 @@ test("an author height beats the rows-derived content floor", async () => {
 
 	dom.dispose();
 });
+
+test("a field doesn't inherit its parent's text-align, as HTML's rendering rules say", () => {
+	const dom = new TermDOM({transport: new MockProcess().transport});
+	const {document, window} = dom;
+	document.body.innerHTML =
+		"<div style=\"text-align: center\"><textarea></textarea><input><select></select><p>p</p></div>" +
+		"<p style=\"text-align: initial\">q</p>";
+	const align = (selector: string) =>
+		window.getComputedStyle(document.querySelector(selector)!).textAlign;
+	expect(["textarea", "input", "select", "div p", "body > p"].map(align))
+		.toEqual(["start", "start", "start", "center", "start"]);
+	dom.dispose();
+});
