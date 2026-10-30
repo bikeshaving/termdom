@@ -1111,19 +1111,19 @@ function paintBlock(
 		paintOutline(element, style, rect, ctx);
 		return;
 	}
-	paintContent(painter, element, style, rect, ctx, (origin) => {
-		paintNodes(painter, node, origin, ctx);
-	});
+	paintContent(painter, element, style, rect, ctx, node);
 	paintOutline(element, style, rect, ctx);
 }
 
+// What a box lays its content out as: its layout node's children, or the
+// lines of the inline-block it is.
 function paintContent(
 	painter: Painter,
 	element: Element,
 	style: PaintStyle,
 	rect: Rect,
 	ctx: CellContext,
-	paintLayoutChildren: (origin: Origin) => void,
+	content: LayoutNode | InlineBlockLeaf,
 ): void {
 	const layout = painter.layout;
 	const isRoot =
@@ -1181,16 +1181,37 @@ function paintContent(
 			// The box lays its content out from 0, so what the viewport shows
 			// of it is counted from where it paints, not from the document.
 			const top = origin.y + style.contentInsetY;
-			paintInFrame(painter, context, -top, () =>
+			const outerFrame = painter.frame;
+			const outerScrolled = painter.scrolledRows;
+			painter.frame = context;
+			painter.scrolledRows = -top;
+			try {
 				paintNodes(
 					painter,
 					context,
 					{x: origin.x + style.contentInsetX, y: top},
 					ctx,
-				),
+				);
+			} finally {
+				painter.frame = outerFrame;
+				painter.scrolledRows = outerScrolled;
+			}
+		} else if (!("type" in content)) {
+			paintNodes(painter, content, origin, ctx);
+		} else if (content.breakResult) {
+			const model = content.boxModel;
+			paintLines(
+				painter,
+				content.breakResult,
+				flowContent(element),
+				element,
+				element,
+				{
+					x: origin.x + model.paddingLeft + model.borderLeftWidth,
+					y: origin.y + model.paddingTop + model.borderTopWidth,
+				},
+				ctx,
 			);
-		} else {
-			paintLayoutChildren(origin);
 		}
 		if (style.overflowX !== "visible") {
 			paintOverflowMarkers(painter, element, style, ctx);
@@ -1787,23 +1808,7 @@ function paintAtomic(
 		paintOutline(element, style, rect, ctx);
 		return;
 	}
-	paintContent(painter, element, style, rect, ctx, (origin) => {
-		if (leaf.breakResult) {
-			const model = leaf.boxModel;
-			paintLines(
-				painter,
-				leaf.breakResult,
-				flowContent(element),
-				element,
-				element,
-				{
-					x: origin.x + model.paddingLeft + model.borderLeftWidth,
-					y: origin.y + model.paddingTop + model.borderTopWidth,
-				},
-				ctx,
-			);
-		}
-	});
+	paintContent(painter, element, style, rect, ctx, leaf);
 	paintOutline(element, style, rect, ctx);
 }
 
