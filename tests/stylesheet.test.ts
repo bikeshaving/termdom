@@ -681,15 +681,14 @@ test("a child added or removed restyles the siblings whose sibling tests it chan
 	const background = (id: string) =>
 		window.getComputedStyle(document.getElementById(id)!).backgroundColor;
 	const green = "rgb(0, 128, 0)";
-	expect([color("a"), color("b"), color("c")].map((c) => c === green))
-		.toEqual([false, true, false]);
+	const greens = (...ids: string[]) => ids.map((id) => color(id) === green);
+	expect(greens("a", "b", "c")).toEqual([false, true, false]);
 	expect(background("c")).toBe("rgb(0, 0, 255)");
 
 	const inserted = document.createElement("li");
 	inserted.id = "x";
 	document.getElementById("a")!.after(inserted);
-	expect([color("a"), color("x"), color("b"), color("c")].map((c) => c === green))
-		.toEqual([false, true, false, true]);
+	expect(greens("a", "x", "b", "c")).toEqual([false, true, false, true]);
 
 	const appended = document.createElement("li");
 	appended.id = "d";
@@ -698,7 +697,6 @@ test("a child added or removed restyles the siblings whose sibling tests it chan
 	expect(background("d")).toBe("rgb(0, 0, 255)");
 
 	document.getElementById("x")!.remove();
-	expect([color("a"), color("b"), color("c"), color("d")].map((c) => c === green))
-		.toEqual([false, true, false, true]);
+	expect(greens("a", "b", "c", "d")).toEqual([false, true, false, true]);
 	dom.dispose();
 });
