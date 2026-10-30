@@ -685,6 +685,9 @@ const NO_CHILDREN: LayoutNode[] = Object.freeze([]) as unknown as LayoutNode[];
 
 export class LayoutNode {
 	measureFn: Measure | null;
+	// What the measure reads its box from, for a measure every node shares
+	// rather than one each.
+	measureSubject: object | null;
 	staticPositionFn: StaticPosition | null;
 	currentStyle: Style;
 	// How many absolutely or fixed positioned boxes the subtree holds, this
@@ -779,6 +782,7 @@ export class LayoutNode {
 		this.parent = null;
 		this.ownerFree = false;
 		this.measureFn = null;
+		this.measureSubject = null;
 		this.staticPositionFn = null;
 		this.stale = true;
 		this.selfStale = true;
