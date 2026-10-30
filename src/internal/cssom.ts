@@ -4773,14 +4773,17 @@ function getSharedResolved(
 		return new Map();
 	}
 	let key = getLocalName(element);
-	for (const rule of rules) {
-		const id = getRuleId(rule);
+	// Counted, as a frozen rule list's iterator leaves its optimized loop
+	// at every end.
+	for (let index = 0; index < rules.length; index++) {
+		const id = getRuleId(rules[index]);
 		if (id === -1) {
 			return new Map();
 		}
 		key += `,${id}`;
 	}
-	for (const name of KEYED_ATTRIBUTES) {
+	for (let index = 0; index < KEYED_ATTRIBUTES.length; index++) {
+		const name = KEYED_ATTRIBUTES[index];
 		const value = getAttributeValue(element, name);
 		if (value !== null) {
 			key += `\0${name}=${value}`;
@@ -8325,13 +8328,15 @@ function getCascadeRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	}
 	// Author level, zero specificity, ahead of every author rule and
 	// layer (HTML §15.1).
-	const at = rules.findIndex((rule) => !rule.uaOrigin);
-	return shareRuleList(
-		cascade,
-		at === -1
-			? [...rules, hints]
-			: [...rules.slice(0, at), hints, ...rules.slice(at)],
-	);
+	let at = 0;
+	while (at < rules.length && rules[at].uaOrigin) {
+		at++;
+	}
+	return shareRuleList(cascade, [
+		...rules.slice(0, at),
+		hints,
+		...rules.slice(at),
+	]);
 }
 
 // A state changed on the element. The element restyles. Its subtree and

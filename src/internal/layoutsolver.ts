@@ -6495,6 +6495,59 @@ function layoutBlock(
 	}
 }
 
+// What a layout writes into its cache entry, filled just before the
+// writes. They follow at once and lay nothing out, so one record serves
+// every layout in turn, and the values stay in locals of known type.
+interface CacheEntry {
+	availableWidth: number;
+	availableHeight: number;
+	widthCode: number;
+	heightCode: number;
+	ownerWidth: number;
+	ownerHeight: number;
+	width: number;
+	height: number;
+}
+
+const cacheEntry: CacheEntry = {
+	availableWidth: 0,
+	availableHeight: 0,
+	widthCode: 0,
+	heightCode: 0,
+	ownerWidth: 0,
+	ownerHeight: 0,
+	width: 0,
+	height: 0,
+};
+
+function writeCacheEntry(
+	cache: Float64Array,
+	at: number,
+	slot: number,
+	entry: CacheEntry,
+): void {
+	cache[at + AVAILABLE_WIDTH] = entry.availableWidth;
+	cache[at + AVAILABLE_HEIGHT] = entry.availableHeight;
+	cache[at + WIDTH_SPACE] = entry.widthCode;
+	cache[at + HEIGHT_SPACE] = entry.heightCode;
+	cache[at + OWNER_WIDTH] = entry.ownerWidth;
+	cache[at + OWNER_HEIGHT] = entry.ownerHeight;
+	cache[at + WIDTH] = entry.width;
+	cache[at + HEIGHT] = entry.height;
+	cache[at + SLOT] = slot;
+}
+
+function hasWidthDependentChild(node: LayoutNode): boolean {
+	const children = node.children;
+	for (let index = 0; index < children.length; index++) {
+		const child = children[index];
+		if (child.widthDependent || usesPercent(child.style)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // The entry point for every mode and every probe.
 function layoutNode(
 	node: LayoutNode,
@@ -6701,25 +6754,21 @@ function layoutNode(
 	node.ownerFree = isOwnerFree(node);
 	node.widthDependent = node.measure !== null
 		? node.measured?.widthDependent === true
-		: node.children.some((child) =>
-			child.widthDependent || usesPercent(child.style),
-		);
+		: hasWidthDependentChild(node);
 	// An entry already in the slot is written over rather than replaced. A
 	// node laid out every frame would otherwise leave one behind each time.
-	const write = (cache: Float64Array, at: number, slot: number): void => {
-		cache[at + AVAILABLE_WIDTH] = availableWidth;
-		cache[at + AVAILABLE_HEIGHT] = availableHeight;
-		cache[at + WIDTH_SPACE] = widthCode;
-		cache[at + HEIGHT_SPACE] = heightCode;
-		cache[at + OWNER_WIDTH] = ownerWidth;
-		cache[at + OWNER_HEIGHT] = ownerHeight;
-		cache[at + WIDTH] = node.result.width;
-		cache[at + HEIGHT] = skipped ? NO_HEIGHT : node.result.height;
-		cache[at + SLOT] = slot;
-	};
+	const entry = cacheEntry;
+	entry.availableWidth = availableWidth;
+	entry.availableHeight = availableHeight;
+	entry.widthCode = widthCode;
+	entry.heightCode = heightCode;
+	entry.ownerWidth = ownerWidth;
+	entry.ownerHeight = ownerHeight;
+	entry.width = node.result.width;
+	entry.height = skipped ? NO_HEIGHT : node.result.height;
 	if (placing) {
 		reserveCache(node, 1);
-		write(node.pool.data, node.cacheAt * ENTRY, -1);
+		writeCacheEntry(node.pool.data, node.cacheAt * ENTRY, -1, entry);
 		node.hasCachedLayout = true;
 	} else {
 		// A sizing pass that ran wrote its own results over the subtree the
@@ -6769,14 +6818,14 @@ function layoutNode(
 			index++;
 		}
 		if (index < end) {
-			write(cache, base + index * ENTRY, slot);
+			writeCacheEntry(cache, base + index * ENTRY, slot, entry);
 		} else if (end - start < CACHE_SLOT_DEPTH) {
 			cache.copyWithin(
 				base + (end + 1) * ENTRY,
 				base + end * ENTRY,
 				base + (count + 1) * ENTRY,
 			);
-			write(cache, base + end * ENTRY, slot);
+			writeCacheEntry(cache, base + end * ENTRY, slot, entry);
 			node.cachedSizeCount = count + 1;
 		} else {
 			cache.copyWithin(
@@ -6784,7 +6833,7 @@ function layoutNode(
 				base + (start + 1) * ENTRY,
 				base + end * ENTRY,
 			);
-			write(cache, base + (end - 1) * ENTRY, slot);
+			writeCacheEntry(cache, base + (end - 1) * ENTRY, slot, entry);
 		}
 	}
 	node.stale = false;
