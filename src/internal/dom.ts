@@ -35596,10 +35596,43 @@ function capParseDepth(parentNode: Node): Node {
 // Every node the adapter creates belongs to the document it was made
 // for, and every insertion runs the same algorithm appendChild runs, so a
 // parsed tree and a scripted tree are the same tree.
+// The parser spells names, values and text out a piece at a time, and
+// JavaScriptCore keeps a string built by appending as a rope of every
+// piece, the whole chain held by the node, until something reads its
+// characters, which resolves it in place. Names repeat across a document,
+// so each is kept once.
+const PARSED_NAMES = 4096;
+const parsedNames = new Map<string, string>();
+// What the reads that resolve a rope come to, kept so the reads are not
+// dropped as unused.
+let _resolvedCodes = 0;
+
+function shareName(name: string): string {
+	let shared = parsedNames.get(name);
+	if (shared === undefined) {
+		if (parsedNames.size >= PARSED_NAMES) {
+			parsedNames.clear();
+		}
+		parsedNames.set(name, name);
+		shared = name;
+	}
+	return shared;
+}
+
+function resolveRope(value: string): string {
+	if (value.length > 0) {
+		_resolvedCodes ^= value.charCodeAt(value.length - 1);
+	}
+	return value;
+}
+
 // The return type is parse5's structural TreeAdapter, spelled by the object.
 // eslint-disable-next-line @b9g/explicit-declaration-return-type
 function createTreeAdapter(document: Document | null) {
 	let target = document;
+	// The text nodes the parse appended to, resolved when it finishes rather
+	// than after every piece, which would copy the text again each time.
+	const extended = new Set<CharacterData>();
 	const adapter = {
 		createDocument(): Document {
 			const created = new Document();
@@ -35622,7 +35655,7 @@ function createTreeAdapter(document: Document | null) {
 		): Element {
 			const element = createElementInternal(
 				target as Document,
-				tagName,
+				shareName(tagName),
 				namespaceURI,
 				null,
 				null,
@@ -35633,10 +35666,14 @@ function createTreeAdapter(document: Document | null) {
 			return element;
 		},
 		createCommentNode(data: string): Comment {
-			return (target as Document).createComment(data) as unknown as Comment;
+			return (target as Document).createComment(
+				resolveRope(data),
+			) as unknown as Comment;
 		},
 		createTextNode(value: string): Text {
-			return (target as Document).createTextNode(value) as unknown as Text;
+			return (target as Document).createTextNode(
+				resolveRope(value),
+			) as unknown as Text;
 		},
 		appendChild(parentNode: Node, newNode: Node): void {
 			insertNode(newNode, capParseDepth(parentNode), null, true);
@@ -35690,6 +35727,7 @@ function createTreeAdapter(document: Document | null) {
 			const last = getObject(_(parentNode).lastChild);
 			if (last !== null && getNodeType(last) === TEXT_NODE) {
 				_((last as CharacterData)).data += text;
+				extended.add(last as CharacterData);
 				return;
 			}
 			adapter.appendChild(
@@ -35705,6 +35743,7 @@ function createTreeAdapter(document: Document | null) {
 			const previous = getObject(_(referenceNode).previous);
 			if (previous !== null && getNodeType(previous) === TEXT_NODE) {
 				_((previous as CharacterData)).data += text;
+				extended.add(previous as CharacterData);
 				return;
 			}
 			adapter.insertBefore(
@@ -35717,14 +35756,26 @@ function createTreeAdapter(document: Document | null) {
 			for (const attribute of attrs) {
 				const namespace = attribute.namespace ?? null;
 				const prefix = attribute.prefix ?? null;
-				const localName = attribute.name;
+				const localName = shareName(attribute.name);
 				if (getAttributeByNamespace(recipient, namespace, localName) !== null) {
 					continue;
 				}
-				const created = new Attr(namespace, prefix, localName, attribute.value);
+				const created = new Attr(
+					namespace,
+					prefix,
+					localName,
+					resolveRope(attribute.value),
+				);
 				setNodeDocument(created, _(recipient).document);
 				appendAttribute(recipient, created);
 			}
+		},
+		// Not parse5's: the parse calls it when parse5 returns.
+		finishParse(): void {
+			for (const text of extended) {
+				resolveRope(_(text).data);
+			}
+			extended.clear();
 		},
 		getFirstChild(node: Node): Node | null {
 			return getObject(_(node).firstChild);
@@ -35918,6 +35969,7 @@ export function parseHTMLDocument(
 			treeAdapter: adapter as never,
 			scriptingEnabled: scripting,
 		}) as unknown as Document;
+		adapter.finishParse();
 	} finally {
 		parseRegistry = outerRegistry;
 	}
@@ -35952,6 +36004,7 @@ function parseHTMLFragment(
 				document as unknown as globalThis.Document,
 			),
 		}) as unknown as DocumentFragment;
+		adapter.finishParse();
 	} finally {
 		parseRegistry = outerRegistry;
 	}
