@@ -9239,6 +9239,12 @@ const NO_CLASS_TOKENS: ReadonlySet<string> = new Set();
 // The parsed set is cached on the element and discarded by the class
 // attribute's change steps, so a walk asking every element for its
 // classes pays only for attributes that changed.
+// Elements share their class lists, a list's items most of all, so the
+// tokens of a class value are kept once and handed to every element with
+// it, read-only as they are.
+const CLASS_TOKEN_SETS = 1024;
+const classTokenSets = new Map<string, ReadonlySet<string>>();
+
 export function getClassTokens(
 	target: globalThis.Element,
 ): ReadonlySet<string> {
@@ -9247,9 +9253,21 @@ export function getClassTokens(
 	let tokens = elementSlots.classTokens;
 	if (tokens === null) {
 		const value = getAttributeValue(element, "class");
-		const names = value === null ? [] : splitOnASCIIWhitespace(value);
-		tokens = names.length === 0 ? NO_CLASS_TOKENS : new Set(names);
+		tokens = value === null ? NO_CLASS_TOKENS : getValueTokens(value);
 		elementSlots.classTokens = tokens;
+	}
+	return tokens;
+}
+
+function getValueTokens(value: string): ReadonlySet<string> {
+	let tokens = classTokenSets.get(value);
+	if (tokens === undefined) {
+		const names = splitOnASCIIWhitespace(value);
+		tokens = names.length === 0 ? NO_CLASS_TOKENS : new Set(names);
+		if (classTokenSets.size >= CLASS_TOKEN_SETS) {
+			classTokenSets.clear();
+		}
+		classTokenSets.set(value, tokens);
 	}
 	return tokens;
 }
