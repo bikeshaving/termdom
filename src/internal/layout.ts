@@ -1400,11 +1400,12 @@ function computePaintExtents(
 
 // The rows each inline-block on these lines paints, from the top of the
 // lines: its content box's, reaching as far as what it lays out does.
-function *getInlineBlockReaches(
+function getInlineBlockReaches(
 	layout: Layout,
 	lines: BreakResult,
 	from = 0,
-): Generator<[number, number]> {
+	reaches: Array<[number, number]> = [],
+): Array<[number, number]> {
 	for (const line of lines.lines) {
 		for (const segment of line.segments) {
 			const leaf = segment.leaf;
@@ -1420,13 +1421,14 @@ function *getInlineBlockReaches(
 			const context = layout.boxes.get(leaf.node)?.independentFormattingContext;
 			const extent = context ? getStoredExtent(context) : undefined;
 			if (extent !== undefined) {
-				yield [top + extent.top, top + extent.bottom];
+				reaches.push([top + extent.top, top + extent.bottom]);
 			} else if (leaf.breakResult !== undefined) {
-				yield [top, top + leaf.breakResult.totalHeight];
-				yield *getInlineBlockReaches(layout, leaf.breakResult, top);
+				reaches.push([top, top + leaf.breakResult.totalHeight]);
+				getInlineBlockReaches(layout, leaf.breakResult, top, reaches);
 			}
 		}
 	}
+	return reaches;
 }
 
 function styleLayoutNode(
@@ -6185,7 +6187,7 @@ function layoutRect(engine: Layout, element: Element): DOMRect | null {
 // Every layout node the document can reach: its trees, the detached
 // nodes it keeps for the re-add sweep, and the trees of its independent
 // formatting contexts.
-function *getLiveLayoutNodes(layout: Layout): Generator<LayoutNode> {
+function getLiveLayoutNodes(layout: Layout): LayoutNode[] {
 	const pending: LayoutNode[] = [layout.initialBlock];
 	for (const [node, layoutNode] of layout.nodeMap) {
 		pending.push(layoutNode);
@@ -6202,10 +6204,10 @@ function *getLiveLayoutNodes(layout: Layout): Generator<LayoutNode> {
 		const node = pending.pop()!;
 		if (!seen.has(node)) {
 			seen.add(node);
-			yield node;
 			pending.push(...node.children);
 		}
 	}
+	return [...seen];
 }
 
 export class Layout {
@@ -8650,14 +8652,15 @@ function invalidateForRecord(
 	}
 }
 
-function *getTextNodes(root: Node): Generator<Text> {
+function getTextNodes(root: Node, found: Text[] = []): Text[] {
 	if (getNodeType(root) === root.TEXT_NODE) {
-		yield root as Text;
-		return;
+		found.push(root as Text);
+		return found;
 	}
 	for (const child of Array.from(root.childNodes)) {
-		yield *getTextNodes(child);
+		getTextNodes(child, found);
 	}
+	return found;
 }
 
 // Where a run head's lines count from. An atomic inline heading a run

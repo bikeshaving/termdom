@@ -1,7 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {flowDescendants, pseudoElement} from "../src/internal/dom.ts";
+import {flowNext, pseudoElement} from "../src/internal/dom.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("::before and ::after content rendering", async () => {
@@ -312,7 +312,11 @@ test.todo("ExpandedTreeWalker traverses pseudo-elements in document order", asyn
 	list.appendChild(listItem);
 
 	const traversedContent: string[] = [];
-	for (const node of flowDescendants(container)) {
+	for (
+		let node = flowNext(container, container, false);
+		node !== null;
+		node = flowNext(node, container, false)
+	) {
 		if (node.nodeType === node.TEXT_NODE) {
 			const textContent = node.textContent || "";
 			if (textContent.trim()) {

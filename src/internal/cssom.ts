@@ -8222,13 +8222,18 @@ function splitArguments(args: string): string[] {
 	return parts;
 }
 
-function *flatDescendants(element: Element): Generator<Element> {
+function flatDescendants(element: Element): Element[] {
+	return addFlatDescendants(element, []);
+}
+
+function addFlatDescendants(element: Element, found: Element[]): Element[] {
 	for (const child of flatChildren(element)) {
 		if (getNodeType(child) === ELEMENT_NODE) {
-			yield child as Element;
-			yield *flatDescendants(child as Element);
+			found.push(child as Element);
+			addFlatDescendants(child as Element, found);
 		}
 	}
+	return found;
 }
 
 function reachesSiblings(

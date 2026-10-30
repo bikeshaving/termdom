@@ -1172,17 +1172,18 @@ function paintContent(
 
 // The text an element's own lines hold: its inline content, not what a
 // nested block or inline-block lays out in lines of its own.
-function *getOwnLineText(element: Element): Generator<Text> {
+function getOwnLineText(element: Element, found: Text[] = []): Text[] {
 	for (const child of flowContent(element)) {
 		if (getNodeType(child) === child.TEXT_NODE) {
-			yield child as Text;
+			found.push(child as Text);
 		} else if (
 			getNodeType(child) === child.ELEMENT_NODE &&
 			getComputedValue(child as Element, "display") === "inline"
 		) {
-			yield *getOwnLineText(child as Element);
+			getOwnLineText(child as Element, found);
 		}
 	}
+	return found;
 }
 
 // What text-overflow puts at each edge a line overflows: nothing for
