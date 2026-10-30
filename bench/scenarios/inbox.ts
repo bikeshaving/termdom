@@ -41,6 +41,15 @@ async function press(): Promise<void> {
 	await nextFrame(dom);
 }
 
+// Every kind of key once over before any is measured, so the first
+// measured is not charged for compiling what they all run.
+for (const each of [0, 20, rows.length]) {
+	span = each;
+	for (let i = 0; i < 100; i++) {
+		await press();
+	}
+}
+span = 0;
 await measure("inbox: a key that changes nothing", 200, press, 20);
 span = 20;
 await measure("inbox: a key that moves the selection", 200, press, 20);
