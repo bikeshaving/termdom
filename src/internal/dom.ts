@@ -27398,6 +27398,11 @@ const documentObservers = new WeakMap<object, Set<AnyObserver>>();
  * frame the renderer is finishing is what an IntersectionObserver measures
  * against and what a ResizeObserver reports the time of.
  */
+/** Whether a frame has any ResizeObserver or IntersectionObserver to run. */
+export function hasObservers(document: globalThis.Document): boolean {
+	return (documentObservers.get(document)?.size ?? 0) > 0;
+}
+
 export function flushObservers(
 	document: globalThis.Document,
 	layout: Layout,
