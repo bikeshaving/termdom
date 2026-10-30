@@ -367,7 +367,7 @@ const TIERS = {
   grand: {width: 7, height: 5, gap: 3},
 } as const;
 const ROOMY_MIN_WIDTH = 64;
-const GRAND_MIN_WIDTH = 96;
+const GRAND_MIN_WIDTH = 72;
 const GRAND_MIN_HEIGHT = 32;
 const HINT_MIN_HEIGHT = 20;
 
