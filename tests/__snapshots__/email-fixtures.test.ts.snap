@@ -127,55 +127,61 @@ exports[`email fixture: card-percent-cell.html 1`] = `
 
 
 
-       x xxxxxxxxxx x xxxxxxxxxxx xx xxxxxxxx xxxxxxxxx xxxxxxxxx xxxx xxxxxxxx xxx xxxx xxxxx
-       xxxx xxx xxxx xxx xxx xxx xxxxxxxxx xxxx xxxxxxxx xxxxxxxxxx xxxxx xxxx xxxxx xxxx xxx
-      xxxxxxx xxx xxxx xxxxx xx xxx xxxxxxxxxx xxxxxxxxx xxxxxxxx xx xxxx xxx xxxx xxxx xxx xxx
-        xxx xxxxxxxxx xxxxxx xxxx xxx xxxxxxx xx xxxxxxxx xxx xxxxxxxx xx xxxxxxxxxxxx xx xxx
-     xxxxxxxxxxx xx xxx xxxxxxxx xxxxxxxxxx xxx xxxxxx xxxx xxx xxxxxxxx xxxxxxxx xxxxxx xxxxxx
-         xxx xxxxxxxxxxx xxx xxx xxxxxx x xxxx xx xxx xxxxxxxx xxxxxxxx xxxx xx xxxx xx xxxx
-                                       xxxxxxxx xxxxxxxxx xxxx
-     xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-     xxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxx xxxxx xxxxxxx xx xxxxxxxx xxx xxxxxx xxxxxxxxxxxx xxxxx
-         xxx xxxxx xxxxxxxxxxxx xx xxxxxxxxxx xxxx xxxxxxx xxxx xxxxxxx xxx xxxx xxxxx xx xx
-      xxxxxxx xxxxxxxxx xxxxxxxxxx xxx xxx xxx xxxxxxxxxx xxxx xxxxxxx xxxxxxx xxx xxxxxx xxxxx
-       x xxxxxxxxx xxxx xxxxxx xx xxxxxxxx xxxxxxxxxx xxxxxx xxxxxxxxxx xxxxxx xx xxxxxxxxxxxx
-             xxxxxxx xxxxxxx xxxxxxxxxx xxxxxxxxxxx xxx xxxxxxxxx xxxxxxxxxx xxx xxxxxxx
-      xxxxxxxxxxxxxxx xxxxxxxxxx xxx xxxxxxxxxxx xxxxxxxx xxx xxxxx xxxxx xxxxxxx xxx xxxxxxxx
-       xxx xxxxxxxx xxxx xxx xxxxxxxxx xxx xxx xxxxxxxxx xxxxx xxxxxxxxxxxxxxx xxxxxxxxxx xxx
-      xxxxx xx xxx xxxxxxx xxx xxxxxxxxxxx xxxx xxx xxx xxxxxxxxxxx xxxxxxxxx xxxxxxxxx xx xxx
-          xxxxxxxxx xxxxxxxxxxx xxxx xxxx xx xxx xxxxxxxx xxxxxxxxxx xxx xxxxx xxxxxxxxxxx
-      xxxxxxxxxx xxxxxxxxxx xxxxxxxxxxxxx xxxxxxxxx xxxxxxxxx xxxxxxxx xxx xxxxxxx xxxxxxxxxxx
-     xxx xxxxxxxx xx xxxxxxxx xxxxxxxxxxxxxxx xxxxxxxxxxx xxxxx xxxxxxxxxx xxxxxxx xxxxxxxxxxxx
-       xxxxxxx xxxxx xxxx xxxxxxx xx xxxxxx xxxxxx xxx xxx xxxxxxx xx xxxxx xxx xxxxxxxxxxxxx
-     xxxx xxxxx xxxxx xxx xxxxxxxxx xxxxxx xxxxxxx xx xxxxxx xxxxxxxxxx xxxx xxxxx xxxxxxxxx xx
-       xxx xxxxxxxxxxxxxxx xxxxxxxxxxx xxxxxxxxx xxx xxxxxxxxx xxx xx xxxxx xxxxx xxxxxxxx xx
-      xxxxx xxxxxxxxxxxxxxx xxxxxxxxxxx xxxxx xxxxx xxxx xx xx xxx xxxx xx xxxxx xxxx xxx xxxxx
-       xxx xxxxxxx xxxx xxx xxxxxxxxx xxx xxxxxxxxxx xx xxxxxx xx xxxxxx xxxxx xxxxxxxxxxxxxxx
-     xxxxxxxxxx xx xxxxxxx xxxxxx xx xxxxxxxxxxxxx xxxxx xxxx xxxx xx xx xxxxxxx xxx xxxxxxxxxx
-                                      xx xxxxxxxxxxxxx xxxxxxx
+            x xxxxxxxxxx x xxxxxxxxxxx xx xxxxxxxx xxxxxxxxx xxxxxxxxx xxxx xxxxxxxx xxx
+           xxxx xxxxx xxxx xxx xxxx xxx xxx xxx xxxxxxxxx xxxx xxxxxxxx xxxxxxxxxx xxxxx
+               xxxx xxxxx xxxx xxx xxxxxxx xxx xxxx xxxxx xx xxx xxxxxxxxxx xxxxxxxxx
+            xxxxxxxx xx xxxx xxx xxxx xxxx xxx xxx xxx xxxxxxxxx xxxxxx xxxx xxx xxxxxxx
+            xx xxxxxxxx xxx xxxxxxxx xx xxxxxxxxxxxx xx xxx xxxxxxxxxxx xx xxx xxxxxxxx
+           xxxxxxxxxx xxx xxxxxx xxxx xxx xxxxxxxx xxxxxxxx xxxxxx xxxxxx xxx xxxxxxxxxxx
+            xxx xxx xxxxxx x xxxx xx xxx xxxxxxxx xxxxxxxx xxxx xx xxxx xx xxxx xxxxxxxx
+                                           xxxxxxxxx xxxx
+           xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+           xxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxx xxxxx xxxxxxx xx xxxxxxxx xxx
+            xxxxxx xxxxxxxxxxxx xxxxx xxx xxxxx xxxxxxxxxxxx xx xxxxxxxxxx xxxx xxxxxxx
+             xxxx xxxxxxx xxx xxxx xxxxx xx xx xxxxxxx xxxxxxxxx xxxxxxxxxx xxx xxx xxx
+            xxxxxxxxxx xxxx xxxxxxx xxxxxxx xxx xxxxxx xxxxx x xxxxxxxxx xxxx xxxxxx xx
+            xxxxxxxx xxxxxxxxxx xxxxxx xxxxxxxxxx xxxxxx xx xxxxxxxxxxxx xxxxxxx xxxxxxx
+            xxxxxxxxxx xxxxxxxxxxx xxx xxxxxxxxx xxxxxxxxxx xxx xxxxxxx xxxxxxxxxxxxxxx
+            xxxxxxxxxx xxx xxxxxxxxxxx xxxxxxxx xxx xxxxx xxxxx xxxxxxx xxx xxxxxxxx xxx
+           xxxxxxxx xxxx xxx xxxxxxxxx xxx xxx xxxxxxxxx xxxxx xxxxxxxxxxxxxxx xxxxxxxxxx
+            xxx xxxxx xx xxx xxxxxxx xxx xxxxxxxxxxx xxxx xxx xxx xxxxxxxxxxx xxxxxxxxx
+            xxxxxxxxx xx xxx xxxxxxxxx xxxxxxxxxxx xxxx xxxx xx xxx xxxxxxxx xxxxxxxxxx
+           xxx xxxxx xxxxxxxxxxx xxxxxxxxxx xxxxxxxxxx xxxxxxxxxxxxx xxxxxxxxx xxxxxxxxx
+             xxxxxxxx xxx xxxxxxx xxxxxxxxxxx xxx xxxxxxxx xx xxxxxxxx xxxxxxxxxxxxxxx
+            xxxxxxxxxxx xxxxx xxxxxxxxxx xxxxxxx xxxxxxxxxxxx xxxxxxx xxxxx xxxx xxxxxxx
+            xx xxxxxx xxxxxx xxx xxx xxxxxxx xx xxxxx xxx xxxxxxxxxxxxx xxxx xxxxx xxxxx
+           xxx xxxxxxxxx xxxxxx xxxxxxx xx xxxxxx xxxxxxxxxx xxxx xxxxx xxxxxxxxx xx xxx
+               xxxxxxxxxxxxxxx xxxxxxxxxxx xxxxxxxxx xxx xxxxxxxxx xxx xx xxxxx xxxxx
+           xxxxxxxx xx xxxxx xxxxxxxxxxxxxxx xxxxxxxxxxx xxxxx xxxxx xxxx xx xx xxx xxxx
+              xx xxxxx xxxx xxx xxxxx xxx xxxxxxx xxxx xxx xxxxxxxxx xxx xxxxxxxxxx xx
+               xxxxxx xx xxxxxx xxxxx xxxxxxxxxxxxxxx xxxxxxxxxx xx xxxxxxx xxxxxx xx
+            xxxxxxxxxxxxx xxxxx xxxx xxxx xx xx xxxxxxx xxx xxxxxxxxxx xx xxxxxxxxxxxxx
+                                              xxxxxxx
 
-      xxxx xxxxxxxxx xxxx xxxxxx xxxxxxxxx xxx xxxx xxxxxx xxxxxxxxxxxxxx xxx xxx xxxxxxxxxxxxx
-      xxxxxxxx xxxxx xxx xxx xxx x xxxxxxxxxxxxxxx xxxxxxxxxxxxx xx xxxxxxxx xxxxxx xxxxxxxx xx
-          xxx xxxxxxxxxx xxxxxxxxx xxxxxxxxx xx xxxxxxx xxxxxx xxx xxxxxxxxxxx xxxxxxx xxxx
-       xxxxxxxxx xxx xxxx xx xxxxxxxxx xxx xxxx xxxxxxxxxxx xxxx xxx xxxxxxxxx xxxxxx xxxxxxxx
+            xxxx xxxxxxxxx xxxx xxxxxx xxxxxxxxx xxx xxxx xxxxxx xxxxxxxxxxxxxx xxx xxx
+            xxxxxxxxxxxxx xxxxxxxx xxxxx xxx xxx xxx x xxxxxxxxxxxxxxx xxxxxxxxxxxxx xx
+             xxxxxxxx xxxxxx xxxxxxxx xx xxx xxxxxxxxxx xxxxxxxxx xxxxxxxxx xx xxxxxxx
+            xxxxxx xxx xxxxxxxxxxx xxxxxxx xxxx xxxxxxxxx xxx xxxx xx xxxxxxxxx xxx xxxx
+                           xxxxxxxxxxx xxxx xxx xxxxxxxxx xxxxxx xxxxxxxx
 
-     xxx xxxxxxxxxxx xxxxxxxxx xx xxxx xxxxxxxxxx xxxx xxx xxxxxxx xx xx x xxxxxxxx xxxxxxxxxxx
-      xx xxx xxxxxxxxxxx xxxxxxxx xx xxxxxxxxxxxx xxxxxxxx xx xx xxxx xxxxxxxxx xxx xxxxxxxxxxx
-     xxx xxxx xxxxxxxx xxxx xxxxxxx xxxxxxxxxx xx xx xxxxxxxxx xxx xx xx xxx xxxxxxxxx xxxx xxx
-      xxxxxxxxx xxxxxxxx xx xxxxxxxx xx xxxxxxxxx xxxxx xx xx xxxxxxxxx xxxx xxx xxxxxxxxxx xx
-                         xxxxxxxx xxxxxxxx xxxxxx xxxx xxxxx xx xx xxxxxxxx
+           xxx xxxxxxxxxxx xxxxxxxxx xx xxxx xxxxxxxxxx xxxx xxx xxxxxxx xx xx x xxxxxxxx
+            xxxxxxxxxxx xx xxx xxxxxxxxxxx xxxxxxxx xx xxxxxxxxxxxx xxxxxxxx xx xx xxxx
+             xxxxxxxxx xxx xxxxxxxxxxx xxx xxxx xxxxxxxx xxxx xxxxxxx xxxxxxxxxx xx xx
+            xxxxxxxxx xxx xx xx xxx xxxxxxxxx xxxx xxx xxxxxxxxx xxxxxxxx xx xxxxxxxx xx
+              xxxxxxxxx xxxxx xx xx xxxxxxxxx xxxx xxx xxxxxxxxxx xx xxxxxxxx xxxxxxxx
+                                  xxxxxx xxxx xxxxx xx xx xxxxxxxx
 
-         xx xxx xx xxxxxx xxxx xx xxxxxxx xxxxxxx xx xxxxxx xxx xxxxxxxx xxx xxx xxxxxx xxxx
-                                 xxxxxxxxxxx  xx xxxxxxxxxxx xxxxx
+           xx xxx xx xxxxxx xxxx xx xxxxxxx xxxxxxx xx xxxxxx xxx xxxxxxxx xxx xxx xxxxxx
+                              xxxx xxxxxxxxxxx  xx xxxxxxxxxxx xxxxx
 
-                               x xxxx xxxx xxxxxxx xxx xxxxxx xxxxxxxxx
+                              x xxxx xxxx xxxxxxx xxx xxxxxx xxxxxxxxx
 
-                                     xxxxxxxx xxxx x xx xxx xxxx
+                                    xxxxxxxx xxxx x xx xxx xxxx
 
-                           xxx xxxx xxxx xxxx xxxxx xxxx xxxxxxxx xx xxxxx
+                          xxx xxxx xxxx xxxx xxxxx xxxx xxxxxxxx xx xxxxx
 
 
-                                 xxxxxxx xxxxxx xxx xxxxx xx xxxxxxx
+                                xxxxxxx xxxxxx xxx xxxxx xx xxxxxxx
 
 -- backgrounds --
 0: 0-100 #f5f5f5
@@ -325,169 +331,187 @@ exports[`email fixture: card-percent-cell.html 1`] = `
 46: 0-7 #f5f5f5
 46: 7-93 #ffffff
 46: 93-100 #f5f5f5
-47: 0-1 #f5f5f5
-47: 1-99 #303345
-47: 99-100 #f5f5f5
-48: 0-1 #f5f5f5
-48: 1-99 #303345
-48: 99-100 #f5f5f5
-49: 0-1 #f5f5f5
-49: 1-99 #303345
-49: 99-100 #f5f5f5
-50: 0-1 #f5f5f5
-50: 1-99 #303345
-50: 99-100 #f5f5f5
-51: 0-1 #f5f5f5
-51: 1-99 #303345
-51: 99-100 #f5f5f5
-52: 0-1 #f5f5f5
-52: 1-99 #303345
-52: 99-100 #f5f5f5
-53: 0-1 #f5f5f5
-53: 1-99 #303345
-53: 99-100 #f5f5f5
-54: 0-1 #f5f5f5
-54: 1-99 #303345
-54: 99-100 #f5f5f5
-55: 0-1 #f5f5f5
-55: 1-99 #303345
-55: 99-100 #f5f5f5
-56: 0-1 #f5f5f5
-56: 1-99 #303345
-56: 99-100 #f5f5f5
-57: 0-1 #f5f5f5
-57: 1-99 #303345
-57: 99-100 #f5f5f5
-58: 0-1 #f5f5f5
-58: 1-99 #303345
-58: 99-100 #f5f5f5
-59: 0-1 #f5f5f5
-59: 1-99 #303345
-59: 99-100 #f5f5f5
-60: 0-1 #f5f5f5
-60: 1-99 #303345
-60: 99-100 #f5f5f5
-61: 0-1 #f5f5f5
-61: 1-99 #303345
-61: 99-100 #f5f5f5
-62: 0-1 #f5f5f5
-62: 1-99 #303345
-62: 99-100 #f5f5f5
-63: 0-1 #f5f5f5
-63: 1-99 #303345
-63: 99-100 #f5f5f5
-64: 0-1 #f5f5f5
-64: 1-99 #303345
-64: 99-100 #f5f5f5
-65: 0-1 #f5f5f5
-65: 1-99 #303345
-65: 99-100 #f5f5f5
-66: 0-1 #f5f5f5
-66: 1-99 #303345
-66: 99-100 #f5f5f5
-67: 0-1 #f5f5f5
-67: 1-99 #303345
-67: 99-100 #f5f5f5
-68: 0-1 #f5f5f5
-68: 1-99 #303345
-68: 99-100 #f5f5f5
-69: 0-1 #f5f5f5
-69: 1-99 #303345
-69: 99-100 #f5f5f5
-70: 0-1 #f5f5f5
-70: 1-99 #303345
-70: 99-100 #f5f5f5
-71: 0-1 #f5f5f5
-71: 1-99 #303345
-71: 99-100 #f5f5f5
-72: 0-1 #f5f5f5
-72: 1-99 #303345
-72: 99-100 #f5f5f5
-73: 0-1 #f5f5f5
-73: 1-99 #303345
-73: 99-100 #f5f5f5
-74: 0-1 #f5f5f5
-74: 1-99 #303345
-74: 99-100 #f5f5f5
-75: 0-1 #f5f5f5
-75: 1-99 #303345
-75: 99-100 #f5f5f5
-76: 0-1 #f5f5f5
-76: 1-99 #303345
-76: 99-100 #f5f5f5
-77: 0-1 #f5f5f5
-77: 1-99 #303345
-77: 99-100 #f5f5f5
-78: 0-1 #f5f5f5
-78: 1-99 #303345
-78: 99-100 #f5f5f5
-79: 0-1 #f5f5f5
-79: 1-99 #303345
-79: 99-100 #f5f5f5
-80: 0-1 #f5f5f5
-80: 1-99 #303345
-80: 99-100 #f5f5f5
-81: 0-1 #f5f5f5
-81: 1-99 #303345
-81: 99-100 #f5f5f5
-82: 0-1 #f5f5f5
-82: 1-99 #303345
-82: 99-100 #f5f5f5
-83: 0-1 #f5f5f5
-83: 1-99 #303345
-83: 99-100 #f5f5f5
-84: 0-1 #f5f5f5
-84: 1-99 #303345
-84: 99-100 #f5f5f5
-85: 0-1 #f5f5f5
-85: 1-99 #303345
-85: 99-100 #f5f5f5
-86: 0-1 #f5f5f5
-86: 1-99 #303345
-86: 99-100 #f5f5f5
-87: 0-1 #f5f5f5
-87: 1-99 #303345
-87: 99-100 #f5f5f5
-88: 0-1 #f5f5f5
-88: 1-99 #303345
-88: 99-100 #f5f5f5
-89: 0-1 #f5f5f5
-89: 1-99 #303345
-89: 99-100 #f5f5f5
-90: 0-1 #f5f5f5
-90: 1-99 #303345
-90: 99-100 #f5f5f5
-91: 0-1 #f5f5f5
-91: 1-99 #303345
-91: 99-100 #f5f5f5
-92: 0-1 #f5f5f5
-92: 1-99 #303345
-92: 99-100 #f5f5f5
-93: 0-1 #f5f5f5
-93: 1-99 #303345
-93: 99-100 #f5f5f5
-94: 0-1 #f5f5f5
-94: 1-99 #303345
-94: 99-100 #f5f5f5
-95: 0-1 #f5f5f5
-95: 1-99 #303345
-95: 99-100 #f5f5f5
-96: 0-1 #f5f5f5
-96: 1-99 #303345
-96: 99-100 #f5f5f5
-97: 0-1 #f5f5f5
-97: 1-99 #303345
-97: 99-100 #f5f5f5
-98: 0-1 #f5f5f5
-98: 1-99 #303345
-98: 99-100 #f5f5f5
-99: 0-1 #f5f5f5
-99: 1-99 #303345
-99: 99-100 #f5f5f5
-100: 0-1 #f5f5f5
-100: 1-99 #303345
-100: 99-100 #f5f5f5
-101: 0-100 #ffffff`;
+47: 0-7 #f5f5f5
+47: 7-93 #303345
+47: 93-100 #f5f5f5
+48: 0-7 #f5f5f5
+48: 7-93 #303345
+48: 93-100 #f5f5f5
+49: 0-7 #f5f5f5
+49: 7-93 #303345
+49: 93-100 #f5f5f5
+50: 0-7 #f5f5f5
+50: 7-93 #303345
+50: 93-100 #f5f5f5
+51: 0-7 #f5f5f5
+51: 7-93 #303345
+51: 93-100 #f5f5f5
+52: 0-7 #f5f5f5
+52: 7-93 #303345
+52: 93-100 #f5f5f5
+53: 0-7 #f5f5f5
+53: 7-93 #303345
+53: 93-100 #f5f5f5
+54: 0-7 #f5f5f5
+54: 7-93 #303345
+54: 93-100 #f5f5f5
+55: 0-7 #f5f5f5
+55: 7-93 #303345
+55: 93-100 #f5f5f5
+56: 0-7 #f5f5f5
+56: 7-93 #303345
+56: 93-100 #f5f5f5
+57: 0-7 #f5f5f5
+57: 7-93 #303345
+57: 93-100 #f5f5f5
+58: 0-7 #f5f5f5
+58: 7-93 #303345
+58: 93-100 #f5f5f5
+59: 0-7 #f5f5f5
+59: 7-93 #303345
+59: 93-100 #f5f5f5
+60: 0-7 #f5f5f5
+60: 7-93 #303345
+60: 93-100 #f5f5f5
+61: 0-7 #f5f5f5
+61: 7-93 #303345
+61: 93-100 #f5f5f5
+62: 0-7 #f5f5f5
+62: 7-93 #303345
+62: 93-100 #f5f5f5
+63: 0-7 #f5f5f5
+63: 7-93 #303345
+63: 93-100 #f5f5f5
+64: 0-7 #f5f5f5
+64: 7-93 #303345
+64: 93-100 #f5f5f5
+65: 0-7 #f5f5f5
+65: 7-93 #303345
+65: 93-100 #f5f5f5
+66: 0-7 #f5f5f5
+66: 7-93 #303345
+66: 93-100 #f5f5f5
+67: 0-7 #f5f5f5
+67: 7-93 #303345
+67: 93-100 #f5f5f5
+68: 0-7 #f5f5f5
+68: 7-93 #303345
+68: 93-100 #f5f5f5
+69: 0-7 #f5f5f5
+69: 7-93 #303345
+69: 93-100 #f5f5f5
+70: 0-7 #f5f5f5
+70: 7-93 #303345
+70: 93-100 #f5f5f5
+71: 0-7 #f5f5f5
+71: 7-93 #303345
+71: 93-100 #f5f5f5
+72: 0-7 #f5f5f5
+72: 7-93 #303345
+72: 93-100 #f5f5f5
+73: 0-7 #f5f5f5
+73: 7-93 #303345
+73: 93-100 #f5f5f5
+74: 0-7 #f5f5f5
+74: 7-93 #303345
+74: 93-100 #f5f5f5
+75: 0-7 #f5f5f5
+75: 7-93 #303345
+75: 93-100 #f5f5f5
+76: 0-7 #f5f5f5
+76: 7-93 #303345
+76: 93-100 #f5f5f5
+77: 0-7 #f5f5f5
+77: 7-93 #303345
+77: 93-100 #f5f5f5
+78: 0-7 #f5f5f5
+78: 7-93 #303345
+78: 93-100 #f5f5f5
+79: 0-7 #f5f5f5
+79: 7-93 #303345
+79: 93-100 #f5f5f5
+80: 0-7 #f5f5f5
+80: 7-93 #303345
+80: 93-100 #f5f5f5
+81: 0-7 #f5f5f5
+81: 7-93 #303345
+81: 93-100 #f5f5f5
+82: 0-7 #f5f5f5
+82: 7-93 #303345
+82: 93-100 #f5f5f5
+83: 0-7 #f5f5f5
+83: 7-93 #303345
+83: 93-100 #f5f5f5
+84: 0-7 #f5f5f5
+84: 7-93 #303345
+84: 93-100 #f5f5f5
+85: 0-7 #f5f5f5
+85: 7-93 #303345
+85: 93-100 #f5f5f5
+86: 0-7 #f5f5f5
+86: 7-93 #303345
+86: 93-100 #f5f5f5
+87: 0-7 #f5f5f5
+87: 7-93 #303345
+87: 93-100 #f5f5f5
+88: 0-7 #f5f5f5
+88: 7-93 #303345
+88: 93-100 #f5f5f5
+89: 0-7 #f5f5f5
+89: 7-93 #303345
+89: 93-100 #f5f5f5
+90: 0-7 #f5f5f5
+90: 7-93 #303345
+90: 93-100 #f5f5f5
+91: 0-7 #f5f5f5
+91: 7-93 #303345
+91: 93-100 #f5f5f5
+92: 0-7 #f5f5f5
+92: 7-93 #303345
+92: 93-100 #f5f5f5
+93: 0-7 #f5f5f5
+93: 7-93 #303345
+93: 93-100 #f5f5f5
+94: 0-7 #f5f5f5
+94: 7-93 #303345
+94: 93-100 #f5f5f5
+95: 0-7 #f5f5f5
+95: 7-93 #303345
+95: 93-100 #f5f5f5
+96: 0-7 #f5f5f5
+96: 7-93 #303345
+96: 93-100 #f5f5f5
+97: 0-7 #f5f5f5
+97: 7-93 #303345
+97: 93-100 #f5f5f5
+98: 0-7 #f5f5f5
+98: 7-93 #303345
+98: 93-100 #f5f5f5
+99: 0-7 #f5f5f5
+99: 7-93 #303345
+99: 93-100 #f5f5f5
+100: 0-7 #f5f5f5
+100: 7-93 #303345
+100: 93-100 #f5f5f5
+101: 0-7 #f5f5f5
+101: 7-93 #303345
+101: 93-100 #f5f5f5
+102: 0-7 #f5f5f5
+102: 7-93 #303345
+102: 93-100 #f5f5f5
+103: 0-7 #f5f5f5
+103: 7-93 #303345
+103: 93-100 #f5f5f5
+104: 0-7 #f5f5f5
+104: 7-93 #303345
+104: 93-100 #f5f5f5
+105: 0-7 #f5f5f5
+105: 7-93 #303345
+105: 93-100 #f5f5f5
+106: 0-7 #f5f5f5
+106: 7-93 #303345
+106: 93-100 #f5f5f5
+107: 0-100 #ffffff`;
 
 exports[`email fixture: ghost-article.html 1`] = `
 
