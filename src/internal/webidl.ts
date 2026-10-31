@@ -122,10 +122,7 @@ function parseCheck(
 		nullable,
 		stringifies,
 	};
-	onForgetClasses(() => {
-		check.accepted = null;
-		check.acceptedBefore = null;
-	});
+	listClassCache(check);
 	return check;
 }
 
@@ -241,6 +238,13 @@ function callsSuper(descriptor: PropertyDescriptor): boolean {
 	);
 }
 
+// The resolve of a member with one definition, which every object runs.
+function enterFixed(this: Resolve): PropertyDescriptor | undefined {
+	return this.fixed;
+}
+
+function leaveFixed(): void {}
+
 interface Resolve {
 	// The one definition every object runs, when no class moved its own up.
 	fixed: PropertyDescriptor | undefined;
@@ -262,23 +266,12 @@ function wrapOperation(
 	const {required, checks} = member;
 	const fixed = resolve.fixed?.value as Operation | undefined;
 	const direct = resolve.direct;
-	let accepted: Constructor | null = null;
-	let acceptedBefore: Constructor | null = null;
-	onForgetClasses(() => {
-		accepted = null;
-		acceptedBefore = null;
-	});
+	const cache: ClassCache = {accepted: null, acceptedBefore: null};
+	listClassCache(cache);
 	const brand = (object: unknown): Constructor => {
-		const type = getSlotClass(object);
+		const type = acceptClass(cache, owner, object);
 		if (type === null) {
 			throw new TypeError("Illegal invocation");
-		}
-		if (type !== accepted && type !== acceptedBefore) {
-			if (!inheritsInterface(type, owner)) {
-				throw new TypeError("Illegal invocation");
-			}
-			acceptedBefore = accepted;
-			accepted = type;
 		}
 		return type;
 	};
@@ -372,26 +365,8 @@ function wrapAttribute(
 	resolve: Resolve,
 	settable: boolean,
 ): PropertyDescriptor {
-	let accepted: Constructor | null = null;
-	let acceptedBefore: Constructor | null = null;
-	onForgetClasses(() => {
-		accepted = null;
-		acceptedBefore = null;
-	});
-	const brand = (object: unknown): Constructor | null => {
-		const type = getSlotClass(object);
-		if (type === null) {
-			return null;
-		}
-		if (type !== accepted && type !== acceptedBefore) {
-			if (!inheritsInterface(type, owner)) {
-				return null;
-			}
-			acceptedBefore = accepted;
-			accepted = type;
-		}
-		return type;
-	};
+	const cache: ClassCache = {accepted: null, acceptedBefore: null};
+	listClassCache(cache);
 	const fixedGet = resolve.fixed?.get;
 	const fixedSet = resolve.fixed?.set;
 	// A read-only attribute with a setter forwards what it is given, as
@@ -399,7 +374,7 @@ function wrapAttribute(
 	const check = member.kind === "a" ? member.checks[0] ?? null : null;
 	const get = {
 		[name](this: unknown): unknown {
-			const type = brand(this);
+			const type = acceptClass(cache, owner, this);
 			if (type === null) {
 				if (member.lenient) {
 					return undefined;
@@ -429,7 +404,7 @@ function wrapAttribute(
 	if (settable) {
 		const set = {
 			[name](this: unknown, value: unknown): void {
-				const type = brand(this);
+				const type = acceptClass(cache, owner, this);
 				if (type === null) {
 					if (member.lenient) {
 						return;
@@ -516,6 +491,41 @@ function onForgetClasses(reset: () => void): void {
 	if (listingClassCaches) {
 		classCacheResets.push(reset);
 	}
+}
+
+// The classes a check or a member last accepted, the two it most often
+// sees, forgotten with the rest.
+interface ClassCache {
+	accepted: Constructor | null;
+	acceptedBefore: Constructor | null;
+}
+
+const classCaches: ClassCache[] = [];
+
+function listClassCache(cache: ClassCache): void {
+	if (listingClassCaches) {
+		classCaches.push(cache);
+	}
+}
+
+// The object's class when it implements `owner`, or null.
+function acceptClass(
+	cache: ClassCache,
+	owner: Constructor,
+	object: unknown,
+): Constructor | null {
+	const type = getSlotClass(object);
+	if (type === null) {
+		return null;
+	}
+	if (type !== cache.accepted && type !== cache.acceptedBefore) {
+		if (!inheritsInterface(type, owner)) {
+			return null;
+		}
+		cache.acceptedBefore = cache.accepted;
+		cache.accepted = type;
+	}
+	return type;
 }
 
 // The window's classes by interface name, as installInterfaces() found them.
@@ -1011,25 +1021,31 @@ export function installInterfaces(
 				base = Object.getOwnPropertyDescriptor(prototype, key);
 			}
 		}
-		const overrides = new Map<Constructor, PropertyDescriptor>();
+		let overrides: Map<Constructor, PropertyDescriptor> | null = null;
 		for (const type of misplacedTypes.get(key) ?? []) {
 			if (type !== owner && inheritsInterface(type, owner)) {
+				overrides ??= new Map();
 				overrides.set(type, originals.get(type.prototype)!.get(key)!);
 			}
 		}
-		if (base === undefined && overrides.size === 0) {
-			return null;
+		if (overrides === null) {
+			return base === undefined
+				? null
+				: {
+					fixed: base,
+					direct: undefined,
+					enter: enterFixed,
+					leave: leaveFixed,
+				};
 		}
-		if (overrides.size === 0) {
-			return {fixed: base, direct: undefined, enter: () => base, leave() {}};
-		}
+		const overridden = overrides;
 		const chainFor = (type: Constructor) => {
 			const chain: Array<PropertyDescriptor | undefined> = [];
 			for (const current of [type, ...ancestors(type)]) {
 				if (current === owner) {
 					break;
 				}
-				const override = overrides.get(current);
+				const override = overridden.get(current);
 				if (override !== undefined) {
 					chain.push(override);
 				}
@@ -1037,7 +1053,7 @@ export function installInterfaces(
 			chain.push(base);
 			return chain;
 		};
-		if (![...overrides.values()].some(callsSuper)) {
+		if (![...overridden.values()].some(callsSuper)) {
 			const firsts = new WeakMap<Constructor, PropertyDescriptor | undefined>();
 			let lastType: Constructor | null = null;
 			let lastFirst: PropertyDescriptor | undefined;
@@ -1378,6 +1394,10 @@ let lastSealedMembers: Array<[string, PropertyDescriptor]> | null = null;
 export function forgetClasses(): void {
 	for (const reset of classCacheResets) {
 		reset();
+	}
+	for (let index = 0; index < classCaches.length; index++) {
+		classCaches[index].accepted = null;
+		classCaches[index].acceptedBefore = null;
 	}
 	lastSealedType = null;
 	lastSealedMembers = null;
