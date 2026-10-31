@@ -7349,13 +7349,22 @@ export function handleMutations(
 	cascade: Cascade,
 	mutations: MutationRecord[],
 ): void {
-	cascade.ancestorFilters = new WeakMap();
 	cascade.listNumberings = new WeakMap();
 	cascade.flatTree = null;
 	// Siblings keep their order through an attribute change, which can
-	// change only which of them an `of S` list keeps.
+	// change only which of them an `of S` list keeps. Nor does one move an
+	// element under other ancestors, so only a class or id changes the
+	// filters, and only those it is in.
 	if (mutations.some((mutation) => mutation.type === "childList")) {
 		cascade.siblingIndexesForMatching = null;
+		cascade.ancestorFilters = new WeakMap();
+	} else {
+		for (let index = 0; index < mutations.length; index++) {
+			const {attributeName, target} = mutations[index];
+			if (attributeName === "class" || attributeName === "id") {
+				dropFiltersUnder(cascade, target as Element);
+			}
+		}
 	}
 	cascade.filteredSiblingsForMatching = null;
 	const Node = cascade.window.Node;
@@ -12092,6 +12101,31 @@ function getChildFilter(cascade: Cascade, parent: Element): Uint32Array {
 		filter = next;
 	}
 	return filter!;
+}
+
+// A filter is kept only with its parent's, so where an element has none,
+// nothing under it has one.
+function dropFiltersUnder(cascade: Cascade, element: Element): void {
+	if (!cascade.ancestorFilters.delete(element)) {
+		return;
+	}
+	for (
+		let child = element.firstElementChild;
+		child !== null;
+		child = child.nextElementSibling
+	) {
+		dropFiltersUnder(cascade, child as Element);
+	}
+	const shadow = getShadowRoot(element);
+	if (shadow !== null) {
+		for (
+			let child = shadow.firstElementChild;
+			child !== null;
+			child = child.nextElementSibling
+		) {
+			dropFiltersUnder(cascade, child as Element);
+		}
+	}
 }
 
 function addFilterKey(filter: Uint32Array, key: string): void {

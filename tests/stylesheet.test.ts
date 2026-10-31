@@ -724,3 +724,40 @@ test("a class change moves an of-S count, and the plain count stays", () => {
 	expect(["a", "b", "c"].map(green)).toEqual([true, false, true]);
 	dom.dispose();
 });
+
+test("a class or id an ancestor gains or loses reaches the rules under it", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document, window} = termdom;
+	document.head.innerHTML =
+		"<style>.on p { color: red } #top p { font-weight: bold }</style>";
+	document.body.innerHTML = "<section><div><p>text</p></div></section>";
+	const section = document.querySelector("section")!;
+	const host = document.querySelector("div")!;
+	const p = document.querySelector("p")!;
+	const shadow = host.attachShadow({mode: "open"});
+	shadow.innerHTML = "<style>:host(.on) span { color: blue }</style><span>x</span><slot></slot>";
+	const span = shadow.querySelector("span")!;
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(p).color).toBe("rgb(0, 0, 0)");
+
+	section.className = "on";
+	section.id = "top";
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(p).color).toBe("rgb(255, 0, 0)");
+	expect(window.getComputedStyle(p).fontWeight).toBe("700");
+	expect(window.getComputedStyle(span).color).toBe("rgb(0, 0, 0)");
+
+	host.className = "on";
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(span).color).toBe("rgb(0, 0, 255)");
+
+	section.className = "";
+	section.removeAttribute("id");
+	host.className = "";
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(p).color).toBe("rgb(0, 0, 0)");
+	expect(window.getComputedStyle(p).fontWeight).toBe("400");
+	expect(window.getComputedStyle(span).color).toBe("rgb(0, 0, 0)");
+	termdom.dispose();
+});
