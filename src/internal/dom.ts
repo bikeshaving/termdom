@@ -9295,7 +9295,7 @@ export function getClassTokens(
 	return tokens;
 }
 
-function getValueTokens(value: string): ReadonlySet<string> {
+export function getValueTokens(value: string): ReadonlySet<string> {
 	let tokens = classTokenSets.get(value);
 	if (tokens === undefined) {
 		const names = splitOnASCIIWhitespace(value);
