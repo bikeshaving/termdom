@@ -131,9 +131,15 @@ class FrameWriter {
 
 	out: string;
 
+	// The style escapes this writer has written, as getStyleDiff keys them.
+	escapes: Map<number, Map<number, Map<number, string>>>;
+	escapeCount: number;
+
 	constructor(colorDepth: ColorDepth) {
 		this.colorDepth = colorDepth;
 		this.out = "";
+		this.escapes = new Map();
+		this.escapeCount = 0;
 	}
 
 	take(): string {
@@ -1696,6 +1702,17 @@ function setBorderCell(
 	);
 }
 
+// A style change's escape follows from the two cells' colors and
+// attributes alone, so each writer keeps the ones it wrote, by the
+// foreground written, the background written, and the attributes. A
+// color is the color, or one of these.
+const UNCHANGED = -1;
+const TO_DEFAULT = -2;
+// The style attributes fit below the width's bits, so the new and the
+// old pack into one key.
+const ATTR_KEY = 1 << ATTR.WidthShift;
+const KEPT_ESCAPES = 4096;
+
 function getStyleDiff(
 	grid: CellGrid,
 	index: number,
@@ -1707,7 +1724,13 @@ function getStyleDiff(
 	const attrs = grid.attrs[index] & ATTR.StyleMask;
 
 	if (prev < 0) {
-		writer.style({
+		const fgCode = fg === 0 ? UNCHANGED : fg;
+		const bgCode = bg === 0 ? UNCHANGED : bg;
+		const attrKey = 1 + attrs * ATTR_KEY;
+		if (writeKnownStyle(writer, fgCode, bgCode, attrKey)) {
+			return;
+		}
+		writeStyle(writer, fgCode, bgCode, attrKey, {
 			fg: fg === 0 ? undefined : fg,
 			bg: bg === 0 ? undefined : bg,
 			attributes: getChangedAttributes(attrs, 0),
@@ -1749,6 +1772,12 @@ function getStyleDiff(
 	const bgChanged =
 		bg !== prevBg || (attrs & ATTR.BGGroup) !== (prevAttrs & ATTR.BGGroup);
 
+	const fgCode = fgChanged ? fg === 0 ? TO_DEFAULT : fg : UNCHANGED;
+	const bgCode = bgChanged ? bg === 0 ? TO_DEFAULT : bg : UNCHANGED;
+	const attrKey = fgChanged || bgChanged ? 1 + attrs * ATTR_KEY + prevAttrs : 0;
+	if (writeKnownStyle(writer, fgCode, bgCode, attrKey)) {
+		return;
+	}
 	const run: StyleSpan = {};
 	if (fgChanged) {
 		run.fg = fg === 0 ? null : fg;
@@ -1762,8 +1791,49 @@ function getStyleDiff(
 			run.underline = getUnderline(attrs);
 		}
 	}
+	writeStyle(writer, fgCode, bgCode, attrKey, run);
+}
 
-	writer.style(run);
+function writeKnownStyle(
+	writer: FrameWriter,
+	fgCode: number,
+	bgCode: number,
+	attrKey: number,
+): boolean {
+	const byAttrs = writer.escapes.get(fgCode)?.get(bgCode);
+	const escape = byAttrs === undefined ? undefined : byAttrs.get(attrKey);
+	if (escape === undefined) {
+		return false;
+	}
+	writer.out += escape;
+	return true;
+}
+
+function writeStyle(
+	writer: FrameWriter,
+	fgCode: number,
+	bgCode: number,
+	attrKey: number,
+	run: StyleSpan,
+): void {
+	const escape = createStyleEscape(run, writer.colorDepth);
+	if (writer.escapeCount >= KEPT_ESCAPES) {
+		writer.escapes.clear();
+		writer.escapeCount = 0;
+	}
+	let byBg = writer.escapes.get(fgCode);
+	if (byBg === undefined) {
+		byBg = new Map();
+		writer.escapes.set(fgCode, byBg);
+	}
+	let byAttrs = byBg.get(bgCode);
+	if (byAttrs === undefined) {
+		byAttrs = new Map();
+		byBg.set(bgCode, byAttrs);
+	}
+	byAttrs.set(attrKey, escape);
+	writer.escapeCount++;
+	writer.out += escape;
 }
 
 function getUnderline(attrs: number): UnderlineStyle {
