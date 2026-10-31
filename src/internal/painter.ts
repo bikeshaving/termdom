@@ -1332,7 +1332,9 @@ function paintNodes(
 	ctx: CellContext,
 ): void {
 	const layout = painter.layout;
-	for (const child of visibleChildren(painter, ctx, node)) {
+	const children = visibleChildren(painter, ctx, node);
+	for (let index = 0; index < children.length; index++) {
+		const child = children[index];
 		const owner = child.owner as Node | null;
 		const childOrigin = {
 			x: origin.x + child.grid.left,
@@ -1657,7 +1659,7 @@ function paintRun(
 function paintLines(
 	painter: Painter,
 	lines: BreakResult,
-	members: Iterable<Node>,
+	members: readonly Node[],
 	container: Element,
 	alignContainer: Element,
 	origin: Origin,
@@ -1666,8 +1668,8 @@ function paintLines(
 	const run = takeRun();
 	try {
 		resolveRun(painter, run, lines, container, alignContainer, origin);
-		for (const member of members) {
-			paintMember(painter, member, run, ctx);
+		for (let index = 0; index < members.length; index++) {
+			paintMember(painter, members[index], run, ctx);
 		}
 	} finally {
 		releaseRun(run);
@@ -1816,20 +1818,21 @@ function paintAtomic(
 // this.
 const NO_SHIFT: Origin = Object.freeze({x: 0, y: 0});
 
-// The text a line spans, by node, cleared for each line and after the
-// last, so it holds no node past the run. A run resolves its lines one at
-// a time and never inside another's.
-const lineTextSpans = new Map<
-	Text,
-	{
-		left: number;
-		right: number;
-		column: number;
-		start: number;
-		end: number;
-		visualBase: "ltr" | "rtl" | null;
-	}
->();
+interface LineTextSpan {
+	node: Text | null;
+	left: number;
+	right: number;
+	column: number;
+	start: number;
+	end: number;
+	visualBase: "ltr" | "rtl" | null;
+}
+
+// The text a line spans, a record per node in the order the line meets
+// them, reused for each line. A record lets go of its node once the line
+// is resolved, so none holds a node past the run. A run resolves its lines
+// one at a time and never inside another's.
+const lineTextSpans: LineTextSpan[] = [];
 
 // How far relative positioning moves a node in a run, from the boxes
 // between it and the run's container.
@@ -1884,24 +1887,40 @@ function resolveRun(
 		);
 		const lineX = origin.x + alignOffset + indent;
 		const lineY = origin.y + line.y;
-		const textSpans = lineTextSpans;
-		textSpans.clear();
+		let spanCount = 0;
 		for (let index = 0; index < line.segments.length; index++) {
 			const segment = line.segments[index];
 			const {leaf} = segment;
 			if (leaf.type === "text") {
-				const span = textSpans.get(leaf.node);
+				let span: LineTextSpan | undefined;
+				for (let at = 0; at < spanCount; at++) {
+					if (lineTextSpans[at].node === leaf.node) {
+						span = lineTextSpans[at];
+						break;
+					}
+				}
 				const left = lineX + segment.x;
 				const right = left + segment.width;
 				if (span === undefined) {
-					textSpans.set(leaf.node, {
-						left,
-						right,
-						column: segment.x,
-						start: segment.dataStart,
-						end: segment.dataEnd,
-						visualBase: segment.visualBase,
-					});
+					if (spanCount === lineTextSpans.length) {
+						lineTextSpans.push({
+							node: null,
+							left: 0,
+							right: 0,
+							column: 0,
+							start: 0,
+							end: 0,
+							visualBase: null,
+						});
+					}
+					span = lineTextSpans[spanCount++];
+					span.node = leaf.node;
+					span.left = left;
+					span.right = right;
+					span.column = segment.x;
+					span.start = segment.dataStart;
+					span.end = segment.dataEnd;
+					span.visualBase = segment.visualBase;
 				} else {
 					span.left = Math.min(span.left, left);
 					span.right = Math.max(span.right, right);
@@ -1936,7 +1955,10 @@ function resolveRun(
 				});
 			}
 		}
-		for (const [textNode, span] of textSpans) {
+		for (let at = 0; at < spanCount; at++) {
+			const span = lineTextSpans[at];
+			const textNode = span.node as Text;
+			span.node = null;
 			const shift = getShift(painter, run, container, textNode);
 			const rect = {
 				left: span.left + shift.x,
@@ -1958,7 +1980,6 @@ function resolveRun(
 			coverAncestors(boxLines, textNode, container, lineY, rect);
 		}
 	}
-	lineTextSpans.clear();
 	for (const [element, byLine] of boxLines) {
 		run.boxes.set(element, [...byLine.values()]);
 	}

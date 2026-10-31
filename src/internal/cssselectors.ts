@@ -1997,8 +1997,9 @@ function matchFrom(
 	if (getNodeType(element) !== ELEMENT_NODE) {
 		return false;
 	}
-	for (const test of compound.tests) {
-		if (!test(element, state)) {
+	const tests = compound.tests;
+	for (let at = 0; at < tests.length; at++) {
+		if (!tests[at](element, state)) {
 			return false;
 		}
 	}
@@ -2008,8 +2009,9 @@ function matchFrom(
 		if (origin === null) {
 			return false;
 		}
-		for (const test of compound.originTests) {
-			if (!test(origin, state)) {
+		const originTests = compound.originTests;
+		for (let at = 0; at < originTests.length; at++) {
+			if (!originTests[at](origin, state)) {
 				return false;
 			}
 		}

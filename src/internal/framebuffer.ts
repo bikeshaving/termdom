@@ -983,13 +983,27 @@ export function readCell(
 // frame's, which its own start has read. Given the rows a frame repainted
 // and the borders the last frame joined, only those rows and their
 // neighbours join again, and the rest keep what the last frame joined.
+// Which neighbour to look at for each edge of a cell, rows and columns
+// away, and which of that neighbour's edges would run into this one.
+const REACHES: ReadonlyArray<{
+	mask: number;
+	rows: number;
+	cols: number;
+	from: number;
+}> = [
+	{mask: BORDER_MASK.Top, rows: -1, cols: 0, from: BORDER_MASK.Bottom},
+	{mask: BORDER_MASK.Bottom, rows: 1, cols: 0, from: BORDER_MASK.Top},
+	{mask: BORDER_MASK.Left, rows: 0, cols: -1, from: BORDER_MASK.Right},
+	{mask: BORDER_MASK.Right, rows: 0, cols: 1, from: BORDER_MASK.Left},
+];
+
 function joinTouchingBorders(
 	grid: CellGrid,
 	ranges: Array<[number, number]> = [[0, grid.rows]],
 	joinedBefore: Uint32Array | null = null,
 	spare: Uint32Array | null = null,
 ): Uint32Array {
-	const {rows, cols, border} = grid;
+	const {cols, border} = grid;
 	let painted: Uint32Array;
 	if (spare !== null && spare.length === border.length) {
 		spare.set(border);
@@ -999,60 +1013,52 @@ function joinTouchingBorders(
 	}
 	if (joinedBefore !== null) {
 		border.set(joinedBefore);
-		for (const [from, to] of ranges) {
-			border.set(painted.subarray(from * cols, to * cols), from * cols);
+		for (let index = 0; index < ranges.length; index++) {
+			const from = ranges[index][0] * cols;
+			border.set(painted.subarray(from, ranges[index][1] * cols), from);
 		}
 	}
-	// Which neighbour to look at for each edge of a cell, and which of that
-	// neighbour's edges would run into this one.
-	const REACHES: Array<{mask: number; step: number; from: number}> = [
-		{mask: BORDER_MASK.Top, step: -cols, from: BORDER_MASK.Bottom},
-		{mask: BORDER_MASK.Bottom, step: cols, from: BORDER_MASK.Top},
-		{mask: BORDER_MASK.Left, step: -1, from: BORDER_MASK.Right},
-		{mask: BORDER_MASK.Right, step: 1, from: BORDER_MASK.Left},
-	];
-
-	for (const [from, to] of ranges) {
-		for (let row = from; row < to; row++) {
-			joinRow(row);
+	for (let index = 0; index < ranges.length; index++) {
+		for (let row = ranges[index][0]; row < ranges[index][1]; row++) {
+			joinRow(grid, painted, row);
 		}
 	}
 	return painted;
+}
 
-	function joinRow(row: number): void {
-		for (let col = 0; col < cols; col++) {
-			const index = row * cols + col;
-			const own = painted[index];
-			if (own === 0) {
+function joinRow(grid: CellGrid, painted: Uint32Array, row: number): void {
+	const {rows, cols, border} = grid;
+	for (let col = 0; col < cols; col++) {
+		const index = row * cols + col;
+		const own = painted[index];
+		if (own === 0) {
+			continue;
+		}
+		let joined = border[index];
+		for (let at = 0; at < REACHES.length; at++) {
+			const {mask, from} = REACHES[at];
+			if ((own & mask) !== 0) {
 				continue;
 			}
-			let joined = border[index];
-			for (const {mask, step, from} of REACHES) {
-				if ((own & mask) !== 0) {
-					continue;
-				}
-				const neighbour = index + step;
-				if (mask === BORDER_MASK.Top && row === 0) {
-					continue;
-				}
-				if (mask === BORDER_MASK.Bottom && row === rows - 1) {
-					continue;
-				}
-				if (mask === BORDER_MASK.Left && col === 0) {
-					continue;
-				}
-				if (mask === BORDER_MASK.Right && col === cols - 1) {
-					continue;
-				}
-				const edge = getBorderEdge(painted[neighbour], from);
-				if (!getEdgePresence(edge)) {
-					continue;
-				}
-				joined = meetEdges(joined, setBorderEdge(0, mask, edge));
+			const neighbourRow = row + REACHES[at].rows;
+			const neighbourCol = col + REACHES[at].cols;
+			if (
+				neighbourRow < 0 ||
+				neighbourRow >= rows ||
+				neighbourCol < 0 ||
+				neighbourCol >= cols
+			) {
+				continue;
 			}
-
-			border[index] = joined;
+			const neighbour = neighbourRow * cols + neighbourCol;
+			const edge = getBorderEdge(painted[neighbour], from);
+			if (!getEdgePresence(edge)) {
+				continue;
+			}
+			joined = meetEdges(joined, setBorderEdge(0, mask, edge));
 		}
+
+		border[index] = joined;
 	}
 }
 
@@ -1320,7 +1326,9 @@ export function drawText(
 		return;
 	}
 
-	for (const char of getGraphemes(text)) {
+	const graphemes = getGraphemes(text);
+	for (let index = 0; index < graphemes.length; index++) {
+		const char = graphemes[index];
 		// Never write a control char to a cell. A cell is a column, and a
 		// control byte must be rejected before it takes one, or it survives
 		// to the output as a raw escape byte (injection from untrusted
@@ -2596,9 +2604,9 @@ export function beginFrame(
 		// A frame painted over the last one changed only its bands, and the
 		// rows beside them where borders join.
 		const changedRows = partial
-			? context.bands.map(([top, end]): [number, number] => [
-				Math.max(0, top - 1),
-				Math.min(frameRows, end + 1),
+			? context.bands.map((band): [number, number] => [
+				Math.max(0, band[0] - 1),
+				Math.min(frameRows, band[1] + 1),
 			])
 			: undefined;
 		const painted = joinTouchingBorders(
@@ -2610,8 +2618,8 @@ export function beginFrame(
 		let unchangedRows: Uint8Array | null = null;
 		if (changedRows !== undefined) {
 			unchangedRows = new Uint8Array(frameRows).fill(1);
-			for (const [from, to] of changedRows) {
-				unchangedRows.fill(0, from, to);
+			for (let index = 0; index < changedRows.length; index++) {
+				unchangedRows.fill(0, changedRows[index][0], changedRows[index][1]);
 			}
 		}
 
