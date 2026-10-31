@@ -410,6 +410,14 @@ interface TextFragment {
 	visualBase: "ltr" | "rtl" | null;
 }
 
+// What a frame keeps of each pool for the next: a screen's worth, not a
+// whole document a static print painted at once.
+const KEPT_RECORDS = 4096;
+
+// Where an edge's rect is worked out, which the boxes it covers copy.
+const EDGE_RECT: Rect = {left: 0, top: 0, width: 0, height: 0};
+const INSIDE_EDGE_RECT: Rect = {left: 0, top: 0, width: 0, height: 0};
+
 // The spaces a line hangs past its end are in the fragment's data, for the
 // caret, but not in its rect, and drawing them would cover what lies past
 // the box. Right to left, the end of the line is its left.
@@ -519,6 +527,12 @@ export class Painter {
 	inTransparent: Map<Element, boolean>;
 	// What the document's selection holds this frame, when it holds any.
 	selectedRange: Range | null;
+	// The rects and text fragments this frame's runs resolved to, kept for
+	// the next frame's, as nothing holds one past the frame it was made in.
+	rects: Rect[];
+	rectsTaken: number;
+	fragments: TextFragment[];
+	fragmentsTaken: number;
 	// The root, or the body standing in for it, whose background color
 	// fills the whole screen, as a browser paints it across the canvas.
 	canvasElement: Element | null;
@@ -541,6 +555,10 @@ export class Painter {
 		this.paintedText = new Map();
 		this.inTransparent = new Map();
 		this.selectedRange = null;
+		this.rects = [];
+		this.rectsTaken = 0;
+		this.fragments = [];
+		this.fragmentsTaken = 0;
 		this.canvasElement = null;
 		this.canvasRows = null;
 		this.window = document.defaultView as unknown as Window;
@@ -736,6 +754,14 @@ export function paint(painter: Painter, ctx: CellContext): void {
 	}
 	painter.highlightedText = collectHighlightedText(painter.document);
 	painter.paintedText.clear();
+	painter.rectsTaken = 0;
+	painter.fragmentsTaken = 0;
+	if (painter.rects.length > KEPT_RECORDS) {
+		painter.rects.length = KEPT_RECORDS;
+	}
+	if (painter.fragments.length > KEPT_RECORDS) {
+		painter.fragments.length = KEPT_RECORDS;
+	}
 	painter.selectedRange = getSelectedRange(painter.window);
 	painter.inTransparent = new Map();
 	painter.highlightStyles = new Map();
@@ -1952,31 +1978,32 @@ function resolveRun(
 				}
 			} else if (leaf.type === "inline-block") {
 				const shift = getShift(painter, container, leaf.node);
-				const rect = {
-					left: lineX + segment.x + shift.x,
-					top: lineY + segment.dy + shift.y,
-					width: segment.width,
-					height: segment.height,
-				};
+				const rect = takeRect(
+					painter,
+					lineX + segment.x + shift.x,
+					lineY + segment.dy + shift.y,
+					segment.width,
+					segment.height,
+				);
 				run.leaves.set(leaf.node, {rect, leaf});
-				coverAncestors(run, leaf.node, container, lineY, rect);
+				coverAncestors(painter, run, leaf.node, container, lineY, rect);
 			} else if (leaf.type === "edge") {
 				// The margin is outside the box it edges and inside the ones
 				// around it.
 				const shift = getShift(painter, container, leaf.node);
-				const rect = {
-					left: lineX + segment.x + shift.x,
-					top: lineY + line.textTop + shift.y,
-					width: segment.width,
-					height: line.height - line.textTop,
-				};
-				coverAncestors(run, leaf.node, container, lineY, rect);
+				const rect = EDGE_RECT;
+				rect.left = lineX + segment.x + shift.x;
+				rect.top = lineY + line.textTop + shift.y;
+				rect.width = segment.width;
+				rect.height = line.height - line.textTop;
+				coverAncestors(painter, run, leaf.node, container, lineY, rect);
 				const margin = Math.max(0, leaf.margin);
-				coverBox(run, leaf.node, lineY, {
-					...rect,
-					left: leaf.side === "start" ? rect.left + margin : rect.left,
-					width: Math.max(0, rect.width - margin),
-				});
+				const inside = INSIDE_EDGE_RECT;
+				inside.left = leaf.side === "start" ? rect.left + margin : rect.left;
+				inside.top = rect.top;
+				inside.width = Math.max(0, rect.width - margin);
+				inside.height = rect.height;
+				coverBox(painter, run, leaf.node, lineY, inside);
 			}
 		}
 		for (let at = 0; at < spanCount; at++) {
@@ -1984,29 +2011,65 @@ function resolveRun(
 			const textNode = span.node as Text;
 			span.node = null;
 			const shift = getShift(painter, container, textNode);
-			const rect = {
-				left: span.left + shift.x,
-				top: lineY + line.textTop + shift.y,
-				width: span.right - span.left,
-				height: line.height - line.textTop,
-			};
+			const fragment = takeFragment(painter);
+			const rect = fragment.rect;
+			rect.left = span.left + shift.x;
+			rect.top = lineY + line.textTop + shift.y;
+			rect.width = span.right - span.left;
+			rect.height = line.height - line.textTop;
+			fragment.column = span.column;
+			fragment.startOffset = span.start;
+			fragment.endOffset = span.end;
+			fragment.visualBase = span.visualBase;
 			let fragments = run.texts.get(textNode);
 			if (fragments === undefined) {
 				run.texts.set(textNode, (fragments = []));
 			}
-			fragments.push({
-				rect,
-				column: span.column,
-				startOffset: span.start,
-				endOffset: span.end,
-				visualBase: span.visualBase,
-			});
-			coverAncestors(run, textNode, container, lineY, rect);
+			fragments.push(fragment);
+			coverAncestors(painter, run, textNode, container, lineY, rect);
 		}
 	}
 }
 
+function takeRect(
+	painter: Painter,
+	left: number,
+	top: number,
+	width: number,
+	height: number,
+): Rect {
+	let rect = painter.rects[painter.rectsTaken];
+	if (rect === undefined) {
+		rect = {left, top, width, height};
+		painter.rects.push(rect);
+	} else {
+		rect.left = left;
+		rect.top = top;
+		rect.width = width;
+		rect.height = height;
+	}
+	painter.rectsTaken++;
+	return rect;
+}
+
+function takeFragment(painter: Painter): TextFragment {
+	let fragment = painter.fragments[painter.fragmentsTaken];
+	if (fragment === undefined) {
+		fragment = {
+			rect: {left: 0, top: 0, width: 0, height: 0},
+			column: 0,
+			startOffset: 0,
+			endOffset: 0,
+			visualBase: null,
+		};
+		painter.fragments.push(fragment);
+	}
+	painter.fragmentsTaken++;
+	return fragment;
+}
+
 function coverAncestors(
+	painter: Painter,
 	run: PainterRun,
 	node: Node,
 	container: Element,
@@ -2018,13 +2081,14 @@ function coverAncestors(
 		ancestor !== null && ancestor !== container;
 		ancestor = flatParentElement(ancestor)
 	) {
-		coverBox(run, ancestor, lineY, rect);
+		coverBox(painter, run, ancestor, lineY, rect);
 	}
 }
 
 // A run's lines are resolved top to bottom, so a box already on this line
 // has its last rect there.
 function coverBox(
+	painter: Painter,
 	run: PainterRun,
 	element: Element,
 	lineY: number,
@@ -2032,10 +2096,12 @@ function coverBox(
 ): void {
 	const rects = run.boxes.get(element);
 	if (rects === undefined) {
-		run.boxes.set(element, [{...rect}]);
+		run.boxes.set(element, [
+			takeRect(painter, rect.left, rect.top, rect.width, rect.height),
+		]);
 		run.boxLines.set(element, lineY);
 	} else if (run.boxLines.get(element) !== lineY) {
-		rects.push({...rect});
+		rects.push(takeRect(painter, rect.left, rect.top, rect.width, rect.height));
 		run.boxLines.set(element, lineY);
 	} else {
 		const known = rects[rects.length - 1];
