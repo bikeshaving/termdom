@@ -724,6 +724,16 @@ export function resolveDocumentScrollBand(
 }
 
 export function paint(painter: Painter, ctx: CellContext): void {
+	// A frame with no rows to paint, one asked for in case input changed
+	// something, lets go of the last frame's and does no more.
+	if (ctx.bands.length === 0) {
+		clearMap(painter.highlightedText);
+		clearMap(painter.paintedText);
+		clearMap(painter.inTransparent);
+		clearMap(painter.highlightStyles);
+		painter.selectedRange = null;
+		return;
+	}
 	painter.highlightedText = collectHighlightedText(painter.document);
 	painter.paintedText.clear();
 	painter.selectedRange = getSelectedRange(painter.window);
