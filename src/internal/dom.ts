@@ -8366,7 +8366,8 @@ function queueMutationRecord(
 		if (list === null) {
 			continue;
 		}
-		for (const registered of list) {
+		for (let index = 0; index < list.length; index++) {
+			const registered = list[index];
 			const options = registered.options;
 			if (node !== target && options.subtree !== true) {
 				continue;
