@@ -30827,12 +30827,21 @@ const scrollShifts = new WeakMap<Document, {element: Element; delta: number}>();
  * and requests a repaint. A clamp is not a scroll shift: it moves offsets the
  * journal already priced, and can move several boxes at once.
  */
+// The layout pass each document's offsets were last clamped after. A
+// write clamps itself, so until layout solves again they still fit.
+const clampedAfterSolve = new WeakMap<Document, number>();
+
 export function clampScrollOffsets(document: globalThis.Document): void {
 	const attached = getAttachedDocument(document);
 	const held = scrolledElements.get(document as Document);
 	if (attached === undefined || held === undefined) {
 		return;
 	}
+	const solves = _(attached).extra.layout.solves;
+	if (clampedAfterSolve.get(document as Document) === solves) {
+		return;
+	}
+	clampedAfterSolve.set(document as Document, solves);
 	let changed = false;
 	for (const element of held) {
 		const offsets = scrollOffsets.get(element) ?? {left: 0, top: 0};
