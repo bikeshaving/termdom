@@ -7138,16 +7138,20 @@ function roundToGrid(
 	}
 	const isText = node.measure !== null && node.measuresText;
 
+	// Whole cells, held as small integers so V8 keeps them unboxed in every
+	// node's grid and in the extents made from it.
 	node.grid.left =
-		roundValue(absLeft, false, false) - roundValue(parentLeft, false, false);
+		(roundValue(absLeft, false, false) - roundValue(parentLeft, false, false)) |
+		0;
 	node.grid.top =
-		roundValue(absTop, false, false) - roundValue(parentTop, false, false);
+		(roundValue(absTop, false, false) - roundValue(parentTop, false, false)) |
+		0;
 	node.grid.width =
-		roundValue(absLeft + width, isText, false) -
-		roundValue(absLeft, isText, false);
+		(roundValue(absLeft + width, isText, false) -
+			roundValue(absLeft, isText, false)) | 0;
 	node.grid.height =
-		roundValue(absTop + height, isText, false) -
-		roundValue(absTop, isText, false);
+		(roundValue(absTop + height, isText, false) -
+			roundValue(absTop, isText, false)) | 0;
 
 	node.settled = absLeft === node.gridLeft && absTop === node.gridTop;
 	if (!node.settled) {
