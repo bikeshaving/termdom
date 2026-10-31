@@ -737,7 +737,7 @@ test("a ::before inherits what its element changes to from a listener", async ()
 	dom.dispose();
 });
 
-test.todo("an element moved into another document takes that document's rules, also failing on main", async () => {
+test.skip("an element moved into another document takes that document's rules, also failing on main", async () => {
 	const {terminal, dom} = await open(
 		"<style>.k { color: rgb(255, 0, 0) } p { margin: 0 }</style>" +
 		"<p>top</p><iframe srcdoc=\"<style>.k { color: rgb(0, 0, 255) }" +

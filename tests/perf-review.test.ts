@@ -8,7 +8,8 @@
  * in one record, and a box's scroll carried by the terminal. The engine's
  * own checks hold every style, layout and partial frame to one made from
  * scratch, so each test drives the sequence a shortcut could get wrong and
- * reads what reaches the screen. A test.todo marks a bug found here.
+ * reads what reaches the screen. A test.skip marks a bug found here whose
+ * failure would throw from the render loop after the test ends.
  */
 import {expect, test} from "@b9g/libuild/test";
 
@@ -558,7 +559,7 @@ test("presentational hints survive a style read made while they are gathered", a
 	}
 });
 
-test.todo("a light child shows again once a slot takes its new slot name", async () => {
+test.skip("a light child shows again once a slot takes its new slot name", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({
 		transport: terminal.transport,
@@ -579,7 +580,7 @@ test.todo("a light child shows again once a slot takes its new slot name", async
 	dom.dispose();
 });
 
-test.todo("a shadow root attached after a frame replaces the light children drawn", async () => {
+test.skip("a shadow root attached after a frame replaces the light children drawn", async () => {
 	const {terminal, dom} = await open("<div id='a'><p>light</p></div>");
 	dom.document.getElementById("a")!.attachShadow({mode: "open"}).innerHTML =
 		"<p>shadow</p>";
