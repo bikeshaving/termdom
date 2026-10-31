@@ -5533,24 +5533,6 @@ function parseCSSTime(token: string): number {
 	return getCSSTimeMs(token) ?? 0;
 }
 
-// Whether any duration or delay is above zero, without which no
-// transition the lists describe can start.
-export function mayStartTransition(
-	read: (property: string) => string,
-): boolean {
-	for (const property of ["transition-duration", "transition-delay"]) {
-		const list = getTransitionBase(read, property);
-		if (
-			list !== "0s" && splitCommaList(list).some((token) =>
-				parseCSSTime(token) > 0,
-			)
-		) {
-			return true;
-		}
-	}
-	return false;
-}
-
 // The timing lists repeat to the property list's length
 // (css-transitions-1 §2.1). A later item naming a property a prior one
 // covered wins.
