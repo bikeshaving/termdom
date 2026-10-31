@@ -1905,6 +1905,12 @@ function generateANSI(
 	const {rows, cols, cluster, border} = grid;
 
 	let output = "";
+	// The printable ASCII cells since the last escape, as codes, made one
+	// string when anything else is written rather than a string a cell.
+	let plain = 0;
+	if (plainCodes.length < cols) {
+		plainCodes = new Uint16Array(cols);
+	}
 	let cursorRow = 0;
 	let cursorCol = 0;
 	let prevIndex = -1;
@@ -1990,6 +1996,8 @@ function generateANSI(
 			}
 
 			if (row !== cursorRow || col !== cursorCol) {
+				output = takePlain(output, plain);
+				plain = 0;
 				const moveSeq = moveCursor(
 					writer,
 					cursorRow,
@@ -2016,6 +2024,8 @@ function generateANSI(
 			}
 
 			if (isFirstRenderOfLine) {
+				output = takePlain(output, plain);
+				plain = 0;
 				output += writer.carriageReturn().eraseToLineEnd().take();
 				if (col > 0) {
 					output += writer.cursorForward(col).take();
@@ -2030,15 +2040,24 @@ function generateANSI(
 			getStyleDiff(grid, index, prevIndex, writer);
 			const styleSeq = writer.take();
 			if (styleSeq !== "") {
+				output = takePlain(output, plain);
+				plain = 0;
 				output += styleSeq;
 				rowHasANSI = true;
 			}
 
 			const encoding = border[index];
-			const glyph = encoding > 0
-				? getBorderChar(encoding)
-				: decodeGrapheme(cluster[index]);
-			output += writer.text(glyph).take();
+			const code = cluster[index];
+			let glyph: string;
+			if (encoding === 0 && code >= 0x20 && code <= 0x7e) {
+				plainCodes[plain++] = code;
+				glyph = "";
+			} else {
+				output = takePlain(output, plain);
+				plain = 0;
+				glyph = encoding > 0 ? getBorderChar(encoding) : decodeGrapheme(code);
+				output += writer.text(glyph).take();
+			}
 
 			const width = widthAt(grid, index);
 
@@ -2046,7 +2065,6 @@ function generateANSI(
 			// keeps ASCII from reaching isWidthUncertain, and a border glyph is
 			// a character this engine chose.
 			if (measurer !== undefined && encoding === 0) {
-				const code = cluster[index];
 				if (
 					(code > 0x7e || code < 0x20) &&
 					isWidthUncertain(glyph) &&
@@ -2080,6 +2098,8 @@ function generateANSI(
 		if (rowHasContent) {
 			prevIndex = -1;
 			if (rowHasANSI) {
+				output = takePlain(output, plain);
+				plain = 0;
 				output += writer.resetStyle().take();
 			}
 		}
@@ -2088,7 +2108,19 @@ function generateANSI(
 	// Never a trailing newline. The frame is repainted in place, and one
 	// line feed per render would scroll the launching prompt up a row each
 	// time.
-	return output;
+	return takePlain(output, plain);
+}
+
+let plainCodes = new Uint16Array(0);
+
+function takePlain(output: string, plain: number): string {
+	return plain === 0
+		? output
+		: output +
+			String.fromCharCode.apply(
+				null,
+				plainCodes.subarray(0, plain) as unknown as number[],
+			);
 }
 
 interface FrameJournal {
