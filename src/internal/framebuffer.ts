@@ -1895,6 +1895,8 @@ function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
 	return null;
 }
 
+let plainCodes = new Uint16Array(0);
+
 function generateANSI(
 	grid: CellGrid,
 	writer: FrameWriter,
@@ -2110,8 +2112,6 @@ function generateANSI(
 	// time.
 	return takePlain(output, plain);
 }
-
-let plainCodes = new Uint16Array(0);
 
 function takePlain(output: string, plain: number): string {
 	return plain === 0
