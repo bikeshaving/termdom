@@ -703,6 +703,29 @@ export function scrollShiftCarriesPaint(
 			return false;
 		}
 	}
+	// Nor does a box beside one the scrolled box sits in, pulled over its
+	// rows by a negative margin or moved there by a transform.
+	const lift = framebuffer.scrollTop;
+	for (
+		let node = getLayoutNode(layout, element);
+		node !== null && node.parent !== null;
+		node = node.parent
+	) {
+		const siblings = node.parent.children;
+		for (let index = 0; index < siblings.length; index++) {
+			const extent = siblings[index] === node
+				? undefined
+				: paintExtent(siblings[index], layout.initialBlock);
+			if (
+				extent !== undefined &&
+				extent.bottom > extent.top &&
+				extent.bottom - lift > shift.top &&
+				extent.top - lift < shift.end
+			) {
+				return false;
+			}
+		}
+	}
 	return true;
 }
 
