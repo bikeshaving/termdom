@@ -304,3 +304,18 @@ test("a class that brings its own transition transitions from the old style", as
 	expect(window.getComputedStyle(box).color).toBe("rgb(128, 128, 128)");
 	await dom.dispose();
 });
+
+test("a style attribute's transition runs in every engine that reads its text", async () => {
+	for (let engine = 0; engine < 2; engine++) {
+		const {dom, document, window} = attached(
+			"<style>#box { width: 10px; height: 1px } #box.wide { width: 20px }</style>" +
+			"<div id='box' style='transition: width 100s steps(1, jump-both)'></div>",
+		);
+		await nextFrame(dom);
+		const box = document.getElementById("box")!;
+		box.classList.add("wide");
+		await nextFrame(dom);
+		expect(window.getComputedStyle(box).width).toBe("15px");
+		await dom.dispose();
+	}
+});

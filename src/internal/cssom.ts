@@ -5660,13 +5660,29 @@ function getContainingWidth(declaration: MeasuredDeclaration): number | null {
 	return rect ? rect.width : null;
 }
 
+// The block a style attribute's text parses to, which the elements that
+// share the text share until a script reads one's style, which then has
+// its own.
+const inlineBlocks = new Map<string, CSSValues.DeclarationBlock>();
+
 function readInlineBlock(element: Element): CSSValues.DeclarationBlock {
-	let style = inlineStyles.get(element);
-	if (style === undefined && hasAttributeByName(element, "style")) {
-		getInlineStyle(element);
-		style = inlineStyles.get(element);
+	const style = inlineStyles.get(element);
+	if (style !== undefined) {
+		return getDeclarationBlock(style);
 	}
-	return style === undefined ? EMPTY_DECLARATIONS : getDeclarationBlock(style);
+	const text = getAttributeValue(element, "style");
+	if (text === null) {
+		return EMPTY_DECLARATIONS;
+	}
+	let block = inlineBlocks.get(text);
+	if (block === undefined) {
+		block = getDeclarationBlock(new CSSStyleProperties({element}));
+		if (inlineBlocks.size >= PARSED_STYLE_TEXTS) {
+			inlineBlocks.clear();
+		}
+		inlineBlocks.set(text, block);
+	}
+	return block;
 }
 
 // The cascade gets the expanded block, so a shorthand's `!important`
