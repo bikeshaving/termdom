@@ -2150,6 +2150,9 @@ export class Framebuffer {
 
 	// The dropped grid, reused by the next frame of the same size.
 	spare: CellGrid | null;
+	// Which rows a partial frame left as they were, a flag a row, reused by
+	// the next partial frame as tall.
+	unchangedRows: Uint8Array | null;
 	diff: CellGrid | null;
 	pendingEnd: (() => string) | null;
 	renderedLines: Set<number>;
@@ -2194,6 +2197,7 @@ export class Framebuffer {
 		this.prevBorders = null;
 		this.prevFrame = null;
 		this.spare = null;
+		this.unchangedRows = null;
 		this.diff = null;
 		this.pendingEnd = null;
 		this.renderedLines = new Set();
@@ -2649,7 +2653,11 @@ export function beginFrame(
 		);
 		let unchangedRows: Uint8Array | null = null;
 		if (changedRows !== undefined) {
-			unchangedRows = new Uint8Array(frameRows).fill(1);
+			unchangedRows = framebuffer.unchangedRows?.length === frameRows
+				? framebuffer.unchangedRows
+				: new Uint8Array(frameRows);
+			framebuffer.unchangedRows = unchangedRows;
+			unchangedRows.fill(1);
 			for (let index = 0; index < changedRows.length; index++) {
 				unchangedRows.fill(0, changedRows[index][0], changedRows[index][1]);
 			}
