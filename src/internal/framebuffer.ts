@@ -1278,18 +1278,28 @@ export function drawRect(
 		const bg = background === "default" ? 0 : background & COLOR_MASK;
 		const clip = context.clipRect;
 		const offset = context.viewportOffset;
-		const top = Math.max(y, clip?.top ?? y, context.bandTop - offset);
-		const bottom = Math.min(
-			y + height,
-			clip?.bottom ?? y + height,
-			context.bandBottom - offset,
-		);
-		const left = Math.max(x, clip?.left ?? x, 0);
-		const right = Math.min(x + width, clip?.right ?? x + width, context.cols);
+		// The cells from each edge, rounded up, held as small integers: a
+		// cell's index is whole, and stepping a number held as a double
+		// makes a new one each step.
+		const top =
+			Math.ceil(Math.max(y, clip?.top ?? y, context.bandTop - offset)) | 0;
+		const bottom =
+			Math.ceil(
+				Math.min(
+					y + height,
+					clip?.bottom ?? y + height,
+					context.bandBottom - offset,
+				),
+			) | 0;
+		const left = Math.ceil(Math.max(x, clip?.left ?? x, 0)) | 0;
+		const right =
+			Math.ceil(Math.min(x + width, clip?.right ?? x + width, context.cols)) |
+			0;
+		const cols = context.cols | 0;
 		const grid = context.grid;
 		const attrs = 1 << ATTR.WidthShift;
 		for (let row = top; row < bottom; row++) {
-			const start = (row + offset) * context.cols;
+			const start = ((row + offset) | 0) * cols;
 			for (let index = start + left; index < start + right; index++) {
 				grid.cluster[index] = 0x20;
 				grid.fg[index] = 0;
