@@ -5975,7 +5975,8 @@ function innerInvoke(
 ): boolean {
 	const state = _(event).state;
 	let found = false;
-	for (const listener of listeners) {
+	for (let index = 0; index < listeners.length; index++) {
+		const listener = listeners[index];
 		if (listener.removed) {
 			continue;
 		}

@@ -4717,18 +4717,24 @@ function inheritsReset(
 	element: Element,
 	rules: readonly ParsedCSSRule[],
 ): boolean {
-	for (const block of [...rules, readInlineBlock(element)]) {
-		let inherits = resetInheritors.get(block);
-		if (inherits === undefined) {
-			inherits = Object.entries(block.declarations).some(([name, value]) =>
-				value.trim() === "inherit" && !CSSValues.isInheritedProperty(name));
-			resetInheritors.set(block, inherits);
-		}
-		if (inherits) {
+	for (let index = 0; index < rules.length; index++) {
+		if (blockInheritsReset(rules[index])) {
 			return true;
 		}
 	}
-	return false;
+	return blockInheritsReset(readInlineBlock(element));
+}
+
+function blockInheritsReset(
+	block: {readonly declarations: Readonly<Record<string, string>>},
+): boolean {
+	let inherits = resetInheritors.get(block);
+	if (inherits === undefined) {
+		inherits = Object.entries(block.declarations).some(([name, value]) =>
+			value.trim() === "inherit" && !CSSValues.isInheritedProperty(name));
+		resetInheritors.set(block, inherits);
+	}
+	return inherits;
 }
 
 // Every value a declaration has resolved, its own over the shared.
@@ -8311,20 +8317,35 @@ const RECENT_RULE_LISTS = 16;
 // cells, so a finished list is checked against the last few the cascade
 // shared and held once. What is shared is frozen. A list holding a shadow
 // tree's rule keeps its own, since the cascade outlives the tree.
+function isSameRuleList(
+	recent: readonly ParsedCSSRule[],
+	rules: readonly ParsedCSSRule[],
+): boolean {
+	if (recent.length !== rules.length) {
+		return false;
+	}
+	for (let index = 0; index < rules.length; index++) {
+		if (recent[index] !== rules[index]) {
+			return false;
+		}
+	}
+	return true;
+}
+
 function shareRuleList(
 	cascade: Cascade,
 	rules: ParsedCSSRule[],
 ): ParsedCSSRule[] {
-	for (const recent of cascade.recentRuleLists) {
-		if (
-			recent.length === rules.length &&
-			recent.every((rule, index) => rule === rules[index])
-		) {
-			return recent;
+	const recents = cascade.recentRuleLists;
+	for (let index = 0; index < recents.length; index++) {
+		if (isSameRuleList(recents[index], rules)) {
+			return recents[index];
 		}
 	}
-	if (rules.some((rule) => rule.scope !== undefined)) {
-		return rules;
+	for (let index = 0; index < rules.length; index++) {
+		if (rules[index].scope !== undefined) {
+			return rules;
+		}
 	}
 	const shared = Object.freeze(rules.slice()) as ParsedCSSRule[];
 	cascade.recentRuleLists[cascade.nextRecentRuleList] = shared;
@@ -10419,30 +10440,46 @@ function isPaintOnlyChange(
 	) {
 		return false;
 	}
-	const keys: string[] = [`[${name}]`];
+	if (!keyPaintsOnly(cascade, `[${name}]`)) {
+		return false;
+	}
 	if (name === "class") {
-		const before = oldValue === null ? [] : oldValue.split(WHITESPACE_RUN);
-		for (const token of [...before, ...getClassTokens(element)]) {
-			if (token !== "") {
-				keys.push(`.${token}`);
+		if (oldValue !== null) {
+			const before = oldValue.split(WHITESPACE_RUN);
+			for (let index = 0; index < before.length; index++) {
+				if (!classPaintsOnly(cascade, before[index])) {
+					return false;
+				}
+			}
+		}
+		for (const token of getClassTokens(element)) {
+			if (!classPaintsOnly(cascade, token)) {
+				return false;
 			}
 		}
 	} else if (name === "id") {
-		for (const token of [oldValue, getAttributeValue(element, "id")]) {
-			if (token !== null && token !== "") {
-				keys.push(`#${token}`);
-			}
-		}
+		const id = getAttributeValue(element, "id");
+		return idPaintsOnly(cascade, oldValue) && idPaintsOnly(cascade, id);
 	}
-	for (const key of keys) {
-		const properties = cascade.keyProperties.get(key);
-		if (properties === undefined) {
-			continue;
-		}
-		for (const property of properties) {
-			if (!PAINT_ONLY_PROPERTIES.has(property)) {
-				return false;
-			}
+	return true;
+}
+
+function classPaintsOnly(cascade: Cascade, token: string): boolean {
+	return token === "" || keyPaintsOnly(cascade, `.${token}`);
+}
+
+function idPaintsOnly(cascade: Cascade, id: string | null): boolean {
+	return id === null || id === "" || keyPaintsOnly(cascade, `#${id}`);
+}
+
+function keyPaintsOnly(cascade: Cascade, key: string): boolean {
+	const properties = cascade.keyProperties.get(key);
+	if (properties === undefined) {
+		return true;
+	}
+	for (const property of properties) {
+		if (!PAINT_ONLY_PROPERTIES.has(property)) {
+			return false;
 		}
 	}
 	return true;

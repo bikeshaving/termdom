@@ -7815,11 +7815,9 @@ export function takeDamageBands(
 		return undefined;
 	}
 	const rows: Array<[number, number]> = [];
-	const add = (top: number, bottom: number, fixed: boolean): void => {
-		rows.push(fixed ? [top, bottom] : [top + offset, bottom + offset]);
-	};
-	for (const [top, bottom, fixed] of layout.damage) {
-		add(top, bottom, fixed);
+	const damage = layout.damage;
+	for (let index = 0; index < damage.length; index++) {
+		addRows(rows, offset, damage[index][0], damage[index][1], damage[index][2]);
 	}
 	for (const [element, key] of layout.restyledForPaint) {
 		if (!element.isConnected) {
@@ -7857,32 +7855,56 @@ export function takeDamageBands(
 			return undefined;
 		}
 		const shift = getScrollShift(layout, node, false).y;
-		add(extent.top + shift, extent.bottom + shift, isInFixedBox(node));
+		addRows(
+			rows,
+			offset,
+			extent.top + shift,
+			extent.bottom + shift,
+			isInFixedBox(node),
+		);
 	}
 	if (layout.selectionMoved) {
 		if (selectionRows === null || previousSelection === null) {
 			return undefined;
 		}
 		for (const [top, bottom] of [previousSelection, selectionRows]) {
-			add(top, bottom, false);
-			add(top, bottom, true);
+			addRows(rows, offset, top, bottom, false);
+			addRows(rows, offset, top, bottom, true);
 		}
 	}
 	// A row beside a change can change too: a border there joins the
-	// changed one, and an outline reaches past its box.
-	rows.sort((a, b) => a[0] - b[0]);
-	const bands: Array<[number, number]> = [];
-	for (const [top, bottom] of rows) {
-		const from = top - 1;
-		const to = bottom + 1;
-		const last = bands.at(-1);
-		if (last !== undefined && from <= last[1]) {
-			last[1] = Math.max(last[1], to);
+	// changed one, and an outline reaches past its box. The rows become the
+	// bands in place.
+	rows.sort(byTop);
+	let bands = 0;
+	for (let index = 0; index < rows.length; index++) {
+		const from = rows[index][0] - 1;
+		const to = rows[index][1] + 1;
+		if (bands > 0 && from <= rows[bands - 1][1]) {
+			rows[bands - 1][1] = Math.max(rows[bands - 1][1], to);
 		} else {
-			bands.push([from, to]);
+			rows[bands] = rows[index];
+			rows[bands][0] = from;
+			rows[bands][1] = to;
+			bands++;
 		}
 	}
-	return bands;
+	rows.length = bands;
+	return rows;
+}
+
+function addRows(
+	rows: Array<[number, number]>,
+	offset: number,
+	top: number,
+	bottom: number,
+	fixed: boolean,
+): void {
+	rows.push(fixed ? [top, bottom] : [top + offset, bottom + offset]);
+}
+
+function byTop(a: [number, number], b: [number, number]): number {
+	return a[0] - b[0];
 }
 
 // Membership gates. A positioned inline run member owns no box of its
