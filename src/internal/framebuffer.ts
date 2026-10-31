@@ -278,8 +278,17 @@ function createStyleEscape(run: StyleSpan, colorDepth: ColorDepth): string {
 		}
 	};
 
-	state("bold", "1", "22");
-	state("dim", "2", "22");
+	// Bold and dim share the code that turns them off, so it goes before
+	// either is turned on.
+	if (wanted?.bold === false || wanted?.dim === false) {
+		codes.push("22");
+	}
+	if (wanted?.bold === true) {
+		codes.push("1");
+	}
+	if (wanted?.dim === true) {
+		codes.push("2");
+	}
 	state("italic", "3", "23");
 	if (run.underline) {
 		codes.push(...getUnderlineCodes(run.underline));
@@ -1871,6 +1880,12 @@ function getChangedAttributes(
 	flag(ATTR.Inverse, "inverse");
 	flag(ATTR.Strikethrough, "strikethrough");
 	flag(ATTR.Overline, "overline");
+	// Turning either of bold and dim off turns both off, so the other is
+	// stated again, on if it stays on.
+	if ((prevAttrs & ~attrs & (ATTR.Bold | ATTR.Dim)) !== 0) {
+		changed.bold = (attrs & ATTR.Bold) !== 0;
+		changed.dim = (attrs & ATTR.Dim) !== 0;
+	}
 	return changed;
 }
 
