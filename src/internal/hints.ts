@@ -213,6 +213,10 @@ export function isScriptedDocument(document: Document): boolean {
 	return scriptedDocuments.has(document);
 }
 
+// Where an element's hints are gathered, emptied before each, and copied
+// out only when they hold something. Most elements have none.
+const scratchHints: Hints = Object.create(null);
+
 export function getPresentationalHints(element: Element): Hints | null {
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return null;
@@ -220,7 +224,10 @@ export function getPresentationalHints(element: Element): Hints | null {
 	const name = element.localName;
 	const get = (attribute: string): string | null =>
 		element.getAttribute(attribute);
-	const hints: Hints = Object.create(null);
+	const hints = scratchHints;
+	for (const name in hints) {
+		delete hints[name];
+	}
 
 	if (TABLE_PARTS.has(name) || name === "body") {
 		setColor(hints, "background-color", get("bgcolor"));
@@ -382,7 +389,12 @@ export function getPresentationalHints(element: Element): Hints | null {
 		}
 	}
 
-	return Object.keys(hints).length === 0 ? null : hints;
+	let found: Hints | null = null;
+	for (const name in hints) {
+		found ??= Object.create(null) as Hints;
+		found[name] = hints[name];
+	}
+	return found;
 }
 
 // The attributes a hint reads, and on which elements. A table's

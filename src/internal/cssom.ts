@@ -4896,6 +4896,10 @@ interface ComputedStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	_computedValue: Step<ComputedStyleDeclaration["_computedValue"]>;
 }
 
+// What a declaration the cascade resolves holds until it takes the values
+// it shares. Nothing reads or writes it.
+const UNRESOLVED = new Map<string, string>();
+
 interface ComputedStyleDeclaration {
 	readonly [internals]: ComputedStyleDeclarationSlots;
 }
@@ -4909,7 +4913,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		super();
 		const slots = _(this);
 		slots.cascade = null;
-		slots.resolved = new Map<string, string>();
+		slots.resolved = cascade ? UNRESOLVED : new Map<string, string>();
 		slots.own = new Map<string, string>();
 		slots.custom = null;
 		slots.element = element;
