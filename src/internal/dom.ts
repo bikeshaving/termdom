@@ -1281,6 +1281,11 @@ interface PathItem {
 	slotInClosedTree: boolean;
 }
 
+// An event's path is emptied once it is dispatched, and its items, let go
+// of their targets, serve the next dispatch.
+const NO_PATH: PathItem[] = Object.freeze([]) as unknown as PathItem[];
+const spareItems: PathItem[] = [];
+
 // The spec's internal slots and flags, kept in one object behind a module
 // symbol because dispatch is a module function that reads and writes them
 // for every target in the path.
@@ -1524,7 +1529,7 @@ function startEvent(
 		relatedTarget: null,
 		currentTarget: null,
 		eventPhase: NONE,
-		path: [],
+		path: NO_PATH,
 		initialized: false,
 		dispatch: false,
 		stopPropagation: false,
@@ -2813,50 +2818,49 @@ function toEventTarget(value: unknown): EventTarget | null {
 	return value;
 }
 
+// The members of an init dictionary that hold a modifier, and its name.
+const INIT_MODIFIERS: ReadonlyArray<readonly [
+	keyof EventModifierInit,
+	string,
+]> = [
+	["ctrlKey", "Control"],
+	["shiftKey", "Shift"],
+	["altKey", "Alt"],
+	["metaKey", "Meta"],
+	["modifierAltGraph", "AltGraph"],
+	["modifierCapsLock", "CapsLock"],
+	["modifierFn", "Fn"],
+	["modifierFnLock", "FnLock"],
+	["modifierHyper", "Hyper"],
+	["modifierNumLock", "NumLock"],
+	["modifierScrollLock", "ScrollLock"],
+	["modifierSuper", "Super"],
+	["modifierSymbol", "Symbol"],
+	["modifierSymbolLock", "SymbolLock"],
+];
+
+// Events with the same modifiers held share one set of their names, by
+// which of them are held. Nothing changes a set once it is made.
+const modifierSets = new Map<number, ReadonlySet<string>>();
+
 /** The modifier key names an event's init dictionary sets. */
-function getInitModifiers(init: EventModifierInit): Set<string> {
-	const modifiers = new Set<string>();
-	if (init.ctrlKey) {
-		modifiers.add("Control");
+function getInitModifiers(init: EventModifierInit): ReadonlySet<string> {
+	let held = 0;
+	for (let index = 0; index < INIT_MODIFIERS.length; index++) {
+		if (init[INIT_MODIFIERS[index][0]]) {
+			held |= 1 << index;
+		}
 	}
-	if (init.shiftKey) {
-		modifiers.add("Shift");
-	}
-	if (init.altKey) {
-		modifiers.add("Alt");
-	}
-	if (init.metaKey) {
-		modifiers.add("Meta");
-	}
-	if (init.modifierAltGraph) {
-		modifiers.add("AltGraph");
-	}
-	if (init.modifierCapsLock) {
-		modifiers.add("CapsLock");
-	}
-	if (init.modifierFn) {
-		modifiers.add("Fn");
-	}
-	if (init.modifierFnLock) {
-		modifiers.add("FnLock");
-	}
-	if (init.modifierHyper) {
-		modifiers.add("Hyper");
-	}
-	if (init.modifierNumLock) {
-		modifiers.add("NumLock");
-	}
-	if (init.modifierScrollLock) {
-		modifiers.add("ScrollLock");
-	}
-	if (init.modifierSuper) {
-		modifiers.add("Super");
-	}
-	if (init.modifierSymbol) {
-		modifiers.add("Symbol");
-	}
-	if (init.modifierSymbolLock) {
-		modifiers.add("SymbolLock");
+	let modifiers = modifierSets.get(held);
+	if (modifiers === undefined) {
+		const names = new Set<string>();
+		for (let index = 0; index < INIT_MODIFIERS.length; index++) {
+			if ((held & (1 << index)) !== 0) {
+				names.add(INIT_MODIFIERS[index][1]);
+			}
+		}
+		modifiers = names;
+		modifierSets.set(held, modifiers);
 	}
 	return modifiers;
 }
@@ -2960,7 +2964,7 @@ interface MouseEventSlots extends UIEventSlots {
 	buttons: number;
 	movementX: number;
 	movementY: number;
-	modifiers: Set<string>;
+	modifiers: ReadonlySet<string>;
 }
 
 interface MouseEvent {
@@ -3171,7 +3175,7 @@ interface KeyboardEventSlots extends UIEventSlots {
 	isComposing: boolean;
 	charCode: number;
 	keyCode: number;
-	modifiers: Set<string>;
+	modifiers: ReadonlySet<string>;
 }
 
 interface KeyboardEvent {
@@ -5364,14 +5368,38 @@ function appendToPath(
 	const rootOfClosedTree =
 		implementsInterface(invocationTarget, ShadowRoot) &&
 		_(invocationTarget).extra.shadowMode === "closed";
-	state.path.push({
-		invocationTarget,
-		invocationTargetInShadowTree: inShadowTree,
-		shadowAdjustedTarget,
-		relatedTarget,
-		rootOfClosedTree,
-		slotInClosedTree,
-	});
+	if (state.path === NO_PATH) {
+		state.path = [];
+	}
+	const item =
+		spareItems.pop() ??
+		{
+			invocationTarget,
+			invocationTargetInShadowTree: false,
+			shadowAdjustedTarget: null,
+			relatedTarget: null,
+			rootOfClosedTree: false,
+			slotInClosedTree: false,
+		};
+	item.invocationTarget = invocationTarget;
+	item.invocationTargetInShadowTree = inShadowTree;
+	item.shadowAdjustedTarget = shadowAdjustedTarget;
+	item.relatedTarget = relatedTarget;
+	item.rootOfClosedTree = rootOfClosedTree;
+	item.slotInClosedTree = slotInClosedTree;
+	state.path.push(item);
+}
+
+function releasePath(state: DispatchState): void {
+	const path = state.path;
+	for (let index = 0; index < path.length; index++) {
+		const item = path[index];
+		item.invocationTarget = null as unknown as EventTarget;
+		item.shadowAdjustedTarget = null;
+		item.relatedTarget = null;
+		spareItems.push(item);
+	}
+	state.path = NO_PATH;
 }
 
 // The one place an event's trust is decided. dispatchEvent() is never
@@ -5666,7 +5694,7 @@ function dispatch(target: EventTarget, event: Event, trusted = true): boolean {
 	}
 	state.eventPhase = NONE;
 	state.currentTarget = null;
-	state.path = [];
+	releasePath(state);
 	state.dispatch = false;
 	state.stopPropagation = false;
 	state.stopImmediate = false;
@@ -5952,7 +5980,13 @@ function invokeListeners(
 		return;
 	}
 	state.currentTarget = struct.invocationTarget;
-	const listeners = _(struct.invocationTarget).listeners.slice();
+	// The list as it was when the event got here, so a listener added
+	// during it does not hear it. A target with none has nothing to copy.
+	const own = _(struct.invocationTarget).listeners;
+	if (own.length === 0) {
+		return;
+	}
+	const listeners = own.slice();
 	const found = innerInvoke(event, listeners, capturing);
 	if (!found && state.trusted) {
 		const legacyType = LEGACY_EVENT_TYPES.get(event.type);

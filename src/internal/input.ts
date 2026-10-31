@@ -137,6 +137,16 @@ const PUNCTUATION_CODES: Record<string, string> = {
 	")": "Digit0",
 };
 
+// The code of each letter and digit key, by the characters it types.
+const CHARACTER_CODES = new Map<string, string>();
+for (const letter of "abcdefghijklmnopqrstuvwxyz") {
+	CHARACTER_CODES.set(letter, `Key${letter.toUpperCase()}`);
+	CHARACTER_CODES.set(letter.toUpperCase(), `Key${letter.toUpperCase()}`);
+}
+for (const digit of "0123456789") {
+	CHARACTER_CODES.set(digit, `Digit${digit}`);
+}
+
 // The DOM `code`, assuming a US layout. A terminal only says what
 // character a key produced, never which key, so punctuation is a guess
 // and a character off the US layout has no code at all.
@@ -147,13 +157,7 @@ function getDOMCode(keyName: string): string {
 	if (keyName in NAMED_KEY_NUMBERS) {
 		return keyName;
 	}
-	if (/^[a-z]$/i.test(keyName)) {
-		return `Key${keyName.toUpperCase()}`;
-	}
-	if (/^[0-9]$/.test(keyName)) {
-		return `Digit${keyName}`;
-	}
-	return PUNCTUATION_CODES[keyName] ?? "";
+	return CHARACTER_CODES.get(keyName) ?? PUNCTUATION_CODES[keyName] ?? "";
 }
 
 // The legacy keyCode of each punctuation key on a US layout, which a
