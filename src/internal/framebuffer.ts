@@ -2887,11 +2887,11 @@ export function beginFrame(
 		);
 
 		let contentHeight = 0;
-		for (const row of framebuffer.renderedLines) {
+		framebuffer.renderedLines.forEach((row) => {
 			if (row + 1 > contentHeight) {
 				contentHeight = row + 1;
 			}
-		}
+		});
 
 		// Rows the last frame painted below where this one ends still show
 		// what it left on them.

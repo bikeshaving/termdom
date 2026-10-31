@@ -2147,7 +2147,29 @@ function renderOutsideMarker(
 // changes.
 const markerTextStyles = new WeakMap<object, CellStyle>();
 
+// A marker no rule styles reads what its item reads, so items that read
+// alike share one style, through any restyle.
+const itemMarkerStyles = new Map<string, CellStyle>();
+
+const ITEM_MARKER_STYLES = 256;
+
 function getMarkerTextStyle(painter: Painter, element: Element): CellStyle {
+	if (!painter.cascade.pseudoRulesByType.has("::marker")) {
+		const color = getComputedValue(element, "color");
+		const weight = getComputedValue(element, "font-weight");
+		const fontStyle = getComputedValue(element, "font-style");
+		const line = getComputedValue(element, "text-decoration-line");
+		const values = `${color} ${weight} ${fontStyle} ${line}`;
+		let style = itemMarkerStyles.get(values);
+		if (style === undefined) {
+			if (itemMarkerStyles.size === ITEM_MARKER_STYLES) {
+				itemMarkerStyles.clear();
+			}
+			style = createMarkerTextStyle(color, weight, fontStyle, line);
+			itemMarkerStyles.set(values, style);
+		}
+		return style;
+	}
 	const key = painter.cascade.getStyleKey(element);
 	const known = key === null ? undefined : markerTextStyles.get(key);
 	if (known !== undefined) {
@@ -2156,24 +2178,34 @@ function getMarkerTextStyle(painter: Painter, element: Element): CellStyle {
 	const color =
 		getComputedValue(element, "color", "::marker") ||
 		getComputedValue(element, "color");
-	const {bold, dim} = resolveFontWeight(
+	const style = createMarkerTextStyle(
+		color,
 		getComputedValue(element, "font-weight", "::marker"),
+		getComputedValue(element, "font-style", "::marker"),
+		getComputedValue(element, "text-decoration-line", "::marker"),
 	);
-	const style: CellStyle = {
+	if (key !== null) {
+		markerTextStyles.set(key, style);
+	}
+	return style;
+}
+
+function createMarkerTextStyle(
+	color: string,
+	weight: string,
+	fontStyle: string,
+	line: string,
+): CellStyle {
+	const {bold, dim} = resolveFontWeight(weight);
+	return {
 		fg: color && color !== "initial"
 			? CSSValues.numberFromCSSColor(color)
 			: undefined,
 		bold,
 		dim,
-		italic: getComputedValue(element, "font-style", "::marker") === "italic",
-		underline: CSSValues.parseTextDecorationLine(
-			getComputedValue(element, "text-decoration-line", "::marker"),
-		).underline,
+		italic: fontStyle === "italic",
+		underline: CSSValues.parseTextDecorationLine(line).underline,
 	};
-	if (key !== null) {
-		markerTextStyles.set(key, style);
-	}
-	return style;
 }
 
 // A focused editing host parks the cursor at the document selection's

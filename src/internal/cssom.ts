@@ -605,12 +605,17 @@ function readBoxModel(element: Element): CSSValues.BoxModel {
 // What list-style-type spells, quoted the way a content value is
 // written. Null outside a list.
 function getDefaultMarkerContent(hostElement: Element): string | null {
+	const marker = getDefaultMarker(hostElement);
+	return marker === null ? null : `"${marker}"`;
+}
+
+function getDefaultMarker(hostElement: Element): string | null {
 	const listParent = hostElement.parentElement;
 	if (!listParent) {
 		return null;
 	}
 	const marker = getListMarker(hostElement, listParent);
-	return marker ? `"${CSSValues.withMarkerSeparator(marker)}"` : null;
+	return marker ? CSSValues.withMarkerSeparator(marker) : null;
 }
 
 // What a list numbers: an li, or anything an author styled as one. A
@@ -7005,10 +7010,11 @@ export class Cascade {
 	// rules declaring an inherited property. Collected loosely. A false
 	// positive only widens the invalidation.
 	reachingClasses: Set<string>;
-	// Every property a rule declares, by each class, id and attribute its
-	// selector tests, as `.name`, `#name` and `[name]`. A change to a key
-	// whose properties are all paint decides nothing layout reads.
-	keyProperties: Map<string, Set<string>>;
+	// Whether every property the rules declare is paint, by each class, id
+	// and attribute their selectors test, as `.name`, `#name` and `[name]`.
+	// A change to a key whose properties are all paint decides nothing
+	// layout reads.
+	keyPaintsOnly: Map<string, boolean>;
 	reachingIds: Set<string>;
 	reachingAttributes: Set<string>;
 
@@ -7183,7 +7189,7 @@ export class Cascade {
 		this.siblingIndexes = new Map();
 		this.uaSiblingIndex = undefined;
 		this.reachingClasses = new Set<string>();
-		this.keyProperties = new Map<string, Set<string>>();
+		this.keyPaintsOnly = new Map<string, boolean>();
 		this.reachingIds = new Set<string>();
 		this.reachingAttributes = new Set<string>();
 		this.reachingStates = false;
@@ -7843,13 +7849,10 @@ export function getMarkerContent(
 	}
 
 	const styles = computePseudoElementStyle(cascade, hostElement, "::marker");
-	let content = styles.content;
+	const content = styles.content;
 
 	if (!content || content === "none" || content === "normal") {
-		content = getDefaultMarkerContent(hostElement) ?? content;
-	}
-	if (!content || content === "none" || content === "normal") {
-		return null;
+		return getDefaultMarker(hostElement);
 	}
 
 	return evaluateContent(cascade, hostElement, "::marker", content);
@@ -10482,16 +10485,7 @@ function idPaintsOnly(cascade: Cascade, id: string | null): boolean {
 }
 
 function keyPaintsOnly(cascade: Cascade, key: string): boolean {
-	const properties = cascade.keyProperties.get(key);
-	if (properties === undefined) {
-		return true;
-	}
-	for (const property of properties) {
-		if (!PAINT_ONLY_PROPERTIES.has(property)) {
-			return false;
-		}
-	}
-	return true;
+	return cascade.keyPaintsOnly.get(key) ?? true;
 }
 
 // The list's padding-left is a function of its items' markers and
@@ -10590,7 +10584,7 @@ function parseAllStylesheets(cascade: Cascade): void {
 	cascade.siblingIndexes = new Map();
 	cascade.uaSiblingIndex = undefined;
 	cascade.reachingClasses.clear();
-	cascade.keyProperties.clear();
+	cascade.keyPaintsOnly.clear();
 	cascade.reachingIds.clear();
 	cascade.reachingAttributes.clear();
 	cascade.reachingStates = false;
@@ -11532,21 +11526,18 @@ function indexReachingKeys(
 			index.keys.add(key);
 		}
 	}
-	const names = Object.keys(declarations);
+	const paintsOnly = Object.keys(declarations).every((name) =>
+		PAINT_ONLY_PROPERTIES.has(name));
 	for (const keys of compounds) {
 		for (const key of [
 			...keys.classes.map((name) => `.${name}`),
 			...keys.ids.map((name) => `#${name}`),
 			...keys.attributes.map((name) => `[${name}]`),
 		]) {
-			let properties = cascade.keyProperties.get(key);
-			if (properties === undefined) {
-				properties = new Set<string>();
-				cascade.keyProperties.set(key, properties);
-			}
-			for (const name of names) {
-				properties.add(name);
-			}
+			cascade.keyPaintsOnly.set(
+				key,
+				paintsOnly && (cascade.keyPaintsOnly.get(key) ?? true),
+			);
 		}
 	}
 	const last = inherits ? compounds.length : compounds.length - 1;
