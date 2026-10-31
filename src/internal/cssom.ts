@@ -40,6 +40,7 @@ import {
 	getRemovedNodes,
 	getShadowRoot,
 	getTopLayer,
+	getValueTokens,
 	isButtonInput,
 	isConnectedNode,
 	isDocumentElement,
@@ -76,7 +77,6 @@ import {
 	type Step,
 } from "./slots.ts";
 import {
-	ASCII_WHITESPACE_RUN,
 	getStringWidth,
 	splitOnASCIIWhitespace,
 	toASCIILowercase,
@@ -8556,23 +8556,38 @@ function classChangeSubjects(
 	if (oldValue === null || cascade.reachingAttributes.has("class")) {
 		return null;
 	}
-	const before = new Set(oldValue.split(WHITESPACE_RUN));
+	const before = getValueTokens(oldValue);
 	const after = getClassTokens(element);
-	const changed = [
-		...[...after].filter((token) => !before.has(token)),
-		...[...before].filter((token) => token !== "" && !after.has(token)),
-	];
 	const anchors: StateAnchor[] = [];
-	for (const token of changed) {
-		const subjects = cascade.classSubjects.get(token);
-		if (subjects === null) {
+	for (const token of after) {
+		if (!before.has(token) && !addClassSubjects(cascade, token, anchors)) {
 			return null;
 		}
-		if (subjects !== undefined) {
-			anchors.push(...subjects);
+	}
+	for (const token of before) {
+		if (!after.has(token) && !addClassSubjects(cascade, token, anchors)) {
+			return null;
 		}
 	}
 	return anchors;
+}
+
+// Whether the subjects of a class that came or went can be listed.
+function addClassSubjects(
+	cascade: Cascade,
+	token: string,
+	anchors: StateAnchor[],
+): boolean {
+	const subjects = cascade.classSubjects.get(token);
+	if (subjects === null) {
+		return false;
+	}
+	if (subjects !== undefined) {
+		for (let index = 0; index < subjects.length; index++) {
+			anchors.push(subjects[index]);
+		}
+	}
+	return true;
 }
 
 // A state that follows one element and its flat-tree ancestors, :hover or
@@ -8647,7 +8662,7 @@ function attributeReachesDescendants(
 			return hasAttributeByName(element, "class");
 		}
 		// Only the classes that came or went can have changed a match.
-		const before = new Set(oldValue.split(WHITESPACE_RUN));
+		const before = getValueTokens(oldValue);
 		const after = getClassTokens(element);
 		for (const token of after) {
 			if (!before.has(token) && cascade.reachingClasses.has(token)) {
@@ -8655,9 +8670,7 @@ function attributeReachesDescendants(
 			}
 		}
 		for (const token of before) {
-			if (
-				token !== "" && !after.has(token) && cascade.reachingClasses.has(token)
-			) {
+			if (!after.has(token) && cascade.reachingClasses.has(token)) {
 				return true;
 			}
 		}
@@ -10286,10 +10299,10 @@ function changeReachesLaterSiblings(
 	}
 	const keys = index.anchorKeys;
 	if (attributeName === "class") {
-		const before = new Set((oldValue ?? "").split(ASCII_WHITESPACE_RUN));
-		const after = new Set(getClassTokens(element));
+		const before = getValueTokens(oldValue ?? "");
+		const after = getClassTokens(element);
 		for (const token of before) {
-			if (token !== "" && !after.has(token) && keys.has(`.${token}`)) {
+			if (!after.has(token) && keys.has(`.${token}`)) {
 				return true;
 			}
 		}
@@ -10477,9 +10490,8 @@ function isPaintOnlyChange(
 	}
 	if (name === "class") {
 		if (oldValue !== null) {
-			const before = oldValue.split(WHITESPACE_RUN);
-			for (let index = 0; index < before.length; index++) {
-				if (!classPaintsOnly(cascade, before[index])) {
+			for (const token of getValueTokens(oldValue)) {
+				if (!classPaintsOnly(cascade, token)) {
 					return false;
 				}
 			}
