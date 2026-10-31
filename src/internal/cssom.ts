@@ -12384,19 +12384,28 @@ function isRuleMatch(
 	return !isShadowRoot(root) && matchesRule(element, rule);
 }
 
+// What a pseudo-element no rule matches declares.
+const NO_PSEUDO_DECLARATIONS: Readonly<Record<string, string>> = Object.freeze(
+	Object.create(null),
+);
+
 function computePseudoElementStyle(
 	cascade: Cascade,
 	element: Element,
 	pseudoElement: string,
-): Record<string, string> {
+): Readonly<Record<string, string>> {
+	if (!cascade.pseudoRulesByType.has(pseudoElement)) {
+		return NO_PSEUDO_DECLARATIONS;
+	}
 	const pseudoRoot = element.getRootNode() as unknown as Node;
-	const matchingRules = cascade.pseudoRulesByType.has(pseudoElement)
-		? getCandidateRules(cascade, null, element).filter(
-			(rule) =>
-				rule.pseudoElement === pseudoElement &&
+	const matchingRules = getCandidateRules(cascade, null, element).filter(
+		(rule) =>
+			rule.pseudoElement === pseudoElement &&
 			isRuleMatch(element, rule, pseudoRoot),
-		)
-		: [];
+	);
+	if (matchingRules.length === 0) {
+		return NO_PSEUDO_DECLARATIONS;
+	}
 
 	// A pseudo-element's declarations are a flat record, not a per-property
 	// cascade, so a flow-relative declaration fills BOTH names of its slot
