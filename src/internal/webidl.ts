@@ -1285,12 +1285,12 @@ export function windowMember(
 			? implementation as (...args: unknown[]) => unknown
 			: bindToRealm(realm, implementation as (...args: unknown[]) => unknown);
 	}
+	const context = `execute '${name}' on 'Window'`;
 	const wrapper = {
 		[name](this: unknown, ...args: unknown[]): unknown {
 			if (this != null && this !== window) {
 				throw new TypeError("Illegal invocation");
 			}
-			const context = `execute '${name}' on 'Window'`;
 			if (args.length < member.required) {
 				throw arity(context, member.required, args.length);
 			}
@@ -1329,6 +1329,7 @@ function createInterfaceObject(
 ): Constructor {
 	const idl = DOM_INTERFACES[name];
 	const signature = parseMember(idl.constructorArguments ?? "o0", classes);
+	const context = `construct '${name}'`;
 	const object = function (this: unknown, ...args: unknown[]): unknown {
 		if (new.target === undefined) {
 			throw new TypeError(
@@ -1341,7 +1342,6 @@ function createInterfaceObject(
 		) {
 			throw new TypeError(`Failed to construct '${name}': Illegal constructor`);
 		}
-		const context = `construct '${name}'`;
 		if (args.length < signature.required) {
 			throw arity(context, signature.required, args.length);
 		}
