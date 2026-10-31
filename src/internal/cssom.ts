@@ -12216,45 +12216,56 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	const partPseudos = getPartPseudos(element, root as unknown as Node);
 	const rootNode = root as unknown as Node;
 	const shadowHost = isShadowRoot(root) ? root.host : null;
-	const partNames = (getAttributeValue(element, "part") ?? "")
-		.split(WHITESPACE_RUN)
-		.filter(Boolean);
+	let partNames: string[] | null = null;
 	const filter = getAncestorFilter(cascade, element);
-	const matched = getCandidateRules(cascade, element, shadowHost).filter(
-		(rule) => {
-			if (rule.pseudoElement) {
-				if (shadowHost === null) {
-					return false;
-				}
-				// ::part(name) matches the shadow's HOST, and its declarations
-				// cascade onto the part element. This is the standard CSS Shadow
-				// Parts crossing. A built-in control's parts are the UA's, as in
-				// every browser, and a page reaches them only through the
-				// pseudo-elements above.
-				const partArg = rule.pseudoElement.startsWith("::part(")
-					? rule.pseudoElement.match(PART_PSEUDO)
-					: null;
-				if (partArg) {
-					return (
-						(rule.uaOrigin || !isUAShadowTree(root)) &&
-						splitOnASCIIWhitespace(partArg[1])
-							.every((name) => partNames.includes(name)) &&
-						isRuleMatch(shadowHost, rule) &&
-						(rule.partMatcher === undefined ||
-							(rule.partMatcher !== null &&
-								isSelectedBy(element, rule.partMatcher, element)))
-					);
-				}
-				return (
-					partPseudos.includes(rule.pseudoElement) &&
-					isRuleMatch(shadowHost, rule)
-				);
+	const candidates = getCandidateRules(cascade, element, shadowHost);
+	const matched: ParsedCSSRule[] = [];
+	for (let index = 0; index < candidates.length; index++) {
+		const rule = candidates[index];
+		if (rule.pseudoElement) {
+			if (shadowHost === null) {
+				continue;
 			}
-			return (rule.ancestorBits === undefined ||
+			// ::part(name) matches the shadow's HOST, and its declarations
+			// cascade onto the part element. This is the standard CSS Shadow
+			// Parts crossing. A built-in control's parts are the UA's, as in
+			// every browser, and a page reaches them only through the
+			// pseudo-elements above.
+			const partArg = rule.pseudoElement.startsWith("::part(")
+				? rule.pseudoElement.match(PART_PSEUDO)
+				: null;
+			if (partArg) {
+				partNames ??= (getAttributeValue(element, "part") ?? "")
+					.split(WHITESPACE_RUN)
+					.filter(Boolean);
+				const names = partNames;
+				if (
+					(rule.uaOrigin || !isUAShadowTree(root)) &&
+					splitOnASCIIWhitespace(partArg[1])
+						.every((name) => names.includes(name)) &&
+					isRuleMatch(shadowHost, rule) &&
+					(rule.partMatcher === undefined ||
+						(rule.partMatcher !== null &&
+							isSelectedBy(element, rule.partMatcher, element)))
+				) {
+					matched.push(rule);
+				}
+			} else if (
+				partPseudos.includes(rule.pseudoElement) &&
+				isRuleMatch(shadowHost, rule)
+			) {
+				matched.push(rule);
+			}
+			continue;
+		}
+		if (
+			(rule.ancestorBits === undefined ||
 				hasAncestorBits(filter, rule.ancestorBits)) &&
-				isRuleMatch(element, rule, rootNode);
-		},
-	);
+			isRuleMatch(element, rule, rootNode)
+		) {
+			matched.push(rule);
+		}
+	}
 	// Scope proximity sorts between specificity and order of appearance
 	// (css-cascade-6 §3.1.3), and unlike either it depends on THIS element.
 	// The sort is stable, so a comparison that only compares proximity
