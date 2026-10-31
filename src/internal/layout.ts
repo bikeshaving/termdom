@@ -3142,7 +3142,7 @@ function getContainingBlockLayoutNode(
 }
 
 function isHiddenByAncestor(layout: Layout, node: Node): boolean {
-	const memo = layout.hiddenElements;
+	const memo = layout.inPass ? (layout.hiddenElements ??= new Map()) : null;
 	const unknown: Element[] = [];
 	let hidden = false;
 	for (
@@ -4512,7 +4512,9 @@ function splitRun(
 	}
 	const run = {...split, reads};
 	if (run.leafNodes.every((leaf) => leaf.type !== "inline-block")) {
-		layout.splitRuns?.set(source, run);
+		if (layout.inPass) {
+			(layout.splitRuns ??= new WeakMap()).set(source, run);
+		}
 	}
 	return run;
 }
@@ -6297,6 +6299,9 @@ export class Layout {
 	// Counts layout passes, so a node styled in this pass is not styled
 	// again when a container re-adds it.
 	pass: number;
+	// Whether a pass is under way. The two memos below are made by the
+	// first lookup that needs one, as most passes find nothing to do.
+	inPass: boolean;
 	// Whether each element looked up during a pass is hidden, by its own
 	// display or an ancestor's, which no pass can change. Null between
 	// passes.
@@ -6334,6 +6339,7 @@ export class Layout {
 	constructor(window: Window, width: number, height: number) {
 		this.geometryMoved = false;
 		this.pass = 0;
+		this.inPass = false;
 		this.hiddenElements = null;
 		this.splitRuns = null;
 		this.solves = 0;
@@ -6412,11 +6418,11 @@ export class Layout {
 	}
 
 	performLayout(): void {
-		this.hiddenElements = new Map();
-		this.splitRuns = new WeakMap();
+		this.inPass = true;
 		try {
 			this.runLayoutPass();
 		} finally {
+			this.inPass = false;
 			this.hiddenElements = null;
 			this.splitRuns = null;
 		}
@@ -7747,6 +7753,9 @@ export function checkLayoutFromScratch(layout: Layout): void {
 // A box whose own formatting context went stale lays it out again in its
 // measure, which is what is invalidated.
 function flushStaleHosts(layout: Layout): void {
+	if (layout.staleHosts.size === 0) {
+		return;
+	}
 	for (const host of layout.staleHosts) {
 		invalidateHost(layout, host);
 	}
@@ -8490,6 +8499,9 @@ function invalidateMeasureReaders(element: Element): void {
 }
 
 function applyRestyles(layout: Layout): void {
+	if (layout.restyledSinceLayout.size === 0 && layout.restyled.size === 0) {
+		return;
+	}
 	// What a measure read is checked first, whatever the restyle changed,
 	// a property the cascade calls paint-only included.
 	for (const element of layout.restyledSinceLayout) {
