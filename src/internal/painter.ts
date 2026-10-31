@@ -436,15 +436,15 @@ interface PainterRun {
 	boxes: Map<Element, Rect[]>;
 	leaves: Map<Element, {rect: Rect; leaf: InlineBlockLeaf}>;
 	// What resolving the run works from: the line each box's last rect is
-	// on, and how far relative positioning moves each node.
+	// on.
 	boxLines: Map<Element, number>;
-	shifts: Map<Node, Origin>;
 }
 
 // A run is painted before the next one at its depth is resolved, and an
 // inline-block in it paints its own runs one deeper, so the maps of one
 // run a depth are reused, cleared once it is painted so they hold no
-// node past it.
+// node past it. Clearing a map makes it a new table, so an empty one is
+// left as it is.
 const runs: PainterRun[] = [];
 let runDepth = 0;
 
@@ -454,18 +454,22 @@ function takeRun(): PainterRun {
 		boxes: new Map(),
 		leaves: new Map(),
 		boxLines: new Map(),
-		shifts: new Map(),
 	};
 	return runs[runDepth++];
 }
 
 function releaseRun(run: PainterRun): void {
-	run.texts.clear();
-	run.boxes.clear();
-	run.leaves.clear();
-	run.boxLines.clear();
-	run.shifts.clear();
+	clearMap(run.texts);
+	clearMap(run.boxes);
+	clearMap(run.leaves);
+	clearMap(run.boxLines);
 	runDepth--;
+}
+
+function clearMap(map: Map<unknown, unknown>): void {
+	if (map.size > 0) {
+		map.clear();
+	}
 }
 
 function unionRect(rects: Rect[]): Rect {
@@ -1857,31 +1861,21 @@ const lineTextSpans: LineTextSpan[] = [];
 
 // How far relative positioning moves a node in a run, from the boxes
 // between it and the run's container.
-function getShift(
-	painter: Painter,
-	run: PainterRun,
-	container: Element,
-	node: Node,
-): Origin {
-	let shift = run.shifts.get(node);
-	if (shift === undefined) {
-		let x = 0;
-		let y = 0;
-		for (
-			let ancestor = getNodeType(node) === node.ELEMENT_NODE
-				? (node as Element)
-				: flatParentElement(node);
-			ancestor !== null && ancestor !== container;
-			ancestor = flatParentElement(ancestor)
-		) {
-			const style = getPaintStyle(painter, ancestor);
-			x += style.shiftX;
-			y += style.shiftY;
-		}
-		shift = x === 0 && y === 0 ? NO_SHIFT : {x, y};
-		run.shifts.set(node, shift);
+function getShift(painter: Painter, container: Element, node: Node): Origin {
+	let x = 0;
+	let y = 0;
+	for (
+		let ancestor = getNodeType(node) === node.ELEMENT_NODE
+			? (node as Element)
+			: flatParentElement(node);
+		ancestor !== null && ancestor !== container;
+		ancestor = flatParentElement(ancestor)
+	) {
+		const style = getPaintStyle(painter, ancestor);
+		x += style.shiftX;
+		y += style.shiftY;
 	}
-	return shift;
+	return x === 0 && y === 0 ? NO_SHIFT : {x, y};
 }
 
 function resolveRun(
@@ -1947,7 +1941,7 @@ function resolveRun(
 					span.end = segment.dataEnd;
 				}
 			} else if (leaf.type === "inline-block") {
-				const shift = getShift(painter, run, container, leaf.node);
+				const shift = getShift(painter, container, leaf.node);
 				const rect = {
 					left: lineX + segment.x + shift.x,
 					top: lineY + segment.dy + shift.y,
@@ -1959,7 +1953,7 @@ function resolveRun(
 			} else if (leaf.type === "edge") {
 				// The margin is outside the box it edges and inside the ones
 				// around it.
-				const shift = getShift(painter, run, container, leaf.node);
+				const shift = getShift(painter, container, leaf.node);
 				const rect = {
 					left: lineX + segment.x + shift.x,
 					top: lineY + line.textTop + shift.y,
@@ -1979,7 +1973,7 @@ function resolveRun(
 			const span = lineTextSpans[at];
 			const textNode = span.node as Text;
 			span.node = null;
-			const shift = getShift(painter, run, container, textNode);
+			const shift = getShift(painter, container, textNode);
 			const rect = {
 				left: span.left + shift.x,
 				top: lineY + line.textTop + shift.y,
