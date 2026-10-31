@@ -214,20 +214,35 @@ export function isScriptedDocument(document: Document): boolean {
 }
 
 // Where an element's hints are gathered, emptied before each, and copied
-// out only when they hold something. Most elements have none.
+// out only when they hold something. Most elements have none. Gathering
+// reads the element through its bindings, which a page can patch to read
+// another element's style, whose hints are gathered in a record of their
+// own.
 const scratchHints: Hints = Object.create(null);
+let gathering = false;
 
 export function getPresentationalHints(element: Element): Hints | null {
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return null;
 	}
+	if (gathering) {
+		return gatherHints(element, Object.create(null));
+	}
+	for (const name in scratchHints) {
+		delete scratchHints[name];
+	}
+	gathering = true;
+	try {
+		return gatherHints(element, scratchHints);
+	} finally {
+		gathering = false;
+	}
+}
+
+function gatherHints(element: Element, hints: Hints): Hints | null {
 	const name = element.localName;
 	const get = (attribute: string): string | null =>
 		element.getAttribute(attribute);
-	const hints = scratchHints;
-	for (const name in hints) {
-		delete hints[name];
-	}
 
 	if (TABLE_PARTS.has(name) || name === "body") {
 		setColor(hints, "background-color", get("bgcolor"));
