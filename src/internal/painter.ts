@@ -513,6 +513,8 @@ export class Painter {
 	// Whether each layer member looked up in this frame has an ancestor
 	// with opacity: 0.
 	inTransparent: Map<Element, boolean>;
+	// What the document's selection holds this frame, when it holds any.
+	selectedRange: Range | null;
 	// The root, or the body standing in for it, whose background color
 	// fills the whole screen, as a browser paints it across the canvas.
 	canvasElement: Element | null;
@@ -534,6 +536,7 @@ export class Painter {
 		this.highlightStyles = new Map();
 		this.paintedText = new Map();
 		this.inTransparent = new Map();
+		this.selectedRange = null;
 		this.canvasElement = null;
 		this.canvasRows = null;
 		this.window = document.defaultView as unknown as Window;
@@ -719,6 +722,7 @@ export function resolveDocumentScrollBand(
 export function paint(painter: Painter, ctx: CellContext): void {
 	painter.highlightedText = collectHighlightedText(painter.document);
 	painter.paintedText.clear();
+	painter.selectedRange = getSelectedRange(painter.window);
 	painter.inTransparent = new Map();
 	painter.highlightStyles = new Map();
 	const layers = collectStackingLayers(painter.layout, painter.topLayer);
@@ -1469,7 +1473,7 @@ function paintOutline(
 	style: PaintStyle,
 	rect: Rect,
 	ctx: CellContext,
-	fragments: readonly Rect[] = [rect],
+	fragments?: readonly Rect[],
 ): void {
 	// A box paints only the rows it covers, which is what its extent
 	// says, so one with no height has no row to ring.
@@ -1501,7 +1505,7 @@ function paintOutline(
 			},
 		);
 	} else {
-		for (const fragment of fragments) {
+		for (const fragment of fragments ?? [rect]) {
 			if (Math.round(fragment.height) < 1) {
 				continue;
 			}
@@ -2337,6 +2341,13 @@ function getGlyphText(element: Element): Text | null {
 // A focused control's own selection when the node renders its value
 // (the document selection cannot see inside a control), else the
 // document's, narrowed to this node's offsets.
+function getSelectedRange(window: Window): Range | null {
+	const selection = window.getSelection();
+	return !selection || selection.isCollapsed || selection.rangeCount === 0
+		? null
+		: selection.getRangeAt(0);
+}
+
 function getPaintSelectionRange(
 	painter: Painter,
 	textNode: Text,
@@ -2355,12 +2366,8 @@ function getPaintSelectionRange(
 		};
 	}
 
-	const selection = painter.window.getSelection();
-	if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-		return null;
-	}
-	const documentRange = selection.getRangeAt(0);
-	if (!documentRange.intersectsNode(textNode)) {
+	const documentRange = painter.selectedRange;
+	if (documentRange === null || !documentRange.intersectsNode(textNode)) {
 		return null;
 	}
 	const selectionParent = flatParentElement(textNode);
