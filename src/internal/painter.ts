@@ -435,9 +435,9 @@ interface PainterRun {
 	texts: Map<Text, TextFragment[]>;
 	boxes: Map<Element, Rect[]>;
 	leaves: Map<Element, {rect: Rect; leaf: InlineBlockLeaf}>;
-	// What resolving the run works from: each box's rect on each line, and
-	// how far relative positioning moves each node.
-	boxLines: Map<Element, Map<number, Rect>>;
+	// What resolving the run works from: the line each box's last rect is
+	// on, and how far relative positioning moves each node.
+	boxLines: Map<Element, number>;
 	shifts: Map<Node, Origin>;
 }
 
@@ -1871,7 +1871,6 @@ function resolveRun(
 	alignContainer: Element,
 	origin: Origin,
 ): void {
-	const boxLines = run.boxLines;
 	const first = lines.lines[0];
 	for (let lineIndex = 0; lineIndex < lines.lines.length; lineIndex++) {
 		const line = lines.lines[lineIndex];
@@ -1935,7 +1934,7 @@ function resolveRun(
 					height: segment.height,
 				};
 				run.leaves.set(leaf.node, {rect, leaf});
-				coverAncestors(boxLines, leaf.node, container, lineY, rect);
+				coverAncestors(run, leaf.node, container, lineY, rect);
 			} else if (leaf.type === "edge") {
 				// The margin is outside the box it edges and inside the ones
 				// around it.
@@ -1946,9 +1945,9 @@ function resolveRun(
 					width: segment.width,
 					height: line.height - line.textTop,
 				};
-				coverAncestors(boxLines, leaf.node, container, lineY, rect);
+				coverAncestors(run, leaf.node, container, lineY, rect);
 				const margin = Math.max(0, leaf.margin);
-				coverBox(boxLines, leaf.node, lineY, {
+				coverBox(run, leaf.node, lineY, {
 					...rect,
 					left: leaf.side === "start" ? rect.left + margin : rect.left,
 					width: Math.max(0, rect.width - margin),
@@ -1977,16 +1976,13 @@ function resolveRun(
 				endOffset: span.end,
 				visualBase: span.visualBase,
 			});
-			coverAncestors(boxLines, textNode, container, lineY, rect);
+			coverAncestors(run, textNode, container, lineY, rect);
 		}
-	}
-	for (const [element, byLine] of boxLines) {
-		run.boxes.set(element, [...byLine.values()]);
 	}
 }
 
 function coverAncestors(
-	boxLines: Map<Element, Map<number, Rect>>,
+	run: PainterRun,
 	node: Node,
 	container: Element,
 	lineY: number,
@@ -1997,24 +1993,27 @@ function coverAncestors(
 		ancestor !== null && ancestor !== container;
 		ancestor = flatParentElement(ancestor)
 	) {
-		coverBox(boxLines, ancestor, lineY, rect);
+		coverBox(run, ancestor, lineY, rect);
 	}
 }
 
+// A run's lines are resolved top to bottom, so a box already on this line
+// has its last rect there.
 function coverBox(
-	boxLines: Map<Element, Map<number, Rect>>,
+	run: PainterRun,
 	element: Element,
 	lineY: number,
 	rect: Rect,
 ): void {
-	let byLine = boxLines.get(element);
-	if (byLine === undefined) {
-		boxLines.set(element, (byLine = new Map()));
-	}
-	const known = byLine.get(lineY);
-	if (known === undefined) {
-		byLine.set(lineY, {...rect});
+	const rects = run.boxes.get(element);
+	if (rects === undefined) {
+		run.boxes.set(element, [{...rect}]);
+		run.boxLines.set(element, lineY);
+	} else if (run.boxLines.get(element) !== lineY) {
+		rects.push({...rect});
+		run.boxLines.set(element, lineY);
 	} else {
+		const known = rects[rects.length - 1];
 		const left = Math.min(known.left, rect.left);
 		const right = Math.max(known.left + known.width, rect.left + rect.width);
 		known.left = left;
