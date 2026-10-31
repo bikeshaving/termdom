@@ -656,3 +656,28 @@ test("setting properties one by one writes the style attribute as cssText does",
 	expect(p.style[p.style.length]).toBeUndefined();
 	dom.dispose();
 });
+
+test("elements sharing style text keep their own styles once one changes", async () => {
+	const terminal = new MockProcess();
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		html:
+			"<p id='a' style='color: red; width: 4ch'>a</p>" +
+			"<p id='b' style='color: red; width: 4ch'>b</p>",
+	});
+	const {document, window} = dom;
+	await nextFrame(dom);
+	const a = document.getElementById("a")!;
+	const b = document.getElementById("b")!;
+	expect(window.getComputedStyle(b).color).toBe("rgb(255, 0, 0)");
+	a.style.color = "blue";
+	await nextFrame(dom);
+	expect(window.getComputedStyle(a).color).toBe("rgb(0, 0, 255)");
+	expect(window.getComputedStyle(b).color).toBe("rgb(255, 0, 0)");
+	expect(b.style.cssText).toBe("color: red; width: 4ch;");
+	b.setAttribute("style", "color: green");
+	await nextFrame(dom);
+	expect(window.getComputedStyle(b).color).toBe("rgb(0, 128, 0)");
+	expect(window.getComputedStyle(a).color).toBe("rgb(0, 0, 255)");
+	await dom.dispose();
+});
