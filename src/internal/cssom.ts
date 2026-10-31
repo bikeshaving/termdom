@@ -4402,12 +4402,72 @@ export function hasLayoutOrPaintContainment(element: Element): boolean {
 	return hasContainment(element, LAYOUT_OR_PAINT_CONTAINMENT);
 }
 
+// A longhand left unset takes the shorthand's value.
+function getOwnOverflow(element: Element, axis: "x" | "y"): string {
+	return (
+		getComputedValue(element, axis === "x" ? "overflow-x" : "overflow-y") ||
+		getComputedValue(element, "overflow")
+	);
+}
+
+function hasVisibleOverflow(element: Element): boolean {
+	return (
+		getOwnOverflow(element, "x") === "visible" &&
+		getOwnOverflow(element, "y") === "visible"
+	);
+}
+
+// The element whose overflow the viewport takes: the root, or the body
+// when the root's is visible on both axes. That element's own overflow is
+// then visible (css-overflow-3 §3.3).
+function getViewportOverflowElement(document: Document): Element | null {
+	const root = document.documentElement as Element | null;
+	if (root === null) {
+		return null;
+	}
+	if (!hasVisibleOverflow(root)) {
+		return root;
+	}
+	const body = document.body as Element | null;
+	return body !== null && !hasVisibleOverflow(body) ? body : null;
+}
+
+export function getViewportOverflow(
+	document: Document,
+	axis: "x" | "y",
+): string {
+	const element = getViewportOverflowElement(document);
+	return element === null ? "visible" : getOwnOverflow(element, axis);
+}
+
+// The root and its children, whose used overflow follows the root's and
+// the body's rather than their own style alone.
+export function mayGiveViewportOverflow(element: Element): boolean {
+	const parent = element.parentNode;
+	if (parent === null) {
+		return false;
+	}
+	const document = getOwnerDocument(element);
+	return (
+		document !== null &&
+		(parent === document || parent === document.documentElement)
+	);
+}
+
+export function givesViewportOverflow(element: Element): boolean {
+	return (
+		mayGiveViewportOverflow(element) &&
+		getViewportOverflowElement(getOwnerDocument(element)!) === element
+	);
+}
+
 // Paint containment clips as overflow: clip would, on each axis overflow
 // leaves visible (css-contain-2 §3.4).
 export function getUsedOverflow(element: Element, axis: "x" | "y"): string {
-	const overflow =
-		getComputedValue(element, axis === "x" ? "overflow-x" : "overflow-y") ||
-		getComputedValue(element, "overflow");
+	if (givesViewportOverflow(element)) {
+		return "visible";
+	}
+	const overflow = getOwnOverflow(element, axis);
 	return overflow === "visible" && hasContainment(element, PAINT_CONTAINMENT)
 		? "clip"
 		: overflow;
@@ -10133,6 +10193,16 @@ function recordRestyle(
 			element,
 			dropped && !hadPseudoStyles ? dropped.own : null,
 		);
+	}
+	// The body's used overflow follows the root's, whatever its own style.
+	const document = getOwnerDocument(element);
+	const body = document?.body as Element | null | undefined;
+	if (
+		body &&
+		element === document!.documentElement &&
+		!cascade.layout.restyledForPaint.has(body)
+	) {
+		cascade.layout.restyledForPaint.set(body, cascade.getStyleKey(body));
 	}
 }
 

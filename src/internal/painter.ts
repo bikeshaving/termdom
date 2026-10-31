@@ -10,6 +10,7 @@ import {
 	getTabSize,
 	getUsedOverflow,
 	getWhiteSpace,
+	mayGiveViewportOverflow,
 	resolveBorderSides,
 	resolveLength,
 	type StyleGroup,
@@ -945,7 +946,9 @@ const overflowedPaintStyles = new WeakMap<
 
 function getPaintStyle(painter: Painter, element: Element): PaintStyle {
 	const key = painter.cascade.getStyleKey(element);
-	const known = key === null ? undefined : paintStyles.get(key);
+	const known = key === null || mayGiveViewportOverflow(element)
+		? undefined
+		: paintStyles.get(key);
 	if (known !== undefined) {
 		return known;
 	}

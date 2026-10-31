@@ -14,6 +14,7 @@ import {
 	getStyleGroup,
 	getTabSize,
 	getUsedOverflow,
+	givesViewportOverflow,
 	hasLayoutOrPaintContainment,
 	readStyleAgain,
 	recordStyleReads,
@@ -10017,7 +10018,10 @@ function isScrollingOverflow(overflow: string): boolean {
 function isScrollContainer(element: Element): boolean {
 	const overflow = getComputedValue(element, "overflow");
 	return (
-		isScrollingOverflow(getComputedValue(element, "overflow-x") || overflow) ||
-		isScrollingOverflow(getComputedValue(element, "overflow-y") || overflow)
+		(isScrollingOverflow(getComputedValue(element, "overflow-x") || overflow) ||
+			isScrollingOverflow(
+				getComputedValue(element, "overflow-y") || overflow,
+			)) &&
+		!givesViewportOverflow(element)
 	);
 }

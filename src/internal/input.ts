@@ -1,6 +1,7 @@
 import {
 	type Cascade,
 	getComputedValue,
+	getViewportOverflow,
 	handleActiveChange,
 	handleFocusChange,
 	handleHoverChange,
@@ -1318,7 +1319,9 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): void {
 		}
 		const framebuffer = _(getAttachedDocument(target)!).extra.framebuffer;
 		const before = framebuffer.scrollTop;
-		scrollDocumentTo(target.ownerDocument, before + deltaY);
+		if (!isViewportLocked(target.ownerDocument)) {
+			scrollDocumentTo(target.ownerDocument, before + deltaY);
+		}
 		if (framebuffer.scrollTop !== before) {
 			return;
 		}
@@ -1329,9 +1332,19 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): void {
 		scroller.scrollTop += pxFromCells(deltaY, true, input.document);
 		return;
 	}
-	if (input.document.fullscreenElement === null) {
+	if (
+		input.document.fullscreenElement === null &&
+		!isViewportLocked(input.document)
+	) {
 		scrollDocumentTo(input.document, input.framebuffer.scrollTop + deltaY);
 	}
+}
+
+// A viewport whose overflow hides or clips its content scrolls for
+// scripts but not for the user's wheel or keys (css-overflow-3 §3.1).
+function isViewportLocked(document: Document): boolean {
+	const overflow = getViewportOverflow(document, "y");
+	return overflow === "hidden" || overflow === "clip";
 }
 
 const KEYLESS_INPUTS = new Set([
@@ -1398,7 +1411,7 @@ function scrollByKey(input: Input, target: Element, key: string): void {
 		requestRender(document);
 		return;
 	}
-	if (document.fullscreenElement !== null) {
+	if (document.fullscreenElement !== null || isViewportLocked(document)) {
 		return;
 	}
 	const top = framebuffer.scrollTop;
