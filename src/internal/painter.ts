@@ -473,7 +473,8 @@ function unionRect(rects: Rect[]): Rect {
 	let top = Infinity;
 	let right = -Infinity;
 	let bottom = -Infinity;
-	for (const rect of rects) {
+	for (let index = 0; index < rects.length; index++) {
+		const rect = rects[index];
 		left = Math.min(left, rect.left);
 		top = Math.min(top, rect.top);
 		right = Math.max(right, rect.left + rect.width);
@@ -1714,16 +1715,32 @@ function paintInline(
 	const fragments = run.boxes.get(element) ?? [];
 	const rect = fragments.length > 0 ? unionRect(fragments) : null;
 	if (rect !== null) {
-		paintBox(painter, element, {...style, border: null}, fragments, rect, ctx);
+		paintBox(painter, element, getBorderless(style), fragments, rect, ctx);
 		paintInlineBorder(style, fragments, ctx);
 		paintCaret(painter, element, style, ctx);
 	}
-	for (const child of flowContent(element)) {
-		paintMember(painter, child, run, ctx);
+	const children = flowContent(element);
+	for (let index = 0; index < children.length; index++) {
+		paintMember(painter, children[index], run, ctx);
 	}
 	if (rect !== null) {
 		paintOutline(element, style, rect, ctx, fragments);
 	}
+}
+
+// An inline box paints its border on its own, beside the box.
+const borderlessStyles = new WeakMap<PaintStyle, PaintStyle>();
+
+function getBorderless(style: PaintStyle): PaintStyle {
+	if (style.border === null) {
+		return style;
+	}
+	let borderless = borderlessStyles.get(style);
+	if (borderless === undefined) {
+		borderless = {...style, border: null};
+		borderlessStyles.set(style, borderless);
+	}
+	return borderless;
 }
 
 // An inline box is one row of text, with no rows above and below it for
