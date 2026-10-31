@@ -7140,18 +7140,20 @@ function roundToGrid(
 
 	// Whole cells, held as small integers so V8 keeps them unboxed in every
 	// node's grid and in the extents made from it.
-	node.grid.left =
-		(roundValue(absLeft, false, false) - roundValue(parentLeft, false, false)) |
-		0;
-	node.grid.top =
-		(roundValue(absTop, false, false) - roundValue(parentTop, false, false)) |
-		0;
-	node.grid.width =
-		(roundValue(absLeft + width, isText, false) -
-			roundValue(absLeft, isText, false)) | 0;
-	node.grid.height =
-		(roundValue(absTop + height, isText, false) -
-			roundValue(absTop, isText, false)) | 0;
+	node.grid.left = toCells(
+		roundValue(absLeft, false, false) - roundValue(parentLeft, false, false),
+	);
+	node.grid.top = toCells(
+		roundValue(absTop, false, false) - roundValue(parentTop, false, false),
+	);
+	node.grid.width = toCells(
+		roundValue(absLeft + width, isText, false) -
+			roundValue(absLeft, isText, false),
+	);
+	node.grid.height = toCells(
+		roundValue(absTop + height, isText, false) -
+			roundValue(absTop, isText, false),
+	);
 
 	node.settled = absLeft === node.gridLeft && absTop === node.gridTop;
 	if (!node.settled) {
@@ -7230,6 +7232,18 @@ function roundValue(
 	}
 	// Round half up.
 	return value - fraction + (fraction >= 0.5 ? 1 : 0);
+}
+
+const CELL_LIMIT = 0x3fffffff;
+
+function toCells(value: number): number {
+	if (value > CELL_LIMIT) {
+		return CELL_LIMIT;
+	}
+	if (value < -CELL_LIMIT) {
+		return -CELL_LIMIT;
+	}
+	return value | 0;
 }
 
 function approximatelyEqual(a: number, b: number): boolean {
