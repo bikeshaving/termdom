@@ -254,7 +254,9 @@ export interface TermDOMOptions {
 	 * - `"auto"` (the default): a guess, since terminals report no ratio.
 	 *   2 when the first cell the terminal reports is taller than 24
 	 *   pixels, as terminals on high-density screens report, and 1
-	 *   otherwise. A font zoom later keeps it.
+	 *   otherwise. A font zoom keeps it. A cell that doubles or halves
+	 *   on both axes, as when the window moves to a screen of another
+	 *   density, is guessed again.
 	 * - A number from 0.25 to 16.
 	 */
 	devicePixelRatio?: "auto" | number;

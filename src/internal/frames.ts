@@ -141,7 +141,6 @@ setFrameEngineFactory((document, window, parent, changed) => {
 
 	function fitFrame(cols: number, rows: number): CellGrid {
 		const cell = parentSlots.framebuffer.cellPixels;
-		framebuffer.pixelRatio = parentSlots.framebuffer.pixelRatio;
 		if (
 			framebuffer.cellPixels.width !== cell.width ||
 			framebuffer.cellPixels.height !== cell.height
@@ -149,6 +148,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 			adoptCellPixels(framebuffer, cell.width, cell.height);
 			stale = true;
 		}
+		framebuffer.pixelRatio = parentSlots.framebuffer.pixelRatio;
 		if (cols !== grid.cols || rows !== grid.rows) {
 			resizeFrame(framebuffer, layout, cascade, window, cols, rows);
 			grid = new CellGrid(rows, cols);

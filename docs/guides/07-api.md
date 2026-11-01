@@ -54,7 +54,10 @@ Options:
   it too. With `"auto"` (default) it's a guess, since terminals don't
   report one: 2 when the first cell the terminal reports is taller than
   24 pixels, as terminals on Retina and other high-density screens
-  report, and 1 otherwise. A number from 0.25 to 16 sets it.
+  report, and 1 otherwise. A font zoom keeps the guess. When the cell
+  doubles or halves on both axes, as when the window moves to a screen
+  of another density, it's guessed again. A number from 0.25 to 16
+  sets it.
 
 - `csp?: string`: a `Content-Security-Policy` that limits what markup
   may load. Without it, everything loads. Set one for untrusted markup;

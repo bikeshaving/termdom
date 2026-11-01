@@ -2275,6 +2275,8 @@ export class Framebuffer {
 	scrollRow: number;
 	documentTopRow: number;
 	cellSize: {width: number; height: number};
+	// The grid the cell was last reported at.
+	cellGrid: {cols: number; rows: number};
 	// Device pixels a CSS pixel, guessed from the first cell the terminal
 	// reports and kept, so a font zoom is not taken for another screen.
 	pixelRatio: number | null;
@@ -2310,6 +2312,7 @@ export class Framebuffer {
 		this.scrollRow = 0;
 		this.documentTopRow = 0;
 		this.cellSize = {...GUESSED_CELL_PIXELS};
+		this.cellGrid = {cols, rows};
 		this.pixelRatio = null;
 		this.frameScroll = 0;
 		this.dirty = true;
@@ -2426,17 +2429,55 @@ export function scrollTo(framebuffer: Framebuffer, row: number): void {
 // taller than this.
 const HIGH_DENSITY_CELL_HEIGHT = 24;
 
+function guessPixelRatio(height: number): number {
+	return height > HIGH_DENSITY_CELL_HEIGHT ? 2 : 1;
+}
+
+// A window moved between a 1x and a 2x screen keeps its rows and columns
+// and reports a cell about twice or half as large on both axes. A font
+// zoom changes the rows and columns with the cell.
+function isScreenChange(
+	framebuffer: Framebuffer,
+	width: number,
+	height: number,
+): boolean {
+	const {cellSize, cellGrid} = framebuffer;
+	if (
+		cellGrid.cols !== framebuffer.colCount ||
+		cellGrid.rows !== framebuffer.rowCount
+	) {
+		return false;
+	}
+	const x = width / cellSize.width;
+	const y = height / cellSize.height;
+	return (
+		(x >= 1.8 && x <= 2.2 && y >= 1.8 && y <= 2.2) ||
+		(x >= 1 / 2.2 && x <= 1 / 1.8 && y >= 1 / 2.2 && y <= 1 / 1.8)
+	);
+}
+
 /**
  * XTWINOPS answered. Whatever was painted against the guess repaints.
  * Whether the size changed, which images sized from it need to know.
+ * The ratio is guessed from the first cell and kept through a font zoom,
+ * and guessed again when the window moves to another screen.
  */
 export function adoptCellPixels(
 	framebuffer: Framebuffer,
 	width: number,
 	height: number,
 ): boolean {
-	framebuffer.pixelRatio ??= height > HIGH_DENSITY_CELL_HEIGHT ? 2 : 1;
 	const cell = framebuffer.cellSize;
+	if (
+		framebuffer.pixelRatio === null ||
+		isScreenChange(framebuffer, width, height)
+	) {
+		framebuffer.pixelRatio = guessPixelRatio(height);
+	}
+	framebuffer.cellGrid = {
+		cols: framebuffer.colCount,
+		rows: framebuffer.rowCount,
+	};
 	if (cell.width === width && cell.height === height) {
 		return false;
 	}
