@@ -10728,6 +10728,15 @@ export interface ElementSlots extends NodeSlots {
 	userValidity: boolean;
 	customValidityMessage: string;
 	validityState: ValidityState | null;
+	// HTML gives these slots to every HTML element. An element that was
+	// never a popover has no state to store, and the state it would have is
+	// the initial one.
+	popoverState: PopoverState | null;
+	// A popovertarget or commandfor set to an ELEMENT rather than named by
+	// id. The attribute cannot hold an element, so the reference is stored
+	// separately. The getter returns it only while the element is in a tree
+	// the invoker composes into.
+	attributeElements: Map<string, Element> | null;
 }
 
 export interface Element {
@@ -11666,6 +11675,8 @@ const RARE_FIELDS: ReadonlyArray<readonly [string, unknown]> = [
 	["userValidity", false],
 	["customValidityMessage", ""],
 	["validityState", null],
+	["popoverState", null],
+	["attributeElements", null],
 ];
 
 function createRareData(): Record<string, unknown> {
@@ -17438,6 +17449,7 @@ interface HTMLFormElementExtra extends NodeExtra {
 	elements: HTMLFormControlsCollection | null;
 	firingReset: boolean;
 	constructingEntryList: boolean;
+	listed?: ListedElements;
 }
 
 interface HTMLFormElementSlots extends HTMLElementSlots {
@@ -17575,7 +17587,6 @@ interface ListedElements {
 	version: number;
 	controls: Element[];
 }
-const listedElements = new WeakMap<HTMLFormElement, ListedElements>();
 
 function countListedChange(): void {
 	listedVersion++;
@@ -17588,12 +17599,12 @@ function noteListedChange(element: Element): void {
 }
 
 function getListedElements(form: HTMLFormElement): Element[] {
-	const known = listedElements.get(form);
+	const known = _(form).extra.listed;
 	if (known !== undefined && known.version === listedVersion) {
 		return [...known.controls];
 	}
 	const controls = findListedElements(form);
-	listedElements.set(form, {version: listedVersion, controls});
+	_(form).extra.listed = {version: listedVersion, controls};
 	return [...controls];
 }
 
@@ -21172,35 +21183,29 @@ function createEmptyTimeRanges(): globalThis.TimeRanges {
 		unknown as globalThis.TimeRanges;
 }
 
-// A media element's text track list and remote playback, made on first
-// read and kept, so a listener added to one stays on it.
-const mediaTextTracks = new WeakMap<object, globalThis.TextTrackList>();
-const mediaRemotes = new WeakMap<object, globalThis.RemotePlayback>();
-
-function getEmptyTextTrackList(media: object): globalThis.TextTrackList {
-	let list = mediaTextTracks.get(media);
-	if (list === undefined) {
-		list = Object.assign(new EventTarget(), {
-			length: 0,
-			onaddtrack: null,
-			onchange: null,
-			onremovetrack: null,
-			getTrackById: () => null,
-			[Symbol.iterator]: () => [][Symbol.iterator](),
-		}) as unknown as globalThis.TextTrackList;
-		mediaTextTracks.set(media, list);
-	}
-	return list;
+function getEmptyTextTrackList(
+	media: HTMLMediaElement,
+): globalThis.TextTrackList {
+	return _(media).extra.textTracks ??= Object.assign(new EventTarget(), {
+		length: 0,
+		onaddtrack: null,
+		onchange: null,
+		onremovetrack: null,
+		getTrackById: () => null,
+		[Symbol.iterator]: () => [][Symbol.iterator](),
+	}) as unknown as globalThis.TextTrackList;
 }
 
-function getDisconnectedRemote(media: object): globalThis.RemotePlayback {
-	let remote = mediaRemotes.get(media);
-	if (remote === undefined) {
+function getDisconnectedRemote(
+	media: HTMLMediaElement,
+): globalThis.RemotePlayback {
+	const extra = _(media).extra;
+	if (extra.remote === undefined) {
 		const unsupported = () =>
 			Promise.reject(
 				domError("NotSupportedError", "A terminal has no remote playback"),
 			);
-		remote = Object.assign(new EventTarget(), {
+		extra.remote = Object.assign(new EventTarget(), {
 			state: "disconnected",
 			onconnect: null,
 			onconnecting: null,
@@ -21209,9 +21214,8 @@ function getDisconnectedRemote(media: object): globalThis.RemotePlayback {
 			cancelWatchAvailability: () => Promise.resolve(),
 			prompt: unsupported,
 		}) as unknown as globalThis.RemotePlayback;
-		mediaRemotes.set(media, remote);
 	}
-	return remote;
+	return extra.remote;
 }
 
 function noMediaPipeline(what: string): never {
@@ -21230,6 +21234,10 @@ interface HTMLMediaElementExtra extends NodeExtra {
 	defaultPlaybackRate: number;
 	preservesPitch: boolean;
 	currentTime: number;
+	// The text track list and remote playback, made on first read and
+	// kept, so a listener added to one stays on it.
+	textTracks?: globalThis.TextTrackList;
+	remote?: globalThis.RemotePlayback;
 }
 
 interface HTMLMediaElementSlots extends HTMLElementSlots {
@@ -24450,24 +24458,14 @@ interface PopoverState {
 	toggleTask: {oldState: string; canceled: boolean} | null;
 }
 
-// HTML gives these slots to every HTML element. An element that was
-// never a popover has no state to store, and the state it would have is
-// the initial one.
-const popoverStates = new WeakMap<Element, PopoverState>();
-
 function getPopoverState(element: Element): PopoverState {
-	let state = popoverStates.get(element);
-	if (state === undefined) {
-		state = {
-			visibility: "hidden",
-			mode: null,
-			previouslyFocused: null,
-			hiding: false,
-			toggleTask: null,
-		};
-		popoverStates.set(element, state);
-	}
-	return state;
+	return _(element).popoverState ??= {
+		visibility: "hidden",
+		mode: null,
+		previouslyFocused: null,
+		hiding: false,
+		toggleTask: null,
+	};
 }
 
 // Returns auto for the empty string and `auto`, manual for `manual` and
@@ -24498,7 +24496,7 @@ function getPopoverValueState(value: string | null): "auto" | "manual" | null {
 export function isShowingPopover(node: globalThis.Node): boolean {
 	return (
 		implementsInterface(node, HTMLElement) &&
-		popoverStates.get(node)?.visibility === "showing"
+		_(node).popoverState?.visibility === "showing"
 	);
 }
 
@@ -24507,7 +24505,7 @@ export function isShowingPopover(node: globalThis.Node): boolean {
 function getShowingAutoPopovers(document: Document): Element[] {
 	const popovers: Element[] = [];
 	for (const element of getTopLayer(document)) {
-		const state = popoverStates.get(element);
+		const state = _(element).popoverState;
 		if (state?.mode === "auto" && state.visibility === "showing") {
 			popovers.push(element);
 		}
@@ -24843,7 +24841,7 @@ function getNearestInclusiveOpenPopover(node: Node): Element | null {
 		current !== null;
 		current = getFlatTreeParent(current)
 	) {
-		const state = popoverStates.get(current as Element);
+		const state = _(current as Element).popoverState;
 		if (state?.mode === "auto" && state.visibility === "showing") {
 			return current as Element;
 		}
@@ -24952,12 +24950,6 @@ function queuePopoverToggleEventTask(
 	});
 }
 
-// A popovertarget or commandfor set to an ELEMENT rather than named by
-// id. The attribute cannot hold an element, so the reference is stored
-// separately. The getter returns it only while the element is in a tree
-// the invoker composes into.
-const explicitAttributeElements = new WeakMap<Element, Map<string, Element>>();
-
 // The explicitly set element if it is still reachable, otherwise the
 // element the attribute names by id in the invoker's own tree.
 function getAttributeElement(node: Node, attribute: string): Element | null {
@@ -24965,7 +24957,7 @@ function getAttributeElement(node: Node, attribute: string): Element | null {
 		return null;
 	}
 	const element = node as Element;
-	const explicit = explicitAttributeElements.get(element)?.get(attribute);
+	const explicit = _(element).attributeElements?.get(attribute);
 	if (explicit !== undefined) {
 		// The reference is valid while the target is in the invoker's own tree
 		// or in one that tree composes into. It goes stale rather than dangling
@@ -25003,16 +24995,11 @@ function setAttributeElement(
 	value: Element | null,
 ): void {
 	if (value == null) {
-		explicitAttributeElements.get(element)?.delete(attribute);
+		_(element).attributeElements?.delete(attribute);
 		removeAttributeByName(element, attribute);
 		return;
 	}
-	let explicit = explicitAttributeElements.get(element);
-	if (explicit === undefined) {
-		explicit = new Map();
-		explicitAttributeElements.set(element, explicit);
-	}
-	explicit.set(attribute, value);
+	(_(element).attributeElements ??= new Map()).set(attribute, value);
 	setAttributeByName(element, attribute, "");
 }
 
