@@ -7142,18 +7142,16 @@ function roundToGrid(
 	// Whole cells, held as small integers so V8 keeps them unboxed in every
 	// node's grid and in the extents made from it.
 	node.grid.left = toCells(
-		roundValue(absLeft, false, false) - roundValue(parentLeft, false, false),
+		roundValue(absLeft, false) - roundValue(parentLeft, false),
 	);
 	node.grid.top = toCells(
-		roundValue(absTop, false, false) - roundValue(parentTop, false, false),
+		roundValue(absTop, false) - roundValue(parentTop, false),
 	);
 	node.grid.width = toCells(
-		roundValue(absLeft + width, isText, false) -
-			roundValue(absLeft, isText, false),
+		roundValue(absLeft + width, isText) - roundValue(absLeft, isText),
 	);
 	node.grid.height = toCells(
-		roundValue(absTop + height, isText, false) -
-			roundValue(absTop, isText, false),
+		roundValue(absTop + height, isText) - roundValue(absTop, isText),
 	);
 
 	node.settled = absLeft === node.gridLeft && absTop === node.gridTop;
@@ -7202,17 +7200,12 @@ function breaksElsewhere(node: LayoutNode): boolean {
  */
 export function getDrawnColumns(left: number, width: number): number {
 	if (Number.isNaN(left)) {
-		return roundValue(width, false, false);
+		return roundValue(width, false);
 	}
-	return roundValue(left + width, false, false) -
-		roundValue(left, false, false);
+	return roundValue(left + width, false) - roundValue(left, false);
 }
 
-function roundValue(
-	value: number,
-	forceCeil: boolean,
-	forceFloor: boolean,
-): number {
+function roundValue(value: number, forceCeil: boolean): number {
 	if (Number.isNaN(value)) {
 		return value;
 	}
@@ -7227,9 +7220,6 @@ function roundValue(
 	}
 	if (forceCeil) {
 		return value - fraction + 1;
-	}
-	if (forceFloor) {
-		return value - fraction;
 	}
 	// Round half up.
 	return value - fraction + (fraction >= 0.5 ? 1 : 0);
