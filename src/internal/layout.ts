@@ -254,9 +254,8 @@ function getLayoutDisplay(element: Element): Display {
 }
 
 // An inline-block flex item's measure returns a border-box size, so its
-// layout node must not add padding and border again on the cross axis (a
-// bordered textarea in a flex row came out too tall). The main axis is
-// masked by flex sizing. The node then holds none on those edges, though
+// layout node must not add padding and border again on the cross axis.
+// The main axis is masked by flex sizing. The node then holds none on those edges, though
 // the box has them.
 function getMaskedEdges(element: Element): readonly Edge[] {
 	if (getLayoutDisplay(element) !== "inline-block" || !hasFlexParent(element)) {
@@ -1562,9 +1561,7 @@ function styleLayoutNodeProperties(
 	style.clipsOverflow = overflowX !== "visible" || overflowY !== "visible";
 	style.scrollContainer =
 		isScrollingOverflow(overflowX) || isScrollingOverflow(overflowY);
-	// A blockified inline's width applies like any block's. Forced
-	// auto, `<span style="width:30ch">` in a flex row came out as wide as its
-	// text.
+	// A blockified inline's width applies like any block's.
 	const parentIsFlex = hasItemParent(element);
 	const inlineBox = display === "inline" && !isBlockified(element);
 	// An inline box has no size, ratio, margin, padding or border of its

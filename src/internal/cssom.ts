@@ -12877,9 +12877,8 @@ function attachPseudoElementToElementForType(
 	const existing = pseudoElement<Element>(element, pseudoType);
 
 	// Node identity is stable. Layout keys the pseudo-element's boxes by
-	// instance, and a fresh node per attach orphans the mapped one (a
-	// positioned button's ::after glyph simply vanished). Only the text
-	// changes.
+	// instance, and a fresh node per attach would orphan the mapped one.
+	// Only the text changes.
 	if (content === null) {
 		if (existing) {
 			removePseudoElement(cascade, element, pseudoType);
