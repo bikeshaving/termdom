@@ -21,7 +21,6 @@ import {
 	replayStyleReads,
 	resolveLength,
 	type StyleGroup,
-	toCellBorder,
 	toCellLength,
 	toWholeCells,
 	usedValuesChanged,
@@ -1613,6 +1612,7 @@ function styleLayoutNodeProperties(
 		// A blockified inline, a flex item or a positioned span, keeps its
 		// padding, margin and border like any block (css-display-3 §2.7).
 		const padding = getCellPadding(element);
+		const borders = getCellBorderWidths(element);
 		for (const edge of EDGES) {
 			const property = `margin-${edge}`;
 			const vertical = edge === "top" || edge === "bottom";
@@ -1628,25 +1628,7 @@ function styleLayoutNodeProperties(
 				(getComputedValue(element, property) === "auto" ? "auto" : undefined),
 			);
 			style.padding[edge] = toValue(padding[edge]);
-			// The used width is 0 when the side's style is none or hidden
-			// (css-backgrounds §3.3), the same rule as getBoxModel, or the two
-			// box models disagree about the same element.
-			const borderStyle = getComputedValue(element, `border-${edge}-style`);
-			const borderWidth =
-				!borderStyle ||
-				borderStyle === "none" ||
-				borderStyle === "hidden"
-					? null
-					: toCellBorder(
-						CSSValues.parseBorderWidthValue(
-							getComputedValue(element, `border-${edge}-width`),
-						),
-						vertical,
-						element,
-					);
-			style.border[edge] = typeof borderWidth === "number" && borderWidth > 0
-				? borderWidth
-				: 0;
+			style.border[edge] = borders[edge] > 0 ? borders[edge] : 0;
 		}
 		applyLegacyAlignment(style, element, display, parentIsFlex);
 	}
