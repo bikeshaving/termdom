@@ -19644,11 +19644,11 @@ export interface HTMLInputElementExtra extends NodeExtra {
 	// A typed character arrives as insertText. A paste arrives as
 	// insertFromPaste, and a single-line input strips its line breaks (HTML
 	// value sanitization). A toggle accepts neither, since it holds no text.
-	onBeforeInput: (event: InputEvent) => void;
+	onBeforeInput: (input: HTMLInputElement, event: InputEvent) => void;
 	// A checkbox or radio activates on Space or Enter and never accepts typed
 	// text. Home and End move to the ends of the whole value, since an input
 	// has no visual lines. Everything else is the shared text control logic.
-	onKeydown: (event: KeyboardEvent) => void;
+	onKeydown: (input: HTMLInputElement, event: KeyboardEvent) => void;
 }
 
 export interface HTMLInputElementSlots extends HTMLElementSlots {
@@ -19724,126 +19724,8 @@ export class HTMLInputElement extends HTMLElement {
 		slots.extra.placeholderText = null;
 		slots.extra.glyphText = null;
 		slots.extra.sliderFill = null;
-		slots.extra.onBeforeInput = (event: InputEvent): void => {
-			if (event.defaultPrevented || event.data == null) {
-				return;
-			}
-			if (getInputKind(this) !== "textControl") {
-				return;
-			}
-			if (event.inputType === "insertText") {
-				event.preventDefault();
-				insertTextControlText(this, event.data, "insertText");
-				return;
-			}
-			if (event.inputType !== "insertFromPaste") {
-				return;
-			}
-			event.preventDefault();
-			insertTextControlText(
-				this,
-				event.data.replace(/[\r\n]+/g, ""),
-				"insertFromPaste",
-			);
-		};
-		slots.extra.onKeydown = (event: KeyboardEvent): void => {
-			if (event.defaultPrevented) {
-				return;
-			}
-			const {key, shiftKey, ctrlKey, altKey} = event;
-
-			if (this.type === "checkbox" || this.type === "radio") {
-			// Either key activates the control, and activation is what toggles
-			// it: the pre-activation behavior flips checkedness, the activation
-			// behavior fires input then change, and a canceled click restores
-			// checkedness.
-			//
-			// Enter toggles here. In a browser Enter on a checkbox submits the
-			// form the control belongs to, and does nothing outside a form, so
-			// the key would be inert on most focused checkboxes. It toggles for
-			// the same reason the readline chords edit.
-				if (key === " " || key === "Enter") {
-					this.click();
-					return;
-				}
-				// The arrows move to the previous or next radio of the group, as
-				// a browser's do, checking it and wrapping at the ends.
-				const step = key === "ArrowUp" || key === "ArrowLeft"
-					? -1
-					: key === "ArrowDown" || key === "ArrowRight" ? 1 : 0;
-				if (this.type === "radio" && step !== 0) {
-					event.preventDefault();
-					const group = getRadioGroup(this).filter(
-						(radio) => radio === this || !isActuallyDisabled(radio),
-					);
-					const next = group[(group.indexOf(this) + step + group.length) %
-						group.length];
-					if (next !== this) {
-						next.focus();
-						next.click();
-					}
-				}
-				return;
-			}
-
-			// The arrows move a slider's thumb a step, PageUp and PageDown a
-			// tenth of its range, and Home and End to its ends, as a browser's
-			// do. Each move is a user edit, so it fires input then change.
-			if (this.type === "range") {
-				const next = getRangeKeyValue(this, key);
-				if (next !== null) {
-					event.preventDefault();
-					if (next !== this.value) {
-						this.value = next;
-						dispatch(
-							this,
-							constructInternal(() =>
-								new Event("input", {bubbles: true, composed: true}),
-							),
-						);
-						dispatchUserChange(this);
-					}
-				}
-				return;
-			}
-
-			// ArrowUp and ArrowDown step a number input, replacing the up/down
-			// buttons a browser draws. A terminal has none, and every hand is
-			// already on the keyboard. Stepping is a user edit, so it fires
-			// input then change, as pressing those buttons does.
-			if (
-				this.type === "number" && (key === "ArrowUp" || key === "ArrowDown")
-			) {
-				const stepped = getSteppedValue(this, key === "ArrowUp" ? 1 : -1);
-				if (stepped !== null) {
-					applyTextControlEdit(
-						this,
-						createCollapsedEdit(stepped, stepped.length),
-					);
-					editedSinceChange.delete(this);
-					dispatchUserChange(this);
-				}
-				return;
-			}
-
-			if (key === "Enter" && getInputKind(this) === "textControl") {
-				implicitlySubmit(this);
-				return;
-			}
-
-			const result = applySharedTextControlEdit(
-				this,
-				key,
-				shiftKey,
-				ctrlKey,
-				altKey,
-			);
-			if (result) {
-				applyTextControlEdit(this, result, {
-					inputType: getKeyInputType(key, ctrlKey, altKey),
-				});
-			}
-		};
+		slots.extra.onBeforeInput = handleInputBeforeInput;
+		slots.extra.onKeydown = handleInputKeydown;
 	}
 
 	get form(): HTMLFormElement | null {
@@ -20459,6 +20341,129 @@ export class HTMLInputElement extends HTMLElement {
 }
 
 declareExtraSlots(HTMLInputElement);
+
+function handleInputBeforeInput(
+	input: HTMLInputElement,
+	event: InputEvent,
+): void {
+	if (event.defaultPrevented || event.data == null) {
+		return;
+	}
+	if (getInputKind(input) !== "textControl") {
+		return;
+	}
+	if (event.inputType === "insertText") {
+		event.preventDefault();
+		insertTextControlText(input, event.data, "insertText");
+		return;
+	}
+	if (event.inputType !== "insertFromPaste") {
+		return;
+	}
+	event.preventDefault();
+	insertTextControlText(
+		input,
+		event.data.replace(/[\r\n]+/g, ""),
+		"insertFromPaste",
+	);
+}
+
+function handleInputKeydown(
+	input: HTMLInputElement,
+	event: KeyboardEvent,
+): void {
+	if (event.defaultPrevented) {
+		return;
+	}
+	const {key, shiftKey, ctrlKey, altKey} = event;
+
+	if (input.type === "checkbox" || input.type === "radio") {
+		// Either key activates the control, and activation is what toggles
+		// it: the pre-activation behavior flips checkedness, the activation
+		// behavior fires input then change, and a canceled click restores
+		// checkedness.
+		//
+		// Enter toggles here. In a browser Enter on a checkbox submits the
+		// form the control belongs to, and does nothing outside a form, so
+		// the key would be inert on most focused checkboxes. It toggles for
+		// the same reason the readline chords edit.
+		if (key === " " || key === "Enter") {
+			input.click();
+			return;
+		}
+		// The arrows move to the previous or next radio of the group, as
+		// a browser's do, checking it and wrapping at the ends.
+		const step = key === "ArrowUp" || key === "ArrowLeft"
+			? -1
+			: key === "ArrowDown" || key === "ArrowRight" ? 1 : 0;
+		if (input.type === "radio" && step !== 0) {
+			event.preventDefault();
+			const group = getRadioGroup(input).filter(
+				(radio) => radio === input || !isActuallyDisabled(radio),
+			);
+			const next = group[(group.indexOf(input) + step + group.length) %
+				group.length];
+			if (next !== input) {
+				next.focus();
+				next.click();
+			}
+		}
+		return;
+	}
+
+	// The arrows move a slider's thumb a step, PageUp and PageDown a
+	// tenth of its range, and Home and End to its ends, as a browser's
+	// do. Each move is a user edit, so it fires input then change.
+	if (input.type === "range") {
+		const next = getRangeKeyValue(input, key);
+		if (next !== null) {
+			event.preventDefault();
+			if (next !== input.value) {
+				input.value = next;
+				dispatch(
+					input,
+					constructInternal(() =>
+						new Event("input", {bubbles: true, composed: true}),
+					),
+				);
+				dispatchUserChange(input);
+			}
+		}
+		return;
+	}
+
+	// ArrowUp and ArrowDown step a number input, replacing the up/down
+	// buttons a browser draws. A terminal has none, and every hand is
+	// already on the keyboard. Stepping is a user edit, so it fires
+	// input then change, as pressing those buttons does.
+	if (input.type === "number" && (key === "ArrowUp" || key === "ArrowDown")) {
+		const stepped = getSteppedValue(input, key === "ArrowUp" ? 1 : -1);
+		if (stepped !== null) {
+			applyTextControlEdit(input, createCollapsedEdit(stepped, stepped.length));
+			editedSinceChange.delete(input);
+			dispatchUserChange(input);
+		}
+		return;
+	}
+
+	if (key === "Enter" && getInputKind(input) === "textControl") {
+		implicitlySubmit(input);
+		return;
+	}
+
+	const result = applySharedTextControlEdit(
+		input,
+		key,
+		shiftKey,
+		ctrlKey,
+		altKey,
+	);
+	if (result) {
+		applyTextControlEdit(input, result, {
+			inputType: getKeyInputType(key, ctrlKey, altKey),
+		});
+	}
+}
 
 // A number input's text can be any prefix of a valid floating-point
 // number and nothing else. An insertion that would break the grammar is
@@ -22503,12 +22508,12 @@ export interface HTMLSelectElementExtra extends NodeExtra {
 	// commit, Escape dismisses. CLOSED: Enter/Space open the picker, and
 	// arrows change the selection in place. This is the browser's
 	// closed-select keyboard model.
-	onKeydown: (event: KeyboardEvent) => void;
+	onKeydown: (select: HTMLSelectElement, event: KeyboardEvent) => void;
 	// A press opens a closed picker. With the picker open, a press on an
 	// option row commits it (a disabled row does nothing), and a press on the
 	// closed face dismisses. The row under the point is found from the rows'
 	// document rects, not a renderer hit test.
-	onMousedown: (event: MouseEvent) => void;
+	onMousedown: (select: HTMLSelectElement, event: MouseEvent) => void;
 	onBlur: () => void;
 }
 
@@ -22543,120 +22548,8 @@ export class HTMLSelectElement extends HTMLElement {
 		slots.extra.valueText = null;
 		slots.extra.picker = null;
 		slots.extra.pickerHighlight = null;
-		slots.extra.onKeydown = (event: KeyboardEvent): void => {
-			if (event.defaultPrevented) {
-				return;
-			}
-			const key = event.key;
-			const options = getOptionList(this);
-			if (options.length === 0) {
-				return;
-			}
-			const current = this.selectedIndex;
-
-			if (slots.extra.pickerHighlight !== null) {
-				const highlight = slots.extra.pickerHighlight;
-				if (key === "ArrowDown") {
-					slots.extra.pickerHighlight = stepSelectHighlight(this, highlight, 1);
-				} else if (key === "ArrowUp") {
-					slots.extra.pickerHighlight = stepSelectHighlight(
-						this,
-						highlight,
-						-1,
-					);
-				} else if (key === "Home") {
-					slots.extra.pickerHighlight = stepSelectHighlight(this, -1, 1);
-				} else if (key === "End") {
-					slots.extra.pickerHighlight = stepSelectHighlight(
-						this,
-						options.length,
-						-1,
-					);
-				} else if (key === "Enter" || key === " ") {
-					slots.extra.pickerHighlight = null;
-					if (highlight !== current && !optionIsDisabled(options[highlight])) {
-						commitSelectOption(this, highlight);
-						return;
-					}
-					syncUAShadowTree(this); // No change: just close.
-					return;
-				} else if (key === "Escape") {
-					slots.extra.pickerHighlight = null;
-				} else {
-					return;
-				}
-				syncUAShadowTree(this);
-				return;
-			}
-
-			// CLOSED: Space or Enter opens. Arrows change the value in place.
-			if (key === "Enter" || key === " ") {
-				openPicker(this);
-				return;
-			}
-			let target: number;
-			if (key === "ArrowDown" || key === "ArrowRight") {
-				target = stepSelectHighlight(this, current, 1);
-			} else if (key === "ArrowUp" || key === "ArrowLeft") {
-				target = stepSelectHighlight(this, current, -1);
-			} else if (key === "Home") {
-				target = stepSelectHighlight(this, -1, 1);
-			} else if (key === "End") {
-				target = stepSelectHighlight(this, options.length, -1);
-			} else {
-				return;
-			}
-			if (target !== current && target >= 0) {
-				commitSelectOption(this, target);
-			}
-		};
-		slots.extra.onMousedown = (event: MouseEvent): void => {
-			if (event.defaultPrevented || event.button !== 0) {
-				return;
-			}
-			const attached = getAttachedDocument(this)!;
-			this.focus(); // A press focuses the control, as in a browser.
-			if (slots.extra.pickerHighlight === null) {
-				openPicker(this);
-				return;
-			}
-			// The event's point is CSS pixels, and the rows' rects are cells.
-			const cell = getCellSize(this);
-			const x = event.clientX / cell.width;
-			const attachedSlots = _(attached);
-			const y =
-				event.clientY / cell.height + attachedSlots.extra.framebuffer.scrollTop;
-			const picker = slots.extra.picker!;
-			const row =
-				(Array.from(picker.childNodes) as globalThis.HTMLElement[]).find(
-					(node) => {
-						const rect = attachedSlots.extra.layout.getRect(node);
-						return rect ? rectContains(rect, x, y) : false;
-					},
-				);
-			if (row) {
-				const index = getOptionIndex(picker, row);
-				// A disabled row does nothing. The picker stays open and
-				// nothing commits.
-				const option = getOptionList(this)[index];
-				if (option && !optionIsDisabled(option)) {
-					slots.extra.pickerHighlight = null;
-					if (index !== this.selectedIndex) {
-						commitSelectOption(this, index);
-					} else {
-						syncUAShadowTree(this); // Re-press the selection: just close.
-					}
-				}
-				return;
-			}
-			// Not on any row. A press inside the picker's own padding does
-			// nothing. A press outside it (on the closed face) dismisses.
-			const pickerRect = attachedSlots.extra.layout.getRect(picker);
-			if (!(pickerRect && rectContains(pickerRect, x, y))) {
-				slots.extra.pickerHighlight = null;
-				syncUAShadowTree(this);
-			}
-		};
+		slots.extra.onKeydown = handleSelectKeydown;
+		slots.extra.onMousedown = handleSelectMousedown;
 		slots.extra.onBlur = (): void => {
 			if (slots.extra.pickerHighlight !== null) {
 				slots.extra.pickerHighlight = null;
@@ -22943,6 +22836,125 @@ export class HTMLSelectElement extends HTMLElement {
 }
 
 declareExtraSlots(HTMLSelectElement);
+
+function handleSelectKeydown(
+	select: HTMLSelectElement,
+	event: KeyboardEvent,
+): void {
+	const slots = _(select);
+	if (event.defaultPrevented) {
+		return;
+	}
+	const key = event.key;
+	const options = getOptionList(select);
+	if (options.length === 0) {
+		return;
+	}
+	const current = select.selectedIndex;
+
+	if (slots.extra.pickerHighlight !== null) {
+		const highlight = slots.extra.pickerHighlight;
+		if (key === "ArrowDown") {
+			slots.extra.pickerHighlight = stepSelectHighlight(select, highlight, 1);
+		} else if (key === "ArrowUp") {
+			slots.extra.pickerHighlight = stepSelectHighlight(select, highlight, -1);
+		} else if (key === "Home") {
+			slots.extra.pickerHighlight = stepSelectHighlight(select, -1, 1);
+		} else if (key === "End") {
+			slots.extra.pickerHighlight = stepSelectHighlight(
+				select,
+				options.length,
+				-1,
+			);
+		} else if (key === "Enter" || key === " ") {
+			slots.extra.pickerHighlight = null;
+			if (highlight !== current && !optionIsDisabled(options[highlight])) {
+				commitSelectOption(select, highlight);
+				return;
+			}
+			syncUAShadowTree(select); // No change: just close.
+			return;
+		} else if (key === "Escape") {
+			slots.extra.pickerHighlight = null;
+		} else {
+			return;
+		}
+		syncUAShadowTree(select);
+		return;
+	}
+
+	// CLOSED: Space or Enter opens. Arrows change the value in place.
+	if (key === "Enter" || key === " ") {
+		openPicker(select);
+		return;
+	}
+	let target: number;
+	if (key === "ArrowDown" || key === "ArrowRight") {
+		target = stepSelectHighlight(select, current, 1);
+	} else if (key === "ArrowUp" || key === "ArrowLeft") {
+		target = stepSelectHighlight(select, current, -1);
+	} else if (key === "Home") {
+		target = stepSelectHighlight(select, -1, 1);
+	} else if (key === "End") {
+		target = stepSelectHighlight(select, options.length, -1);
+	} else {
+		return;
+	}
+	if (target !== current && target >= 0) {
+		commitSelectOption(select, target);
+	}
+}
+
+function handleSelectMousedown(
+	select: HTMLSelectElement,
+	event: MouseEvent,
+): void {
+	const slots = _(select);
+	if (event.defaultPrevented || event.button !== 0) {
+		return;
+	}
+	const attached = getAttachedDocument(select)!;
+	select.focus(); // A press focuses the control, as in a browser.
+	if (slots.extra.pickerHighlight === null) {
+		openPicker(select);
+		return;
+	}
+	// The event's point is CSS pixels, and the rows' rects are cells.
+	const cell = getCellSize(select);
+	const x = event.clientX / cell.width;
+	const attachedSlots = _(attached);
+	const y =
+		event.clientY / cell.height + attachedSlots.extra.framebuffer.scrollTop;
+	const picker = slots.extra.picker!;
+	const row = (Array.from(picker.childNodes) as globalThis.HTMLElement[]).find(
+		(node) => {
+			const rect = attachedSlots.extra.layout.getRect(node);
+			return rect ? rectContains(rect, x, y) : false;
+		},
+	);
+	if (row) {
+		const index = getOptionIndex(picker, row);
+		// A disabled row does nothing. The picker stays open and
+		// nothing commits.
+		const option = getOptionList(select)[index];
+		if (option && !optionIsDisabled(option)) {
+			slots.extra.pickerHighlight = null;
+			if (index !== select.selectedIndex) {
+				commitSelectOption(select, index);
+			} else {
+				syncUAShadowTree(select); // Re-press the selection: just close.
+			}
+		}
+		return;
+	}
+	// Not on any row. A press inside the picker's own padding does
+	// nothing. A press outside it (on the closed face) dismisses.
+	const pickerRect = attachedSlots.extra.layout.getRect(picker);
+	if (!(pickerRect && rectContains(pickerRect, x, y))) {
+		slots.extra.pickerHighlight = null;
+		syncUAShadowTree(select);
+	}
+}
 
 // With no argument a select removes itself, as ChildNode's remove does.
 // With an index it removes that option.
@@ -23801,12 +23813,12 @@ export interface HTMLTextAreaElementExtra extends NodeExtra {
 	placeholderSpan: globalThis.HTMLElement | null;
 	goalColumn: number | null;
 	// A typed character arrives as insertText. A paste keeps its newlines.
-	onBeforeInput: (event: InputEvent) => void;
+	onBeforeInput: (textarea: HTMLTextAreaElement, event: InputEvent) => void;
 	// Enter inserts a newline. The vertical arrows and Home/End move by
 	// VISUAL line (soft wraps count, as in a browser). Every other editing
 	// key is the shared text control logic. This reads laid-out geometry, so it
 	// flushes layout first.
-	onKeydown: (event: KeyboardEvent) => void;
+	onKeydown: (textarea: HTMLTextAreaElement, event: KeyboardEvent) => void;
 }
 
 export interface HTMLTextAreaElementSlots extends HTMLElementSlots {
@@ -23852,78 +23864,8 @@ export class HTMLTextAreaElement extends HTMLElement {
 		slots.extra.placeholderText = null;
 		slots.extra.placeholderSpan = null;
 		slots.extra.goalColumn = null;
-		slots.extra.onBeforeInput = (event: InputEvent): void => {
-			if (event.defaultPrevented || event.data == null) {
-				return;
-			}
-			if (event.inputType === "insertText") {
-				event.preventDefault();
-				applyTextControlEdit(this, printableTextControlEdit(this, event.data), {
-					inputType: "insertText",
-					data: event.data,
-					asked: true,
-				});
-				return;
-			}
-			if (event.inputType !== "insertFromPaste") {
-				return;
-			}
-			event.preventDefault();
-			insertPaste(this, event.data);
-		};
-		slots.extra.onKeydown = (event: KeyboardEvent): void => {
-			// Editing is a default action. An author's keydown preventDefault
-			// suppresses it, as it suppresses a browser textarea's edit.
-			if (event.defaultPrevented) {
-				return;
-			}
-			if (!slots.extra.upgraded) {
-				return;
-			}
-			const {key, shiftKey, ctrlKey, altKey} = event;
-			// The goal column survives only an unbroken run of vertical moves.
-			if (key !== "ArrowUp" && key !== "ArrowDown") {
-				slots.extra.goalColumn = null;
-			}
-
-			const value = slots._uaValue;
-			const {start, end, direction} = getSelectionRecord(this)!;
-			const backward = direction === "backward";
-			const caret = backward ? start : end;
-			const anchor = backward ? end : start;
-
-			let result: TextControlEditResult | null;
-			if (key === "Enter" || (ctrlKey && key === "j")) {
-				// Insert a newline like any typed character, replacing the
-				// selection. A terminal sends line feed for Ctrl+J, which is the
-				// chord that reaches a text control whose Enter an application has
-				// taken over.
-				const next = value.slice(0, start) + "\n" + value.slice(end);
-				const pos = start + 1;
-				result = {value: next, start: pos, end: pos, direction: "none"};
-			} else if (key === "ArrowUp" || key === "ArrowDown") {
-				_(getAttachedDocument(this)!).extra.layout.performLayout();
-				const target = getVerticalTarget(
-					this,
-					caret,
-					key === "ArrowDown" ? 1 : -1,
-				);
-				result = moveTextControlSelection(value, anchor, target, shiftKey);
-			} else {
-				result = applySharedTextControlEdit(
-					this,
-					key,
-					shiftKey,
-					ctrlKey,
-					altKey,
-				);
-			}
-			if (result) {
-				applyTextControlEdit(this, result, {
-					inputType: getKeyInputType(key, ctrlKey, altKey),
-				});
-			}
-		};
+		slots.extra.onBeforeInput = handleTextAreaBeforeInput;
+		slots.extra.onKeydown = handleTextAreaKeydown;
 	}
 
 	get form(): HTMLFormElement | null {
@@ -24226,6 +24168,87 @@ export class HTMLTextAreaElement extends HTMLElement {
 }
 
 declareExtraSlots(HTMLTextAreaElement);
+
+function handleTextAreaBeforeInput(
+	textarea: HTMLTextAreaElement,
+	event: InputEvent,
+): void {
+	if (event.defaultPrevented || event.data == null) {
+		return;
+	}
+	if (event.inputType === "insertText") {
+		event.preventDefault();
+		applyTextControlEdit(
+			textarea,
+			printableTextControlEdit(textarea, event.data),
+			{inputType: "insertText", data: event.data, asked: true},
+		);
+		return;
+	}
+	if (event.inputType !== "insertFromPaste") {
+		return;
+	}
+	event.preventDefault();
+	insertPaste(textarea, event.data);
+}
+
+function handleTextAreaKeydown(
+	textarea: HTMLTextAreaElement,
+	event: KeyboardEvent,
+): void {
+	const slots = _(textarea);
+	// Editing is a default action. An author's keydown preventDefault
+	// suppresses it, as it suppresses a browser textarea's edit.
+	if (event.defaultPrevented) {
+		return;
+	}
+	if (!slots.extra.upgraded) {
+		return;
+	}
+	const {key, shiftKey, ctrlKey, altKey} = event;
+	// The goal column survives only an unbroken run of vertical moves.
+	if (key !== "ArrowUp" && key !== "ArrowDown") {
+		slots.extra.goalColumn = null;
+	}
+
+	const value = slots._uaValue;
+	const {start, end, direction} = getSelectionRecord(textarea)!;
+	const backward = direction === "backward";
+	const caret = backward ? start : end;
+	const anchor = backward ? end : start;
+
+	let result: TextControlEditResult | null;
+	if (key === "Enter" || (ctrlKey && key === "j")) {
+		// Insert a newline like any typed character, replacing the
+		// selection. A terminal sends line feed for Ctrl+J, which is the
+		// chord that reaches a text control whose Enter an application has
+		// taken over.
+		const next = value.slice(0, start) + "\n" + value.slice(end);
+		const pos = start + 1;
+		result = {value: next, start: pos, end: pos, direction: "none"};
+	} else if (key === "ArrowUp" || key === "ArrowDown") {
+		_(getAttachedDocument(textarea)!).extra.layout.performLayout();
+		const target = getVerticalTarget(
+			textarea,
+			caret,
+			key === "ArrowDown" ? 1 : -1,
+		);
+		result = moveTextControlSelection(value, anchor, target, shiftKey);
+	} else {
+		result = applySharedTextControlEdit(
+			textarea,
+			key,
+			shiftKey,
+			ctrlKey,
+			altKey,
+		);
+	}
+	if (result) {
+		applyTextControlEdit(textarea, result, {
+			inputType: getKeyInputType(key, ctrlKey, altKey),
+		});
+	}
+}
 
 // One atomic edit.
 function insertPaste(
@@ -37502,9 +37525,15 @@ export function runControlDefaultAction(
 	// A control's own slots, which only a control has.
 	const control = _(target as unknown as Element).extra as unknown as {
 		upgraded?: boolean;
-		onKeydown?: (event: globalThis.Event) => void;
-		onBeforeInput?: (event: globalThis.Event) => void;
-		onMousedown?: (event: globalThis.Event) => void;
+		onKeydown?: (control: globalThis.Element, event: globalThis.Event) => void;
+		onBeforeInput?: (
+			control: globalThis.Element,
+			event: globalThis.Event,
+		) => void;
+		onMousedown?: (
+			control: globalThis.Element,
+			event: globalThis.Event,
+		) => void;
 	} | null;
 	if (event.defaultPrevented || control?.upgraded !== true) {
 		return;
@@ -37514,7 +37543,7 @@ export function runControlDefaultAction(
 		: event.type === "beforeinput"
 			? control.onBeforeInput
 			: event.type === "mousedown" ? control.onMousedown : undefined;
-	handler?.(event);
+	handler?.(target, event);
 }
 
 /** The focused element, through shadow roots. */
