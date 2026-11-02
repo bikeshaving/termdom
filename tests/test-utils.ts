@@ -12,7 +12,7 @@ import {
 	type TerminalTransport,
 	transportFromProcess,
 } from "../src/index.ts";
-import {controlCheck, framePainted} from "../src/internal/dom.ts";
+import {framePainted} from "../src/internal/dom.ts";
 import type {ColorDepth} from "../src/internal/exchange.ts";
 import {
 	beginFrame,
@@ -26,8 +26,6 @@ import {getStringWidth} from "../src/internal/text.ts";
 // A frame that repaints only the rows that changed must match one painted
 // whole, and every test's frames are held to that.
 partialFrameCheck.enabled = true;
-// And every form control must show its state before a frame redraws it.
-controlCheck.enabled = true;
 
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;

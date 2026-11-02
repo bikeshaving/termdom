@@ -37907,13 +37907,10 @@ export function syncFormControls(document: globalThis.Document): void {
 /**
  * Checks, for tests, that every form control's shadow tree already shows
  * its state when a frame starts, so no change of state went without
- * redrawing it. Set, a control the frame's sync would change throws,
- * naming it.
+ * redrawing it. A control the frame's sync would change throws, naming
+ * it.
  */
-export const controlCheck = {enabled: false, checked: 0};
-
 export function checkFormControls(document: globalThis.Document): void {
-	controlCheck.checked++;
 	const attached = getAttachedDocument(document);
 	if (attached === undefined) {
 		return;

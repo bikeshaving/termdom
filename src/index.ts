@@ -18,7 +18,6 @@ import {
 	clearHighlights,
 	clearWindowTimers,
 	constructInternal,
-	controlCheck,
 	discardFrames,
 	disconnectObservers,
 	dispatchAsUserAgent,
@@ -1882,7 +1881,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// First, so a hover listener's mutations join the records taken below.
 	resolvePendingHover(termDOMSlots.input);
 
-	if (import.meta.litest && controlCheck.enabled) {
+	if (import.meta.litest) {
 		checkFormControls(termDOM.document);
 	}
 	syncFormControls(termDOM.document);
