@@ -39537,13 +39537,21 @@ const RANDOM_VALUE_ARRAYS = [
 	BigUint64Array,
 ];
 
-/** WebCrypto's Crypto, as far as the runtime's random source serves it. */
+/**
+ * WebCrypto's Crypto, from the runtime's random source and the runtime's
+ * SubtleCrypto.
+ */
 export class Crypto {
 	constructor() {
 		seal(this, new.target, Crypto);
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
+	}
+
+	get subtle(): globalThis.SubtleCrypto {
+		_(this);
+		return runtimeCrypto.subtle;
 	}
 
 	getRandomValues<T extends ArrayBufferView | null>(array: T): T {
