@@ -6865,6 +6865,13 @@ export class Layout {
 				}
 			}
 
+			if (display === "inline" && holdsBlock(element)) {
+				const rects = getSplitInlineRects(this, element);
+				if (rects.length > 0) {
+					return unionRects(this, rects);
+				}
+			}
+
 			const rectTexts = getRectTexts(this, element);
 			if (rectTexts.length > 0) {
 				return unionRects(this, rectTexts.map((rectText) => rectText.rect));
@@ -6932,6 +6939,11 @@ export class Layout {
 			}
 		}
 
+		if (
+			getNodeType(node) === node.ELEMENT_NODE && holdsBlock(node as Element)
+		) {
+			return getSplitInlineRects(this, node as Element);
+		}
 		// One rect per text run per line it spans.
 		return getRectTexts(this, node).map((rectText) => rectText.rect);
 	}
@@ -7304,6 +7316,45 @@ export class Layout {
 	getBox(element: Element): Box | null {
 		return this.boxes.get(element) ?? null;
 	}
+}
+
+// An inline box split around a block-level box in its flow, as
+// <a><img style="display:block"></a> is.
+function holdsBlock(element: Element): boolean {
+	for (const child of flatChildren(element)) {
+		if (getNodeType(child) !== child.ELEMENT_NODE || isOutOfFlow(child)) {
+			continue;
+		}
+		const display = getLayoutDisplay(child as Element);
+		if (display === "none") {
+			continue;
+		}
+		if (display === "inline" || display === "contents") {
+			if (holdsBlock(child as Element)) {
+				return true;
+			}
+		} else if (!isInlineDisplay(display)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// A split inline's fragments on either side of a block, and the block-level
+// boxes between them, in tree order (cssom-view-1 §6.1).
+function getSplitInlineRects(layout: Layout, element: Element): DOMRect[] {
+	const rects: DOMRect[] = [];
+	for (const child of flatChildren(element)) {
+		if (getNodeType(child) === child.ELEMENT_NODE && isOutOfFlow(child)) {
+			continue;
+		}
+		if (getNodeType(child) === child.ELEMENT_NODE && isDisplayContents(child)) {
+			rects.push(...getSplitInlineRects(layout, child as Element));
+		} else {
+			rects.push(...layout.getRects(child));
+		}
+	}
+	return rects;
 }
 
 export function adoptTerminalReordering(layout: Layout): void {

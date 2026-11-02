@@ -3124,3 +3124,24 @@ test("the first autofocus element of the starting markup takes the keys", async 
 	expect(input.value).toBe("hi");
 	dom.dispose();
 });
+
+test("Tab stops on a link whose only content is a block image", async () => {
+	const terminal = new MockProcess({rows: 12, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+	document.body.innerHTML =
+		'<a id="picture" href="/p"><img alt="Cornet" width="250" style="display:block;width:100%;height:auto"></a>' +
+		'<a id="text" href="/p">Cornet</a>' +
+		'<a id="card" href="/q"><div>Mute</div></a>';
+	await nextFrame(dom);
+	const seen: string[] = [];
+	for (let i = 0; i < 3; i++) {
+		(terminal.stdin as any).emit("data", Buffer.from("\t"));
+		await inputDispatched();
+		seen.push(document.activeElement!.id);
+	}
+	expect(seen).toEqual(["picture", "text", "card"]);
+	dom.dispose();
+});

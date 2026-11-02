@@ -1963,17 +1963,20 @@ test("white space beside an out-of-flow box collapses as if it were absent", () 
 
 test("a broken inline is not sized by an out-of-flow descendant", () => {
 	// The <b> is split around a block, so its rect is the union of the
-	// fragments it was broken into. An absolutely positioned child lays out
-	// against its containing block and is no part of them, so the union is
-	// empty -- the walk that gathers the fragments was descending into the
-	// child on its computed display.
+	// fragments it was broken into and the block between them. An
+	// absolutely positioned child lays out against its containing block and
+	// is no part of them, so the union is the empty block's -- the walk that
+	// gathers the fragments was descending into the child on its computed
+	// display.
 	const dom = layoutDOM(
-		"<b id=\"split\"><div></div>" +
+		"<b id=\"split\"><div id=\"block\"></div>" +
 		"<div style=\"display: inline-block; position: absolute\">t000</div></b>",
 	);
 	const split = dom.document.getElementById("split")!;
-	const rect = getBox(split);
-	expect(rect === null || rect.width === 0).toBe(true);
+	const block = dom.document.getElementById("block")!;
+	expect(getBox(split)?.toJSON()).toEqual(
+		block.getBoundingClientRect().toJSON(),
+	);
 });
 
 test("min-height in content-box sizing counts the content box", async () => {
@@ -2012,5 +2015,27 @@ test("auto margins center a narrower block and leave an auto one filling", () =>
 	expect(box("centered")).toEqual([0, 120]);
 	expect(document.getElementById("inner")!.getBoundingClientRect().width)
 		.toBeGreaterThan(60);
+	dom.dispose();
+});
+
+test("an inline split around a block reports the block among its rects", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		'<a id="only" href="/p"><img alt="Cornet" style="display:block"></a>' +
+		'<a id="around" href="/q">before<div>block</div>after</a>';
+	dom.attach();
+	await nextFrame(dom);
+	const rects = (id: string) =>
+		Array.from(dom.document.getElementById(id)!.getClientRects(), (rect) => [
+			rect.x,
+			rect.y,
+			rect.width,
+			rect.height,
+		]);
+	expect(rects("only")).toEqual([[0, 0, 40, 1]]);
+	expect(rects("around")).toEqual([[0, 1, 6, 1], [0, 2, 40, 1], [0, 3, 5, 1]]);
+	const box = dom.document.getElementById("around")!.getBoundingClientRect();
+	expect([box.x, box.y, box.width, box.height]).toEqual([0, 1, 40, 3]);
 	dom.dispose();
 });
