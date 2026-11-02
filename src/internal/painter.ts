@@ -1408,8 +1408,8 @@ function paintNodes(
 		const child = children[index];
 		const owner = child.owner as Node | null;
 		const childOrigin = {
-			x: origin.x + child.grid.left,
-			y: origin.y + child.grid.top,
+			x: origin.x + child.snapped.left,
+			y: origin.y + child.snapped.top,
 		};
 		// An anonymous table paints nothing of its own, only its parts.
 		if (owner === null) {

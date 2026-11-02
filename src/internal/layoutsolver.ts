@@ -743,8 +743,8 @@ export class LayoutNode {
 
 	// The unrounded origin roundToGrid last gave the children, NaN once the
 	// node is laid out again. Their rounded results stand while it holds.
-	gridLeft: number;
-	gridTop: number;
+	snapOriginLeft: number;
+	snapOriginTop: number;
 	// Whether the last roundToGrid left the children as they were.
 	settled: boolean;
 	// Whether a roundToGrid since the last paint extents moved the box. A
@@ -757,7 +757,7 @@ export class LayoutNode {
 	// rounded. rawAbsoluteLeft sums result's left edges down from the root:
 	// the text in a box breaks against the columns it says the box is drawn
 	// across.
-	grid: {left: number; top: number; width: number; height: number};
+	snapped: {left: number; top: number; width: number; height: number};
 	rawAbsoluteLeft: number;
 	rawAbsoluteTop: number;
 	// Whether the last layout of a block laid out only its stale children
@@ -798,11 +798,11 @@ export class LayoutNode {
 		this.owner = null;
 		this.measuresText = true;
 		this.outOfFlowCount = 0;
-		this.gridLeft = NaN;
-		this.gridTop = NaN;
+		this.snapOriginLeft = NaN;
+		this.snapOriginTop = NaN;
 		this.settled = false;
 		this.movedSinceExtents = true;
-		this.grid = {left: 0, top: 0, width: 0, height: 0};
+		this.snapped = {left: 0, top: 0, width: 0, height: 0};
 		this.rawAbsoluteLeft = NaN;
 		this.rawAbsoluteTop = NaN;
 		this.keptChildren = false;
@@ -975,8 +975,8 @@ export function forgetLayout(node: LayoutNode): void {
 	releaseCache(node);
 	node.hasCachedLayout = false;
 	node.cachedSizeCount = 0;
-	node.gridLeft = NaN;
-	node.gridTop = NaN;
+	node.snapOriginLeft = NaN;
+	node.snapOriginTop = NaN;
 	node.settled = false;
 	node.movedSinceExtents = true;
 	node.rawAbsoluteLeft = NaN;
@@ -1035,11 +1035,11 @@ export function getComputedGridTracks(
 }
 
 export function getComputedWidth(layoutNode: LayoutNode): number {
-	return layoutNode.grid.width;
+	return layoutNode.snapped.width;
 }
 
 export function getComputedHeight(layoutNode: LayoutNode): number {
-	return layoutNode.grid.height;
+	return layoutNode.snapped.height;
 }
 
 // The values and edge records nodes share. Most boxes have one of a few
@@ -4067,7 +4067,7 @@ function layoutTable(
 	});
 	for (const group of groups) {
 		const first = firstRows.get(group);
-		group.gridLeft = NaN;
+		group.snapOriginLeft = NaN;
 		group.result.left = leftPaddingBorder;
 		group.result.width = contentWidth;
 		group.result.top = gridTop + (first === undefined ? 0 : rowStart(first));
@@ -4086,7 +4086,7 @@ function layoutTable(
 		if (row.node === null) {
 			return;
 		}
-		row.node.gridLeft = NaN;
+		row.node.snapOriginLeft = NaN;
 		row.node.result.left = rowLeft(row);
 		row.node.result.top = rowTop(row, index);
 		row.node.result.width = contentWidth;
@@ -6638,10 +6638,10 @@ function layoutNode(
 	// between, as a table does its cells, so every box above it rounds again.
 	for (
 		let above = node.parent;
-		above !== null && !Number.isNaN(above.gridLeft);
+		above !== null && !Number.isNaN(above.snapOriginLeft);
 		above = above.parent
 	) {
-		above.gridLeft = NaN;
+		above.snapOriginLeft = NaN;
 	}
 	// css-sizing-4 §5: the open axis follows a settled (`definite`) one
 	// through the ratio. With both settled the ratio yields. Margins come
@@ -6984,7 +6984,7 @@ function layoutNodeImpl(
 	ownerHeight: number,
 	placing: boolean,
 ): void {
-	node.gridLeft = NaN;
+	node.snapOriginLeft = NaN;
 	node.result.paddingLeft = getPadding(node, "left", ownerWidth);
 	node.result.paddingTop = getPadding(node, "top", ownerWidth);
 	node.result.paddingRight = getPadding(node, "right", ownerWidth);
@@ -7163,33 +7163,34 @@ function roundToGrid(
 	const isText = node.measure !== null && node.measuresText;
 
 	// Whole cells, held as small integers so V8 keeps them unboxed in every
-	// node's grid and in the extents made from it.
-	node.grid.left = toCells(
+	// node's snapped box and in the extents made from it.
+	node.snapped.left = toCells(
 		roundValue(absLeft, false) - roundValue(parentLeft, false),
 	);
-	node.grid.top = toCells(
+	node.snapped.top = toCells(
 		roundValue(absTop, false) - roundValue(parentTop, false),
 	);
-	node.grid.width = toCells(
+	node.snapped.width = toCells(
 		roundValue(absLeft + width, isText) - roundValue(absLeft, isText),
 	);
-	node.grid.height = toCells(
+	node.snapped.height = toCells(
 		roundValue(absTop + height, isText) - roundValue(absTop, isText),
 	);
 
-	node.settled = absLeft === node.gridLeft && absTop === node.gridTop;
+	node.settled =
+		absLeft === node.snapOriginLeft && absTop === node.snapOriginTop;
 	if (!node.settled) {
 		node.movedSinceExtents = true;
 	}
 	if (node.settled) {
 		return;
 	}
-	node.gridLeft = absLeft;
-	node.gridTop = absTop;
+	node.snapOriginLeft = absLeft;
+	node.snapOriginTop = absTop;
 	// Only a child laid out again had its origin forgotten. The others are
 	// where they were and would round as they did, settled.
 	for (const child of node.children) {
-		if (!kept || Number.isNaN(child.gridLeft)) {
+		if (!kept || Number.isNaN(child.snapOriginLeft)) {
 			roundToGrid(child, absLeft, absTop, misplaced);
 		} else {
 			child.settled = true;
