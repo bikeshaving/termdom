@@ -43,6 +43,7 @@ import {
 	setInterval,
 	setTimeout,
 } from "./timers.ts";
+import {Parser, type ParserHandlers} from "./vt.ts";
 
 // Made once: a regular expression literal is a new object each time it
 // runs, and this runs for every chunk the terminal writes.
@@ -485,7 +486,18 @@ const PASTE_LIMIT = 1 << 20;
 // A split sequence longer than this is not one a terminal sends.
 const HOLD_LIMIT = 4096;
 
-const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
+const STRING_OPENERS = "]P_^X";
+
+// The reader decodes a sequence from its text, so its parser only finds
+// where each one ends.
+const IGNORED_HANDLERS: ParserHandlers = {
+	print() {},
+	execute() {},
+	csi() {},
+	esc() {},
+	osc() {},
+	dcs() {},
+};
 
 // OSC 11 answered: the default background, each channel one to four hex
 // digits, ended by BEL or ST.
@@ -543,6 +555,7 @@ class WireReader {
 	pasteOverflowed: boolean;
 	replyBody: string | null;
 	expectingReply: boolean;
+	parser: Parser;
 
 	constructor() {
 		this.tail = "";
@@ -550,6 +563,7 @@ class WireReader {
 		this.pasteOverflowed = false;
 		this.replyBody = null;
 		this.expectingReply = false;
+		this.parser = new Parser(IGNORED_HANDLERS);
 	}
 
 	holdsEscape(): boolean {
@@ -581,12 +595,6 @@ class WireReader {
 	feed(chunk: string, holdEscape = false): WireItem[] {
 		let data = this.tail + chunk;
 		this.tail = "";
-		const held = splitTrailingEscape(data, holdEscape);
-		if (held > 0 && held <= HOLD_LIMIT) {
-			this.tail = data.slice(-held);
-			data = data.slice(0, -held);
-		}
-
 		const items: WireItem[] = [];
 		let i = 0;
 		while (i < data.length) {
@@ -594,7 +602,9 @@ class WireReader {
 			if (this.pasteBody !== null) {
 				const end = data.indexOf(PASTE_END, i);
 				if (end === -1) {
-					this.pasteBody += data.slice(i);
+					const kept = findFenceStart(data, i, holdEscape);
+					this.tail = data.slice(kept);
+					this.pasteBody += data.slice(i, kept);
 					if (this.pasteOverflowed || this.pasteBody.length > PASTE_LIMIT) {
 						if (this.pasteBody !== "") {
 							items.push({kind: "paste", text: this.pasteBody});
@@ -616,10 +626,13 @@ class WireReader {
 			// A payload no decoding rescues is reported as an empty clipboard.
 			if (this.replyBody !== null) {
 				const reply = this.replyBody + data.slice(i);
+				const opened = this.replyBody === "";
 				this.replyBody = null;
 				const match = reply.match(CLIPBOARD_REPLY);
 				if (!match) {
-					if (reply.length <= REPLY_LIMIT) {
+					if (opened && isHeldString(reply, holdEscape)) {
+						this.tail = reply;
+					} else if (reply.length <= REPLY_LIMIT) {
 						this.replyBody = reply;
 					} else {
 						items.push({kind: "clipboard", text: null});
@@ -635,180 +648,173 @@ class WireReader {
 				i = match[0].length;
 				continue;
 			}
-			if (data.startsWith(PASTE_START, i)) {
-				this.pasteBody = "";
-				i += PASTE_START.length;
-				continue;
-			}
 			if (data.startsWith(CLIPBOARD_START, i) && this.expectingReply) {
 				this.replyBody = "";
 				continue;
 			}
-			// OSC, DCS, APC, PM and SOS are strings a terminal writes, not
-			// keys it sends. One that arrives whole is discarded through its
-			// terminator. One with no terminator in the same write is keys:
-			// Escape and then a bracket is what a person typing sends too.
-			if (data[i] === "\x1b" && data[i + 1] === "P") {
-				const report = SGR_REPORT.exec(data.slice(i));
-				if (report !== null) {
-					items.push({
-						kind: "sgr-report",
-						params: report[1] === "1" ? report[2] : null,
-					});
-					i += report[0].length;
-					continue;
-				}
-				const capability = CAPABILITY_REPORT.exec(data.slice(i));
-				if (capability !== null) {
-					items.push({kind: "capability-report", known: capability[1] === "1"});
-					i += capability[0].length;
-					continue;
-				}
-			}
-			if (data[i] === "\x1b" && data[i + 1] === "]") {
-				const background = BACKGROUND_REPLY.exec(data.slice(i));
-				if (background !== null) {
-					items.push({
-						kind: "background",
-						red: readChannel(background[1]),
-						green: readChannel(background[2]),
-						blue: readChannel(background[3]),
-					});
-					i += background[0].length;
-					continue;
-				}
-			}
-			if (
-				data[i] === "\x1b" &&
-				i + 1 < data.length &&
-				STRING_OPENERS.has(data[i + 1])
-			) {
-				const end = findStringTerminator(data, i + 2);
-				if (end !== -1) {
-					i = end;
-					continue;
-				}
-			}
-			if (data[i] === "\x1b" && i + 1 < data.length) {
-				if (data[i + 1] === "[") {
-					let end = i + 2;
-					while (
-						end < data.length &&
-						!(data.charCodeAt(end) >= 0x40 && data.charCodeAt(end) <= 0x7e)
-					) {
-						end++;
-					}
-					// A sequence with no final byte, or one nothing here names,
-					// is not a keystroke.
-					if (end < data.length) {
-						const item = decodeControlToken(data.slice(i, end + 1));
-						if (item.kind !== "key" || !item.key.includes("\x1b")) {
-							items.push(item);
-						}
-					}
-					i = end + 1;
-					continue;
-				}
-				if (data[i + 1] === "O" && i + 2 < data.length) {
-					const item = decodeKeyToken(data.slice(i, i + 3));
-					if (!item.key.includes("\x1b")) {
-						items.push(item);
-					}
-					i += 3;
-					continue;
-				}
-				// ESC and a key in one write is that key with Alt, the way a
-				// terminal sends it. A person pressing Escape and then a key
-				// sends two writes.
-				const next = data.charCodeAt(i + 1);
-				if (next !== 0x1b && !(next >= 0x80 && next <= 0x9f)) {
-					const width = next >= 0xd800 && next <= 0xdbff && i + 2 < data.length
-						? 2
-						: 1;
-					const item = decodeKeyToken(data.slice(i + 1, i + 1 + width));
-					items.push({...item, char: "", altKey: true});
-					i += 1 + width;
-					continue;
-				}
-			}
-			// A C1 control is not a keystroke a terminal sends.
-			const code = data.charCodeAt(i);
-			if (code >= 0x80 && code <= 0x9f) {
-				i++;
-				continue;
-			}
-			// A surrogate pair is one keystroke.
-			const width = code >= 0xd800 && code <= 0xdbff && i + 1 < data.length
-				? 2
-				: 1;
-			items.push(decodeKeyToken(data.slice(i, i + width)));
-			i += width;
+			i = data[i] === "\x1b"
+				? this.readEscape(data, i, holdEscape, items)
+				: readKey(data, i, items);
 		}
 		return items;
 	}
-}
 
-/** The index just past BEL or ST, or -1 when neither closes the string. */
-function findStringTerminator(data: string, from: number): number {
-	for (let i = from; i < data.length; i++) {
-		if (data[i] === "\x07") {
+	// The keys or the sequence that the ESC at `i` starts, and the index
+	// past them.
+	readEscape(
+		data: string,
+		i: number,
+		replyDue: boolean,
+		items: WireItem[],
+	): number {
+		const next = data[i + 1];
+		if (next === undefined) {
+			if (replyDue && data[i - 1] !== "\x1b") {
+				this.tail = "\x1b";
+			} else {
+				items.push(decodeKeyToken("\x1b"));
+			}
 			return i + 1;
 		}
-		if (data[i] === "\x1b" && data[i + 1] === "\\") {
+		if (next === "[" || STRING_OPENERS.includes(next)) {
+			const end = this.parser.parse(data, i, "input");
+			if (end !== -1) {
+				this.readSequence(data.slice(i, end), items);
+				return end;
+			}
+			// OSC, DCS, APC, PM and SOS are strings a terminal writes, not
+			// keys it sends. One with no terminator in the same write is
+			// keys: Escape and then a bracket is what a person typing sends
+			// too.
+			const opened = data.slice(i);
+			if (next === "[") {
+				if (opened.length <= HOLD_LIMIT) {
+					this.tail = opened;
+				}
+				return data.length;
+			}
+			if (isHeldString(opened, replyDue)) {
+				this.tail = opened;
+				return data.length;
+			}
+			items.push({...decodeKeyToken(next), char: "", altKey: true});
 			return i + 2;
 		}
+		if (next === "O") {
+			if (i + 2 === data.length) {
+				this.tail = "\x1bO";
+				return data.length;
+			}
+			const item = decodeKeyToken(data.slice(i, i + 3));
+			if (!item.key.includes("\x1b")) {
+				items.push(item);
+			}
+			return i + 3;
+		}
+		// ESC and a key in one write is that key with Alt, the way a
+		// terminal sends it. A person pressing Escape and then a key sends
+		// two writes.
+		const code = data.charCodeAt(i + 1);
+		if (code === 0x1b || (code >= 0x80 && code <= 0x9f)) {
+			items.push(decodeKeyToken("\x1b"));
+			return i + 1;
+		}
+		const width = getKeyWidth(data, i + 1);
+		const item = decodeKeyToken(data.slice(i + 1, i + 1 + width));
+		items.push({...item, char: "", altKey: true});
+		return i + 1 + width;
 	}
-	return -1;
+
+	// A whole CSI is a key, a report or a paste's opening fence. A whole
+	// string is a reply, or is discarded.
+	readSequence(token: string, items: WireItem[]): void {
+		if (token === PASTE_START) {
+			this.pasteBody = "";
+			return;
+		}
+		const item = token[1] === "["
+			? decodeControlToken(token)
+			: decodeString(token);
+		// A sequence nothing here names is not a keystroke.
+		if (item !== null && (item.kind !== "key" || !item.key.includes("\x1b"))) {
+			items.push(item);
+		}
+	}
 }
 
-function splitTrailingEscape(chunk: string, replyDue: boolean): number {
-	// While a reply is due, an OSC or DCS cut before its terminator, even
-	// between the ESC and backslash of its ST, is a reply.
+// The key at `i`, and the index past it. A C1 control is not a keystroke
+// a terminal sends.
+function readKey(data: string, i: number, items: WireItem[]): number {
+	const code = data.charCodeAt(i);
+	if (code >= 0x80 && code <= 0x9f) {
+		return i + 1;
+	}
+	const width = getKeyWidth(data, i);
+	items.push(decodeKeyToken(data.slice(i, i + width)));
+	return i + width;
+}
+
+// A surrogate pair is one keystroke.
+function getKeyWidth(data: string, i: number): number {
+	const code = data.charCodeAt(i);
+	return code >= 0xd800 && code <= 0xdbff && i + 1 < data.length ? 2 : 1;
+}
+
+// What a string the terminal wrote means, with its opener and its
+// terminator, when it is a reply.
+function decodeString(token: string): WireItem | null {
+	const report = SGR_REPORT.exec(token);
+	if (report !== null) {
+		return {kind: "sgr-report", params: report[1] === "1" ? report[2] : null};
+	}
+	const capability = CAPABILITY_REPORT.exec(token);
+	if (capability !== null) {
+		return {kind: "capability-report", known: capability[1] === "1"};
+	}
+	const background = BACKGROUND_REPLY.exec(token);
+	return background === null
+		? null
+		: {
+			kind: "background",
+			red: readChannel(background[1]),
+			green: readChannel(background[2]),
+			blue: readChannel(background[3]),
+		};
+}
+
+/**
+ * Whether a string the chunk cuts waits for the rest of it. While a reply
+ * is due an OSC or a DCS does, even cut between the ESC and backslash of
+ * its ST. Otherwise a DCS does, and the start of a clipboard reply's
+ * opener.
+ */
+function isHeldString(opened: string, replyDue: boolean): boolean {
+	const inner = opened.indexOf("\x1b", 2);
+	if (opened.length > HOLD_LIMIT) {
+		return false;
+	}
 	if (replyDue) {
-		const opener = Math.max(
-			chunk.lastIndexOf("\x1b]"),
-			chunk.lastIndexOf("\x1bP"),
-		);
-		const inner = chunk.indexOf("\x1b", opener + 2);
-		if (
-			opener !== -1 &&
-			findStringTerminator(chunk, opener + 2) === -1 &&
-			(inner === -1 || inner === chunk.length - 1)
-		) {
-			return chunk.length - opener;
-		}
-		if (chunk.endsWith("\x1b") && !chunk.endsWith("\x1b\x1b")) {
-			return 1;
-		}
+		return (opened[1] === "]" || opened[1] === "P") &&
+			(inner === -1 || inner === opened.length - 1);
 	}
-	const esc = chunk.lastIndexOf("\x1b");
-	if (esc === -1 || esc === chunk.length - 1) {
-		return 0;
+	return inner === -1 && (
+		opened[1] === "P" ||
+		(opened.length < CLIPBOARD_START.length &&
+			CLIPBOARD_START.startsWith(opened))
+	);
+}
+
+// Where a paste body the chunk cuts may start its end fence, or the end
+// of `data`. A lone ESC there waits only while a reply is due.
+function findFenceStart(data: string, from: number, replyDue: boolean): number {
+	const esc = data.lastIndexOf("\x1b");
+	if (esc < from) {
+		return data.length;
 	}
-	const kind = chunk[esc + 1];
-	if (kind === "[") {
-		for (let i = esc + 2; i < chunk.length; i++) {
-			const code = chunk.charCodeAt(i);
-			if (code >= 0x40 && code <= 0x7e) {
-				return 0;
-			}
-		}
-		return chunk.length - esc;
-	}
-	if (kind === "O" && esc + 2 >= chunk.length) {
-		return chunk.length - esc;
-	}
-	// A DCS reply cut before its terminator.
-	if (kind === "P" && findStringTerminator(chunk, esc + 2) === -1) {
-		return chunk.length - esc;
-	}
-	const tail = chunk.slice(esc);
-	if (
-		tail.length < CLIPBOARD_START.length && CLIPBOARD_START.startsWith(tail)
-	) {
-		return tail.length;
-	}
-	return 0;
+	const held = esc === data.length - 1
+		? replyDue && data[esc - 1] !== "\x1b"
+		: PASTE_END.startsWith(data.slice(esc));
+	return held ? esc : data.length;
 }
 
 function decodeControlToken(token: string): WireItem {

@@ -165,10 +165,18 @@ export interface ParserHandlers {
 }
 
 /**
+ * How a Parser reads. "output" is what a program writes, read as xterm
+ * reads it, with a sequence or a surrogate pair that one text cuts going
+ * on in the next. "input" is one sequence a terminal sends, read from its
+ * ESC: a control inside it belongs to it, and a string ends only at BEL
+ * or ST.
+ */
+export type ParseMode = "output" | "input";
+
+/**
  * The DEC state machine. It reads text one code point at a time and
  * keeps the sequence in progress, whose prefix, parameters and
- * intermediates a handler reads when the sequence ends. A sequence or a
- * surrogate pair that one text cuts goes on in the next.
+ * intermediates a handler reads when the sequence ends.
  */
 export class Parser {
 	handlers: ParserHandlers;
@@ -191,23 +199,53 @@ export class Parser {
 		this.highSurrogate = 0;
 	}
 
-	parse(text: string): void {
-		for (let index = 0; index < text.length; index++) {
-			let code = text.charCodeAt(index);
-			if (this.highSurrogate !== 0) {
-				if (code >= 0xdc00 && code <= 0xdfff) {
-					code =
-						((this.highSurrogate - 0xd800) << 10) + (code - 0xdc00) + 0x10000;
-				} else {
-					this.consume(0xfffd);
+	/**
+	 * Returns the index just past the sequence an "input" read ends at, or
+	 * -1 when the text ends first. An "input" read cut by the end of the
+	 * text leaves the parser in its ground state.
+	 */
+	parse(text: string, from = 0, mode: ParseMode = "output"): number {
+		for (let index = from; index < text.length; index++) {
+			const code = text.charCodeAt(index);
+			if (mode === "output") {
+				this.read(code);
+			} else if (
+				this.state <= ESCAPE || (code >= 0x20 && (code < 0x80 || code >= 0xa0))
+			) {
+				this.consume(code);
+				if (this.state === GROUND) {
+					return index + 1;
 				}
-				this.highSurrogate = 0;
-			} else if (code >= 0xd800 && code <= 0xdbff) {
-				this.highSurrogate = code;
-				continue;
+			} else if (this.state < OSC_STRING) {
+				this.state = CSI_IGNORE;
+			} else if (code === 0x07) {
+				this.state = GROUND;
+				return index + 1;
+			} else if (code === 0x1b && text[index + 1] === "\\") {
+				this.state = GROUND;
+				return index + 2;
 			}
-			this.consume(code);
 		}
+		if (mode === "input") {
+			this.state = GROUND;
+		}
+		return -1;
+	}
+
+	read(code: number): void {
+		if (this.highSurrogate !== 0) {
+			if (code >= 0xdc00 && code <= 0xdfff) {
+				code =
+					((this.highSurrogate - 0xd800) << 10) + (code - 0xdc00) + 0x10000;
+			} else {
+				this.consume(0xfffd);
+			}
+			this.highSurrogate = 0;
+		} else if (code >= 0xd800 && code <= 0xdbff) {
+			this.highSurrogate = code;
+			return;
+		}
+		this.consume(code);
 	}
 
 	consume(code: number): void {
