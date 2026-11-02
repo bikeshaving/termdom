@@ -9,6 +9,7 @@ import xtermPkg from "@xterm/headless";
 
 import {
 	type ProcessLike,
+	type TermDOM,
 	type TerminalTransport,
 	transportFromProcess,
 } from "../src/index.ts";
@@ -20,12 +21,8 @@ import {
 	endFrame,
 	Framebuffer,
 } from "../src/internal/framebuffer.ts";
-import {partialFrameCheck} from "../src/internal/painter.ts";
+import {_} from "../src/internal/slots.ts";
 import {getStringWidth} from "../src/internal/text.ts";
-
-// A frame that repaints only the rows that changed must match one painted
-// whole, and every test's frames are held to that.
-partialFrameCheck.enabled = true;
 
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
@@ -469,6 +466,18 @@ export async function nextFrame(
 		dom.window.requestAnimationFrame(() => resolve()),
 	);
 	await framePainted(dom.document);
+}
+
+/**
+ * Answers whether a frame painted only some rows since the last call, and
+ * clears the record. A partial frame keeps the rows it left on the
+ * framebuffer, and a frame painted whole leaves them as they were.
+ */
+export function takePartialFrame(dom: TermDOM): boolean {
+	const framebuffer = _(dom).framebuffer;
+	const partial = framebuffer.unchangedRows !== null;
+	framebuffer.unchangedRows = null;
+	return partial;
 }
 
 /**

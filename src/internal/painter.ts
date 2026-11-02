@@ -856,17 +856,13 @@ function findCanvasElement(painter: Painter): Element | null {
 
 /**
  * Checks a frame that repainted only some rows against one painted
- * whole, for tests. Set, a frame that differs throws, naming the cells,
- * and checked counts the frames compared.
+ * whole, for tests. A frame that differs throws, naming the cells.
  */
-export const partialFrameCheck = {enabled: false, checked: 0};
-
 export function checkPartialFrame(
 	painter: Painter,
 	ctx: CellContext,
 	previousCaret: Caret | null,
 ): void {
-	partialFrameCheck.checked++;
 	const whole = new CellContext(
 		new CellGrid(ctx.rows, ctx.cols),
 		ctx.rows,

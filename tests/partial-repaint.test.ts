@@ -4,22 +4,21 @@
  * frame and holds the result to two oracles: the partial-frame check,
  * which paints the frame whole beside it, and the terminal itself, whose
  * screen must not change when the page is then repainted from scratch.
- * The tests also count the frames the check compared, so a change that
- * repaints whole cannot pass for one that repaints rows.
+ * The tests also ask whether a frame painted only some rows, so a change
+ * that repaints whole cannot pass for one that repaints rows.
  */
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {invalidate, repaintAll} from "../src/internal/framebuffer.ts";
-import {partialFrameCheck} from "../src/internal/painter.ts";
 import {_} from "../src/internal/slots.ts";
-import {MockProcess, nextFrame} from "./test-utils.ts";
+import {MockProcess, nextFrame, takePartialFrame} from "./test-utils.ts";
 
 async function repaint(
 	html: string,
 	change: (document: any, window: any) => void | Promise<void>,
 	{head = "", cols = 40, rows = 12} = {},
-): Promise<{partial: number; terminal: MockProcess; dom: TermDOM}> {
+): Promise<{partial: boolean; terminal: MockProcess; dom: TermDOM}> {
 	const terminal = new MockProcess({cols, rows});
 	const dom = new TermDOM({transport: terminal.transport});
 	if (head) {
@@ -28,10 +27,10 @@ async function repaint(
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	await nextFrame(dom);
-	const before = partialFrameCheck.checked;
+	takePartialFrame(dom);
 	await change(dom.document, dom.window);
 	await nextFrame(dom);
-	const partial = partialFrameCheck.checked - before;
+	const partial = takePartialFrame(dom);
 
 	const shown = terminal.getScreenContents();
 	const slots = _(dom as any) as any;
@@ -56,7 +55,7 @@ test("a z-index swap repaints the boxes it reorders", async () => {
 			document.getElementById("a").style.zIndex = "3";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -67,7 +66,7 @@ test("visibility hides a word in place", async () => {
 			document.getElementById("s").style.visibility = "hidden";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -80,7 +79,7 @@ test("an outline drawn outside its box repaints the rows it reaches", async () =
 			d.style.outlineOffset = "1px";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -91,7 +90,7 @@ test("an inherited color reaches every descendant's rows", async () => {
 			document.getElementById("d").style.color = "rgb(0, 128, 0)";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -148,7 +147,7 @@ test("text edited to the same length repaints its row", async () => {
 			document.getElementById("p").firstChild.data = "uvwxyz";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -170,7 +169,7 @@ test("the last child leaving a box of fixed height clears its rows", async () =>
 			document.getElementById("last").remove();
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -181,7 +180,7 @@ test("a plain box hidden with display: none clears its text", async () => {
 			document.getElementById("d").style.display = "none";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -195,7 +194,7 @@ test("a border removed beside another unjoins their corners", async () => {
 			document.getElementById("a").style.border = "none";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -244,7 +243,7 @@ test("a table cell's background repaints the cell", async () => {
 			document.getElementById("c").style.background = "blue";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -257,7 +256,7 @@ test("an inline-block's text changes inside its line", async () => {
 			document.getElementById("s").firstChild.data = "bix";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -268,7 +267,7 @@ test("text-align moves a block's lines without moving the block", async () => {
 			document.getElementById("p").style.textAlign = "center";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -280,7 +279,7 @@ test("a class that bolds a word repaints its row", async () => {
 		},
 		{head: "<style>.b { font-weight: bold }</style>"},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -353,7 +352,7 @@ test("a sticky header moves when the box it sticks in shrinks", async () => {
 			document.getElementById("q").innerHTML = "q<br>".repeat(12);
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -367,7 +366,7 @@ test("a box that stops painting as it moves clears its old rows", async () => {
 		},
 		{head: "<style>.tall { top: 0; background: navy }</style>"},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -379,7 +378,7 @@ test("an outlined box with no height paints no row", async () => {
 			document.getElementById("p").textContent = "changed";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });
 
@@ -394,6 +393,6 @@ test("a change in what overflows an inline-block repaints its rows", async () =>
 			document.getElementById("c").textContent = "changed";
 		},
 	);
-	expect(partial).toBeGreaterThan(0);
+	expect(partial).toBe(true);
 	dom.dispose();
 });

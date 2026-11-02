@@ -114,7 +114,6 @@ import {
 	paint,
 	Painter,
 	paintsAsBefore,
-	partialFrameCheck,
 	resolveDocumentScrollBand,
 	resolveScrollShift,
 	scrollShiftCarriesPaint,
@@ -1983,7 +1982,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 			termDOMSlots.framebuffer.scrollTop + termDOMSlots.framebuffer.rows - top,
 		);
 	paint(termDOMSlots.painter, context);
-	if (import.meta.litest && context.partial && partialFrameCheck.enabled) {
+	if (import.meta.litest && context.partial) {
 		checkPartialFrame(
 			termDOMSlots.painter,
 			context,
