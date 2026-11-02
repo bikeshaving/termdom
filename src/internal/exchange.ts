@@ -668,6 +668,7 @@ class WireReader {
 		items: WireItem[],
 	): number {
 		const next = data[i + 1];
+		// A lone ESC at the end is the Escape key, unless a reply is due.
 		if (next === undefined) {
 			if (replyDue && data[i - 1] !== "\x1b") {
 				this.tail = "\x1b";
@@ -682,10 +683,10 @@ class WireReader {
 				this.readSequence(data.slice(i, end), items);
 				return end;
 			}
-			// OSC, DCS, APC, PM and SOS are strings a terminal writes, not
-			// keys it sends. One with no terminator in the same write is
-			// keys: Escape and then a bracket is what a person typing sends
-			// too.
+			// A CSI the chunk cuts waits for the rest of it. OSC, DCS, APC,
+			// PM and SOS are strings a terminal writes, not keys it sends.
+			// One with no terminator in the same write is keys: Escape and
+			// then a bracket is what a person typing sends too.
 			const opened = data.slice(i);
 			if (next === "[") {
 				if (opened.length <= HOLD_LIMIT) {
@@ -789,10 +790,10 @@ function decodeString(token: string): WireItem | null {
  * opener.
  */
 function isHeldString(opened: string, replyDue: boolean): boolean {
-	const inner = opened.indexOf("\x1b", 2);
 	if (opened.length > HOLD_LIMIT) {
 		return false;
 	}
+	const inner = opened.indexOf("\x1b", 2);
 	if (replyDue) {
 		return (opened[1] === "]" || opened[1] === "P") &&
 			(inner === -1 || inner === opened.length - 1);
