@@ -2976,7 +2976,10 @@ function styleContextRoot(element: Element, root: LayoutNode): void {
 				gutter === "row",
 				element,
 			);
-			style.gap[gutter] = typeof gap === "number" ? Math.max(0, gap) : 0;
+			// Whole rows, as the box's own node rounds its row gap.
+			style.gap[gutter] = typeof gap !== "number"
+				? 0
+				: Math.max(0, gutter === "row" ? toWholeCells(gap) : gap);
 		}
 	}
 	root.style = style;
