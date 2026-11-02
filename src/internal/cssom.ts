@@ -181,9 +181,9 @@ function getMathMLDefaults(
 	if (background !== null && background.trim() !== "") {
 		(defaults ??= {})["background-color"] = background.trim();
 	}
-	const displaystyle = getAttributeValue(element, "displaystyle")
-		?.trim()
-		.toLowerCase();
+	const displaystyle = toASCIILowercase(
+		getAttributeValue(element, "displaystyle")?.trim() ?? "",
+	);
 	if (displaystyle === "true" || displaystyle === "false") {
 		(defaults ??= {})["math-style"] = displaystyle === "true"
 			? "normal"
@@ -970,7 +970,7 @@ class CSSStyleDeclaration {
 			this.removeProperty(name);
 			return;
 		}
-		const priorityText = String(priority ?? "").toLowerCase();
+		const priorityText = toASCIILowercase(String(priority ?? ""));
 		if (priorityText !== "" && priorityText !== "important") {
 			return;
 		}
@@ -2871,7 +2871,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 				descriptors: "@font-feature-values",
 			});
 			assignDeclarations(block, CSSValues.getBlockDeclarations(child, source));
-			slots.blocks.set(child.name.toLowerCase(), block);
+			slots.blocks.set(toASCIILowercase(child.name), block);
 		}
 	}
 
@@ -3723,7 +3723,7 @@ function convertRule(
 		return null;
 	}
 	const prelude = CSSValues.getPreludeText(node);
-	switch ((node.name ?? "").toLowerCase()) {
+	switch (toASCIILowercase(node.name ?? "")) {
 		// A charset rule is not exposed in a sheet's rule list, per CSSOM.
 		case "charset":
 			return null;
@@ -3927,7 +3927,7 @@ function convertImportRule(
 	if (
 		node &&
 		(node.type === "Identifier" || node.type === "Function") &&
-		(node.name ?? "").toLowerCase() === "layer"
+		toASCIILowercase(node.name ?? "") === "layer"
 	) {
 		const layer = (node.children?.toArray() ?? []).find(
 			(child) => child.type === "Layer",
@@ -3947,7 +3947,7 @@ function convertImportRule(
 	if (
 		node?.loc &&
 		node.type === "Function" &&
-		(node.name ?? "").toLowerCase() === "supports"
+		toASCIILowercase(node.name ?? "") === "supports"
 	) {
 		// The slice spans the function: its name, its parentheses and the
 		// condition between them. A function whose parenthesis never closes is
@@ -4509,7 +4509,7 @@ export function establishesFixedContainingBlock(element: Element): boolean {
 	return getComputedValue(element, "will-change")
 		.split(",")
 		.some((name) =>
-			FIXED_CONTAINING_WILL_CHANGE.has(name.trim().toLowerCase()),
+			FIXED_CONTAINING_WILL_CHANGE.has(toASCIILowercase(name.trim())),
 		);
 }
 
@@ -5310,7 +5310,7 @@ export function resolveLength(
 	unit: string,
 	vertical: boolean,
 ): number | null {
-	if (unit.toLowerCase() === "px") {
+	if (toASCIILowercase(unit) === "px") {
 		return length;
 	}
 	const document = element.ownerDocument;
@@ -5986,7 +5986,7 @@ function resolvePropertyValue(
 // css-fonts-4 §2.2: a weight computes to a number. `bolder` and `lighter`
 // step from the parent's weight by the specification's table.
 function computeFontWeight(element: Element | null, value: string): string {
-	const keyword = value.trim().toLowerCase();
+	const keyword = toASCIILowercase(value.trim());
 	if (keyword === "normal") {
 		return "400";
 	}
@@ -8021,7 +8021,9 @@ function noteHasRule(
 
 function couldAnchorHas(cascade: Cascade, element: Element): boolean {
 	const anchors = cascade.hasAnchors;
-	if (anchors.has("*") || anchors.has(getLocalName(element).toLowerCase())) {
+	if (
+		anchors.has("*") || anchors.has(toASCIILowercase(getLocalName(element)))
+	) {
 		return true;
 	}
 	const id = getAttributeValue(element, "id");
@@ -10842,12 +10844,12 @@ function mediaQueryNodeMatches(
 	cascade: Cascade,
 	query: CSSTree.MediaQueryNode,
 ): boolean {
-	const type = (query.mediaType ?? "").toLowerCase();
+	const type = toASCIILowercase(query.mediaType ?? "");
 	let result: MediaResult = type === "" || type === "all" || type === "screen";
 	if (result && query.condition) {
 		result = mediaConditionMatches(cascade, query.condition);
 	}
-	if (result !== null && (query.modifier ?? "").toLowerCase() === "not") {
+	if (result !== null && toASCIILowercase(query.modifier ?? "") === "not") {
 		result = !result;
 	}
 	return result === true;
@@ -10862,7 +10864,7 @@ function mediaConditionMatches(
 	let negate = false;
 	for (const part of CSSValues.getMediaConditionParts(condition)) {
 		if (part.type === "Identifier") {
-			const word = (part.name ?? "").toLowerCase();
+			const word = toASCIILowercase(part.name ?? "");
 			if (word === "not") {
 				negate = true;
 			} else if (word === "and" || word === "or") {
@@ -11148,7 +11150,7 @@ function getMediaValue(
 			if (node.type !== "Dimension" || !(value >= 0)) {
 				return null;
 			}
-			switch ((node.unit ?? "").toLowerCase()) {
+			switch (toASCIILowercase(node.unit ?? "")) {
 				case "dppx":
 				case "x":
 					return value;
@@ -11187,7 +11189,7 @@ function mediaFeatureMatches(
 	feature: CSSTree.MediaConditionNode,
 ): MediaResult {
 	const window = cascade.window;
-	const name = (feature.name ?? "").toLowerCase();
+	const name = toASCIILowercase(feature.name ?? "");
 	const value = feature.value ?? null;
 	const discrete = MEDIA_DISCRETE_FEATURES[name];
 	if (discrete) {
@@ -11196,7 +11198,7 @@ function mediaFeatureMatches(
 			return actual !== discrete.falsy;
 		}
 		const wanted = value.type === "Identifier"
-			? (value.name ?? "").toLowerCase()
+			? toASCIILowercase(value.name ?? "")
 			: "";
 		return discrete.values.includes(wanted) ? wanted === actual : null;
 	}
@@ -11232,7 +11234,7 @@ function mediaFeatureRangeMatches(
 	range: CSSTree.MediaConditionNode,
 ): MediaResult {
 	const named = (node: CSSTree.ValueNode | null | undefined): string =>
-		node?.type === "Identifier" ? (node.name ?? "").toLowerCase() : "";
+		node?.type === "Identifier" ? toASCIILowercase(node.name ?? "") : "";
 	const window = cascade.window;
 	if (range.right) {
 		const feature = MEDIA_RANGE_FEATURES[named(range.middle)];
@@ -11951,7 +11953,7 @@ function addCandidatePositions(
 	// A foreign element's name keeps its case, and a type selector may
 	// still match it lowercased, as isRuleMatch allows.
 	const tag = getLocalName(element);
-	const lower = tag.toLowerCase();
+	const lower = toASCIILowercase(tag);
 	for (const name of lower === tag ? [tag] : [tag, lower]) {
 		for (const position of tagged.get(name) ?? []) {
 			positions.add(position);
@@ -12342,7 +12344,9 @@ function isRuleMatch(
 		// A foreign element's local name keeps its case (feGaussianBlur), so
 		// the rejection fires only when neither reading matches. The matcher
 		// decides the case sensitivity a selector really has.
-		if (local !== rule.subjectTag && local.toLowerCase() !== rule.subjectTag) {
+		if (
+			local !== rule.subjectTag && toASCIILowercase(local) !== rule.subjectTag
+		) {
 			return false;
 		}
 	}
@@ -12654,7 +12658,7 @@ function subjectCouldMatch(element: Element, rule: ParsedCSSRule): boolean {
 	const tag = rule.subjectTag;
 	if (tag !== undefined) {
 		const local = getLocalName(element);
-		if (local !== tag && local.toLowerCase() !== tag) {
+		if (local !== tag && toASCIILowercase(local) !== tag) {
 			return false;
 		}
 	}

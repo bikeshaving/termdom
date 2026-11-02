@@ -330,7 +330,7 @@ export function getChildren(
  * the spelling, not of the name.
  */
 export function pseudoName(name: string): string {
-	return CSSTree.ident.decode(name).toLowerCase();
+	return toASCIILowercase(CSSTree.ident.decode(name));
 }
 
 /** The namespaces a selector's prefixes resolve against. */

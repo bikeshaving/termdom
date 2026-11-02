@@ -20,6 +20,7 @@ import {
 	type SelectorNamespaces,
 } from "./cssselectors.ts";
 import * as CSSTree from "./csstree.ts";
+import {toASCIILowercase} from "./text.ts";
 
 // A regular expression literal is a new object each time it runs, so the
 // ones that run for every value are made once.
@@ -110,7 +111,7 @@ function getCSSTimeMs(token: string): number | null {
 	if (!node || node.type !== "Dimension") {
 		return null;
 	}
-	const unit = (node.unit ?? "").toLowerCase();
+	const unit = toASCIILowercase(node.unit ?? "");
 	if (unit !== "s" && unit !== "ms") {
 		return null;
 	}
@@ -217,7 +218,7 @@ export function serializeCSSValue(input: string, property = ""): string {
 			}
 			emit(
 				(custom ? number : serializeCSSNumber(number)) +
-				(unit === "%" ? "%" : (unit?.toLowerCase() ?? "")),
+				(unit === "%" ? "%" : toASCIILowercase(unit ?? "")),
 			);
 			i--;
 			continue;
@@ -227,7 +228,7 @@ export function serializeCSSValue(input: string, property = ""): string {
 			i += name.length;
 			// A url() token's body is not an identifier list. It runs to the
 			// closing parenthesis, quoted or not, and serializes quoted.
-			if (name.toLowerCase() === "url" && input[i] === "(") {
+			if (toASCIILowercase(name) === "url" && input[i] === "(") {
 				const end = input.indexOf(")", i);
 				const body = input.slice(i + 1, end === -1 ? input.length : end).trim();
 				const url = body.startsWith('"') || body.startsWith("'")
@@ -272,7 +273,7 @@ function canonicalizeValue(property: string, value: string): string {
 	if (FAMILY_PROPERTIES.has(property)) {
 		out = out.replace(/"((?:[^"\\]|\\.)*)"/g, (quoted, body: string) => {
 			const name = unescapeCSSString(body);
-			const lower = name.toLowerCase();
+			const lower = toASCIILowercase(name);
 			return FAMILY_IDENTIFIERS.test(name) &&
 				!CSS_WIDE_KEYWORDS.has(lower) &&
 				!RESERVED_FAMILY_NAMES.has(lower)
@@ -286,11 +287,11 @@ function canonicalizeValue(property: string, value: string): string {
 		/\b(counters?)\(([^()]*)\)/gi,
 		(whole, name: string, args: string) => {
 			const parts = args.split(",").map((part) => part.trim());
-			const wanted = name.toLowerCase() === "counters" ? 3 : 2;
+			const wanted = toASCIILowercase(name) === "counters" ? 3 : 2;
 			if (parts.length !== wanted) {
 				return whole;
 			}
-			if (parts[wanted - 1].toLowerCase() !== DEFAULT_COUNTER_STYLE) {
+			if (toASCIILowercase(parts[wanted - 1]) !== DEFAULT_COUNTER_STYLE) {
 				return whole;
 			}
 			return `${name}(${parts.slice(0, wanted - 1).join(", ")})`;
@@ -383,7 +384,7 @@ export function serializeCSSString(text: string): string {
 // <custom-ident> excludes (the CSS-wide keywords and `none`, which
 // animation-name uses for "no animation") are written as strings.
 export function serializeKeyframesName(name: string): string {
-	const reserved = name.toLowerCase();
+	const reserved = toASCIILowercase(name);
 	return CSS_WIDE_KEYWORDS.has(reserved) || reserved === "none"
 		? serializeCSSString(name)
 		: serializeCSSIdentifier(name);
@@ -517,7 +518,7 @@ const SYSTEM_COLORS: Record<string, number> = {
 export function parseColor(
 	text: string,
 ): {color: number; alpha: number} | null {
-	const color = text.trim().toLowerCase();
+	const color = toASCIILowercase(text.trim());
 
 	if (color in CSS_NAMED_COLORS) {
 		return {color: CSS_NAMED_COLORS[color], alpha: 1};
@@ -680,7 +681,7 @@ function parseAlpha(raw: string | undefined): number {
 
 /** Whether a color paints nothing: transparent, none, empty, or zero alpha. */
 export function isTransparentColor(color: string): boolean {
-	const text = color.trim().toLowerCase();
+	const text = toASCIILowercase(color.trim());
 	if (!text || text === "transparent" || text === "none") {
 		return true;
 	}
@@ -707,7 +708,7 @@ function serializeCSSColor(value: string): string | null {
 function parseCSSColorComponents(
 	value: string,
 ): [number, number, number, number] | null {
-	const text = value.trim().toLowerCase();
+	const text = toASCIILowercase(value.trim());
 	if (!text || text === "currentcolor") {
 		return null;
 	}
@@ -756,7 +757,7 @@ const BACKGROUND_SYSTEM_COLORS = new Set([
 export function getSystemColor(
 	value: string,
 ): {cell: number; background: boolean} | null {
-	const keyword = value.trim().toLowerCase();
+	const keyword = toASCIILowercase(value.trim());
 	const cell = SYSTEM_COLORS[keyword];
 	if (cell === undefined) {
 		return null;
@@ -773,7 +774,7 @@ export function resolveSystemColor(
 	value: string,
 	scheme: "light" | "dark",
 ): string | null {
-	const keyword = value.trim().toLowerCase();
+	const keyword = toASCIILowercase(value.trim());
 	const cell = SYSTEM_COLORS[keyword];
 	if (cell === undefined) {
 		return null;
@@ -794,7 +795,7 @@ export function numberFromCSSColor(cssColor: string): number {
 	if (!cssColor || cssColor === "transparent" || cssColor === "none") {
 		return 0;
 	}
-	const system = SYSTEM_COLORS[cssColor.trim().toLowerCase()];
+	const system = SYSTEM_COLORS[toASCIILowercase(cssColor.trim())];
 	if (system !== undefined) {
 		return system;
 	}
@@ -957,7 +958,7 @@ function expandFlexFlow(value: string): Record<string, string> {
 		"flex-wrap": "nowrap",
 	};
 	for (const token of splitComponents(value)) {
-		const keyword = token.toLowerCase();
+		const keyword = toASCIILowercase(token);
 		if (FLEX_DIRECTIONS.has(keyword)) {
 			out["flex-direction"] = keyword;
 		} else if (FLEX_WRAPS.has(keyword)) {
@@ -977,7 +978,8 @@ function expandPlace(
 	for (const token of splitComponents(value)) {
 		const previous = values[values.length - 1];
 		if (
-			previous !== undefined && ALIGNMENT_QUALIFIERS.has(previous.toLowerCase())
+			previous !== undefined &&
+			ALIGNMENT_QUALIFIERS.has(toASCIILowercase(previous))
 		) {
 			values[values.length - 1] = `${previous} ${token}`;
 		} else {
@@ -1103,7 +1105,7 @@ function expandBackground(value: string): Record<string, string> {
 		return {"background-image": value.trim()};
 	}
 	const color = tokens
-		.filter((token) => token.toLowerCase() !== "none")
+		.filter((token) => toASCIILowercase(token) !== "none")
 		.join(" ");
 	return {
 		"background-image": "none",
@@ -1131,9 +1133,9 @@ function isImageValue(token: string): boolean {
 		return true;
 	}
 	if (node.type === "Identifier") {
-		return (node.name ?? "").toLowerCase() === "none";
+		return toASCIILowercase(node.name ?? "") === "none";
 	}
-	const name = (node.name ?? "").toLowerCase();
+	const name = toASCIILowercase(node.name ?? "");
 	return (
 		node.type === "Function" &&
 		(IMAGE_FUNCTIONS.has(name) || name.endsWith("-gradient"))
@@ -1172,7 +1174,7 @@ function expandBorderImage(value: string): Record<string, string> {
 	const slice: string[] = [];
 	const repeat: string[] = [];
 	for (const token of splitComponents(groups[0] ?? "")) {
-		if (BORDER_IMAGE_REPEATS.has(token.toLowerCase())) {
+		if (BORDER_IMAGE_REPEATS.has(toASCIILowercase(token))) {
 			repeat.push(token);
 		} else if (isImageValue(token)) {
 			out["border-image-source"] = token;
@@ -1439,11 +1441,11 @@ function isEasingValue(token: string): boolean {
 		return false;
 	}
 	if (node.type === "Identifier") {
-		return EASING_KEYWORDS.has((node.name ?? "").toLowerCase());
+		return EASING_KEYWORDS.has(toASCIILowercase(node.name ?? ""));
 	}
 	return (
 		node.type === "Function" &&
-		EASING_FUNCTION_NAMES.has((node.name ?? "").toLowerCase())
+		EASING_FUNCTION_NAMES.has(toASCIILowercase(node.name ?? ""))
 	);
 }
 
@@ -1460,7 +1462,7 @@ function expandTransition(value: string): Record<string, string> {
 		let behavior = "";
 		const times: string[] = [];
 		for (const token of splitComponents(item)) {
-			const lower = token.toLowerCase();
+			const lower = toASCIILowercase(token);
 			if (times.length < 2 && getCSSTimeMs(token) !== null) {
 				times.push(lower);
 			} else if (!easing && isEasingValue(token)) {
@@ -1595,7 +1597,7 @@ export function parseCanvasFont(value: string): CanvasFont | null {
 }
 
 function expandFont(tokens: string[]): Record<string, string> | null {
-	if (tokens.length === 1 && SYSTEM_FONTS.has(tokens[0].toLowerCase())) {
+	if (tokens.length === 1 && SYSTEM_FONTS.has(toASCIILowercase(tokens[0]))) {
 		return null;
 	}
 	const out: Record<string, string> = {
@@ -1612,7 +1614,7 @@ function expandFont(tokens: string[]): Record<string, string> | null {
 	let i = 0;
 	for (; i < tokens.length; i++) {
 		const token = tokens[i];
-		const lower = token.toLowerCase();
+		const lower = toASCIILowercase(token);
 		const size = token.split("/")[0];
 		if (size !== "" && matchesProperty("font-size", size)) {
 			break;
@@ -1791,7 +1793,7 @@ export function expandShorthands(
 			// and an unstated longhand resets to normal.
 			case "font-variant": {
 				const longhands = SHORTHAND_LONGHANDS.get("font-variant")!;
-				const lower = value.trim().toLowerCase();
+				const lower = toASCIILowercase(value.trim());
 				if (lower === "normal" || lower === "none") {
 					for (const longhand of longhands) {
 						out[longhand] =
@@ -1830,7 +1832,7 @@ export function expandShorthands(
 			// collapses and whether lines wrap. The shorthand keeps its own
 			// entry, like border's, for the declared value.
 			case "white-space": {
-				const longhands = WHITE_SPACE_KEYWORDS[value.trim().toLowerCase()];
+				const longhands = WHITE_SPACE_KEYWORDS[toASCIILowercase(value.trim())];
 				if (longhands !== undefined) {
 					out["white-space-collapse"] = longhands[0];
 					out["text-wrap-mode"] = longhands[1];
@@ -1850,7 +1852,7 @@ export function expandShorthands(
 				let mode = "wrap";
 				let style = "auto";
 				let valid = values.length > 0 && values.length <= 2;
-				for (const token of values.map((part) => part.toLowerCase())) {
+				for (const token of values.map((part) => toASCIILowercase(part))) {
 					if (TEXT_WRAP_MODES.has(token)) {
 						mode = token;
 					} else if (TEXT_WRAP_STYLES.has(token)) {
@@ -1944,7 +1946,7 @@ export function expandShorthands(
 							)
 							.map((component) => component.text)
 						: values.filter((token) =>
-							DECORATION_LINE_KEYWORDS.has(token.toLowerCase()),
+							DECORATION_LINE_KEYWORDS.has(toASCIILowercase(token)),
 						)
 				).join(" ");
 				if (line) {
@@ -1955,7 +1957,7 @@ export function expandShorthands(
 						component.terms.includes("text-decoration-style"),
 					)?.text
 					: values.find((token) =>
-						DECORATION_STYLE_KEYWORDS.has(token.toLowerCase()),
+						DECORATION_STYLE_KEYWORDS.has(toASCIILowercase(token)),
 					);
 				out["text-decoration-style"] = style ?? "solid";
 				break;
@@ -2066,7 +2068,9 @@ export function getLegacyAlignment(
 	textAlign: string,
 ): "left" | "center" | "right" | null {
 	const match = /^-(?:webkit|moz)-(left|center|right)$/i.exec(textAlign.trim());
-	return match ? (match[1].toLowerCase() as "left" | "center" | "right") : null;
+	return match
+		? (toASCIILowercase(match[1]) as "left" | "center" | "right")
+		: null;
 }
 
 /** text-align with the legacy spellings read as the plain ones. */
@@ -2133,7 +2137,7 @@ export function parseAngle(value: string): number | null {
 	if (!node || node.type !== "Dimension") {
 		return null;
 	}
-	const factor = ANGLE_DEGREES[(node.unit ?? "").toLowerCase()];
+	const factor = ANGLE_DEGREES[toASCIILowercase(node.unit ?? "")];
 	const number = parseFloat(node.value ?? "");
 	if (factor === undefined || !Number.isFinite(number)) {
 		return null;
@@ -2176,9 +2180,7 @@ export function parseEdgeLengths(
  * `first baseline` name center and baseline.
  */
 export function parseAlignmentKeyword(value: string): string {
-	const tokens = value
-		.trim()
-		.toLowerCase()
+	const tokens = toASCIILowercase(value.trim())
 		.split(WHITESPACE_RUN)
 		.filter(Boolean);
 	while (tokens.length > 1 && ALIGNMENT_QUALIFIERS.has(tokens[0])) {
@@ -2191,7 +2193,7 @@ export function parseGridAutoFlow(value: string): {
 	column: boolean;
 	dense: boolean;
 } {
-	const tokens = value.toLowerCase().split(WHITESPACE_RUN);
+	const tokens = toASCIILowercase(value).split(WHITESPACE_RUN);
 	return {column: tokens.includes("column"), dense: tokens.includes("dense")};
 }
 
@@ -2201,7 +2203,7 @@ export function parseGridAutoFlow(value: string): {
  * between to be relative to.
  */
 export function parseFontWeight(value: string): number {
-	switch (value.trim().toLowerCase()) {
+	switch (toASCIILowercase(value.trim())) {
 		case "normal":
 			return 400;
 		case "bold":
@@ -2221,7 +2223,7 @@ export function parseTextDecorationLine(value: string): {
 	overline: boolean;
 	lineThrough: boolean;
 } {
-	const tokens = new Set(value.toLowerCase().split(WHITESPACE_RUN));
+	const tokens = new Set(toASCIILowercase(value).split(WHITESPACE_RUN));
 	return {
 		underline: tokens.has("underline"),
 		overline: tokens.has("overline"),
@@ -2231,7 +2233,7 @@ export function parseTextDecorationLine(value: string): {
 
 /** Canvas: the terminal's own background. */
 export function isCanvasColor(value: string): boolean {
-	return value.trim().toLowerCase() === "canvas";
+	return toASCIILowercase(value.trim()) === "canvas";
 }
 
 /**
@@ -2240,7 +2242,7 @@ export function isCanvasColor(value: string): boolean {
  */
 export function isHighlightColor(value: string): boolean {
 	return /^(?:highlight|selecteditem)(?:text)?$/.test(
-		value.trim().toLowerCase(),
+		toASCIILowercase(value.trim()),
 	);
 }
 
@@ -2271,7 +2273,7 @@ export interface BoxModel {
 export function parseBorderWidthValue(
 	value: string,
 ): ReturnType<typeof parseUnitValue> {
-	const keyword = value.trim().toLowerCase();
+	const keyword = toASCIILowercase(value.trim());
 	if (keyword === "thin" || keyword === "medium" || keyword === "thick") {
 		return 1;
 	}
@@ -2403,7 +2405,7 @@ function isValidByGrammar(
 		return true;
 	}
 	const text = value.trim();
-	if (!text || CSS_WIDE_KEYWORDS.has(text.toLowerCase())) {
+	if (!text || CSS_WIDE_KEYWORDS.has(toASCIILowercase(text))) {
 		return true;
 	}
 	if (SUBSTITUTION_FUNCTION.test(text)) {
@@ -2484,7 +2486,7 @@ export function unquoteContent(
 			}
 			const token = content.slice(index, end);
 			const call = /^([\w-]+)\(([\s\S]*)\)$/.exec(token);
-			out += (call && evaluate?.(call[1].toLowerCase(), call[2])) ?? token;
+			out += (call && evaluate?.(toASCIILowercase(call[1]), call[2])) ?? token;
 			index = end;
 		}
 	}
@@ -2544,7 +2546,7 @@ function getComputedNumber(token: string): string {
 		case "Percentage":
 			return `${number}%`;
 		case "Dimension":
-			return `${number}${(node.unit ?? "").toLowerCase()}`;
+			return `${number}${toASCIILowercase(node.unit ?? "")}`;
 	}
 	return token;
 }
@@ -2606,7 +2608,7 @@ function normalizeValue(property: string, declared: string): string {
 			.join(" ");
 		return collapseRadius(property, lengths);
 	}
-	return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
+	return IDENTIFIER_VALUE.test(value) ? toASCIILowercase(value) : value;
 }
 
 // A value on any other property is the same string on every element,
@@ -2723,7 +2725,7 @@ export function getFontSize(fontSize: string, initial: number): number {
 }
 
 function getUnitFactor(unit: string, context: LengthContext): number | null {
-	switch (unit.toLowerCase()) {
+	switch (toASCIILowercase(unit)) {
 		case "em":
 			return context.font;
 		case "rem":
@@ -2788,7 +2790,7 @@ const NO_LENGTHS: LengthContext = {
 
 /** Whether a dimension's unit makes it a `<length>`. */
 export function isLengthUnit(unit: string): boolean {
-	return unit.toLowerCase() === "px" ||
+	return toASCIILowercase(unit) === "px" ||
 		getUnitFactor(unit, NO_LENGTHS) !== null;
 }
 
@@ -2820,7 +2822,7 @@ function replaceCalc(value: string, context: LengthContext): string {
 	let out = "";
 	let index = 0;
 	while (index < value.length) {
-		const start = value.toLowerCase().indexOf("calc(", index);
+		const start = toASCIILowercase(value).indexOf("calc(", index);
 		if (start === -1) {
 			out += value.slice(index);
 			break;
@@ -3242,7 +3244,7 @@ function supportsConditionMatches(
 	let awaited = true;
 	for (const part of condition.children?.toArray() ?? []) {
 		if (part.type === "Identifier") {
-			const word = (part.name ?? "").toLowerCase();
+			const word = toASCIILowercase(part.name ?? "");
 			if (word === "not") {
 				if (matches !== null || negate || !awaited) {
 					return false;
@@ -3379,9 +3381,9 @@ function readShorthandValue(
 	}
 	// A CSS-wide keyword is the whole value of every longhand the shorthand
 	// covers, which for `all` is all of them.
-	if (CSS_WIDE_KEYWORDS.has(value.toLowerCase())) {
+	if (CSS_WIDE_KEYWORDS.has(toASCIILowercase(value))) {
 		return Object.fromEntries(
-			longhands.map((longhand) => [longhand, value.toLowerCase()]),
+			longhands.map((longhand) => [longhand, toASCIILowercase(value)]),
 		);
 	}
 	if (value.includes("var(")) {
@@ -3769,7 +3771,7 @@ export function normalizePropertyName(property: string): string {
 	if (name.startsWith("--")) {
 		return name;
 	}
-	const lower = name.toLowerCase();
+	const lower = toASCIILowercase(name);
 	return LEGACY_PROPERTY_ALIASES.get(lower) ?? lower;
 }
 
@@ -3857,9 +3859,9 @@ function serializeMediaFeature(feature: string): string {
 	const body = feature.slice(1, -1).trim();
 	const colon = body.indexOf(":");
 	if (colon === -1) {
-		return `(${body.toLowerCase()})`;
+		return `(${toASCIILowercase(body)})`;
 	}
-	const name = body.slice(0, colon).trim().toLowerCase();
+	const name = toASCIILowercase(body.slice(0, colon).trim());
 	return `(${name}: ${serializeCSSValue(body.slice(colon + 1))})`;
 }
 
@@ -3874,20 +3876,22 @@ function serializeMediaQueryText(text: string): string {
 	let modifier = "";
 	const prefixed = /^(not|only)\s+([^]*)$/i.exec(head);
 	if (prefixed) {
-		modifier = `${prefixed[1].toLowerCase()} `;
+		modifier = `${toASCIILowercase(prefixed[1])} `;
 		head = prefixed[2].trim();
 	}
 	const conditions = parts
 		.slice(1)
 		.map((part) =>
-			part.startsWith("(") ? serializeMediaFeature(part) : part.toLowerCase(),
+			part.startsWith("(")
+				? serializeMediaFeature(part)
+				: toASCIILowercase(part),
 		);
 	if (head.startsWith("(")) {
 		return (
 			modifier + [serializeMediaFeature(head), ...conditions].join(" and ")
 		);
 	}
-	const type = head.toLowerCase();
+	const type = toASCIILowercase(head);
 	if (type === "all" && !modifier && conditions.length > 0) {
 		return conditions.join(" and ");
 	}
@@ -3944,8 +3948,8 @@ export function serializeMediaQuery(query: string): string {
 		return serializeMediaQueryText(text);
 	}
 	const parsed = queries[0];
-	let modifier = parsed.modifier ? `${parsed.modifier.toLowerCase()} ` : "";
-	const type = parsed.mediaType ? parsed.mediaType.toLowerCase() : null;
+	let modifier = parsed.modifier ? `${toASCIILowercase(parsed.modifier)} ` : "";
+	const type = parsed.mediaType ? toASCIILowercase(parsed.mediaType) : null;
 	// css-tree tolerates shapes the splitter treats as opaque text (a
 	// missing `and`, a dangling word), so the source is re-walked alongside
 	// the nodes, and a query whose parts are not separated by ` and ` keeps
@@ -3975,7 +3979,7 @@ export function serializeMediaQuery(query: string): string {
 		const gap = text.slice(cursor, part.loc.start.offset);
 		cursor = part.loc.end.offset;
 		if (part.type === "Identifier") {
-			const word = (part.name ?? "").toLowerCase();
+			const word = toASCIILowercase(part.name ?? "");
 			// A leading `not` is the query's modifier, as the splitter treated
 			// it. `and` joins. Any other bare word is a shape the splitter
 			// divides differently.
@@ -4073,7 +4077,7 @@ function readMediaQuery(piece: string): string {
 	const query = queries?.length === 1 ? queries[0] : null;
 	if (
 		query === null ||
-		RESERVED_MEDIA_TYPES.has((query.mediaType ?? "").toLowerCase()) ||
+		RESERVED_MEDIA_TYPES.has(toASCIILowercase(query.mediaType ?? "")) ||
 		!isWellFormedCondition(query.condition ?? null)
 	) {
 		return "not all";
@@ -4092,7 +4096,7 @@ function isWellFormedCondition(
 	let expectOperand = true;
 	for (const part of parts) {
 		if (part.type === "Identifier") {
-			const word = (part.name ?? "").toLowerCase();
+			const word = toASCIILowercase(part.name ?? "");
 			if (word === "not" && expectOperand) {
 				continue;
 			}
@@ -4152,12 +4156,13 @@ export function serializePageSelector(selector: string): string {
 	}
 	const pseudos = match[2] ? match[2].slice(1).split(":") : [];
 	for (const pseudo of pseudos) {
-		if (!PAGE_PSEUDO_CLASSES.has(pseudo.toLowerCase())) {
+		if (!PAGE_PSEUDO_CLASSES.has(toASCIILowercase(pseudo))) {
 			return "";
 		}
 	}
 	const name = match[1] ? serializeCSSIdentifier(match[1]) : "";
-	return name + pseudos.map((pseudo) => `:${pseudo.toLowerCase()}`).join("");
+	return name +
+		pseudos.map((pseudo) => `:${toASCIILowercase(pseudo)}`).join("");
 }
 
 // `from` is 0%, `to` is 100%.
@@ -4199,7 +4204,7 @@ export function serializeKeyText(text: string): string {
 			continue;
 		}
 		const word = key.type === "TypeSelector"
-			? (key.name ?? "").toLowerCase()
+			? toASCIILowercase(key.name ?? "")
 			: "";
 		if (word === "from") {
 			keys.push("0%");
@@ -4601,13 +4606,15 @@ function harvestKeys(nodes: CSSTree.SelectorNode[], keys: CompoundKeys): void {
 				// An unprefixed attribute is in no namespace, and a prefixed
 				// one is keyed by the local name a mutation reports.
 				keys.attributes.push(
-					CSSTree.ident.decode(name.slice(name.indexOf("|") + 1)).toLowerCase(),
+					toASCIILowercase(
+						CSSTree.ident.decode(name.slice(name.indexOf("|") + 1)),
+					),
 				);
 				break;
 			}
 			case "TypeSelector": {
 				const name = String(node.name ?? "");
-				const local = name.slice(name.indexOf("|") + 1).toLowerCase();
+				const local = toASCIILowercase(name.slice(name.indexOf("|") + 1));
 				if (local !== "*") {
 					keys.tag = local;
 				}
@@ -4660,22 +4667,24 @@ function harvestRequiredKeys(
 				(part.name as {name: string} | undefined)?.name ?? "",
 			);
 			required.attributes.push(
-				CSSTree.ident.decode(name.slice(name.indexOf("|") + 1)).toLowerCase(),
+				toASCIILowercase(
+					CSSTree.ident.decode(name.slice(name.indexOf("|") + 1)),
+				),
 			);
 		} else if (part.type === "TypeSelector") {
 			const name = String(part.name ?? "");
-			const local = name.slice(name.indexOf("|") + 1).toLowerCase();
+			const local = toASCIILowercase(name.slice(name.indexOf("|") + 1));
 			if (local !== "*") {
 				required.tag = local;
 			}
 		} else if (
 			part.type === "PseudoClassSelector" &&
-			String(part.name ?? "").toLowerCase() === "root"
+			toASCIILowercase(String(part.name ?? "")) === "root"
 		) {
 			required.root = true;
 		} else if (
 			part.type === "PseudoClassSelector" &&
-			IS_PSEUDO_CLASSES.has(String(part.name ?? "").toLowerCase())
+			IS_PSEUDO_CLASSES.has(toASCIILowercase(String(part.name ?? "")))
 		) {
 			// `:is(.a)` and `:where(.a)` require what their one compound does.
 			// With alternatives, or a combinator, nothing one of them names is
@@ -4908,7 +4917,7 @@ function getSubjectTag(
 	if (!name || name.includes("|") || name.endsWith("*")) {
 		return undefined;
 	}
-	return CSSTree.ident.decode(name).toLowerCase();
+	return toASCIILowercase(CSSTree.ident.decode(name));
 }
 
 export function serializeSelectorList(
@@ -4972,7 +4981,7 @@ function serializeSimpleSelector(
 					: (node.value.name ?? "");
 				out += `${node.matcher}${serializeCSSString(value)}`;
 				if (node.flags) {
-					out += ` ${node.flags.toLowerCase()}`;
+					out += ` ${toASCIILowercase(node.flags)}`;
 				}
 			}
 			return `${out}]`;
@@ -5022,7 +5031,7 @@ function serializeSelectorArgument(
 			return serializeAnPlusB(node.a ?? null, node.b ?? null);
 		case "Identifier": {
 			// `even` and `odd` are An+B written in words.
-			const word = ((node.name as string) ?? "").toLowerCase();
+			const word = toASCIILowercase((node.name as string) ?? "");
 			if (word === "even") {
 				return "2n";
 			}
@@ -5616,7 +5625,7 @@ export function getMatchedTransitions(
 	const items = splitCommaList(propertyList);
 	const out = new Map<string, TransitionTiming>();
 	items.forEach((item, index) => {
-		const name = item.toLowerCase();
+		const name = toASCIILowercase(item);
 		if (name === "none") {
 			return;
 		}
@@ -5724,7 +5733,7 @@ function getScalarComponents(
 		case "Percentage":
 			return {number, unit: "%"};
 		case "Dimension":
-			return {number, unit: (node.unit ?? "").toLowerCase()};
+			return {number, unit: toASCIILowercase(node.unit ?? "")};
 	}
 	return null;
 }
@@ -5732,7 +5741,7 @@ function getScalarComponents(
 const easingFunctions = new Map<string, (input: number) => number>();
 
 export function parseEasing(text: string): (input: number) => number {
-	const key = text.trim().toLowerCase();
+	const key = toASCIILowercase(text.trim());
 	let easing = easingFunctions.get(key);
 	if (!easing) {
 		easing = buildEasing(key);
@@ -5763,7 +5772,7 @@ function buildEasing(key: string): (input: number) => number {
 	}
 	const node = getSingleValueNode(key);
 	if (node && node.type === "Function") {
-		const name = (node.name ?? "").toLowerCase();
+		const name = toASCIILowercase(node.name ?? "");
 		const args = getFunctionArguments(node);
 		if (name === "cubic-bezier" && args.length === 4) {
 			const points = args.map((arg) =>
@@ -5779,7 +5788,7 @@ function buildEasing(key: string): (input: number) => number {
 			const position = args.length < 2
 				? "end"
 				: args[1].type === "Identifier"
-						? (args[1].name ?? "").toLowerCase()
+						? toASCIILowercase(args[1].name ?? "")
 						: "";
 			if (Number.isFinite(count) && count > 0 && position) {
 				return stepsEasing(count, position);
@@ -6073,7 +6082,7 @@ function trackCells(node: CSSTree.ValueNode): number | null {
 	if (node.type !== "Dimension") {
 		return null;
 	}
-	const unit = (node.unit ?? "").toLowerCase();
+	const unit = toASCIILowercase(node.unit ?? "");
 	if (unit !== "px" && unit !== "ch") {
 		return null;
 	}
@@ -6086,7 +6095,7 @@ function getCellBreadth(cells: number): TrackBreadth {
 }
 
 function parseTrackBreadth(node: CSSTree.ValueNode): TrackBreadth | null {
-	if (node.type === "Dimension" && (node.unit ?? "").toLowerCase() === "fr") {
+	if (node.type === "Dimension" && toASCIILowercase(node.unit ?? "") === "fr") {
 		const factor = parseFloat(node.value ?? "");
 		return Number.isFinite(factor) && factor >= 0
 			? {kind: "flex", factor}
@@ -6106,7 +6115,7 @@ function parseTrackBreadth(node: CSSTree.ValueNode): TrackBreadth | null {
 		return getCellBreadth(0);
 	}
 	if (node.type === "Identifier") {
-		switch ((node.name ?? "").toLowerCase()) {
+		switch (toASCIILowercase(node.name ?? "")) {
 			case "auto":
 				return {kind: "auto"};
 			case "min-content":
@@ -6120,7 +6129,7 @@ function parseTrackBreadth(node: CSSTree.ValueNode): TrackBreadth | null {
 
 function parseTrackSize(node: CSSTree.ValueNode): TrackSize | null {
 	if (node.type === "Function") {
-		const name = (node.name ?? "").toLowerCase();
+		const name = toASCIILowercase(node.name ?? "");
 		const args = getFunctionArguments(node);
 		if (name === "minmax") {
 			if (args.length !== 2) {
@@ -6202,7 +6211,7 @@ function parseTrackListValue(value: string): TrackList | null {
 	if (!text || text === "none") {
 		return null;
 	}
-	if (REFUSED_GRID_VALUES.has(text.toLowerCase())) {
+	if (REFUSED_GRID_VALUES.has(toASCIILowercase(text))) {
 		return null;
 	}
 	const children = getCSSValueChildren(text);
@@ -6219,7 +6228,7 @@ function parseTrackListValue(value: string): TrackList | null {
 			continue;
 		}
 		if (
-			node.type === "Function" && (node.name ?? "").toLowerCase() === "repeat"
+			node.type === "Function" && toASCIILowercase(node.name ?? "") === "repeat"
 		) {
 			const repeat = parseTrackRepeat(node);
 			if (!repeat) {
@@ -6232,7 +6241,7 @@ function parseTrackListValue(value: string): TrackList | null {
 		}
 		if (
 			node.type === "Identifier" &&
-			REFUSED_GRID_VALUES.has((node.name ?? "").toLowerCase())
+			REFUSED_GRID_VALUES.has(toASCIILowercase(node.name ?? ""))
 		) {
 			return null;
 		}
@@ -6268,7 +6277,7 @@ function parseTrackRepeat(node: CSSTree.ValueNode): TrackRepeat | null {
 		// count would cost tracks nobody can see.
 		count = Math.min(parsed, 1000);
 	} else if (first.type === "Identifier") {
-		const keyword = (first.name ?? "").toLowerCase();
+		const keyword = toASCIILowercase(first.name ?? "");
 		if (keyword !== "auto-fill" && keyword !== "auto-fit") {
 			return null;
 		}
@@ -6438,14 +6447,14 @@ function parseGridPlacementValue(value: string): GridPlacement | null {
 			return null;
 		}
 		const keyword = node.name ?? "";
-		if (keyword.toLowerCase() === "span") {
+		if (toASCIILowercase(keyword) === "span") {
 			if (span) {
 				return null;
 			}
 			span = true;
 			continue;
 		}
-		if (keyword.toLowerCase() === "auto") {
+		if (toASCIILowercase(keyword) === "auto") {
 			return null;
 		}
 		if (name !== null) {
