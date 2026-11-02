@@ -1472,7 +1472,7 @@ function expandTransition(value: string): Record<string, string> {
 			) {
 				behavior = lower;
 			} else if (!property) {
-				property = lower;
+				property = token.startsWith("--") ? token : lower;
 			}
 		}
 		properties.push(property || "all");
@@ -5625,7 +5625,7 @@ export function getMatchedTransitions(
 	const items = splitCommaList(propertyList);
 	const out = new Map<string, TransitionTiming>();
 	items.forEach((item, index) => {
-		const name = toASCIILowercase(item);
+		const name = normalizePropertyName(item);
 		if (name === "none") {
 			return;
 		}

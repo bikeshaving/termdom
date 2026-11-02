@@ -319,3 +319,19 @@ test("a style attribute's transition runs in every engine that reads its text", 
 		await dom.dispose();
 	}
 });
+
+test("a custom property keeps its case in the transition list", async () => {
+	const {dom, document, window} = attached(
+		"<style>@property --Foo { syntax: '<number>'; inherits: false; " +
+		"initial-value: 0 } " +
+		"#box { --Foo: 0; transition: --Foo 100s steps(1, jump-both); }" +
+		"</style><div id='box'></div>",
+	);
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	expect(window.getComputedStyle(box).transitionProperty).toBe("--Foo");
+	box.style.setProperty("--Foo", "10");
+	await nextFrame(dom);
+	expect(window.getComputedStyle(box).getPropertyValue("--Foo")).toBe("5");
+	await dom.dispose();
+});
