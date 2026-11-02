@@ -5814,20 +5814,24 @@ function parseCSSTime(token: string): number {
 
 // The timing lists repeat to the property list's length
 // (css-transitions-1 §2.1). A later item naming a property a prior one
-// covered wins.
+// covered wins. A property whose duration and delay add up to no time
+// cannot transition, and is left out.
 export function getMatchedTransitions(
 	read: (property: string) => string,
 ): Map<string, TransitionTiming> | null {
-	const propertyList = getTransitionBase(read, "transition-property");
-	if (!propertyList || propertyList === "none") {
-		return null;
-	}
 	const durations = splitCommaList(
 		getTransitionBase(read, "transition-duration"),
 	).map(parseCSSTime);
 	const delays = splitCommaList(
 		getTransitionBase(read, "transition-delay"),
 	).map(parseCSSTime);
+	if (!durations.some((d) => d > 0) && !delays.some((d) => d > 0)) {
+		return null;
+	}
+	const propertyList = getTransitionBase(read, "transition-property");
+	if (!propertyList || propertyList === "none") {
+		return null;
+	}
 	const easings = splitCommaList(
 		getTransitionBase(read, "transition-timing-function"),
 	);
@@ -5835,14 +5839,14 @@ export function getMatchedTransitions(
 	const out = new Map<string, TransitionTiming>();
 	items.forEach((item, index) => {
 		const name = normalizePropertyName(item);
-		if (name === "none") {
-			return;
-		}
 		const timing: TransitionTiming = {
 			duration: durations.length > 0 ? durations[index % durations.length] : 0,
 			delay: delays.length > 0 ? delays[index % delays.length] : 0,
 			easing: easings.length > 0 ? easings[index % easings.length] : "ease",
 		};
+		if (name === "none" || timing.duration + Math.max(timing.delay, 0) <= 0) {
+			return;
+		}
 		// A shorthand in the list covers its longhands (css-transitions-1
 		// §2.1). `all` covers the bounded list above, and a name that is no
 		// property covers nothing.

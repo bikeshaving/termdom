@@ -7158,6 +7158,11 @@ export class Cascade {
 	// safe to hold.
 	transitionFallback: WeakMap<Element, Map<string, ResolvedValues>>;
 
+	// The computed styles a whole-cascade drop let go of, which a rebuilt
+	// style takes its transitions' before-change values from. An element's
+	// entry goes once its style is rebuilt.
+	droppedStyles: WeakMap<Element, Slots<ComputedStyleDeclaration>>;
+
 	activeTransitions: Map<
 		Element,
 		Map<string, Map<string, CSSValues.RunningTransition>>
@@ -7287,6 +7292,7 @@ export class Cascade {
 		this.transitionsExist = false;
 		this.transitionSnapshots = new WeakMap();
 		this.transitionFallback = new WeakMap();
+		this.droppedStyles = new WeakMap();
 		this.activeTransitions = new Map();
 		this.transitionClock = 0;
 		this.transitionTimer = null;
@@ -7869,6 +7875,13 @@ function buildComputedSlots(
 		),
 	);
 	cascade.computedStyleCache.set(element, fresh);
+	const dropped = cascade.droppedStyles.get(element);
+	if (dropped !== undefined) {
+		cascade.droppedStyles.delete(element);
+		if (cascade.transitionsExist) {
+			storeTransitionFallback(cascade, element, "", getDroppedValues(dropped));
+		}
+	}
 	// Building a fresh declaration is the other form of the style change
 	// event _syncResolved sees.
 	processTransitionStyle(
@@ -8403,6 +8416,7 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 		currentDeclarations: cascade.currentDeclarations,
 		usedValues: cascade.usedValues,
 		computedStyleCache: cascade.computedStyleCache,
+		droppedStyles: cascade.droppedStyles,
 		hasResults: cascade.hasResults,
 		pseudoElementStyleCache: cascade.pseudoElementStyleCache,
 		counterSets: cascade.counterSets,
@@ -8413,6 +8427,7 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 		passedTokens: cascade.passedTokens,
 	};
 	dropCache(cascade);
+	cascade.droppedStyles = new WeakMap();
 	cascade.sharedRoot = new Map();
 	cascade.passedTokens = new Map();
 	const differences: string[] = [];
@@ -8445,6 +8460,7 @@ function dropCache(cascade: Cascade): void {
 	cascade.filteredSiblingsForMatching = null;
 	cascade.currentDeclarations = new WeakSet<object>();
 	cascade.usedValues = new WeakMap();
+	cascade.droppedStyles = cascade.computedStyleCache;
 	cascade.computedStyleCache = new WeakMap();
 	cascade.hasResults = null;
 	cascade.pseudoElementStyleCache = new WeakMap();
@@ -9529,14 +9545,16 @@ function processTransitionStyle(
 		...(candidates?.keys() ?? []),
 		...(active?.keys() ?? []),
 	]);
+	const snapshot = new Map<string, string>();
 	for (const property of names) {
 		const after = CSSValues.getTransitionBase(read, property);
 		const timing = candidates?.get(property);
-		const runnable =
-			timing !== undefined && timing.duration + Math.max(timing.delay, 0) > 0;
+		if (timing !== undefined) {
+			snapshot.set(property, after);
+		}
 		const running = active?.get(property);
 		if (running) {
-			if (!runnable) {
+			if (timing === undefined) {
 				cancelTransition(cascade, element, pseudo, property, now);
 				continue;
 			}
@@ -9584,23 +9602,19 @@ function processTransitionStyle(
 				CSS_INITIAL_VALUES[property] ?? "",
 			)
 			: raw;
-		if (before === undefined || before === after || !runnable) {
+		if (before === undefined || before === after || timing === undefined) {
 			continue;
 		}
 		startTransition(cascade, element, pseudo, property, {
 			from: before,
 			to: after,
-			timing: timing!,
+			timing,
 			now,
 			reversingAdjustedStartValue: before,
 			reversingShorteningFactor: 1,
 		});
 	}
 	if (candidates) {
-		const snapshot = new Map<string, string>();
-		for (const property of candidates.keys()) {
-			snapshot.set(property, CSSValues.getTransitionBase(read, property));
-		}
 		if (!snapshots) {
 			snapshots = new Map();
 			cascade.transitionSnapshots.set(element, snapshots);
