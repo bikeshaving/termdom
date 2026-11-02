@@ -4002,6 +4002,7 @@ function collectLeaves(
 			break;
 		}
 
+		let skipChildren = false;
 		if (getNodeType(node) === node.TEXT_NODE) {
 			const textNode = node as Text;
 
@@ -4009,21 +4010,9 @@ function collectLeaves(
 			if (content) {
 				const isWhitespaceOnly = COLLAPSIBLE_ONLY.test(content);
 
-				if (isWhitespaceOnly && shouldCollapseWhitespaceTextNode(textNode)) {
-					cursor = flowNext(node, root, false);
-					pushExitedEdges(leafNodes, node, cursor, root);
-					if (cursor === null) {
-						break;
-					}
-					continue;
+				if (!isWhitespaceOnly || !shouldCollapseWhitespaceTextNode(textNode)) {
+					leafNodes.push({type: "text", node: textNode, content});
 				}
-
-				leafNodes.push({type: "text", node: textNode, content});
-			}
-			cursor = flowNext(node, root, false);
-			pushExitedEdges(leafNodes, node, cursor, root);
-			if (cursor === null) {
-				break;
 			}
 		} else if (getNodeType(node) === node.ELEMENT_NODE) {
 			const element = node as Element;
@@ -4041,18 +4030,9 @@ function collectLeaves(
 				// Neither occupies run space nor interrupts the run. Before the
 				// display branches, or an absolute inline span measures into
 				// the run it left.
-				cursor = flowNext(node, root, true);
-				pushExitedEdges(leafNodes, node, cursor, root);
-				if (cursor === null) {
-					break;
-				}
+				skipChildren = true;
 			} else if (getHTMLLocalName(element) === "br") {
 				leafNodes.push({type: "br", node: element as HTMLBRElement});
-				cursor = flowNext(node, root, false);
-				pushExitedEdges(leafNodes, node, cursor, root);
-				if (cursor === null) {
-					break;
-				}
 			} else if (isAtomicInline(display) && isReplacedBox(element)) {
 				const size = getReplacedSize(element, availableWidth);
 				leafNodes.push({
@@ -4062,11 +4042,7 @@ function collectLeaves(
 					contentWidth: size.width,
 					contentHeight: size.height,
 				});
-				cursor = flowNext(node, root, true);
-				pushExitedEdges(leafNodes, node, cursor, root);
-				if (cursor === null) {
-					break;
-				}
+				skipChildren = true;
 			} else if (isAtomicInline(display) && isMathRoot(element)) {
 				const box = measureMath(layout, element);
 				leafNodes.push({
@@ -4076,11 +4052,7 @@ function collectLeaves(
 					contentWidth: box.width,
 					contentHeight: box.height,
 				});
-				cursor = flowNext(node, root, true);
-				pushExitedEdges(leafNodes, node, cursor, root);
-				if (cursor === null) {
-					break;
-				}
+				skipChildren = true;
 			} else if (isAtomicInline(display)) {
 				const ownBox = getPrincipalBox(layout, element);
 				// An inline-block nested in another inline is a run member, and
@@ -4404,32 +4376,19 @@ function collectLeaves(
 					contentHeight: finalContentHeight,
 				});
 				// The children were measured inside the box above.
-				cursor = flowNext(node, root, true);
-				pushExitedEdges(leafNodes, node, cursor, root);
-				if (cursor === null) {
-					break;
-				}
+				skipChildren = true;
 			} else if (display === "inline") {
 				if (hasInlineEdges(element)) {
 					pushEdge(leafNodes, element, "start");
-				}
-				cursor = flowNext(node, root, false);
-				pushExitedEdges(leafNodes, node, cursor, root);
-				if (cursor === null) {
-					break;
 				}
 			} else {
 				// A block-level box broke the inline that holds it. The
 				// fragments on either side are members of their own.
 				break;
 			}
-		} else {
-			cursor = flowNext(node, root, false);
-			pushExitedEdges(leafNodes, node, cursor, root);
-			if (cursor === null) {
-				break;
-			}
 		}
+		cursor = flowNext(node, root, skipChildren);
+		pushExitedEdges(leafNodes, node, cursor, root);
 	}
 }
 
