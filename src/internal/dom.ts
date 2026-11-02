@@ -3568,10 +3568,10 @@ Object.defineProperty(
 	{value: "SecurityPolicyViolationEvent", configurable: true},
 );
 
-// A transfer here carries text under format names and nothing else. There
-// is no drag and drop in a terminal and no files to hand over, so
-// `dropEffect`, `effectAllowed`, `setDragImage()` and `files` exist,
-// return what the interface specifies, and do nothing.
+// A transfer here carries text under format names, and files a script
+// adds. There is no drag and drop in a terminal, so `dropEffect`,
+// `effectAllowed` and `setDragImage()` exist, return what the interface
+// specifies, and do nothing.
 
 // The platform's two shorthands map to the media types they stand for,
 // so `"TEXT/Plain "` and `"text"` name the same entry.
@@ -3589,22 +3589,57 @@ function normalizeTransferFormat(format: unknown): string {
 /** The brand used to construct an interface that declares no constructor. */
 const kInternalConstruction = Symbol("internal construction");
 
+/** Give `target` the indexed properties `values`, in place of `count`. */
+function setIndexedValues(
+	target: object,
+	count: number,
+	values: readonly unknown[],
+): void {
+	for (let i = 0; i < count; i++) {
+		delete (target as Record<number, unknown>)[i];
+	}
+	values.forEach((value, i) => {
+		Object.defineProperty(target, i, {
+			value,
+			configurable: true,
+			enumerable: true,
+		});
+	});
+}
+
+interface FileListSlots {
+	listFiles: globalThis.File[];
+}
+
+interface FileList {
+	readonly [internals]: FileListSlots;
+}
+
+/** A list of files: a file input's selected files, or a transfer's. */
 class FileList {
 	readonly [index: number]: globalThis.File;
 
 	constructor() {
 		seal(this, new.target, FileList);
+		_(this).listFiles = [];
 	}
 
 	get length(): number {
-		return 0;
+		return _(this).listFiles.length;
 	}
 
-	item(_index: number): globalThis.File | null {
-		return null;
+	item(index: number): globalThis.File | null {
+		return _(this).listFiles[toUnsignedLong(index)] ?? null;
 	}
 
-	*[Symbol.iterator](): Generator<never, void, unknown> {}
+	*[Symbol.iterator](): Generator<globalThis.File, void, unknown> {
+		yield *_(this).listFiles;
+	}
+}
+
+function setListedFiles(list: FileList, files: globalThis.File[]): void {
+	setIndexedValues(list, _(list).listFiles.length, files);
+	_(list).listFiles = files;
 }
 
 declareSealedRoot(FileList);
@@ -3614,29 +3649,35 @@ Object.defineProperty(FileList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+/** An entry of a transfer: a string or a file, under its type. */
+interface TransferEntry {
+	type: string;
+	data: string | globalThis.File;
+}
+
 interface DataTransferItemSlots {
 	itemType: string;
-	itemData: string;
+	itemData: string | globalThis.File;
 }
 
 interface DataTransferItem {
 	readonly [internals]: DataTransferItemSlots;
 }
 
-/** One entry of a transfer: a string under a format name. */
+/** One entry of a transfer: a string under a format name, or a file. */
 class DataTransferItem {
-	constructor(brand?: unknown, type?: string, data?: string) {
+	constructor(brand?: unknown, entry?: TransferEntry) {
 		seal(this, new.target, DataTransferItem);
 		if (brand !== kInternalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
 		const slots = _(this);
-		slots.itemType = String(type);
-		slots.itemData = String(data);
+		slots.itemType = entry!.type;
+		slots.itemData = entry!.data;
 	}
 
 	get kind(): string {
-		return "string";
+		return typeof _(this).itemData === "string" ? "string" : "file";
 	}
 
 	get type(): string {
@@ -3651,13 +3692,17 @@ class DataTransferItem {
 			throw new TypeError("getAsString needs a function");
 		}
 		const data = _(this).itemData;
+		if (typeof data !== "string") {
+			return;
+		}
 		queueMicrotask(() => {
 			(callback as (data: string) => void)(data);
 		});
 	}
 
 	getAsFile(): globalThis.File | null {
-		return null;
+		const data = _(this).itemData;
+		return typeof data === "string" ? null : data;
 	}
 
 	webkitGetAsEntry(): globalThis.FileSystemEntry | null {
@@ -3695,7 +3740,7 @@ class DataTransferItemList {
 	}
 
 	get length(): number {
-		return _(_(this).listOwner).transferEntries.size;
+		return _(_(this).listOwner).transferEntries.length;
 	}
 
 	add(data: string, type: string): DataTransferItem | null;
@@ -3706,20 +3751,24 @@ class DataTransferItemList {
 		if (ownerSlots.transferMode !== "readwrite") {
 			return null;
 		}
-		if (type === undefined) {
+		const entries = ownerSlots.transferEntries;
+		if (type !== undefined) {
+			const format = normalizeTransferFormat(type);
+			if (findTextEntry(entries, format) >= 0) {
+				throw domError(
+					"NotSupportedError",
+					`The transfer already carries a ${format} entry`,
+				);
+			}
+			entries.push({type: format, data: String(data)});
+		} else if (data instanceof File) {
+			entries.push({type: data.type.toLowerCase(), data});
+		} else {
 			throw new TypeError("Adding a string entry needs a format");
 		}
-		const format = normalizeTransferFormat(type);
-		if (ownerSlots.transferEntries.has(format)) {
-			throw domError(
-				"NotSupportedError",
-				`The transfer already carries a ${format} entry`,
-			);
-		}
-		ownerSlots.transferEntries.set(format, String(data));
 		syncTransferItems(owner);
 		return (this as unknown as Record<number, DataTransferItem>)[
-			ownerSlots.transferEntries.size - 1
+			entries.length - 1
 		];
 	}
 
@@ -3729,12 +3778,11 @@ class DataTransferItemList {
 		if (ownerSlots.transferMode !== "readwrite") {
 			throw domError("InvalidStateError", "That transfer cannot be modified");
 		}
-		const formats = Array.from(ownerSlots.transferEntries.keys());
 		const at = toLong(index);
-		if (at < 0 || at >= formats.length) {
+		if (at < 0 || at >= ownerSlots.transferEntries.length) {
 			return;
 		}
-		ownerSlots.transferEntries.delete(formats[at]);
+		ownerSlots.transferEntries.splice(at, 1);
 		syncTransferItems(owner);
 	}
 
@@ -3744,7 +3792,7 @@ class DataTransferItemList {
 		if (ownerSlots.transferMode !== "readwrite") {
 			return;
 		}
-		ownerSlots.transferEntries.clear();
+		ownerSlots.transferEntries.length = 0;
 		syncTransferItems(owner);
 	}
 }
@@ -3756,29 +3804,33 @@ Object.defineProperty(DataTransferItemList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** Update a list's indexed properties to match the entries behind it. */
+/** The index of the string entry under `format`, or -1. */
+function findTextEntry(entries: TransferEntry[], format: string): number {
+	return entries.findIndex(
+		(entry) => typeof entry.data === "string" && entry.type === format,
+	);
+}
+
+/**
+ * Update the item list's indexed properties and the file list to match
+ * the entries behind them.
+ */
 function syncTransferItems(transfer: DataTransfer): void {
 	const transferSlots = _(transfer);
-	const list = transferSlots.transferItems as unknown as Record<
-		number,
-		unknown
-	>;
-	const formats = Array.from(transferSlots.transferEntries.keys());
-	for (let i = 0; i < _(transferSlots.transferItems).listIndices; i++) {
-		delete list[i];
-	}
-	for (let i = 0; i < formats.length; i++) {
-		Object.defineProperty(list, i, {
-			value: new DataTransferItem(
-				kInternalConstruction,
-				formats[i],
-				transferSlots.transferEntries.get(formats[i]),
-			),
-			configurable: true,
-			enumerable: true,
-		});
-	}
-	_(transferSlots.transferItems).listIndices = formats.length;
+	const entries = transferSlots.transferEntries;
+	const items = _(transferSlots.transferItems);
+	setIndexedValues(
+		transferSlots.transferItems,
+		items.listIndices,
+		entries.map((entry) => new DataTransferItem(kInternalConstruction, entry)),
+	);
+	items.listIndices = entries.length;
+	setListedFiles(
+		transferSlots.transferFiles,
+		entries.flatMap((entry) =>
+			typeof entry.data === "string" ? [] : [entry.data],
+		),
+	);
 }
 
 const EFFECTS_ALLOWED = new Set([
@@ -3794,7 +3846,7 @@ const EFFECTS_ALLOWED = new Set([
 ]);
 
 interface DataTransferSlots {
-	transferEntries: Map<string, string>;
+	transferEntries: TransferEntry[];
 	transferItems: DataTransferItemList;
 	transferFiles: FileList;
 	transferMode: "readwrite" | "readonly" | "protected";
@@ -3814,12 +3866,12 @@ interface DataTransfer {
 	readonly [internals]: DataTransferSlots;
 }
 
-/** The payload a clipboard event carries: text under format names. */
+/** A transfer's payload: text under format names, and files. */
 class DataTransfer {
 	constructor() {
 		seal(this, new.target, DataTransfer);
 		const slots = _(this);
-		slots.transferEntries = new Map();
+		slots.transferEntries = [];
 		slots.transferItems = new DataTransferItemList(kInternalConstruction, this);
 		slots.transferFiles = new FileList();
 		slots.transferMode = "readwrite";
@@ -3878,7 +3930,14 @@ class DataTransfer {
 		if (slots.transferMode === "protected") {
 			return Object.freeze([]);
 		}
-		return Object.freeze(Array.from(slots.transferEntries.keys()));
+		const entries = slots.transferEntries;
+		const types = entries.flatMap((entry) =>
+			typeof entry.data === "string" ? [entry.type] : [],
+		);
+		if (types.length < entries.length) {
+			types.push("Files");
+		}
+		return Object.freeze(types);
 	}
 
 	get files(): FileList {
@@ -3892,7 +3951,9 @@ class DataTransfer {
 		if (slots.transferMode === "protected") {
 			return "";
 		}
-		return slots.transferEntries.get(normalizeTransferFormat(format)) ?? "";
+		const entries = slots.transferEntries;
+		const found = findTextEntry(entries, normalizeTransferFormat(format));
+		return found < 0 ? "" : entries[found].data as string;
 	}
 
 	setData(format: string, data: string): void {
@@ -3900,7 +3961,13 @@ class DataTransfer {
 		if (slots.transferMode !== "readwrite") {
 			return;
 		}
-		slots.transferEntries.set(normalizeTransferFormat(format), String(data));
+		const entries = slots.transferEntries;
+		const type = normalizeTransferFormat(format);
+		const found = findTextEntry(entries, type);
+		if (found >= 0) {
+			entries.splice(found, 1);
+		}
+		entries.push({type, data: String(data)});
 		syncTransferItems(this);
 	}
 
@@ -3909,11 +3976,12 @@ class DataTransfer {
 		if (slots.transferMode !== "readwrite") {
 			return;
 		}
-		if (format === undefined) {
-			slots.transferEntries.clear();
-		} else {
-			slots.transferEntries.delete(normalizeTransferFormat(format));
-		}
+		const type = format === undefined ? null : normalizeTransferFormat(format);
+		slots.transferEntries = slots.transferEntries.filter(
+			(entry) =>
+				typeof entry.data !== "string" ||
+				(type !== null && entry.type !== type),
+		);
 		syncTransferItems(this);
 	}
 }
@@ -19753,8 +19821,10 @@ export class HTMLInputElement extends HTMLElement {
 				return getAttributeValue(this, "value") ?? "";
 			case "on":
 				return getAttributeValue(this, "value") ?? "on";
-			default:
-				return "";
+			default: {
+				const file = slots.extra.files?.item(0);
+				return file == null ? "" : `C:\\fakepath\\${file.name}`;
+			}
 		}
 	}
 
@@ -19781,6 +19851,7 @@ export class HTMLInputElement extends HTMLElement {
 						"A file input's value can only be emptied",
 					);
 				}
+				slots.extra.files = null;
 				break;
 			default:
 				setAttributeByName(this, "value", string);
@@ -20210,6 +20281,7 @@ export class HTMLInputElement extends HTMLElement {
 		slots.extra.checked = hasAttributeByName(getOwner(this), "checked");
 		slots.extra.dirtyChecked = false;
 		slots.extra.indeterminate = false;
+		slots.extra.files = null;
 		syncUAShadowTree(getOwner(this));
 	}
 
