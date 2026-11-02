@@ -278,7 +278,9 @@ function readCellStyle(line: Line, col: number): CellStyle {
 	return style;
 }
 
-const CSI_KEYS: Record<string, string> = {
+// The keys a terminal sends as CSI or SS3 and a letter, and as CSI, a
+// number and a tilde. F1-F4 are SS3. F5-F12 skip 16, as xterm's do.
+export const CSI_KEYS: Record<string, string> = {
 	ArrowUp: "A",
 	ArrowDown: "B",
 	ArrowRight: "C",
@@ -287,7 +289,7 @@ const CSI_KEYS: Record<string, string> = {
 	End: "F",
 };
 
-const TILDE_KEYS: Record<string, number> = {
+export const TILDE_KEYS: Record<string, number> = {
 	Insert: 2,
 	Delete: 3,
 	PageUp: 5,
@@ -302,7 +304,15 @@ const TILDE_KEYS: Record<string, number> = {
 	F12: 24,
 };
 
-const SS3_KEYS: Record<string, string> = {F1: "P", F2: "Q", F3: "R", F4: "S"};
+export const SS3_KEYS: Record<string, string> = {
+	F1: "P",
+	F2: "Q",
+	F3: "R",
+	F4: "S",
+};
+
+// The one named spelling that carries a modifier.
+export const SHIFT_TAB = "\x1b[Z";
 
 interface KeyLike {
 	key: string;
@@ -351,7 +361,7 @@ export function encodeKey(
 		case "Backspace":
 			return `${alt}${key.ctrlKey ? "\b" : "\x7f"}`;
 		case "Tab":
-			return key.shiftKey ? "\x1b[Z" : `${alt}\t`;
+			return key.shiftKey ? SHIFT_TAB : `${alt}\t`;
 		case "Escape":
 			return `${alt}\x1b`;
 	}

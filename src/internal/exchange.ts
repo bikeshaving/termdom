@@ -26,6 +26,7 @@ import {
 	invalidateTextMeasurement,
 	type Layout,
 } from "./layout.ts";
+import {CSI_KEYS, SHIFT_TAB, SS3_KEYS, TILDE_KEYS} from "./pty.ts";
 import {_, type internals} from "./slots.ts";
 import {isControlByte, recordClusterAdvance} from "./text.ts";
 import {
@@ -314,62 +315,31 @@ type WireItem =
 	{kind: "background"; red: number; green: number; blue: number} |
 	{kind: "device-attributes"};
 
-// The one named spelling that carries a modifier.
-const SHIFT_TAB = "\x1b[Z";
-
 // Line feed is not here. It is the Ctrl+J chord. A lone ESC is the
-// Escape key, since the reader peels CSI and SS3 off whole. F1-F4 are
-// SS3. F5-F12 are CSI-tilde with xterm's historical gap at 16.
+// Escape key, since the reader peels CSI and SS3 off whole. CSI 1 ~ and
+// CSI 4 ~ are Home and End from the VT220 editing keypad.
 const KEY_BY_TOKEN: Record<string, string> = {
 	"\r": "Enter",
 	"\t": "Tab",
 	[SHIFT_TAB]: "Tab",
 	"\x7f": "Backspace",
 	"\x1b": "Escape",
-	"\x1b[A": "ArrowUp",
-	"\x1b[B": "ArrowDown",
-	"\x1b[C": "ArrowRight",
-	"\x1b[D": "ArrowLeft",
-	"\x1bOA": "ArrowUp",
-	"\x1bOB": "ArrowDown",
-	"\x1bOC": "ArrowRight",
-	"\x1bOD": "ArrowLeft",
-	"\x1b[H": "Home",
 	"\x1b[1~": "Home",
-	"\x1bOH": "Home",
-	"\x1b[F": "End",
 	"\x1b[4~": "End",
-	"\x1bOF": "End",
-	"\x1b[2~": "Insert",
-	"\x1b[3~": "Delete",
-	"\x1b[5~": "PageUp",
-	"\x1b[6~": "PageDown",
-	"\x1bOP": "F1",
-	"\x1bOQ": "F2",
-	"\x1bOR": "F3",
-	"\x1bOS": "F4",
-	"\x1b[15~": "F5",
-	"\x1b[17~": "F6",
-	"\x1b[18~": "F7",
-	"\x1b[19~": "F8",
-	"\x1b[20~": "F9",
-	"\x1b[21~": "F10",
-	"\x1b[23~": "F11",
-	"\x1b[24~": "F12",
 };
 
-const MODIFIED_CURSOR_KEYS: Record<string, string> = {
-	A: "ArrowUp",
-	B: "ArrowDown",
-	C: "ArrowRight",
-	D: "ArrowLeft",
-	F: "End",
-	H: "Home",
-	P: "F1",
-	Q: "F2",
-	R: "F3",
-	S: "F4",
-};
+const MODIFIED_CURSOR_KEYS: Record<string, string> = {};
+
+for (const [key, letter] of Object.entries({...CSI_KEYS, ...SS3_KEYS})) {
+	MODIFIED_CURSOR_KEYS[letter] = key;
+	KEY_BY_TOKEN[`\x1bO${letter}`] = key;
+}
+for (const [key, letter] of Object.entries(CSI_KEYS)) {
+	KEY_BY_TOKEN[`\x1b[${letter}`] = key;
+}
+for (const [key, code] of Object.entries(TILDE_KEYS)) {
+	KEY_BY_TOKEN[`\x1b[${code}~`] = key;
+}
 
 // xterm's modified cursor and F1-F4 keys: CSI 1 ; <mod> <letter>, e.g.
 // Alt+Up = CSI 1;3A.
