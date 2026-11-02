@@ -1203,14 +1203,15 @@ export class Exchange extends EventTarget {
 			slots.pendingReplies.filter((entry) => entry.sequence !== undefined)
 				.length;
 		slots.probingEnded = true;
-		if (slots.resizeTimer !== null) {
-			clearTimeout(slots.resizeTimer);
-			slots.resizeTimer = null;
-		}
-		if (slots.escapeTimer !== null) {
-			clearTimeout(slots.escapeTimer);
-			slots.escapeTimer = null;
-		}
+		const widths = slots.widths;
+		clearTimeout(slots.resizeTimer ?? undefined);
+		clearTimeout(slots.escapeTimer ?? undefined);
+		clearTimeout(widths.timer ?? undefined);
+		clearTimeout(widths.deferralTimer ?? undefined);
+		slots.resizeTimer = null;
+		slots.escapeTimer = null;
+		widths.timer = null;
+		widths.deferralTimer = null;
 
 		// Only when it was set. Reset is where we left it anyway.
 		if (slots.priorBidiMode === 1) {
@@ -1223,15 +1224,6 @@ export class Exchange extends EventTarget {
 		abandonClipboardQuery(this);
 		for (const entry of slots.pendingReplies.splice(0)) {
 			entry.giveUp();
-		}
-		const widths = slots.widths;
-		if (widths.timer !== null) {
-			clearTimeout(widths.timer);
-			widths.timer = null;
-		}
-		if (widths.deferralTimer !== null) {
-			clearTimeout(widths.deferralTimer);
-			widths.deferralTimer = null;
 		}
 		widths.pending.length = 0;
 		widths.probing = false;
