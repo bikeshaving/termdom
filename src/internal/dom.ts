@@ -1176,10 +1176,11 @@ const NAME_REST = `${NAME_START}\\-.0-9\u00B7\u0300-\u036F\u203F-\u2040`;
 
 /* eslint-disable no-misleading-character-class -- the XML Name production
    matches lone combining marks by definition */
-const XML_NAME = new RegExp(
-	`^(?:[${NAME_START}]|[\uD800-\uDBFF][\uDC00-\uDFFF])` +
-	`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*$`,
-);
+const XML_NAME_SOURCE =
+	`(?:[${NAME_START}]|[\uD800-\uDBFF][\uDC00-\uDFFF])` +
+	`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*`;
+const XML_NAME = new RegExp(`^${XML_NAME_SOURCE}$`);
+const XML_NAME_TOKEN = new RegExp(XML_NAME_SOURCE, "y");
 /* eslint-enable no-misleading-character-class */
 
 function isValidLocalName(name: string, forAttribute: boolean): boolean {
@@ -36095,15 +36096,6 @@ const PARSERERROR_NAMESPACE =
 // partner.
 const XML_FORBIDDEN_CHAR =
 	/[\0-\x08\x0B\x0C\x0E-\x1F￾￿]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-
-/* eslint-disable no-misleading-character-class -- the XML Name production
-   matches lone combining marks by definition */
-const XML_NAME_TOKEN = new RegExp(
-	`(?:[${NAME_START}]|[\uD800-\uDBFF][\uDC00-\uDFFF])` +
-	`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*`,
-	"y",
-);
-/* eslint-enable no-misleading-character-class */
 
 const PREDEFINED_ENTITIES = new Map([
 	["amp", "&"],
