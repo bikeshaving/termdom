@@ -1,5 +1,4 @@
 [install]
-exact = true
 # Seconds a version must be public before an install resolves to it.
 minimumReleaseAge = 259200
 minimumReleaseAgeExcludes = [
