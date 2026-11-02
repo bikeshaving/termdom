@@ -8381,10 +8381,10 @@ type MeasureSubject =
 
 function setMeasure(node: LayoutNode, subject: MeasureSubject): void {
 	node.measureSubject = subject;
-	node.measure = measureNode;
+	node.measure = measureRecordingReads;
 }
 
-function measureSubject(
+function measureByKind(
 	subject: MeasureSubject,
 	width: number,
 	widthSpace: AvailableSpace,
@@ -8414,7 +8414,7 @@ function measureSubject(
 // once the measure has returned, and only while the layout still measures
 // the box: a measure can drop its own box on the way, and a reader dropped
 // would be held by every element it read.
-function measureNode(
+function measureRecordingReads(
 	this: LayoutNode,
 	width: number,
 	widthSpace: AvailableSpace,
@@ -8440,7 +8440,7 @@ function measureNode(
 			}
 		}
 		reads.push(element, read, value);
-	}, () => measureSubject(subject, width, widthSpace, placing, left));
+	}, () => measureByKind(subject, width, widthSpace, placing, left));
 	if (!placing && contextLayouts !== contextLayoutsBefore) {
 		node.hasCachedLayout = false;
 	}
