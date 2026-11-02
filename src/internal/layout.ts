@@ -242,8 +242,8 @@ function getLayoutDisplay(element: Element): Display {
 
 // An inline-block flex item's measure returns a border-box size, so its
 // layout node must not add padding and border again on the cross axis.
-// The main axis is masked by flex sizing. The node then holds none on those edges, though
-// the box has them.
+// The main axis is masked by flex sizing. The node then holds none on
+// those edges, though the box has them.
 function getMaskedEdges(element: Element): readonly Edge[] {
 	if (getLayoutDisplay(element) !== "inline-block" || !hasFlexParent(element)) {
 		return [];
@@ -1563,8 +1563,8 @@ function applyBoxEdges(style: Style, element: Element): void {
 	}
 }
 
-// An absolutely positioned part of a table is a block (css2 §9.7). It
-// leaves the table, and lays out as any positioned box does.
+// The solver's display type for an element's node, and the container
+// properties its display brings.
 function applyDisplayType(
 	style: Style,
 	element: Element,
@@ -1572,6 +1572,8 @@ function applyDisplayType(
 	position: Position,
 ): void {
 	const outOfFlow = position === "absolute" || position === "fixed";
+	// An absolutely positioned part of a table is a block (css2 §9.7). It
+	// leaves the table, and lays out as any positioned box does.
 	if (outOfFlow && BLOCKIFIED_TABLE_PARTS.has(display)) {
 		style.displayType = "block";
 	} else if (
@@ -3148,9 +3150,9 @@ function getLayoutRoot(node: LayoutNode): LayoutNode {
 	return root;
 }
 
-// Coordinates under an independent formatting context start at the box that owns
-// it: the ancestor whose root the node was actually laid out under, not the
-// nearest one. An out-of-flow descendant hangs from its containing block
+// Coordinates under an independent formatting context start at the box
+// that owns it: the ancestor whose root the node was laid out under, not
+// the nearest one. An out-of-flow descendant hangs from its containing block
 // instead.
 function getDocumentPosition(
 	layout: Layout,
@@ -5301,8 +5303,9 @@ function measureText(
 	return content.getPrefixWidths[end] - content.getPrefixWidths[start];
 }
 
-// Both halves are needed. Each segment's characters reorder (bidi-js, through text.ts),
-// and in an RTL paragraph the segments mirror across the line.
+// Both halves are needed. Each segment's characters reorder (bidi-js,
+// through text.ts), and in an RTL paragraph the segments mirror across the
+// line.
 // Reordering stays within each leaf. Whole-line reordering would merge
 // and re-split segments, losing the leaf identity painting, hit-testing
 // and selection key on.
