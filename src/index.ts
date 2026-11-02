@@ -1788,11 +1788,6 @@ function renderStatic(termDOM: TermDOM, lineEnding: "\n" | "\r\n"): string {
 	);
 }
 
-/**
- * A window of the document, repainted in place in a region below the
- * anchor. Needing more rows scrolls earlier output into the
- * scrollback. Nothing on screen before us is painted over.
- */
 // The rows a frame paints over the last one, or undefined for all of them.
 // A box scrolled moves rows no box reports, so after one the frame paints
 // all, unless the terminal shifted the box's rows and nothing over them
@@ -1823,6 +1818,11 @@ function chooseBands(
 	return [...damage, delta > 0 ? [end - delta, end] : [top, top - delta]];
 }
 
+/**
+ * A window of the document, repainted in place in a region below the
+ * anchor. Needing more rows scrolls earlier output into the
+ * scrollback. Nothing on screen above the region is painted over.
+ */
 async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	// close() sealed the previous document. Start a fresh one below it.
 	const termDOMSlots = _(termDOM);
