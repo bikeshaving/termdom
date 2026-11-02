@@ -203,18 +203,6 @@ const DISPLAYS = new Set<string>([
 	"table-caption",
 ]);
 
-const TABLE_DISPLAYS = new Set<string>([
-	"table",
-	"table-row",
-	"table-row-group",
-	"table-header-group",
-	"table-footer-group",
-	"table-column",
-	"table-column-group",
-	"table-cell",
-	"table-caption",
-]);
-
 const BLOCKIFIED_TABLE_PARTS = new Set<Display>([
 	"table-header-group",
 	"table-footer-group",
@@ -1707,28 +1695,34 @@ function styleLayoutNodeProperties(
 	const outOfFlow = position === "absolute" || position === "fixed";
 	if (outOfFlow && BLOCKIFIED_TABLE_PARTS.has(display)) {
 		style.displayType = "block";
-	} else if (display === "none") {
+	} else if (
+		display === "none" ||
+		display === "table-column" ||
+		display === "table-column-group"
+	) {
+		// Columns carry style, not a box of their own.
 		style.displayType = "none";
 	} else if (display === "grid" || display === "inline-grid") {
 		style.displayType = "grid";
 		applyGridContainer(style, element);
-	} else if (display === "flex") {
+	} else if (display === "flex" || display === "inline-flex") {
 		style.displayType = "flex";
+		applyFlexContainer(style, element);
 	} else if (display === "table" || display === "inline-table") {
 		applyTableContainer(style, element);
-	} else if (display === "table-header-group") {
-		style.displayType = "table-header-group";
-	} else if (display === "table-footer-group") {
-		style.displayType = "table-footer-group";
-	} else if (display === "table-row-group") {
-		style.displayType = "table-row-group";
-	} else if (display === "table-caption") {
-		style.displayType = "table-caption";
-	} else if (display === "table-column" || display === "table-column-group") {
-		// Columns carry style, not a box of their own.
-		style.displayType = "none";
-	} else if (display === "table-row") {
-		style.displayType = "table-row";
+		// An inline-table's own node is its run's. The table is its context
+		// root.
+		if (display === "inline-table") {
+			style.displayType = "block";
+		}
+	} else if (
+		display === "table-header-group" ||
+		display === "table-footer-group" ||
+		display === "table-row-group" ||
+		display === "table-caption" ||
+		display === "table-row"
+	) {
+		style.displayType = display;
 	} else if (display === "table-cell") {
 		style.displayType = "table-cell";
 		style.alignContent = getCellAlignment(getTextStyle(element).verticalAlign);
@@ -1737,19 +1731,7 @@ function styleLayoutNodeProperties(
 		const cell = element as {colSpan?: number; rowSpan?: number};
 		style.colSpan = Math.max(1, Math.floor(cell.colSpan ?? 1) || 1);
 		style.rowSpan = Math.max(1, Math.floor(cell.rowSpan ?? 1) || 1);
-	}
-
-	if (display === "flex" || display === "inline-flex") {
-		style.displayType = "flex";
-		applyFlexContainer(style, element);
-	} else if (
-		display !== "none" &&
-		display !== "grid" &&
-		display !== "inline-grid" &&
-		!TABLE_DISPLAYS.has(display)
-	) {
-		// Displays decided above must not be reset. A caption reset to block
-		// is lost to its table, and a hidden element reset keeps painting.
+	} else {
 		style.displayType = "block";
 	}
 
