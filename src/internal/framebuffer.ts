@@ -2433,9 +2433,24 @@ function guessPixelRatio(height: number): number {
 	return height > HIGH_DENSITY_CELL_HEIGHT ? 2 : 1;
 }
 
+// How far a cell's size may be from twice or half the last one, on both
+// axes, and still be taken for a move between a 1x and a 2x screen. A move
+// between other densities, such as 1.5x or 3x, is not recognized, and the
+// guess stays.
+const SCREEN_CHANGE_MIN = 1.8;
+const SCREEN_CHANGE_MAX = 2.2;
+
+function isScreenChangeFactor(factor: number): boolean {
+	return (
+		(factor >= SCREEN_CHANGE_MIN && factor <= SCREEN_CHANGE_MAX) ||
+		(factor >= 1 / SCREEN_CHANGE_MAX && factor <= 1 / SCREEN_CHANGE_MIN)
+	);
+}
+
 // A window moved between a 1x and a 2x screen keeps its rows and columns
 // and reports a cell about twice or half as large on both axes. A font
-// zoom changes the rows and columns with the cell.
+// zoom changes the rows and columns with the cell, and a terminal that
+// keeps them through a zoom, as iTerm2 does, changes the cell by less.
 function isScreenChange(
 	framebuffer: Framebuffer,
 	width: number,
@@ -2450,10 +2465,9 @@ function isScreenChange(
 	}
 	const x = width / cellSize.width;
 	const y = height / cellSize.height;
-	return (
-		(x >= 1.8 && x <= 2.2 && y >= 1.8 && y <= 2.2) ||
-		(x >= 1 / 2.2 && x <= 1 / 1.8 && y >= 1 / 2.2 && y <= 1 / 1.8)
-	);
+	return isScreenChangeFactor(x) &&
+		isScreenChangeFactor(y) &&
+		(x > 1) === (y > 1);
 }
 
 /**
