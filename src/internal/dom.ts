@@ -1012,37 +1012,31 @@ export function takeFocusStartingPoint(
 	return point;
 }
 
-const engineObservers = new WeakMap<Document, MutationObserver>();
-
 // Per spec a document-rooted observer never sees inside a shadow root, so
 // each root is observed on its own.
 function observeShadowRoot(
 	document: Document,
 	root: globalThis.ShadowRoot,
 ): void {
-	engineObservers
-		.get(document)
-		?.observe(root as unknown as Node, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeOldValue: true,
-			characterData: true,
-		});
+	_(document).extra.engineObserver?.observe(root as unknown as Node, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeOldValue: true,
+		characterData: true,
+	});
 }
 
 // The displayed label and picker rows track the option list, so a
 // framework mutating the options must trigger a sync. Selection changes
 // reach the tree through the control's own setters.
 function observeOptionList(select: Element): void {
-	engineObservers
-		.get(_(select).document)
-		?.observe(select, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			characterData: true,
-		});
+	_(_(select).document).extra.engineObserver?.observe(select, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		characterData: true,
+	});
 }
 
 // The root is registered with the cascade BEFORE it is populated, so
@@ -6290,14 +6284,9 @@ interface LiveCollection {
 // (a form's controls, for example) registers in the document's
 // documentWideLists.
 
-// A collection stays registered for its owner's lifetime, so this only
-// grows. A change in a document that never registered a collection skips
-// the ancestor climb.
-const heldListDocuments = new WeakSet<Document>();
-
 function registerLiveCollection(collection: LiveCollection, owner: Node): void {
 	const ownerSlots = _(owner);
-	heldListDocuments.add(ownerSlots.document);
+	_(ownerSlots.document).extra.heldLists = true;
 	const held = ownerSlots.liveLists;
 	if (held === null) {
 		ownerSlots.liveLists = new Set([collection]);
@@ -6337,7 +6326,7 @@ function runChildrenChangedSteps(
 	added: boolean,
 ): void {
 	const pointSlots = _(point);
-	if (heldListDocuments.has(pointSlots.document)) {
+	if (_(pointSlots.document).extra.heldLists === true) {
 		for (let nodeSlots: Slots<Node> | null = getSlots(point);
 			nodeSlots !== null;
 			nodeSlots = nodeSlots.parent) {
@@ -6378,7 +6367,7 @@ function syncAttributeCollections(element: Element, localName: string): void {
 			_(list)._sync();
 		}
 	}
-	if (heldListDocuments.has(elementSlots.document)) {
+	if (_(elementSlots.document).extra.heldLists === true) {
 		for (let nodeSlots: Slots<Node> | null = getSlots(element);
 			nodeSlots !== null;
 			nodeSlots = nodeSlots.parent) {
@@ -8301,7 +8290,7 @@ function normalizeObserverOptions(
  * document. It lives as long as the document does.
  */
 export function releaseRemovedNodes(document: globalThis.Document): void {
-	const observer = engineObservers.get(document as unknown as Document);
+	const observer = _(document as unknown as Document).extra.engineObserver;
 	if (observer === undefined) {
 		return;
 	}
@@ -8328,7 +8317,7 @@ export function reobserveShadowRoot(root: globalThis.ShadowRoot): void {
 }
 
 function isWatchedByDocument(node: Node, document: Document): boolean {
-	const observer = engineObservers.get(document);
+	const observer = _(document).extra.engineObserver;
 	return (_(node).registeredObservers ?? []).some((registered) =>
 		registered.observer === observer && registered.source === null,
 	);
@@ -27405,11 +27394,6 @@ interface ContentBox {
 	left: number;
 }
 
-// Keyed by document, not by a registry object, because the document is
-// what an observer can reach from the target it was given. That is why
-// `new ResizeObserver(callback)` needs only its callback.
-const documentObservers = new WeakMap<object, Set<AnyObserver>>();
-
 /**
  * Run a document's observers against the layout just computed for it. The
  * frame the renderer is finishing is what an IntersectionObserver measures
@@ -27417,7 +27401,7 @@ const documentObservers = new WeakMap<object, Set<AnyObserver>>();
  */
 /** Whether a frame has any ResizeObserver or IntersectionObserver to run. */
 export function hasObservers(document: globalThis.Document): boolean {
-	return (documentObservers.get(document)?.size ?? 0) > 0;
+	return (_(document as Document).extra.observers?.size ?? 0) > 0;
 }
 
 export function flushObservers(
@@ -27426,7 +27410,7 @@ export function flushObservers(
 	viewport: globalThis.DOMRect,
 	frame: number,
 ): void {
-	const observers = documentObservers.get(document);
+	const observers = _(document as Document).extra.observers;
 	if (observers === undefined || observers.size === 0) {
 		return;
 	}
@@ -27444,8 +27428,9 @@ export function flushObservers(
 
 /** A torn-down document delivers nothing. */
 export function disconnectObservers(document: globalThis.Document): void {
-	documentObservers.get(document)?.clear();
-	engineObservers.get(document as Document)?.disconnect();
+	const extra = _(document as Document).extra;
+	extra.observers?.clear();
+	extra.engineObserver?.disconnect();
 }
 
 // What ResizeObserver and IntersectionObserver both hold: which elements
@@ -27515,18 +27500,13 @@ function unobserveTarget(
 function disconnectObserver(observer: AnyObserver): void {
 	_(observer).targets.clear();
 	for (const document of _(observer).homes) {
-		documentObservers.get(document)?.delete(observer);
+		_(document as Document).extra.observers?.delete(observer);
 	}
 	_(observer).homes.clear();
 }
 
 function getObservers(document: globalThis.Document): Set<AnyObserver> {
-	let observers = documentObservers.get(document);
-	if (observers === undefined) {
-		observers = new Set<AnyObserver>();
-		documentObservers.set(document, observers);
-	}
-	return observers;
+	return _(document as Document).extra.observers ??= new Set<AnyObserver>();
 }
 
 function checkObserver<TState, TEntry, TOptions>(
@@ -28124,6 +28104,34 @@ export interface DocumentExtra extends NodeExtra {
 	pointerState?: PointerState;
 	focusVisible?: boolean;
 	fullscreenStack?: Element[];
+	engineObserver?: MutationObserver;
+	// Whether a live collection was ever registered in the document. A
+	// collection stays registered for its owner's lifetime, so this only
+	// goes one way. A change in a document that never registered a
+	// collection skips the ancestor climb.
+	heldLists?: boolean;
+	// One live collection per kind, so `document.forms` is the same object
+	// on every read, as the HTML Standard requires.
+	collections?: Map<string, HTMLCollection>;
+	// The document's ResizeObservers and IntersectionObservers. They are
+	// kept by document, not by a registry object, because the document is
+	// what an observer can reach from the target it was given. That is why
+	// `new ResizeObserver(callback)` needs only its callback.
+	observers?: Set<AnyObserver>;
+	sessionHistory?: SessionHistory;
+	// The MediaQueryLists with a listener, which are the only ones a
+	// viewport change has anyone to tell. `matches` reads live, so a list
+	// without a listener needs no bookkeeping and is the page's to drop.
+	// The resize path is the one place a terminal viewport changes, so the
+	// engine decides when to re-evaluate.
+	mediaQueryLists?: Set<MediaQueryList>;
+	// The requestAnimationFrame callbacks, keyed by the handle
+	// requestAnimationFrame returned, so cancelAnimationFrame can cancel.
+	// The engine fires them once the frame containing their pending
+	// mutations has been written.
+	frameCallbacks?: {next: number; held: Map<number, FrameRequestCallback>};
+	// The policies the page stated for itself with <meta> in its head.
+	metaPolicyTexts?: string[];
 }
 
 export interface DocumentSlots extends NodeSlots {
@@ -29645,23 +29653,14 @@ function isPotentiallyScrollable(body: Element): boolean {
 	);
 }
 
-// One live collection per document and kind, so `document.forms` is the
-// same object on every read, as the HTML Standard requires. `watched`
-// names the attribute that decides membership, if one does.
-const documentCollections =
-	new WeakMap<Document, Map<string, HTMLCollection>>();
-
+// `watched` names the attribute that decides membership, if one does.
 function getDocumentCollection(
 	document: Document,
 	kind: string,
 	match: (element: Element) => boolean,
 	watched: string | null = null,
 ): HTMLCollection {
-	let collections = documentCollections.get(document);
-	if (collections === undefined) {
-		collections = new Map();
-		documentCollections.set(document, collections);
-	}
+	const collections = _(document).extra.collections ??= new Map();
 	let collection = collections.get(kind);
 	if (collection === undefined) {
 		collection = live(
@@ -35091,20 +35090,13 @@ interface SessionHistory {
 	targetURL: string | null;
 }
 
-const sessionHistories = new WeakMap<Document, SessionHistory>();
-
 function getSessionHistory(document: Document): SessionHistory {
-	let session = sessionHistories.get(document);
-	if (session === undefined) {
-		session = {
-			state: null,
-			length: 1,
-			scrollRestoration: "auto",
-			targetURL: null,
-		};
-		sessionHistories.set(document, session);
-	}
-	return session;
+	return _(document).extra.sessionHistory ??= {
+		state: null,
+		length: 1,
+		scrollRestoration: "auto",
+		targetURL: null,
+	};
 }
 
 /** Whether `:target` matches. */
@@ -35114,7 +35106,8 @@ export function isTargetElement(element: Element): boolean {
 		return false;
 	}
 	const url =
-		sessionHistories.get(document)?.targetURL ?? _(document).extra.documentURL;
+		_(document).extra.sessionHistory?.targetURL ??
+		_(document).extra.documentURL;
 	const hash = url.indexOf("#");
 	if (hash === -1) {
 		return false;
@@ -35190,7 +35183,7 @@ function navigateToFragment(
 function moveToURL(document: Document, url: string): Element | null {
 	const previous = getTargetElement(document);
 	_(document).extra.documentURL = url;
-	const session = sessionHistories.get(document);
+	const session = _(document).extra.sessionHistory;
 	if (session !== undefined) {
 		session.targetURL = null;
 	}
@@ -37158,13 +37151,6 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 	}
 }
 
-// The lists with a listener, which are the only ones a viewport change
-// has anyone to tell. `matches` reads live, so a list without a listener
-// needs no bookkeeping and is the page's to drop. The resize path is the
-// one place a terminal viewport changes, so the engine decides when to
-// re-evaluate.
-const mediaQueryLists = new WeakMap<Document, Set<MediaQueryList>>();
-
 interface MediaQueryListSlots extends EventTargetSlots {
 	mediaQueryDocument: Document;
 	// The value the last "change" event reported, kept while a listener
@@ -37256,15 +37242,12 @@ function syncMediaQuery(mediaQueryList: MediaQueryList): void {
 function trackMediaQueryListeners(list: MediaQueryList): void {
 	const listSlots = _(list);
 	const document = listSlots.mediaQueryDocument;
-	let lists = mediaQueryLists.get(document);
+	const extra = _(document).extra;
 	if (listSlots.listeners.length === 0) {
-		lists?.delete(list);
+		extra.mediaQueryLists?.delete(list);
 		return;
 	}
-	if (lists === undefined) {
-		lists = new Set();
-		mediaQueryLists.set(document, lists);
-	}
+	const lists = extra.mediaQueryLists ??= new Set();
 	if (!lists.has(list)) {
 		listSlots.mediaQueryNotified = list.matches;
 		lists.add(list);
@@ -37280,7 +37263,7 @@ export function syncMediaQueries(document: globalThis.Document): void {
 	if (window !== null) {
 		syncScreenOrientation(window as unknown as Window);
 	}
-	const lists = mediaQueryLists.get(document as Document);
+	const lists = _(document as Document).extra.mediaQueryLists;
 	if (lists === undefined) {
 		return;
 	}
@@ -37380,7 +37363,7 @@ export function attachDocument(
 		attributeOldValue: true,
 		characterData: true,
 	});
-	engineObservers.set(attached, observer);
+	_(attached).extra.engineObserver = observer;
 	// The markup parsed before the engine came holds controls no insertion
 	// record will ever name, so they are upgraded here, as an insertion
 	// upgrades them.
@@ -37794,7 +37777,7 @@ function dropUnfocusableFocus(document: Document): void {
  * callback, so a caller that never paints must request the frame itself.
  */
 export function applyMutations(document: globalThis.Document): boolean {
-	const observer = engineObservers.get(document as Document);
+	const observer = _(document as Document).extra.engineObserver;
 	if (observer === undefined) {
 		return false;
 	}
@@ -37904,10 +37887,6 @@ export function revealPendingEditingCaret(document: globalThis.Document): void {
 	attachedSlots.extra.layout.revealCaret(node as Node, selection!.focusOffset);
 }
 
-// Offsets only leave their range when layout changes, since every scroll
-// clamps what it stores, so a flush after no solve has nothing to clamp.
-const clampedSolves = new WeakMap<object, number>();
-
 /**
  * Synchronously settle what a geometry read must see: pending mutations
  * delivered and layout brought up to date. A geometry read needs fresh
@@ -37921,10 +37900,7 @@ export function flushLayout(node: globalThis.Node): boolean {
 	if (attached !== undefined) {
 		const layout = _(attached).extra.layout;
 		layout.performLayout();
-		if (clampedSolves.get(layout) !== layout.solves) {
-			clampedSolves.set(layout, layout.solves);
-			clampScrollOffsets(attached);
-		}
+		clampScrollOffsets(attached);
 	}
 	return had;
 }
@@ -38510,23 +38486,11 @@ function noNavigation(): DOMException {
 	);
 }
 
-// Keyed by the handle requestAnimationFrame returned, so
-// cancelAnimationFrame can cancel. The engine fires them once the frame
-// containing their pending mutations has been written.
-const frameCallbacks = new WeakMap<
-	Document,
-	{next: number; held: Map<number, FrameRequestCallback>}
->();
-
 function holdFrameCallback(
 	document: Document,
 	callback: FrameRequestCallback,
 ): number {
-	let state = frameCallbacks.get(document);
-	if (state === undefined) {
-		state = {next: 1, held: new Map()};
-		frameCallbacks.set(document, state);
-	}
+	const state = _(document).extra.frameCallbacks ??= {next: 1, held: new Map()};
 	const handle = state.next++;
 	state.held.set(handle, callback);
 	return handle;
@@ -38545,12 +38509,12 @@ export function framePainted(document: globalThis.Document): Promise<void> {
 }
 
 export function hasFrameCallbacks(document: globalThis.Document): boolean {
-	const state = frameCallbacks.get(document as Document);
+	const state = _(document as Document).extra.frameCallbacks;
 	return state !== undefined && state.held.size > 0;
 }
 
 export function runFrameCallbacks(document: globalThis.Document): boolean {
-	const state = frameCallbacks.get(document as Document);
+	const state = _(document as Document).extra.frameCallbacks;
 	if (state === undefined || state.held.size === 0) {
 		return false;
 	}
@@ -40097,7 +40061,7 @@ export class Window extends EventTarget {
 	}
 
 	cancelAnimationFrame(handle: number): void {
-		frameCallbacks.get(this.document)?.held.delete(handle);
+		_(this.document).extra.frameCallbacks?.held.delete(handle);
 	}
 
 	// The Selection API defines the window's getSelection as a call to the
@@ -41023,26 +40987,18 @@ export function getEditingHost(
 	return nodeContains(body, node) ? body : null;
 }
 
-// The policies a page stated for itself with <meta> in its head.
-const metaPolicyTexts = new WeakMap<object, string[]>();
-
 /**
  * A `<meta http-equiv="Content-Security-Policy">` inserted as a child of
  * a head (HTML §4.2.5.3): its policy holds for the document from then on,
  * whatever later becomes of the element.
  */
-function addDocumentPolicy(document: object, content: string): void {
-	const texts = metaPolicyTexts.get(document);
-	if (texts === undefined) {
-		metaPolicyTexts.set(document, [content]);
-	} else {
-		texts.push(content);
-	}
+function addDocumentPolicy(document: Document, content: string): void {
+	(_(document).extra.metaPolicyTexts ??= []).push(content);
 }
 
 /** The policy texts the document's <meta> elements stated, in order. */
 export function getMetaPolicyTexts(document: object): readonly string[] {
-	return metaPolicyTexts.get(document) ?? [];
+	return _(document as Document).extra.metaPolicyTexts ?? [];
 }
 
 /**
