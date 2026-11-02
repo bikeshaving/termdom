@@ -30,7 +30,7 @@ function rgbTo256(color: number): number {
 }
 
 // The 16 SGR colors as xterm draws them by default.
-const ANSI_PALETTE = [
+export const ANSI_PALETTE = [
 	0x000000,
 	0xcd0000,
 	0x00cd00,
