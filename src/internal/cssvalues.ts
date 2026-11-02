@@ -4588,6 +4588,22 @@ export interface SelectorReading {
 	// change among one element's children can change its descendants'
 	// matches too.
 	siblingsReachDescendants: boolean;
+	// For each :has(), what the compound it is written on asks of an
+	// element: its id, else a class, else its local name, else anything
+	// ("*"). What an argument or an attribute selector asks is left out, so
+	// the answer only ever asks for less.
+	hasAnchors: string[];
+	// For each :has(), the whole compound it is written in, as
+	// `.a:has(> .b):not(.c)`, which tested on an anchor says whether that
+	// part of the rule holds there. Null for a compound that only means
+	// something in its tree, as a :host's does.
+	hasCompounds: Array<string | null>;
+	// The pseudo-classes inside the arguments of :has().
+	hasStates: string[];
+	// Whether a :has() takes a relative selector that starts with + or ~.
+	hasSiblings: boolean;
+	// Whether the selector holds `&`.
+	nests: boolean;
 }
 
 const STRUCTURAL_PSEUDO = /^(?:nth-|first-|last-|only-|empty)/;
@@ -4774,6 +4790,11 @@ function readSelectorText(selector: string): SelectorReading {
 			compounds: [],
 			reachesSiblings,
 			siblingsReachDescendants: reachesSiblings,
+			hasAnchors: [],
+			hasCompounds: [],
+			hasStates: [],
+			hasSiblings: false,
+			nests: false,
 		};
 	}
 	const weight = getListSpecificity(list);
@@ -4815,7 +4836,7 @@ function readSelectorText(selector: string): SelectorReading {
 		}
 	}
 	closeCompound();
-	return {
+	const reading: SelectorReading = {
 		specificity,
 		subjectTag: getSubjectTag(complex),
 		compounds,
@@ -4823,7 +4844,99 @@ function readSelectorText(selector: string): SelectorReading {
 		siblingsReachDescendants: compounds
 			.slice(0, -1)
 			.some((keys) => keys.siblingTested),
+		hasAnchors: [],
+		hasCompounds: [],
+		hasStates: [],
+		hasSiblings: false,
+		nests: false,
 	};
+	for (const node of walkSelector(list)) {
+		if (node.type === "NestingSelector") {
+			reading.nests = true;
+		} else if (node.type === "Selector") {
+			let parts: CSSTree.SelectorNode[] = [];
+			for (const part of [...getChildren(node), null]) {
+				if (part === null || part.type === "Combinator") {
+					readHasCompound(parts, reading);
+					parts = [];
+				} else {
+					parts.push(part);
+				}
+			}
+		} else if (isHas(node)) {
+			for (const relative of getChildren(getChildren(node)[0] ?? {type: ""})) {
+				const first = getChildren(relative)[0];
+				if (first?.type === "Combinator" && /^[+~]$/.test(String(first.name))) {
+					reading.hasSiblings = true;
+				}
+				for (const inner of walkSelector(relative)) {
+					if (inner.type === "PseudoClassSelector") {
+						reading.hasStates.push(pseudoName(String(inner.name ?? "")));
+					}
+				}
+			}
+		}
+	}
+	return reading;
+}
+
+function *walkSelector(
+	node: CSSTree.SelectorNode,
+): Generator<CSSTree.SelectorNode> {
+	yield node;
+	for (const child of getChildren(node)) {
+		yield *walkSelector(child);
+	}
+	if (node.type === "Nth" && node.selector) {
+		yield *walkSelector(node.selector);
+	}
+}
+
+function isHas(node: CSSTree.SelectorNode): boolean {
+	return node.type === "PseudoClassSelector" &&
+		pseudoName(String(node.name ?? "")) === "has";
+}
+
+// A compound holding a pseudo-element or :host, or a second :has(), only
+// means something in its tree. A prefix needs the sheet's namespaces,
+// which the compound is tested without.
+function readHasCompound(
+	parts: CSSTree.SelectorNode[],
+	reading: SelectorReading,
+): void {
+	const count = parts.filter(isHas).length;
+	if (count === 0) {
+		return;
+	}
+	const required: CompoundKeys["required"] = {
+		tag: null,
+		classes: [],
+		ids: [],
+		attributes: [],
+		root: false,
+	};
+	harvestRequiredKeys(parts, required);
+	const anchor = required.ids.length > 0
+		? `#${required.ids[0]}`
+		: required.classes.length > 0
+		? `.${required.classes[0]}`
+		: (required.tag ?? "*");
+	const inside = parts.flatMap((part) => [...walkSelector(part)]);
+	const text = parts
+		.map((part) => serializeSimpleSelector(part, undefined))
+		.join("");
+	const untestable =
+		text.includes("|") ||
+		inside.filter(isHas).length > 1 ||
+		inside.some((node) =>
+			node.type === "PseudoElementSelector" ||
+			(node.type === "PseudoClassSelector" &&
+				pseudoName(String(node.name ?? "")).startsWith("host")),
+		);
+	for (let i = 0; i < count; i++) {
+		reading.hasAnchors.push(anchor);
+		reading.hasCompounds.push(untestable ? null : text);
+	}
 }
 
 // Undefined when the subject names no type, including a type in a

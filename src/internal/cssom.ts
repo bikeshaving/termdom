@@ -6857,14 +6857,9 @@ interface ParsedCSSRule {
 	// originates on the part element, inside the host's shadow tree.
 	ofPart?: boolean;
 
-	// For a rule with a :has(), what its anchors must have, as the cascade's
-	// hasAnchors keeps them, and the pseudo-classes inside it.
-	hasAnchors?: readonly string[];
-	hasStates?: readonly string[];
-	hasSiblings?: boolean;
-	// The compounds the :has()es are written in, or null for one that can
-	// only be tested in its tree, as a :host's is.
-	hasCompounds?: ReadonlyArray<string | null>;
+	// For a rule with a :has(), its selector's reading, whose anchors,
+	// compounds and states the cascade's :has() tables gather.
+	has?: CSSValues.SelectorReading;
 
 	// The bits, in an element's ancestor filter, of the names, ids and
 	// classes the rule's compounds left of a descendant or child
@@ -7999,13 +7994,10 @@ function registerConnectedShadowRoots(
 // leaves no shared table reusable.
 function noteHasRule(
 	cascade: Cascade,
-	anchors: readonly string[],
-	states: readonly string[],
-	siblings: boolean,
-	compounds: ReadonlyArray<string | null>,
+	reading: CSSValues.SelectorReading,
 ): void {
 	cascade.hasRulesExist = true;
-	for (const compound of compounds) {
+	for (const compound of reading.hasCompounds) {
 		if (compound === null) {
 			cascade.hasCompoundsUntestable = true;
 		} else if (!cascade.hasCompounds.has(compound)) {
@@ -8013,152 +8005,15 @@ function noteHasRule(
 			cascade.hasAnswers = new WeakMap();
 		}
 	}
-	if (siblings) {
+	if (reading.hasSiblings) {
 		cascade.hasSiblingRules = true;
 	}
-	for (const anchor of anchors) {
+	for (const anchor of reading.hasAnchors) {
 		cascade.hasAnchors.add(anchor);
 	}
-	for (const state of states) {
+	for (const state of reading.hasStates) {
 		cascade.hasStates.add(state);
 	}
-}
-
-// Whether a :has() in the selector takes a relative selector that starts
-// with + or ~.
-function hasSiblingArgument(selector: string): boolean {
-	for (
-		let at = selector.indexOf(":has(");
-		at !== -1;
-		at = selector.indexOf(":has(", at + 5)
-	) {
-		let depth = 0;
-		let start = at + 5;
-		for (let index = start; index < selector.length; index++) {
-			const char = selector[index];
-			if (char === "(" || char === "[") {
-				depth++;
-			} else if (char === ")" || char === "]") {
-				if (depth === 0) {
-					if (/^\s*[+~]/.test(selector.slice(start, index))) {
-						return true;
-					}
-					break;
-				}
-				depth--;
-			} else if (char === "," && depth === 0) {
-				if (/^\s*[+~]/.test(selector.slice(start, index))) {
-					return true;
-				}
-				start = index + 1;
-			}
-		}
-	}
-	return false;
-}
-
-// For each :has() in a selector, what the compound it is written on asks
-// of an element: its id, else a class, else its local name, else
-// anything. What a functional pseudo-class or an attribute selector asks
-// is left out, so the answer only ever asks for less.
-function getHasAnchors(selector: string): string[] {
-	const anchors: string[] = [];
-	for (
-		let at = selector.indexOf(":has(");
-		at !== -1;
-		at = selector.indexOf(":has(", at + 5)
-	) {
-		let start = at;
-		let depth = 0;
-		while (start > 0) {
-			const char = selector[start - 1];
-			if (char === ")" || char === "]") {
-				depth++;
-			} else if (char === "(" || char === "[") {
-				if (depth === 0) {
-					break;
-				}
-				depth--;
-			} else if (depth === 0 && /[\s>+~,]/.test(char)) {
-				break;
-			}
-			start--;
-		}
-		let compound = selector.slice(start, at);
-		if (/[\\|]/.test(compound)) {
-			anchors.push("*");
-			continue;
-		}
-		let previous;
-		do {
-			previous = compound;
-			compound = compound
-				.replace(/:[\w-]+\([^()]*\)/g, "")
-				.replace(/\[[^[\]]*\]/g, "");
-		} while (compound !== previous);
-		const id = /#([\w-]+)/.exec(compound);
-		const className = /\.([\w-]+)/.exec(compound);
-		const tag = /^([a-zA-Z][\w-]*)/.exec(compound);
-		anchors.push(
-			id
-				? `#${id[1]}`
-				: className ? `.${className[1]}` : tag ? tag[1].toLowerCase() : "*",
-		);
-	}
-	return anchors;
-}
-
-// For each :has() in a selector, the whole compound it is written in, as
-// `.a:has(> .b):not(.c)`, which tested on an anchor says whether that
-// part of the rule holds there. Null for a compound that only means
-// something in its tree.
-function getHasCompounds(selector: string): Array<string | null> {
-	const compounds: Array<string | null> = [];
-	for (
-		let at = selector.indexOf(":has(");
-		at !== -1;
-		at = selector.indexOf(":has(", at + 5)
-	) {
-		let start = at;
-		let depth = 0;
-		while (start > 0) {
-			const char = selector[start - 1];
-			if (char === ")" || char === "]") {
-				depth++;
-			} else if (char === "(" || char === "[") {
-				if (depth === 0) {
-					break;
-				}
-				depth--;
-			} else if (depth === 0 && /[\s>+~,]/.test(char)) {
-				break;
-			}
-			start--;
-		}
-		let end = at;
-		depth = 0;
-		for (; end < selector.length; end++) {
-			const char = selector[end];
-			if (char === "(" || char === "[") {
-				depth++;
-			} else if (char === ")" || char === "]") {
-				if (depth === 0) {
-					break;
-				}
-				depth--;
-			} else if (depth === 0 && /[\s>+~,]/.test(char)) {
-				break;
-			}
-		}
-		const compound = selector.slice(start, end);
-		compounds.push(
-			/::|:host|[\\|]/.test(compound) ||
-			compound.indexOf(":has(") !== compound.lastIndexOf(":has(")
-				? null
-				: compound,
-		);
-	}
-	return compounds;
 }
 
 function couldAnchorHas(cascade: Cascade, element: Element): boolean {
@@ -8211,14 +8066,8 @@ function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	cascade.hasCompoundsUntestable = false;
 	cascade.hasAnswers = new WeakMap();
 	for (const rule of cascade.parsedRules) {
-		if (rule.hasAnchors !== undefined) {
-			noteHasRule(
-				cascade,
-				rule.hasAnchors,
-				rule.hasStates ?? [],
-				rule.hasSiblings === true,
-				rule.hasCompounds ?? [null],
-			);
+		if (rule.has !== undefined) {
+			noteHasRule(cascade, rule.has);
 		}
 	}
 }
@@ -11723,24 +11572,16 @@ function parseSelector(
 		cascade.transitionsExist = true;
 	}
 	const layer = context.layer;
+	const reading = CSSValues.readSelector(selector);
 	// A :has() rule reads DOWN the tree, the one relational direction the
 	// per-target invalidation cannot see, so the flag enables the ancestor
 	// sweep only for documents that need it.
-	let hasAnchors: string[] | undefined;
-	let hasStates: string[] | undefined;
-	let hasSiblings: boolean | undefined;
-	let hasCompounds: Array<string | null> | undefined;
-	if (selector.includes(":has(")) {
-		hasAnchors = getHasAnchors(selector);
-		hasCompounds = getHasCompounds(selector);
-		const inside = selector.slice(selector.indexOf(":has(") + 5);
-		hasStates = Array.from(inside.matchAll(/:([a-zA-Z-]+)/g), (match) =>
-			match[1].toLowerCase(),
-		);
-		hasSiblings = hasSiblingArgument(selector);
-		noteHasRule(cascade, hasAnchors, hasStates, hasSiblings, hasCompounds);
+	const has = reading.hasAnchors.length > 0 ? reading : undefined;
+	if (has) {
+		noteHasRule(cascade, has);
 	}
-	if (selector.includes(":hover")) {
+	const pseudoClasses = reading.compounds.flatMap((keys) => keys.pseudoClasses);
+	if (pseudoClasses.includes("hover")) {
 		cascade.hoverRulesDeclared = true;
 	}
 	let scopes: readonly CSSValues.ScopeCondition[] | undefined;
@@ -11754,7 +11595,6 @@ function parseSelector(
 	) {
 		return;
 	}
-	const reading = CSSValues.readSelector(selector);
 	indexReachingKeys(cascade, selector, reading, declarations, scope);
 	if (
 		declarations["counter-reset"] ||
@@ -11798,7 +11638,9 @@ function parseSelector(
 					: undefined;
 	// A :host rule is tried against the host as well as the tree's
 	// elements.
-	const reachesHost = scope !== undefined && selector.includes(":host");
+	const reachesHost =
+		scope !== undefined &&
+		pseudoClasses.some((name) => name.startsWith("host"));
 
 	// Any pseudo-element, not just the ones this engine gives a box. A rule
 	// for `::highlight(x)` still has to be visible through
@@ -11840,10 +11682,7 @@ function parseSelector(
 			scope,
 			uaOrigin,
 			reachesHost,
-			hasAnchors,
-			hasStates,
-			hasSiblings,
-			hasCompounds,
+			has,
 			layer,
 			layerRank: 0,
 			scopes,
@@ -11858,7 +11697,7 @@ function parseSelector(
 	} else {
 		cascade.parsedRules.push({
 			...compileRuleSelector(selector, namespaces, scopes),
-			ancestorBits: scopes || reachesHost || selector.includes("&")
+			ancestorBits: scopes || reachesHost || reading.nests
 				? undefined
 				: getAncestorBits(reading),
 			subjectTag,
@@ -11870,10 +11709,7 @@ function parseSelector(
 			scope,
 			uaOrigin,
 			reachesHost,
-			hasAnchors,
-			hasStates,
-			hasSiblings,
-			hasCompounds,
+			has,
 			layer,
 			layerRank: 0,
 			scopes,
