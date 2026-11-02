@@ -1725,8 +1725,8 @@ function styleLayoutNodeProperties(
 
 	// An absolutely positioned part of a table is a block (css2 §9.7). It
 	// leaves the table, and lays out as any positioned box does.
-	const outOfFlow =
-		getPosition(element) === "absolute" || getPosition(element) === "fixed";
+	const position = getPosition(element);
+	const outOfFlow = position === "absolute" || position === "fixed";
 	if (outOfFlow && BLOCKIFIED_TABLE_PARTS.has(display)) {
 		style.displayType = "block";
 	} else if (display === "none") {
@@ -1789,7 +1789,6 @@ function styleLayoutNodeProperties(
 		hasLayoutOrPaintContainment(element) ||
 		parentIsFlex;
 
-	const position = getPosition(element);
 	style.containsPositioned = establishesFixedContainingBlock(element);
 	style.translate = getTranslation(element);
 	// How the stacking-context painter finds positioned and isolated boxes
