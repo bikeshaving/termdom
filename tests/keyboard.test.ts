@@ -2927,6 +2927,29 @@ test("keys that spell out their modifiers decode as those keys", async () => {
 	termdom.dispose();
 });
 
+test("an uppercase letter from a terminal reports Shift", async () => {
+	const {termdom, document, type} = await makeKeyApp("<p>p</p>");
+	const seen: string[] = [];
+	document.addEventListener("keydown", (event) => {
+		const mods =
+			[event.altKey && "Alt", event.shiftKey && "Shift"].filter(Boolean);
+		seen.push([...mods, `${event.key}:${event.code}`].join("+"));
+	});
+	await type("A");
+	await type("a");
+	await type("\x1bZ");
+	await type("?");
+	await type("\x1b[65u");
+	expect(seen).toEqual([
+		"Shift+A:KeyA",
+		"a:KeyA",
+		"Alt+Shift+Z:KeyZ",
+		"?:Slash",
+		"A:KeyA",
+	]);
+	termdom.dispose();
+});
+
 test("keyCode names the key, not the character", async () => {
 	const {termdom, document, type} = await makeKeyApp("<p>p</p>");
 	const codes: number[] = [];

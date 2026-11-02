@@ -402,7 +402,7 @@ function decodeKeyToken(token: string): WireKey {
 	}
 
 	// A character outside the basic plane is one character across two
-	// units.
+	// units. An uppercase ASCII letter is that letter with Shift.
 	const astral = token.length === 2 && code >= 0xd800 && code <= 0xdbff;
 	const printable =
 		astral || (token.length === 1 && code >= 32 && code !== 127);
@@ -410,7 +410,7 @@ function decodeKeyToken(token: string): WireKey {
 		kind: "key",
 		key: KEY_BY_TOKEN[token] ?? token,
 		char: printable ? token : "",
-		shiftKey: false,
+		shiftKey: code >= 0x41 && code <= 0x5a,
 		ctrlKey: false,
 		altKey: false,
 		metaKey: false,
