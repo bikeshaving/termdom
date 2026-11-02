@@ -1019,6 +1019,78 @@ function compileAttribute(
 	};
 }
 
+// The pseudo-classes that take no argument and test the element alone,
+// or with the match state.
+const PSEUDO_CLASS_TESTS: Readonly<Record<string, Predicate>> = {
+	scope: (element, state) => element === state.scope,
+	root: (element) => {
+		const parent = getParentNode(element);
+		return parent !== null && getNodeType(parent) === DOCUMENT_NODE;
+	},
+	empty: isEmpty,
+	"first-child": (element) => getPreviousElement(element) === null,
+	"last-child": (element) => getNextElement(element) === null,
+	"only-child": (element) =>
+		getPreviousElement(element) === null && getNextElement(element) === null,
+	"first-of-type": (element, state) =>
+		getOfTypeIndex(element, false, state) === 1,
+	"last-of-type": (element, state) =>
+		getOfTypeIndex(element, true, state) === 1,
+	"only-of-type": (element, state) =>
+		getOfTypeIndex(element, false, state) === 1 &&
+		getOfTypeIndex(element, true, state) === 1,
+	link: isHyperlink,
+	"any-link": isHyperlink,
+	// A terminal has never recorded a visited link, and answering would
+	// leak history even if it had.
+	visited: matchNothing,
+	target: (element) => states.isTargetElement(element),
+	hover: (element) => states.isHovered(element),
+	// Between a mouse press and its release, which a terminal's mouse
+	// reporting sends apart.
+	active: (element) => states.isActive(element),
+	focus: (element) => states.hasFocus(element),
+	"focus-visible": (element) => states.isFocusVisible(element),
+	"focus-within": (element) => states.hasFocusWithin(element),
+	// A dialog shown modally, or an element in fullscreen.
+	modal: (element) =>
+		states.isModalDialog(element) || states.isFullscreenElement(element),
+	"popover-open": (element) => states.isShowingPopover(element),
+	fullscreen: (element) => states.isFullscreenElement(element),
+	defined: (element) => states.isDefinedElement(element),
+	open: (element) => states.isOpenElement(element),
+	closed: (element) => canOpen(element) && !states.isOpenElement(element),
+	checked: (element) => states.isCheckedControl(element),
+	indeterminate: (element) => states.isIndeterminateControl(element),
+	"low-value": (element) => states.isMeterValue(element, "low"),
+	"high-value": (element) => states.isMeterValue(element, "high"),
+	"optimal-value": (element) => states.getMeterLevel(element) === "optimum",
+	"-moz-meter-optimum": (element) =>
+		states.getMeterLevel(element) === "optimum",
+	"-moz-meter-sub-optimum": (element) =>
+		states.getMeterLevel(element) === "suboptimum",
+	"-moz-meter-sub-sub-optimum": (element) =>
+		states.getMeterLevel(element) === "even-less-good",
+	"placeholder-shown": (element) => states.isPlaceholderShown(element),
+	default: (element) => states.isDefaultControl(element),
+	disabled: (element) => states.isActuallyDisabled(element),
+	enabled: (element) =>
+		isDisableable(element) && !states.isActuallyDisabled(element),
+	valid: (element) => states.getValidityMatch(element) === "valid",
+	invalid: (element) => states.getValidityMatch(element) === "invalid",
+	"user-valid": (element) => states.getUserValidityMatch(element) === "valid",
+	"user-invalid": (element) =>
+		states.getUserValidityMatch(element) === "invalid",
+	"in-range": (element) => states.getRangeMatch(element) === "in",
+	"out-of-range": (element) => states.getRangeMatch(element) === "out",
+	required: (element) =>
+		isRequirable(element) && getAttributeValue(element, "required") !== null,
+	optional: (element) =>
+		isRequirable(element) && getAttributeValue(element, "required") === null,
+	"read-only": (element) => !isMutable(element),
+	"read-write": isMutable,
+};
+
 function compilePseudoClass(
 	part: CSSTree.SelectorNode,
 	compound: CompiledCompound,
@@ -1110,48 +1182,6 @@ function compilePseudoClass(
 			});
 			return;
 		}
-		case "scope":
-			compound.tests.push((element, state) => element === state.scope);
-			return;
-		case "root":
-			compound.tests.push((element) => {
-				const parent = getParentNode(element);
-				return parent !== null && getNodeType(parent) === DOCUMENT_NODE;
-			});
-			return;
-		case "empty":
-			compound.tests.push(isEmpty);
-			return;
-		case "first-child":
-			compound.tests.push((element) => getPreviousElement(element) === null);
-			return;
-		case "last-child":
-			compound.tests.push((element) => getNextElement(element) === null);
-			return;
-		case "only-child":
-			compound.tests.push(
-				(element) =>
-					getPreviousElement(element) === null &&
-					getNextElement(element) === null,
-			);
-			return;
-		case "first-of-type":
-			compound.tests.push(
-				(element, state) => getOfTypeIndex(element, false, state) === 1,
-			);
-			return;
-		case "last-of-type":
-			compound.tests.push(
-				(element, state) => getOfTypeIndex(element, true, state) === 1,
-			);
-			return;
-		case "only-of-type":
-			compound.tests.push(
-				(element, state) =>
-					getOfTypeIndex(element, false, state) === 1 &&
-					getOfTypeIndex(element, true, state) === 1,
-			);
-			return;
 		case "nth-child":
 		case "nth-last-child":
 		case "nth-of-type":
@@ -1185,153 +1215,11 @@ function compilePseudoClass(
 			compound.tests.push((element) => states.hasCustomState(element, wanted));
 			return;
 		}
-		case "link":
-		case "any-link":
-			compound.tests.push(isHyperlink);
-			return;
-		case "visited":
-			// A terminal has never recorded a visited link, and answering would
-			// leak history even if it had.
-			compound.tests.push(matchNothing);
-			return;
-		case "target":
-			compound.tests.push((element) => states.isTargetElement(element));
-			return;
-		case "hover":
-			compound.tests.push((element) => states.isHovered(element));
-			return;
-		case "active":
-			// Between a mouse press and its release, which a terminal's mouse
-			// reporting sends apart.
-			compound.tests.push((element) => states.isActive(element));
-			return;
-		case "focus":
-			compound.tests.push((element) => states.hasFocus(element));
-			return;
-		case "focus-visible":
-			compound.tests.push((element) => states.isFocusVisible(element));
-			return;
-		case "focus-within":
-			compound.tests.push((element) => states.hasFocusWithin(element));
-			return;
-		case "modal":
-			// A dialog shown modally, or an element in fullscreen.
-			compound.tests.push(
-				(element) => states.isModalDialog(element) ||
-					states.isFullscreenElement(element),
-			);
-			return;
-		case "popover-open":
-			compound.tests.push((element) => states.isShowingPopover(element));
-			return;
-		case "fullscreen":
-			compound.tests.push((element) => states.isFullscreenElement(element));
-			return;
-		case "defined":
-			compound.tests.push((element) => states.isDefinedElement(element));
-			return;
-		case "open":
-			compound.tests.push((element) => states.isOpenElement(element));
-			return;
-		case "closed":
-			compound.tests.push(
-				(element) => canOpen(element) && !states.isOpenElement(element),
-			);
-			return;
-		case "checked":
-			compound.tests.push((element) => states.isCheckedControl(element));
-			return;
-		case "indeterminate":
-			compound.tests.push((element) => states.isIndeterminateControl(element));
-			return;
-		case "low-value":
-			compound.tests.push((element) => states.isMeterValue(element, "low"));
-			return;
-		case "high-value":
-			compound.tests.push((element) => states.isMeterValue(element, "high"));
-			return;
-		case "optimal-value":
-		case "-moz-meter-optimum":
-			compound.tests.push(
-				(element) => states.getMeterLevel(element) === "optimum",
-			);
-			return;
-		case "-moz-meter-sub-optimum":
-			compound.tests.push(
-				(element) => states.getMeterLevel(element) === "suboptimum",
-			);
-			return;
-		case "-moz-meter-sub-sub-optimum":
-			compound.tests.push(
-				(element) => states.getMeterLevel(element) === "even-less-good",
-			);
-			return;
-		case "placeholder-shown":
-			compound.tests.push((element) => states.isPlaceholderShown(element));
-			return;
-		case "default":
-			compound.tests.push((element) => states.isDefaultControl(element));
-			return;
-		case "disabled":
-			compound.tests.push(states.isActuallyDisabled);
-			return;
-		case "enabled":
-			compound.tests.push(
-				(element) => isDisableable(element) &&
-					!states.isActuallyDisabled(element),
-			);
-			return;
-		case "valid":
-			compound.tests.push(
-				(element) => states.getValidityMatch(element) === "valid",
-			);
-			return;
-		case "invalid":
-			compound.tests.push(
-				(element) => states.getValidityMatch(element) === "invalid",
-			);
-			return;
-		case "user-valid":
-			compound.tests.push(
-				(element) => states.getUserValidityMatch(element) === "valid",
-			);
-			return;
-		case "user-invalid":
-			compound.tests.push(
-				(element) => states.getUserValidityMatch(element) === "invalid",
-			);
-			return;
-		case "in-range":
-			compound.tests.push((element) => states.getRangeMatch(element) === "in");
-			return;
-		case "out-of-range":
-			compound.tests.push((element) => states.getRangeMatch(element) === "out");
-			return;
-		case "required":
-			compound.tests.push(
-				(element) =>
-					isRequirable(element) &&
-					getAttributeValue(element, "required") !== null,
-			);
-			return;
-		case "optional":
-			compound.tests.push(
-				(element) =>
-					isRequirable(element) &&
-					getAttributeValue(element, "required") === null,
-			);
-			return;
-		case "read-only":
-			compound.tests.push((element) => !isMutable(element));
-			return;
-		case "read-write":
-			compound.tests.push(isMutable);
-			return;
 		default:
-			// Everything left names a state this user agent never enters: a
-			// media element's buffering, a page box's side, a spatial
-			// navigation target, and autofill.
-			compound.tests.push(matchNothing);
+			// A pseudo-class the table leaves out names a state this user agent
+			// never enters: a media element's buffering, a page box's side, a
+			// spatial navigation target, and autofill.
+			compound.tests.push(PSEUDO_CLASS_TESTS[name] ?? matchNothing);
 	}
 }
 
