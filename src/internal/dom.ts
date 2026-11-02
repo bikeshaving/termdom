@@ -529,9 +529,6 @@ export function revealTextControlCaret(document: globalThis.Document): void {
 	}
 }
 
-/** The range each document reuses for control-selection queries. */
-const selectionRanges = new WeakMap<globalThis.Document, globalThis.Range>();
-
 // Per spec a form control's selection is invisible to getSelection(), so
 // this is the only way to measure it. The range belongs to the document
 // and is valid until the next selection read. Null when the selection is
@@ -553,11 +550,8 @@ function getTextSelectionRange(
 		return null;
 	}
 	const document = getUADocument(control);
-	let range = selectionRanges.get(document);
-	if (range === undefined) {
-		range = document.createRange();
-		selectionRanges.set(document, range);
-	}
+	const range =
+		_(document as Document).extra.selectionRange ??= document.createRange();
 	range.setStart(valueText, from);
 	range.setEnd(valueText, to);
 	return range;
@@ -1008,14 +1002,13 @@ export interface FocusStartingPoint {
 	next: Node | null;
 }
 
-const focusStartingPoints = new WeakMap<Document, FocusStartingPoint>();
-
 /** The starting point a removal left, consumed by the Tab that uses it. */
 export function takeFocusStartingPoint(
 	document: globalThis.Document,
 ): FocusStartingPoint | null {
-	const point = focusStartingPoints.get(document as Document) ?? null;
-	focusStartingPoints.delete(document as Document);
+	const extra = _(document as Document).extra;
+	const point = extra.focusStartingPoint ?? null;
+	extra.focusStartingPoint = undefined;
 	return point;
 }
 
@@ -4445,15 +4438,8 @@ interface HoverListenerCount {
 	onChange: (() => void) | null;
 }
 
-const hoverListenerCounters = new WeakMap<Document, HoverListenerCount>();
-
 function getHoverCount(document: Document): HoverListenerCount {
-	let hoverCount = hoverListenerCounters.get(document);
-	if (hoverCount === undefined) {
-		hoverCount = {count: 0, onChange: null};
-		hoverListenerCounters.set(document, hoverCount);
-	}
-	return hoverCount;
+	return _(document).extra.hoverCount ??= {count: 0, onChange: null};
 }
 
 // Returns null when the type is not a hover type or the target belongs to
@@ -5512,15 +5498,6 @@ function isActivationTriggering(
 	}
 }
 
-/** How many activation-triggering dispatches are running, per document. */
-const activationDepths = new WeakMap<Document, number>();
-
-/** Documents the user has ever acted on. */
-const everActivatedDocuments = new WeakSet<Document>();
-
-/** When the user last acted on each document, in performance.now() time. */
-const lastActivations = new WeakMap<Document, number>();
-
 // HTML leaves the transient activation duration to the user agent, "at
 // most a few seconds". Browsers use about five.
 const TRANSIENT_ACTIVATION_MS = 5000;
@@ -5544,7 +5521,7 @@ function getActivationDocument(target: EventTarget): Document | null {
  * user's own clipboard happens inside the gesture or not at all.
  */
 function isUserActive(document: Document): boolean {
-	return (activationDepths.get(document) ?? 0) > 0;
+	return (_(document).extra.activationDepth ?? 0) > 0;
 }
 
 /**
@@ -5555,7 +5532,7 @@ function hasTransientActivation(document: Document): boolean {
 	if (isUserActive(document)) {
 		return true;
 	}
-	const last = lastActivations.get(document);
+	const last = _(document).extra.lastActivation;
 	return last !== undefined &&
 		performance.now() - last <= TRANSIENT_ACTIVATION_MS;
 }
@@ -5577,13 +5554,13 @@ export function dispatchAsUserAgent(
 	if (document === null || !isActivationTriggering(event)) {
 		return dispatchFromOutside(target as EventTarget, event as Event, true);
 	}
-	activationDepths.set(document, (activationDepths.get(document) ?? 0) + 1);
-	everActivatedDocuments.add(document);
-	lastActivations.set(document, performance.now());
+	const extra = _(document).extra;
+	extra.activationDepth = (extra.activationDepth ?? 0) + 1;
+	extra.lastActivation = performance.now();
 	try {
 		return dispatchFromOutside(target as EventTarget, event as Event, true);
 	} finally {
-		activationDepths.set(document, activationDepths.get(document)! - 1);
+		extra.activationDepth--;
 	}
 }
 
@@ -7768,11 +7745,11 @@ function removeNode(node: Node, suppressObservers = false): void {
 			if (descendant === active) {
 				documentSlots.extra.activeElement = null;
 				// Tab carries on from where the focused element was.
-				focusStartingPoints.set(document, {
+				documentSlots.extra.focusStartingPoint = {
 					tabIndex: (active as HTMLElement).tabIndex ?? 0,
 					parent,
 					next: oldNextSibling,
-				});
+				};
 				// The ancestors it left were :focus-within, and no longer are.
 				const left = implementsInterface(parent, ShadowRoot)
 					? (_(parent).extra.host as Element)
@@ -12825,7 +12802,7 @@ function runFocusingSteps(element: HTMLElement): void {
 		_(document).extra.activeElement = element;
 		// Focusing the body moves nothing a Tab would start from.
 		if (element !== document.body) {
-			focusStartingPoints.delete(document);
+			_(document).extra.focusStartingPoint = undefined;
 		}
 		// Focus in a frame's document is focus in the frame, in the document
 		// the frame is in, as HTML's focus chain runs up through the frames.
@@ -16938,7 +16915,7 @@ function focusDialog(dialog: HTMLDialogElement): void {
 	}
 	if (isModalDialog(dialog)) {
 		_(dialogSlots.document).extra.activeElement = dialog;
-		focusStartingPoints.delete(dialogSlots.document);
+		_(dialogSlots.document).extra.focusStartingPoint = undefined;
 	}
 }
 
@@ -25290,27 +25267,20 @@ export function handleCloseRequest(document: globalThis.Document): boolean {
 // stack, the spec steps and the two events are user-agent state and live
 // here. The screen swap itself belongs to the engine and is bracketed
 // through the frame so no frame straddles it.
-const fullscreenStacks = new WeakMap<Document, Element[]>();
-
 function getFullscreenStack(document: Document): Element[] {
-	let stack = fullscreenStacks.get(document);
-	if (stack === undefined) {
-		stack = [];
-		fullscreenStacks.set(document, stack);
-	}
-	return stack;
+	return _(document).extra.fullscreenStack ??= [];
 }
 
 // The top of the stack is the element the viewport shows alone.
 export function getFullscreenElement(document: Document): Element | null {
-	const stack = fullscreenStacks.get(document);
+	const stack = _(document).extra.fullscreenStack;
 	return stack?.length ? stack[stack.length - 1] : null;
 }
 
 // A fullscreen element that leaves the document leaves fullscreen, and
 // the document hears it (the Fullscreen Standard's removing steps).
 function leaveFullscreenOnRemoval(document: Document, node: Node): void {
-	const stack = fullscreenStacks.get(document);
+	const stack = _(document).extra.fullscreenStack;
 	if (stack === undefined || stack.length === 0) {
 		return;
 	}
@@ -25336,7 +25306,7 @@ function leaveFullscreenOnRemoval(document: Document, node: Node): void {
 
 /** Abandon fullscreen without events. Used when the engine is tearing down. */
 export function dropFullscreen(document: globalThis.Document): void {
-	fullscreenStacks.delete(document as Document);
+	_(document as Document).extra.fullscreenStack = undefined;
 }
 
 // ONE target, per the Fullscreen Standard: the element while it is still
@@ -28135,6 +28105,25 @@ export interface DocumentExtra extends NodeExtra {
 	// The layout pass the document's offsets were last clamped after. A
 	// write clamps itself, so until layout solves again they still fit.
 	clampedAfterSolve?: number;
+	// The range the document reuses for control-selection queries.
+	selectionRange?: globalThis.Range;
+	focusStartingPoint?: FocusStartingPoint;
+	hoverCount?: HoverListenerCount;
+	// How many activation-triggering dispatches are running.
+	activationDepth?: number;
+	// When the user last acted on the document, in performance.now() time,
+	// or undefined while the user never has.
+	lastActivation?: number;
+	// The element a mouse button is held down on, for `:active`.
+	pressedElement?: Element;
+	// Hover is not a mutation and no attribute records it. The engine
+	// writes it here as motion reports arrive, and the `:hover` resolver
+	// reads it. Absent means nothing is hovered, because the document has
+	// no motion reporting or the pointer left.
+	hoveredElement?: Element;
+	pointerState?: PointerState;
+	focusVisible?: boolean;
+	fullscreenStack?: Element[];
 }
 
 export interface DocumentSlots extends NodeSlots {
@@ -34929,26 +34918,20 @@ Object.defineProperty(TreeWalker.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-const activeElements = new WeakMap<Document, Element>();
-
 /** Record the element a mouse button is held down on, for `:active`. */
 export function setActiveElement(
 	document: globalThis.Document,
 	element: globalThis.Element | null,
 ): void {
-	if (element === null) {
-		activeElements.delete(document as Document);
-	} else {
-		activeElements.set(document as Document, element as Element);
-	}
+	_(document as Document).extra.pressedElement =
+		(element as Element | null) ?? undefined;
 }
 
 export function getActiveElement(
 	document: globalThis.Document,
 ): globalThis.Element | null {
-	return (activeElements.get(document as Document) ??
-		null) as globalThis.Element |
-		null;
+	return (_(document as Document).extra.pressedElement ?? null) as
+		globalThis.Element | null;
 }
 
 // True for the pressed element and anything that contains it in the flat
@@ -34956,7 +34939,7 @@ export function getActiveElement(
 export function isActive(element: Element): boolean {
 	const document = _(element).document;
 	for (
-		let node: Element | null = activeElements.get(document) ?? null;
+		let node: Element | null = _(document).extra.pressedElement ?? null;
 		node !== null;
 		node = getFlatTreeParent(node)
 	) {
@@ -34966,12 +34949,6 @@ export function isActive(element: Element): boolean {
 	}
 	return false;
 }
-
-// Hover is not a mutation and no attribute records it. The engine
-// writes it here as motion reports arrive, and the `:hover` resolver
-// reads it. Absent means nothing is hovered, because the document has no
-// motion reporting or the pointer left.
-const hoveredElements = new WeakMap<Document, Element>();
 
 /**
  * The mouse's buttons held down, and its capture: `pending` is what
@@ -34983,21 +34960,18 @@ export interface PointerState {
 	active: Element | null;
 }
 
-const pointerStates = new WeakMap<Document, PointerState>();
-
 export function getPointerState(document: globalThis.Document): PointerState {
-	let state = pointerStates.get(document as Document);
-	if (state === undefined) {
-		state = {buttons: 0, pending: null, active: null};
-		pointerStates.set(document as Document, state);
-	}
-	return state;
+	return _(document as Document).extra.pointerState ??= {
+		buttons: 0,
+		pending: null,
+		active: null,
+	};
 }
 
 // An element that leaves the document loses its capture at once. A move
 // is not a removal, so moveBefore keeps it.
 function releasePointerCaptureOnRemoval(document: Document, node: Node): void {
-	const state = pointerStates.get(document);
+	const state = _(document).extra.pointerState;
 	if (
 		state?.pending != null &&
 		isShadowIncludingInclusiveAncestor(node, state.pending)
@@ -35018,16 +34992,13 @@ function movePointerStatesOffRemoval(
 	const heir = implementsInterface(parent, ShadowRoot)
 		? (_(parent).extra.host as Element)
 		: getNodeType(parent) === ELEMENT_NODE ? (parent as Element) : null;
-	for (const states of [activeElements, hoveredElements]) {
-		const element = states.get(document);
+	const extra = _(document).extra;
+	for (const key of ["pressedElement", "hoveredElement"] as const) {
+		const element = extra[key];
 		if (
 			element !== undefined && isShadowIncludingInclusiveAncestor(node, element)
 		) {
-			if (heir === null) {
-				states.delete(document);
-			} else {
-				states.set(document, heir);
-			}
+			extra[key] = heir ?? undefined;
 		}
 	}
 }
@@ -35037,14 +35008,9 @@ export function setHoveredElement(
 	document: globalThis.Document,
 	element: globalThis.Element | null,
 ): void {
-	if (element === null) {
-		hoveredElements.delete(document as Document);
-	} else {
-		hoveredElements.set(document as Document, element as Element);
-	}
+	_(document as Document).extra.hoveredElement =
+		(element as Element | null) ?? undefined;
 }
-
-const focusVisibleDocuments = new WeakMap<Document, boolean>();
 
 /**
  * A focus ring depends on how focus was moved: a key shows one, a click
@@ -35055,11 +35021,11 @@ export function setDocumentFocusVisible(
 	document: globalThis.Document,
 	active: boolean,
 ): boolean {
-	const node = document as Document;
-	if ((focusVisibleDocuments.get(node) ?? true) === active) {
+	const extra = _(document as Document).extra;
+	if ((extra.focusVisible ?? true) === active) {
 		return false;
 	}
-	focusVisibleDocuments.set(node, active);
+	extra.focusVisible = active;
 	return true;
 }
 
@@ -35375,7 +35341,7 @@ export function isInQuirksMode(node: Node): boolean {
 export function isHovered(element: Element): boolean {
 	const document = _(element).document;
 	for (
-		let node: Element | null = hoveredElements.get(document) ?? null;
+		let node: Element | null = _(document).extra.hoveredElement ?? null;
 		node !== null;
 		node = getFlatTreeParent(node)
 	) {
@@ -35388,7 +35354,7 @@ export function isHovered(element: Element): boolean {
 
 export function isFocusVisible(element: Element): boolean {
 	const document = _(element).document;
-	return (focusVisibleDocuments.get(document) ?? true) && hasFocus(element);
+	return (_(document).extra.focusVisible ?? true) && hasFocus(element);
 }
 
 // The climb continues past every shadow host above the focused element,
@@ -35411,7 +35377,7 @@ export function hasFocusWithin(element: Element): boolean {
 }
 
 export function isFullscreenElement(element: Element): boolean {
-	const stack = fullscreenStacks.get(_(element).document);
+	const stack = _(_(element).document).extra.fullscreenStack;
 	return stack !== undefined && stack.includes(element);
 }
 
@@ -37964,7 +37930,7 @@ export function flushLayout(node: globalThis.Node): boolean {
 }
 
 export function hoverListenerCount(document: globalThis.Document): number {
-	return hoverListenerCounters.get(document as Document)?.count ?? 0;
+	return _(document as Document).extra.hoverCount?.count ?? 0;
 }
 
 /** The images and canvas options of the TermDOM drawing the node's document. */
@@ -39845,7 +39811,7 @@ export class Window extends EventTarget {
 				permissions: constructInternal(() => new Permissions(document)),
 				userActivation: {
 					get hasBeenActive(): boolean {
-						return everActivatedDocuments.has(document);
+						return _(document).extra.lastActivation !== undefined;
 					},
 					// HTML's transient activation, which outlasts the gesture by
 					// a moment. The clipboard asks the narrower question.
