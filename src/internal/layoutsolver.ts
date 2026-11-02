@@ -91,6 +91,7 @@ export interface Size {
 // box was last placed, so text can break against the whole columns it is
 // drawn across. NaN before the box is first placed.
 export type Measure = (
+	this: LayoutNode,
 	width: number,
 	widthSpace: AvailableSpace,
 	placing: boolean,

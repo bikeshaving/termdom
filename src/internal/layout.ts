@@ -66,7 +66,6 @@ import {
 	isContainingBlock,
 	type Justify,
 	LayoutNode,
-	type Measure,
 	NO_TRANSLATION,
 	type PositionType,
 	releaseCache,
@@ -8438,7 +8437,7 @@ type MeasureSubject =
 
 function setMeasure(node: LayoutNode, subject: MeasureSubject): void {
 	node.measureSubject = subject;
-	node.measure = measureNode as unknown as Measure;
+	node.measure = measureNode;
 }
 
 function measureSubject(
