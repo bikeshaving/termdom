@@ -152,6 +152,219 @@ function defaultTabStops(cols: number): boolean[] {
 	return Array.from({length: cols}, (_value, col) => col > 0 && col % 8 === 0);
 }
 
+/** What a Parser reports as it reads. */
+export interface ParserHandlers {
+	print(code: number): void;
+	// A C0 or C1 control that starts no sequence, and CAN or SUB, which
+	// cancel one.
+	execute(code: number): void;
+	csi(final: string): void;
+	esc(final: string): void;
+	osc(text: string): void;
+	dcs(text: string): void;
+}
+
+/**
+ * The DEC state machine. It reads one code point at a time and keeps
+ * the sequence in progress, whose prefix, parameters and intermediates a
+ * handler reads when the sequence ends.
+ */
+export class Parser {
+	handlers: ParserHandlers;
+	state: number;
+	params: number[][];
+	prefix: string;
+	intermediates: string;
+	osc: string;
+	dcs: string;
+
+	constructor(handlers: ParserHandlers) {
+		this.handlers = handlers;
+		this.state = GROUND;
+		this.params = [[0]];
+		this.prefix = "";
+		this.intermediates = "";
+		this.osc = "";
+		this.dcs = "";
+	}
+
+	consume(code: number): void {
+		if (
+			this.state === GROUND &&
+			(code >= 0x20 && code !== 0x7f) &&
+			(code < 0x80 || code >= 0xa0)
+		) {
+			this.handlers.print(code);
+			return;
+		}
+		if (code === 0x18 || code === 0x1a) {
+			this.state = GROUND;
+			this.handlers.execute(code);
+			return;
+		}
+		if (code === 0x1b || code === 0x9c) {
+			this.endString();
+			this.state = code === 0x1b ? ESCAPE : GROUND;
+			this.intermediates = "";
+			return;
+		}
+		if (code >= 0x80 && code < 0xa0) {
+			this.consumeC1(code);
+			return;
+		}
+		switch (this.state) {
+			case GROUND:
+				if (code < 0x20) {
+					this.handlers.execute(code);
+				}
+				return;
+			case ESCAPE:
+				if (code < 0x20) {
+					this.handlers.execute(code);
+				} else if (code < 0x30) {
+					this.intermediates += String.fromCharCode(code);
+					this.state = ESCAPE_INTERMEDIATE;
+				} else if (code === 0x5b) {
+					this.params = [[0]];
+					this.prefix = "";
+					this.intermediates = "";
+					this.state = CSI_ENTRY;
+				} else if (code === 0x5d) {
+					this.osc = "";
+					this.state = OSC_STRING;
+				} else if (code === 0x50) {
+					this.dcs = "";
+					this.state = DCS_STRING;
+				} else if (code === 0x58 || code === 0x5e || code === 0x5f) {
+					this.state = IGNORED_STRING;
+				} else {
+					this.state = GROUND;
+					this.handlers.esc(String.fromCharCode(code));
+				}
+				return;
+			case ESCAPE_INTERMEDIATE:
+				if (code < 0x20) {
+					this.handlers.execute(code);
+				} else if (code < 0x30) {
+					this.intermediates += String.fromCharCode(code);
+				} else if (code < 0x7f) {
+					this.state = GROUND;
+					this.handlers.esc(String.fromCharCode(code));
+				}
+				return;
+			case CSI_ENTRY:
+			case CSI_PARAM:
+				if (code < 0x20) {
+					this.handlers.execute(code);
+				} else if (code >= 0x30 && code <= 0x39) {
+					const param = this.params[this.params.length - 1];
+					const last = param.length - 1;
+					param[last] = Math.min(param[last] * 10 + code - 0x30, 0xffff);
+					this.state = CSI_PARAM;
+				} else if (code === 0x3b) {
+					if (this.params.length < MAX_PARAMS) {
+						this.params.push([0]);
+					}
+					this.state = CSI_PARAM;
+				} else if (code === 0x3a) {
+					const param = this.params[this.params.length - 1];
+					if (param.length < MAX_SUBPARAMS) {
+						param.push(0);
+					}
+					this.state = CSI_PARAM;
+				} else if (code >= 0x3c && code <= 0x3f) {
+					if (this.state === CSI_ENTRY) {
+						this.prefix = String.fromCharCode(code);
+						this.state = CSI_PARAM;
+					} else {
+						this.state = CSI_IGNORE;
+					}
+				} else if (code >= 0x20 && code < 0x30) {
+					this.intermediates += String.fromCharCode(code);
+					this.state = CSI_INTERMEDIATE;
+				} else if (code >= 0x40 && code < 0x7f) {
+					this.state = GROUND;
+					this.handlers.csi(String.fromCharCode(code));
+				}
+				return;
+			case CSI_INTERMEDIATE:
+				if (code < 0x20) {
+					this.handlers.execute(code);
+				} else if (code < 0x30) {
+					this.intermediates += String.fromCharCode(code);
+				} else if (code < 0x40) {
+					this.state = CSI_IGNORE;
+				} else if (code < 0x7f) {
+					this.state = GROUND;
+					this.handlers.csi(String.fromCharCode(code));
+				}
+				return;
+			case CSI_IGNORE:
+				if (code < 0x20) {
+					this.handlers.execute(code);
+				} else if (code >= 0x40 && code < 0x7f) {
+					this.state = GROUND;
+				}
+				return;
+			case OSC_STRING:
+				if (code === 0x07) {
+					this.state = GROUND;
+					this.handlers.osc(this.osc);
+				} else if (code >= 0x20 && this.osc.length < MAX_OSC) {
+					this.osc += String.fromCodePoint(code);
+				}
+				return;
+			case IGNORED_STRING:
+				if (code === 0x07) {
+					this.state = GROUND;
+				}
+				return;
+			case DCS_STRING:
+				if (this.dcs.length < MAX_DCS) {
+					this.dcs += String.fromCodePoint(code);
+				}
+				return;
+		}
+	}
+
+	// ESC or ST ends a string, and an OSC or a DCS takes effect.
+	endString(): void {
+		if (this.state === OSC_STRING) {
+			this.handlers.osc(this.osc);
+		} else if (this.state === DCS_STRING) {
+			this.handlers.dcs(this.dcs);
+		}
+	}
+
+	// The 8-bit controls, as xterm reads them: CSI, OSC and DCS start
+	// their sequences, and the rest are controls.
+	consumeC1(code: number): void {
+		switch (code) {
+			case 0x9b:
+				this.params = [[0]];
+				this.prefix = "";
+				this.intermediates = "";
+				this.state = CSI_ENTRY;
+				return;
+			case 0x9d:
+				this.osc = "";
+				this.state = OSC_STRING;
+				return;
+			case 0x90:
+				this.dcs = "";
+				this.state = DCS_STRING;
+				return;
+			case 0x98:
+			case 0x9e:
+			case 0x9f:
+				this.state = IGNORED_STRING;
+				return;
+		}
+		this.state = GROUND;
+		this.handlers.execute(code);
+	}
+}
+
 /**
  * A terminal's screen and modes, changed by what the program writes.
  * Answers to the program's questions, such as where the cursor is, go to
@@ -212,12 +425,7 @@ export class Terminal {
 
 	reply: (data: string) => void;
 
-	state: number;
-	params: number[][];
-	prefix: string;
-	intermediates: string;
-	osc: string;
-	dcs: string;
+	parser: Parser;
 	highSurrogate: number;
 	decoder: TextDecoder;
 
@@ -260,12 +468,7 @@ export class Terminal {
 		this.preceding = null;
 		this.mouseTracking = 0;
 		this.mouseEncoding = 0;
-		this.state = GROUND;
-		this.params = [[0]];
-		this.prefix = "";
-		this.intermediates = "";
-		this.osc = "";
-		this.dcs = "";
+		this.parser = new Parser(this);
 		this.highSurrogate = 0;
 	}
 
@@ -309,14 +512,14 @@ export class Terminal {
 					code =
 						((this.highSurrogate - 0xd800) << 10) + (code - 0xdc00) + 0x10000;
 				} else {
-					this.consume(0xfffd);
+					this.parser.consume(0xfffd);
 				}
 				this.highSurrogate = 0;
 			} else if (code >= 0xd800 && code <= 0xdbff) {
 				this.highSurrogate = code;
 				continue;
 			}
-			this.consume(code);
+			this.parser.consume(code);
 		}
 	}
 
@@ -377,193 +580,6 @@ export class Terminal {
 		this.preceding = null;
 	}
 
-	consume(code: number): void {
-		if (
-			this.state === GROUND &&
-			(code >= 0x20 && code !== 0x7f) &&
-			(code < 0x80 || code >= 0xa0)
-		) {
-			this.print(code);
-			return;
-		}
-		if (code === 0x18 || code === 0x1a) {
-			this.preceding = null;
-			this.state = GROUND;
-			return;
-		}
-		if (code === 0x1b || code === 0x9c) {
-			this.endString();
-			this.state = code === 0x1b ? ESCAPE : GROUND;
-			this.intermediates = "";
-			return;
-		}
-		if (code >= 0x80 && code < 0xa0) {
-			this.consumeC1(code);
-			return;
-		}
-		switch (this.state) {
-			case GROUND:
-				if (code < 0x20) {
-					this.execute(code);
-				}
-				return;
-			case ESCAPE:
-				if (code < 0x20) {
-					this.execute(code);
-				} else if (code < 0x30) {
-					this.intermediates += String.fromCharCode(code);
-					this.state = ESCAPE_INTERMEDIATE;
-				} else if (code === 0x5b) {
-					this.params = [[0]];
-					this.prefix = "";
-					this.intermediates = "";
-					this.state = CSI_ENTRY;
-				} else if (code === 0x5d) {
-					this.osc = "";
-					this.state = OSC_STRING;
-				} else if (code === 0x50) {
-					this.dcs = "";
-					this.state = DCS_STRING;
-				} else if (code === 0x58 || code === 0x5e || code === 0x5f) {
-					this.state = IGNORED_STRING;
-				} else {
-					this.state = GROUND;
-					this.dispatchEscape(String.fromCharCode(code));
-				}
-				return;
-			case ESCAPE_INTERMEDIATE:
-				if (code < 0x20) {
-					this.execute(code);
-				} else if (code < 0x30) {
-					this.intermediates += String.fromCharCode(code);
-				} else if (code < 0x7f) {
-					this.state = GROUND;
-					this.dispatchEscape(String.fromCharCode(code));
-				}
-				return;
-			case CSI_ENTRY:
-			case CSI_PARAM:
-				if (code < 0x20) {
-					this.execute(code);
-				} else if (code >= 0x30 && code <= 0x39) {
-					const param = this.params[this.params.length - 1];
-					const last = param.length - 1;
-					param[last] = Math.min(param[last] * 10 + code - 0x30, 0xffff);
-					this.state = CSI_PARAM;
-				} else if (code === 0x3b) {
-					if (this.params.length < MAX_PARAMS) {
-						this.params.push([0]);
-					}
-					this.state = CSI_PARAM;
-				} else if (code === 0x3a) {
-					const param = this.params[this.params.length - 1];
-					if (param.length < MAX_SUBPARAMS) {
-						param.push(0);
-					}
-					this.state = CSI_PARAM;
-				} else if (code >= 0x3c && code <= 0x3f) {
-					if (this.state === CSI_ENTRY) {
-						this.prefix = String.fromCharCode(code);
-						this.state = CSI_PARAM;
-					} else {
-						this.state = CSI_IGNORE;
-					}
-				} else if (code >= 0x20 && code < 0x30) {
-					this.intermediates += String.fromCharCode(code);
-					this.state = CSI_INTERMEDIATE;
-				} else if (code >= 0x40 && code < 0x7f) {
-					this.state = GROUND;
-					this.dispatchCSI(String.fromCharCode(code));
-				}
-				return;
-			case CSI_INTERMEDIATE:
-				if (code < 0x20) {
-					this.execute(code);
-				} else if (code < 0x30) {
-					this.intermediates += String.fromCharCode(code);
-				} else if (code < 0x40) {
-					this.state = CSI_IGNORE;
-				} else if (code < 0x7f) {
-					this.state = GROUND;
-					this.dispatchCSI(String.fromCharCode(code));
-				}
-				return;
-			case CSI_IGNORE:
-				if (code < 0x20) {
-					this.execute(code);
-				} else if (code >= 0x40 && code < 0x7f) {
-					this.state = GROUND;
-				}
-				return;
-			case OSC_STRING:
-				if (code === 0x07) {
-					this.dispatchOSC();
-					this.preceding = null;
-					this.state = GROUND;
-				} else if (code >= 0x20 && this.osc.length < MAX_OSC) {
-					this.osc += String.fromCodePoint(code);
-				}
-				return;
-			case IGNORED_STRING:
-				if (code === 0x07) {
-					this.state = GROUND;
-				}
-				return;
-			case DCS_STRING:
-				if (this.dcs.length < MAX_DCS) {
-					this.dcs += String.fromCodePoint(code);
-				}
-				return;
-		}
-	}
-
-	// ESC or ST ends a string, and an OSC or a DCS takes effect.
-	endString(): void {
-		if (this.state === OSC_STRING) {
-			this.dispatchOSC();
-			this.preceding = null;
-		} else if (this.state === DCS_STRING) {
-			this.dispatchDCS();
-			this.preceding = null;
-		}
-	}
-
-	// The 8-bit controls, as xterm reads them: CSI, OSC and DCS start
-	// their sequences, and IND, NEL and HTS act as their ESC forms do.
-	consumeC1(code: number): void {
-		switch (code) {
-			case 0x9b:
-				this.params = [[0]];
-				this.prefix = "";
-				this.intermediates = "";
-				this.state = CSI_ENTRY;
-				return;
-			case 0x9d:
-				this.osc = "";
-				this.state = OSC_STRING;
-				return;
-			case 0x90:
-				this.dcs = "";
-				this.state = DCS_STRING;
-				return;
-			case 0x98:
-			case 0x9e:
-			case 0x9f:
-				this.state = IGNORED_STRING;
-				return;
-		}
-		this.state = GROUND;
-		this.preceding = null;
-		if (code === 0x84) {
-			this.lineFeed();
-		} else if (code === 0x85) {
-			this.x = 0;
-			this.lineFeed();
-		} else if (code === 0x88) {
-			this.tabStops[this.x] = true;
-		}
-	}
-
 	execute(code: number): void {
 		this.runControl(code);
 		this.preceding = null;
@@ -600,6 +616,16 @@ export class Terminal {
 				return;
 			case 0x0f:
 				this.shift = 0;
+				return;
+			case 0x84:
+				this.lineFeed();
+				return;
+			case 0x85:
+				this.x = 0;
+				this.lineFeed();
+				return;
+			case 0x88:
+				this.tabStops[this.x] = true;
 				return;
 		}
 	}
@@ -947,13 +973,13 @@ export class Terminal {
 		this.y = 0;
 	}
 
-	dispatchEscape(final: string): void {
+	esc(final: string): void {
 		this.runEscape(final);
 		this.preceding = null;
 	}
 
 	runEscape(final: string): void {
-		const intermediates = this.intermediates;
+		const intermediates = this.parser.intermediates;
 		if (intermediates === "") {
 			switch (final) {
 				case "7":
@@ -1004,20 +1030,20 @@ export class Terminal {
 	}
 
 	param(index: number, fallback: number): number {
-		const value = this.params[index]?.[0] ?? 0;
+		const value = this.parser.params[index]?.[0] ?? 0;
 		return value === 0 ? fallback : value;
 	}
 
-	dispatchCSI(final: string): void {
+	csi(final: string): void {
 		this.runCSI(final);
 		this.preceding = null;
 	}
 
 	runCSI(final: string): void {
-		const {prefix, intermediates} = this;
+		const {prefix, intermediates} = this.parser;
 		if (prefix === "?" && intermediates === "") {
 			if (final === "h" || final === "l") {
-				for (const [mode] of this.params) {
+				for (const [mode] of this.parser.params) {
 					this.setPrivateMode(mode, final === "h");
 				}
 			} else if (final === "J") {
@@ -1153,7 +1179,7 @@ export class Terminal {
 				return;
 			case "h":
 			case "l":
-				for (const [mode] of this.params) {
+				for (const [mode] of this.parser.params) {
 					if (mode === 4) {
 						this.insertMode = final === "h";
 					} else if (mode === 20) {
@@ -1397,7 +1423,7 @@ export class Terminal {
 	}
 
 	setGraphics(): void {
-		const params = this.params;
+		const params = this.parser.params;
 		for (let index = 0; index < params.length; index++) {
 			const param = params[index];
 			const n = param[0];
@@ -1501,23 +1527,23 @@ export class Terminal {
 		}
 	}
 
-	dispatchOSC(): void {
-		const match = /^([02]);(.*)$/s.exec(this.osc);
+	osc(text: string): void {
+		const match = /^([02]);(.*)$/s.exec(text);
 		if (match !== null) {
 			this.title = match[2];
 		}
-		const link = /^8;([^;]*);(.*)$/s.exec(this.osc);
+		const link = /^8;([^;]*);(.*)$/s.exec(text);
 		if (link !== null && (link[2] !== "" || link[1].trim() === "")) {
 			this.link = link[2] !== "";
 		}
-		this.osc = "";
+		this.preceding = null;
 	}
 
 	// DECRQSS: the SGR, the margins, the cursor's shape, and the fixed
 	// answers xterm gives for protection and the conformance level.
-	dispatchDCS(): void {
-		const request = /^\$q(.*)$/s.exec(this.dcs)?.[1];
-		this.dcs = "";
+	dcs(text: string): void {
+		this.preceding = null;
+		const request = /^\$q(.*)$/s.exec(text)?.[1];
 		if (request === undefined) {
 			return;
 		}
