@@ -293,19 +293,13 @@ function getControlStateBits(element: Element): number {
 	return bits;
 }
 
-// What each element matched when it was last reported. Restyling for a
-// state is a subtree and its later siblings, so only a state that really
-// changed is reported. Most elements match none of these, and an
-// attribute change on them reports nothing.
-const reportedControlStates = new WeakMap<Element, number>();
-
 function reportControlStates(element: Element): void {
-	const before = reportedControlStates.get(element) ?? 0;
+	const before = _(element).reportedControlStates;
 	const after = getControlStateBits(element);
 	if (after === before) {
 		return;
 	}
-	reportedControlStates.set(element, after);
+	_(element).reportedControlStates = after;
 	stateChanged(
 		element,
 		CONTROL_STATE_BITS.filter(([, bit]) => ((before ^ after) & bit) !== 0)
@@ -892,30 +886,12 @@ function createCollapsedEdit(
 	return {value, start: clamped, end: clamped, direction: "none"};
 }
 
-// Fires input when the value actually changed and select when the user
-// moved the selection. Writes to the control's value directly, never
-// through the value IDL setter. In a browser a user edit changes the value
-// without running the setter, and frameworks rely on that to tell user
-// input from the page's own writes.
-// Text controls the user has edited since the last change event. Leaving
-// one fires change, before blur, as a browser does. A value set by script
-// is not the user's edit, and clears the mark.
-const editedSinceChange = new WeakSet<Element>();
-
-// HTML's user validity: set once the user has committed a change to the
-// control or tried to submit its form, cleared when the form resets. It
-// is what :user-valid and :user-invalid wait for.
-const userValidity = new WeakSet<Element>();
-
 function setUserValidity(element: Element, value: boolean): void {
-	if (userValidity.has(element) === value) {
+	const slots = _(element);
+	if (slots.userValidity === value) {
 		return;
 	}
-	if (value) {
-		userValidity.add(element);
-	} else {
-		userValidity.delete(element);
-	}
+	slots.userValidity = value;
 	stateChanged(element, ["user-valid", "user-invalid"]);
 }
 
@@ -930,10 +906,10 @@ function dispatchUserChange(control: Element): void {
 
 // Focus leaving a text control the user edited commits the edit.
 function commitTextControl(element: Element | null): void {
-	if (element === null || !editedSinceChange.has(element)) {
+	if (element === null || !_(element).editedSinceChange) {
 		return;
 	}
-	editedSinceChange.delete(element);
+	_(element).editedSinceChange = false;
 	dispatchUserChange(element);
 }
 
@@ -946,6 +922,11 @@ interface TextControlEditKind {
 	asked?: boolean;
 }
 
+// Fires input when the value actually changed and select when the user
+// moved the selection. Writes to the control's value directly, never
+// through the value IDL setter. In a browser a user edit changes the value
+// without running the setter, and frameworks rely on that to tell user
+// input from the page's own writes.
 function applyTextControlEdit(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
 	result: TextControlEditResult,
@@ -972,7 +953,7 @@ function applyTextControlEdit(
 		) {
 			return;
 		}
-		editedSinceChange.add(textControl);
+		textControlSlots.editedSinceChange = true;
 		textControlSlots._setUAValue!(result.value);
 		textControlSlots._setUASelection!(
 			result.start,
@@ -10732,6 +10713,21 @@ export interface ElementSlots extends NodeSlots {
 	readonly _uaValueText?: globalThis.Text | null;
 	// Set on the first selectionchange a text control schedules.
 	textSelectionChangeScheduled?: boolean;
+	// What the element matched when it was last reported. Restyling for a
+	// state is a subtree and its later siblings, so only a state that really
+	// changed is reported. Most elements match none of these, and an
+	// attribute change on them reports nothing.
+	reportedControlStates: number;
+	// Whether the user has edited the text control since the last change
+	// event. Leaving one fires change, before blur, as a browser does. A
+	// value set by script is not the user's edit, and clears the mark.
+	editedSinceChange: boolean;
+	// HTML's user validity: set once the user has committed a change to the
+	// control or tried to submit its form, cleared when the form resets. It
+	// is what :user-valid and :user-invalid wait for.
+	userValidity: boolean;
+	customValidityMessage: string;
+	validityState: ValidityState | null;
 }
 
 export interface Element {
@@ -11665,6 +11661,11 @@ const RARE_FIELDS: ReadonlyArray<readonly [string, unknown]> = [
 	["reactionQueue", null],
 	["pseudoElements", null],
 	["pseudoName", null],
+	["reportedControlStates", 0],
+	["editedSinceChange", false],
+	["userValidity", false],
+	["customValidityMessage", ""],
+	["validityState", null],
 ];
 
 function createRareData(): Record<string, unknown> {
@@ -17742,7 +17743,7 @@ function implicitlySubmit(input: HTMLInputElement): void {
 }
 
 function resetControl(control: Element): void {
-	editedSinceChange.delete(control);
+	_(control).editedSinceChange = false;
 	setUserValidity(control, false);
 	if (isFormAssociatedCustom(control)) {
 		enqueueCallbackReaction(control, "formResetCallback", []);
@@ -19642,6 +19643,8 @@ export interface HTMLInputElementExtra extends NodeExtra {
 	placeholderText: globalThis.Text | null;
 	glyphText: globalThis.Text | null;
 	sliderFill: globalThis.HTMLElement | null;
+	// A slider's value when a press on it began, until the release.
+	rangeDragStart?: string;
 	// A typed character arrives as insertText. A paste arrives as
 	// insertFromPaste, and a single-line input strips its line breaks (HTML
 	// value sanitization). A toggle accepts neither, since it holds no text.
@@ -19784,7 +19787,7 @@ export class HTMLInputElement extends HTMLElement {
 
 	set value(value: string) {
 		const string = value === null ? "" : String(value);
-		editedSinceChange.delete(this);
+		_(this).editedSinceChange = false;
 		const slots = _(this);
 		switch (getInputValueMode(this.type)) {
 			case "value": {
@@ -20441,7 +20444,7 @@ function handleInputKeydown(
 		const stepped = getSteppedValue(input, key === "ArrowUp" ? 1 : -1);
 		if (stepped !== null) {
 			applyTextControlEdit(input, createCollapsedEdit(stepped, stepped.length));
-			editedSinceChange.delete(input);
+			_(input).editedSinceChange = false;
 			dispatchUserChange(input);
 		}
 		return;
@@ -20915,8 +20918,6 @@ function buildSlider(
 	return track.firstChild as globalThis.HTMLElement;
 }
 
-const rangeDragStarts = new WeakMap<Element, string>();
-
 /**
  * A press at column `x` on a slider, or a drag that press began, moves
  * its thumb there, to the nearest value its step allows, and fires input
@@ -20943,7 +20944,7 @@ export function moveRangeThumb(
 		return false;
 	}
 	if (press) {
-		rangeDragStarts.set(element, element.value);
+		_(element).extra.rangeDragStart = element.value;
 	}
 	// The thumb takes a cell of the track, so it has the track's width less
 	// one places to be.
@@ -20970,8 +20971,8 @@ export function commitRangeThumb(element: globalThis.Element): void {
 	if (!(implementsInterface(element, HTMLInputElement))) {
 		return;
 	}
-	const before = rangeDragStarts.get(element);
-	rangeDragStarts.delete(element);
+	const before = _(element).extra.rangeDragStart;
+	_(element).extra.rangeDragStart = undefined;
 	if (before !== undefined && element.value !== before) {
 		dispatchUserChange(element);
 	}
@@ -23894,7 +23895,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	set value(value: string) {
-		editedSinceChange.delete(this);
+		_(this).editedSinceChange = false;
 		const slots = _(this);
 		const previous = slots._uaValue;
 		slots.extra.value = normalizeNewlines(value === null ? "" : String(value));
@@ -26483,21 +26484,14 @@ function checkValidity(element: Element): boolean {
 	return false;
 }
 
-const customValidityMessages = new WeakMap<Element, string>();
-const validityStates = new WeakMap<Element, ValidityState>();
-
 function setCustomValidity(element: Element, error: string): void {
-	customValidityMessages.set(element, String(error));
+	_(element).customValidityMessage = String(error);
 }
 
 function getValidityState(element: Element): ValidityState {
-	let state = validityStates.get(element);
-	if (state === undefined) {
-		state = constructInternal(() =>
-			new ValidityState(() => getValidityFlags(element)));
-		validityStates.set(element, state);
-	}
-	return state;
+	const slots = _(element);
+	return slots.validityState ??= constructInternal(() =>
+		new ValidityState(() => getValidityFlags(element)));
 }
 
 function getValidityFlags(element: Element): ValidityFlags {
@@ -26506,7 +26500,7 @@ function getValidityFlags(element: Element): ValidityFlags {
 		return _(internals).validityFlags;
 	}
 	const flags = noValidityFlags();
-	flags.customError = (customValidityMessages.get(element) ?? "") !== "";
+	flags.customError = _(element).customValidityMessage !== "";
 	if (implementsInterface(element, HTMLInputElement)) {
 		collectInputValidity(element, flags);
 	} else if (implementsInterface(element, HTMLSelectElement)) {
@@ -26781,7 +26775,7 @@ function getValidationMessage(element: Element): string {
 	}
 	const flags = getValidityFlags(element);
 	if (flags.customError) {
-		return customValidityMessages.get(element) ?? "";
+		return _(element).customValidityMessage;
 	}
 	if (flags.valueMissing) {
 		if (implementsInterface(element, HTMLSelectElement)) {
@@ -35606,7 +35600,7 @@ function isInvalidCandidate(element: Element): boolean {
 export function getUserValidityMatch(
 	element: Element,
 ): "valid" | "invalid" | null {
-	return userValidity.has(element) ? getValidityMatch(element) : null;
+	return _(element).userValidity ? getValidityMatch(element) : null;
 }
 
 // What :in-range and :out-of-range say about an input that is being
