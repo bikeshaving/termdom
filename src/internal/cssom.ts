@@ -6781,7 +6781,10 @@ function readPseudoDeclared(
 		._computedValue(property) || declared;
 }
 
-// TODO: Just use the CSSOM CSSRule interface from the DOM
+// One selector of a style rule, compiled with the rule's declarations
+// and where the cascade sorts it. A CSSStyleRule whose list holds n
+// selectors makes n of these, and a presentational hint, which has no
+// CSSRule, makes one.
 interface ParsedCSSRule {
 
 	// Compiled against the namespaces the sheet declared, once, at parse. A
