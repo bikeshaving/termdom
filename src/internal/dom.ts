@@ -10720,8 +10720,9 @@ export interface ElementSlots extends NodeSlots {
 	_qualifiedName: Step<Element["_qualifiedName"]>;
 	_attributeChangeSteps: Step<Element["_attributeChangeSteps"]>;
 	// The steps of UA controls and replaced elements. The family record
-	// dispatches each to the element's class, which reads undefined when the
-	// class does not define it.
+	// installs a dispatcher for each on every element, so a method step is
+	// always a function: called on a class that does not define it, it
+	// returns undefined. The getter step _uaValueText reads undefined there.
 	_ensureUAShadowTree?: () => void;
 	_syncUAShadowTree?: () => void;
 	_uaSelection?: () => {start: number; end: number; direction: string};
@@ -19646,8 +19647,8 @@ export interface HTMLInputElementExtra extends NodeExtra {
 	// value sanitization). A toggle accepts neither, since it holds no text.
 	onBeforeInput: (input: HTMLInputElement, event: InputEvent) => void;
 	// A checkbox or radio activates on Space or Enter and never accepts typed
-	// text. Home and End move to the ends of the whole value, since an input
-	// has no visual lines. Everything else is the shared text control logic.
+	// text. Every other key is the shared text control logic, where an
+	// input's line for Home and End is its whole value.
 	onKeydown: (input: HTMLInputElement, event: KeyboardEvent) => void;
 }
 
@@ -23814,10 +23815,10 @@ export interface HTMLTextAreaElementExtra extends NodeExtra {
 	goalColumn: number | null;
 	// A typed character arrives as insertText. A paste keeps its newlines.
 	onBeforeInput: (textarea: HTMLTextAreaElement, event: InputEvent) => void;
-	// Enter inserts a newline. The vertical arrows and Home/End move by
-	// VISUAL line (soft wraps count, as in a browser). Every other editing
-	// key is the shared text control logic. This reads laid-out geometry, so it
-	// flushes layout first.
+	// Enter inserts a newline, and the vertical arrows move by visual line,
+	// counting soft wraps. Every other editing key is the shared text control
+	// logic, where a textarea's line for Home and End is the caret's visual
+	// line. This reads laid-out geometry, so it flushes layout first.
 	onKeydown: (textarea: HTMLTextAreaElement, event: KeyboardEvent) => void;
 }
 
