@@ -10741,15 +10741,11 @@ export interface ElementSlots extends NodeSlots {
 
 export interface Element {
 	readonly [internals]: ElementSlots;
-
-	// The ChildNode mixin's remove, installed from the tables. A select
-	// overloads it, which a declared property cannot allow.
-	// eslint-disable-next-line @b9g/merged-slots-only
-	remove(): void;
 	get ownerDocument(): Document;
 }
 
 export class Element extends Node implements globalThis.Element {
+	declare remove: globalThis.Element["remove"];
 	declare after: globalThis.Element["after"];
 	declare before: globalThis.Element["before"];
 	declare replaceWith: globalThis.Element["replaceWith"];
@@ -22543,6 +22539,7 @@ export class HTMLSelectElement extends HTMLElement {
 	declare multiple: globalThis.HTMLSelectElement["multiple"];
 	declare required: globalThis.HTMLSelectElement["required"];
 	declare size: globalThis.HTMLSelectElement["size"];
+	declare remove: globalThis.HTMLSelectElement["remove"];
 	declare autocomplete: globalThis.HTMLSelectElement["autocomplete"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -22830,18 +22827,6 @@ export class HTMLSelectElement extends HTMLElement {
 		this.options.add(element, before);
 	}
 
-	override remove(): void;
-	override remove(index: number): void;
-	override remove(index?: number): void {
-		if (arguments.length === 0) {
-			if (_(this).parent !== null) {
-				removeNode(this);
-			}
-			return;
-		}
-		this.options.remove(toLong(index));
-	}
-
 	// A select's selection record is always collapsed at the label's start, so
 	// the caret placement path can treat a select like a text control. The
 	// caret is the focus of the selection.
@@ -22965,6 +22950,23 @@ export class HTMLSelectElement extends HTMLElement {
 }
 
 declareExtraSlots(HTMLSelectElement);
+
+// With no argument a select removes itself, as ChildNode's remove does.
+// With an index it removes that option.
+Object.defineProperties(HTMLSelectElement.prototype, {
+	remove: {
+		value(this: HTMLSelectElement, ...args: [index?: number]): void {
+			if (args.length > 0) {
+				this.options.remove(toLong(args[0]));
+			} else if (_(this).parent !== null) {
+				removeNode(this);
+			}
+		},
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+});
 
 // Same as `options` but without building a collection.
 function getOptionList(select: HTMLSelectElement): HTMLOptionElement[] {
