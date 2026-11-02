@@ -2603,35 +2603,34 @@ export function repaintAll(framebuffer: Framebuffer): void {
 export function beginFrame(
 	framebuffer: Framebuffer,
 	{offset, cursorRow: cursorPosition, regionRows, delta = 0, shift, bands}: {
-
 		/** Rows the document scroll has scrolled, negative downward. */
 		offset: number;
 
 		cursorRow?: number;
 
 		/**
-	 * Rows past the terminal's height are printed with newlines, which is
-	 * what scrolls them into the scrollback where they stay readable (CSI n
-	 * S discards them). Only the last `rows` of them are kept as the previous
-	 * frame. They alone can still be redrawn.
-	 */
+		 * Rows past the terminal's height are printed with newlines, which is
+		 * what scrolls them into the scrollback where they stay readable (CSI n
+		 * S discards them). Only the last `rows` of them are kept as the previous
+		 * frame. They alone can still be redrawn.
+		 */
 		regionRows?: number;
 
 		/** Rows the scroll moved since the last frame, positive downward. */
 		delta?: number;
 
 		/**
-	 * The buffer rows `delta` moved, `[top, end)`. A scrolling element's
-	 * port names its own rows here. The document scroll names none and takes the
-	 * whole region, which is the rows a document scroll spans.
-	 */
+		 * The buffer rows `delta` moved, `[top, end)`. A scrolling element's
+		 * port names its own rows here. The document scroll names none and takes the
+		 * whole region, which is the rows a document scroll spans.
+		 */
 		shift?: {top: number; end: number};
 
 		/**
-	 * The buffer rows that changed, `[top, end)` each. The frame starts
-	 * from the last one and repaints only these, when nothing moved the
-	 * rest. Absent, every row repaints.
-	 */
+		 * The buffer rows that changed, `[top, end)` each. The frame starts
+		 * from the last one and repaints only these, when nothing moved the
+		 * rest. Absent, every row repaints.
+		 */
 		bands?: Array<[number, number]>;
 	},
 ): CellContext {

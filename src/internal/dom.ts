@@ -23848,8 +23848,8 @@ export class HTMLTextAreaElement extends HTMLElement {
 			insertPaste(this, event.data);
 		};
 		slots.extra.onKeydown = (event: KeyboardEvent): void => {
-		// Editing is a default action. An author's keydown preventDefault
-		// suppresses it, exactly as it suppresses a browser textarea's edit.
+			// Editing is a default action. An author's keydown preventDefault
+			// suppresses it, as it suppresses a browser textarea's edit.
 			if (event.defaultPrevented) {
 				return;
 			}
@@ -23872,10 +23872,10 @@ export class HTMLTextAreaElement extends HTMLElement {
 			let result: TextControlEditResult | null;
 			const attachedSlots = _(attached);
 			if (key === "Enter" || (ctrlKey && key === "j")) {
-			// Insert a newline like any typed character, replacing the
-			// selection. A terminal sends line feed for Ctrl+J, which is the
-			// chord that reaches a text control whose Enter an application has
-			// taken over.
+				// Insert a newline like any typed character, replacing the
+				// selection. A terminal sends line feed for Ctrl+J, which is the
+				// chord that reaches a text control whose Enter an application has
+				// taken over.
 				const next = value.slice(0, start) + "\n" + value.slice(end);
 				const pos = start + 1;
 				result = {value: next, start: pos, end: pos, direction: "none"};
