@@ -9422,114 +9422,6 @@ function hitTestContext(
 	return null;
 }
 
-// An inline-block asked for directly. The text to report is in the
-// break result nested under its own segment's leaf.
-function getAtomicInlineRectTexts(
-	layout: Layout,
-	element: Element,
-	breakResult: BreakResult,
-): RectText[] {
-	const layoutNode = runLayoutNode(layout, element);
-	if (!layoutNode) {
-		return [];
-	}
-	const rectTexts: RectText[] = [];
-	const {x: containerX, y: containerY} = getRunOrigin(
-		layout,
-		element,
-		layoutNode,
-	);
-	for (const line of breakResult.lines) {
-		for (const segment of line.segments) {
-			if (
-				segment.leaf.type === "inline-block" &&
-				segment.leaf.node === element &&
-				segment.leaf.breakResult
-			) {
-				// The border occupies real cells, so content starts
-				// after border AND padding.
-				const nestedBreakResult = segment.leaf.breakResult;
-				const paddingLeft =
-					segment.leaf.boxModel.paddingLeft +
-					segment.leaf.boxModel.borderLeftWidth;
-				const paddingTop =
-					segment.leaf.boxModel.paddingTop +
-					segment.leaf.boxModel.borderTopWidth;
-				for (const nestedLine of nestedBreakResult.lines) {
-					for (const nestedSegment of nestedLine.segments) {
-						if (nestedSegment.leaf.type === "text") {
-							rectTexts.push({
-								text: nestedSegment.processedText,
-								column: nestedSegment.x,
-								startOffset: nestedSegment.dataStart,
-								endOffset: nestedSegment.dataEnd,
-								visualBase: nestedSegment.visualBase,
-								rect: new layout.domRect(
-									containerX + segment.x + paddingLeft + nestedSegment.x,
-									containerY +
-										line.y +
-										segment.dy +
-										paddingTop +
-										nestedLine.y +
-										nestedLine.textTop,
-									nestedSegment.width,
-									nestedLine.height - nestedLine.textTop,
-								),
-							});
-						} else if (
-							nestedSegment.leaf.type === "inline-block" &&
-							nestedSegment.leaf.breakResult
-						) {
-							const nestedInlineBlock = nestedSegment.leaf;
-							const nestedPaddingLeft =
-								nestedInlineBlock.boxModel.paddingLeft +
-								nestedInlineBlock.boxModel.borderLeftWidth;
-							const nestedPaddingTop =
-								nestedInlineBlock.boxModel.paddingTop +
-								nestedInlineBlock.boxModel.borderTopWidth;
-
-							for (const innerLine of nestedInlineBlock.breakResult!
-								.lines) {
-								for (const innerSegment of innerLine.segments) {
-									if (innerSegment.leaf.type === "text") {
-										rectTexts.push({
-											text: innerSegment.processedText,
-											column: innerSegment.x,
-											startOffset: innerSegment.dataStart,
-											endOffset: innerSegment.dataEnd,
-											visualBase: innerSegment.visualBase,
-											rect: new layout.domRect(
-												containerX +
-												segment.x +
-												paddingLeft +
-												nestedSegment.x +
-												nestedPaddingLeft +
-												innerSegment.x,
-												containerY +
-												line.y +
-												segment.dy +
-												paddingTop +
-												nestedLine.y +
-												nestedSegment.dy +
-												nestedPaddingTop +
-												innerLine.y +
-												innerLine.textTop,
-												innerSegment.width,
-												innerLine.height,
-											),
-										});
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	return rectTexts;
-}
-
 // Nothing outside layout may reason about processed text. Geometry
 // consumers read getRects, getRangeRects or lineFragments, whose
 // fragments carry data offsets a consumer can render for itself.
@@ -9565,13 +9457,15 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 			return fragments;
 		}
 
+		// An atomic inline heading its own run has its box from
+		// getInlineBlockRect, which getRect asks first. When that finds no
+		// segment for the box, the run's lines hold none either.
 		if (
-			isAtomicInline(display) && getBoxEntry(layout, element)?.head === element
+			isAtomicInline(display) &&
+			getBoxEntry(layout, element)?.head === element &&
+			runBreakResult(layout, element)
 		) {
-			const breakResult = runBreakResult(layout, element);
-			if (breakResult) {
-				return getAtomicInlineRectTexts(layout, element, breakResult);
-			}
+			return [];
 		}
 	}
 
