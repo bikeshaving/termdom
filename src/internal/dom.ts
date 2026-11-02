@@ -619,10 +619,34 @@ function moveTextControlSelection(
 	return {value, start: clamped, end: clamped, direction: "none"};
 }
 
-// Handles Backspace, Delete, the horizontal arrows and the readline chords,
-// grapheme-aware. Returns null for any other key. Enter, vertical motion
-// and Home/End are left to the control, which knows where its lines end,
-// and printable insertion is a keypress action.
+// The bounds of the line holding the caret. An input's value is one line.
+// A textarea's lines are its visual lines, soft wraps included, so this
+// lays out the document.
+function getTextControlLineBounds(
+	textControl: HTMLInputElement | HTMLTextAreaElement,
+	caret: number,
+): {lineStart: number; lineEnd: number} {
+	const value = _(textControl)._uaValue;
+	if (!isHTMLElementNamed(textControl, "textarea")) {
+		return {lineStart: 0, lineEnd: value.length};
+	}
+	const layout = _(getAttachedDocument(textControl)!).extra.layout;
+	layout.performLayout();
+	const visual = getTextareaVisualLines(
+		textControl as HTMLTextAreaElement,
+		layout,
+	);
+	const line = visual?.lines[getTextareaLine(visual.lines, caret)];
+	return {
+		lineStart: line?.startOffset ?? 0,
+		lineEnd: line?.endOffset ?? value.length,
+	};
+}
+
+// Handles Backspace, Delete, the horizontal arrows, Home/End and the
+// readline chords, grapheme-aware. Returns null for any other key. Enter
+// and vertical motion are left to the control, and printable insertion is
+// a keypress action.
 function applySharedTextControlEdit(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
 	key: string,
@@ -670,8 +694,34 @@ function applySharedTextControlEdit(
 	}
 
 	// The readline chords a terminal user expects: caret motion or deletion,
-	// never a browser shortcut. Ctrl+A, Ctrl+E, Ctrl+K and Ctrl+U depend on
-	// line bounds, so the control handles those. These are the rest.
+	// never a browser shortcut. Home, End, Ctrl+A, Ctrl+E, Ctrl+K and Ctrl+U
+	// work within the caret's line.
+	if (
+		key === "Home" ||
+		key === "End" ||
+		(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
+	) {
+		const {lineStart, lineEnd} = getTextControlLineBounds(textControl, caret);
+		if (ctrlKey && key === "k") {
+			return createCollapsedEdit(
+				value.slice(0, caret) + value.slice(lineEnd),
+				caret,
+			);
+		}
+		if (ctrlKey && key === "u") {
+			return createCollapsedEdit(
+				value.slice(0, lineStart) + value.slice(caret),
+				lineStart,
+			);
+		}
+		const toStart = key === "Home" || key === "a";
+		return moveTextControlSelection(
+			value,
+			anchor,
+			toStart ? lineStart : lineEnd,
+			shiftKey,
+		);
+	}
 	if (ctrlKey && key === "b") {
 		return moveTextControlSelection(
 			value,
@@ -19792,34 +19842,13 @@ export class HTMLInputElement extends HTMLElement {
 				return;
 			}
 
-			const value = slots._uaValue;
-			const {start, end, direction} = getSelectionRecord(this)!;
-			const anchor = direction === "backward" ? end : start;
-			const caret = direction === "backward" ? start : end;
-
-			let result: TextControlEditResult | null;
-			if (key === "Home" || (ctrlKey && key === "a")) {
-				result = moveTextControlSelection(value, anchor, 0, shiftKey);
-			} else if (key === "End" || (ctrlKey && key === "e")) {
-				result = moveTextControlSelection(
-					value,
-					anchor,
-					value.length,
-					shiftKey,
-				);
-			} else if (ctrlKey && key === "k") {
-				result = createCollapsedEdit(value.slice(0, caret), caret);
-			} else if (ctrlKey && key === "u") {
-				result = createCollapsedEdit(value.slice(caret), 0);
-			} else {
-				result = applySharedTextControlEdit(
-					this,
-					key,
-					shiftKey,
-					ctrlKey,
-					altKey,
-				);
-			}
+			const result = applySharedTextControlEdit(
+				this,
+				key,
+				shiftKey,
+				ctrlKey,
+				altKey,
+			);
 			if (result) {
 				applyTextControlEdit(this, result, {
 					inputType: getKeyInputType(key, ctrlKey, altKey),
@@ -23856,7 +23885,6 @@ export class HTMLTextAreaElement extends HTMLElement {
 			if (!slots.extra.upgraded) {
 				return;
 			}
-			const attached = getAttachedDocument(this)!;
 			const {key, shiftKey, ctrlKey, altKey} = event;
 			// The goal column survives only an unbroken run of vertical moves.
 			if (key !== "ArrowUp" && key !== "ArrowDown") {
@@ -23870,7 +23898,6 @@ export class HTMLTextAreaElement extends HTMLElement {
 			const anchor = backward ? end : start;
 
 			let result: TextControlEditResult | null;
-			const attachedSlots = _(attached);
 			if (key === "Enter" || (ctrlKey && key === "j")) {
 				// Insert a newline like any typed character, replacing the
 				// selection. A terminal sends line feed for Ctrl+J, which is the
@@ -23880,44 +23907,13 @@ export class HTMLTextAreaElement extends HTMLElement {
 				const pos = start + 1;
 				result = {value: next, start: pos, end: pos, direction: "none"};
 			} else if (key === "ArrowUp" || key === "ArrowDown") {
-				attachedSlots.extra.layout.performLayout();
+				_(getAttachedDocument(this)!).extra.layout.performLayout();
 				const target = getVerticalTarget(
 					this,
 					caret,
 					key === "ArrowDown" ? 1 : -1,
 				);
 				result = moveTextControlSelection(value, anchor, target, shiftKey);
-			} else if (
-				key === "Home" ||
-				key === "End" ||
-				(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
-			) {
-				attachedSlots.extra.layout.performLayout();
-				const visual = getTextareaVisualLines(this, attachedSlots.extra.layout);
-				const line = visual
-					? visual.lines[getTextareaLine(visual.lines, caret)]
-					: null;
-				const lineStart = line?.startOffset ?? 0;
-				const lineEnd = line?.endOffset ?? value.length;
-				if (ctrlKey && key === "k") {
-					result = createCollapsedEdit(
-						value.slice(0, caret) + value.slice(lineEnd),
-						caret,
-					);
-				} else if (ctrlKey && key === "u") {
-					result = createCollapsedEdit(
-						value.slice(0, lineStart) + value.slice(caret),
-						lineStart,
-					);
-				} else {
-					const toStart = key === "Home" || key === "a";
-					result = moveTextControlSelection(
-						value,
-						anchor,
-						toStart ? lineStart : lineEnd,
-						shiftKey,
-					);
-				}
 			} else {
 				result = applySharedTextControlEdit(
 					this,
