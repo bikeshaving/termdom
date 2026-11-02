@@ -24,7 +24,6 @@ import {
 	parseHTMLDocument,
 	parseXMLDocument,
 	platform,
-	processTimers,
 	reportError,
 	runtime,
 	setAttributeByName,
@@ -32,7 +31,6 @@ import {
 	startPendingImages,
 	toImageDimension,
 	Window,
-	windowTimers,
 } from "./dom.ts";
 import {createRealm, rehomeClone} from "./realms.ts";
 import {
@@ -89,7 +87,7 @@ export function buildWindow(
 	// number HTML hands the page for each: the runtime's own handle is the
 	// runtime's object.
 	const timers = new Map<number, ReturnType<typeof setTimeout>>();
-	windowTimers.set(window, timers);
+	_(window as unknown as Window).timers = timers;
 	let lastTimerId = 0;
 	const clearTimer = (id: unknown) => {
 		const key = Number(id);
@@ -99,12 +97,12 @@ export function buildWindow(
 			runtime.clearTimeout(handle);
 		}
 	};
-	processTimers.set(window, {
+	_(window as unknown as Window).processTimers = {
 		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) =>
 			runtime.setTimeout(guard(handler, args) as () => void, timeout),
 		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) =>
 			runtime.setInterval(guard(handler, args) as () => void, timeout),
-	});
+	};
 	Object.assign(
 		window,
 		getWindowClasses(),

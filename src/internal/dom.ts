@@ -6206,17 +6206,14 @@ function callInRealm<Args extends unknown[]>(
 // unhandled one goes to the engine rendering the document, which owns
 // the terminal the runtime would otherwise print over. With no engine,
 // the runtime reports it.
-// The windows firing an error event now. An exception raised while one
-// is, by an error listener itself, skips the event, as HTML's "in error
-// reporting mode" has it, rather than firing another without end.
-const reportingWindows = new WeakSet<object>();
-
 export function reportError(
 	error: unknown,
 	document: Document | null = null,
 ): void {
-	const view = document === null ? null : _(document).extra.defaultView;
-	if (view !== null && !reportingWindows.has(view)) {
+	const view = document === null
+		? null
+		: _(document).extra.defaultView as Window | null;
+	if (view !== null && _(view).reportingError !== true) {
 		const event = constructInternal(() =>
 			new ErrorEvent("error", {
 				cancelable: true,
@@ -6224,11 +6221,11 @@ export function reportError(
 				error,
 			}),
 		);
-		reportingWindows.add(view);
+		_(view).reportingError = true;
 		try {
-			dispatch(view as unknown as EventTarget, event);
+			dispatch(view, event);
 		} finally {
-			reportingWindows.delete(view);
+			_(view).reportingError = false;
 		}
 		if (event.defaultPrevented) {
 			return;
@@ -39370,6 +39367,16 @@ export interface WindowSlots extends EventTargetSlots {
 	realm: Realm | null;
 	// How many frames the window's indexed properties name.
 	frameIndexes: number;
+	// Whether the window is firing an error event now. An exception raised
+	// while it is, by an error listener itself, skips the event, as HTML's
+	// "in error reporting mode" has it, rather than firing another without
+	// end.
+	reportingError?: boolean;
+	timers?: Map<number, ReturnType<typeof setTimeout>>;
+	processTimers?: Record<string, unknown>;
+	// The tasks the engine queued for the window, such as a message on its
+	// way, which go with the window as its timers do.
+	tasks?: Set<ReturnType<typeof runtime.setTimeout>>;
 }
 
 export interface Window {
@@ -40634,12 +40641,6 @@ function cloneWithPlatformObjects(
 	return copy;
 }
 
-export const windowTimers = new WeakMap<
-	object,
-	Map<number, ReturnType<typeof setTimeout>>
->();
-export const processTimers = new WeakMap<object, Record<string, unknown>>();
-
 /**
  * The window's setTimeout and setInterval as installGlobals() puts them
  * on the global: they report what their callbacks throw as the page's
@@ -40647,22 +40648,11 @@ export const processTimers = new WeakMap<object, Record<string, unknown>>();
  * disposing the TermDOM leaves them running.
  */
 export function getProcessTimers(window: Window): Record<string, unknown> {
-	return processTimers.get(window)!;
+	return _(window).processTimers!;
 }
 
-// The tasks the engine queued for a window, such as a message on its way,
-// which go with the window as its timers do.
-const windowTasks = new WeakMap<
-	Window,
-	Set<ReturnType<typeof runtime.setTimeout>>
->();
-
 function queueWindowTask(window: Window, task: () => void): void {
-	let tasks = windowTasks.get(window);
-	if (tasks === undefined) {
-		tasks = new Set();
-		windowTasks.set(window, tasks);
-	}
+	const tasks = _(window).tasks ??= new Set();
 	const handle = runtime.setTimeout(() => {
 		tasks.delete(handle);
 		task();
@@ -40675,12 +40665,12 @@ function queueWindowTask(window: Window, task: () => void): void {
  * unloaded document's.
  */
 export function clearWindowTimers(window: Window): void {
-	const timers = windowTimers.get(window);
+	const timers = _(window).timers;
 	for (const handle of timers?.values() ?? []) {
 		runtime.clearTimeout(handle);
 	}
 	timers?.clear();
-	const tasks = windowTasks.get(window);
+	const tasks = _(window).tasks;
 	for (const handle of tasks ?? []) {
 		runtime.clearTimeout(handle);
 	}
