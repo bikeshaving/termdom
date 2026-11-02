@@ -26,14 +26,7 @@ import {
 	invalidateTextMeasurement,
 	type Layout,
 } from "./layout.ts";
-import {
-	CSI_KEYS,
-	PASTE_END,
-	PASTE_START,
-	SHIFT_TAB,
-	SS3_KEYS,
-	TILDE_KEYS,
-} from "./pty.ts";
+import {CSI_KEYS, PASTE_END, SS3_KEYS, TILDE_KEYS} from "./pty.ts";
 import {_, type internals} from "./slots.ts";
 import {isControlByte, recordClusterAdvance} from "./text.ts";
 import {
@@ -248,21 +241,6 @@ const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 	return typeof panic === "string" ? panic : reset;
 }).join("");
 
-function decodeMouseEscape(
-	token: string,
-): {button: number; col: number; row: number; release: boolean} | null {
-	const match = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
-	if (!match) {
-		return null;
-	}
-	return {
-		button: parseInt(match[1], 10),
-		col: parseInt(match[2], 10),
-		row: parseInt(match[3], 10),
-		release: match[4] === "m",
-	};
-}
-
 const CLIPBOARD_START = "\x1b]52;";
 // The payload stops at ESC so a reply ended by ST is still bounded.
 const CLIPBOARD_REPLY = /^\x1b\]52;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/;
@@ -321,44 +299,28 @@ type WireItem =
 	{kind: "device-attributes"};
 
 // Line feed is not here. It is the Ctrl+J chord. A lone ESC is the
-// Escape key, since the reader peels CSI and SS3 off whole. CSI 1 ~ and
-// CSI 4 ~ are Home and End from the VT220 editing keypad.
+// Escape key, since the reader peels CSI and SS3 off whole.
 const KEY_BY_TOKEN: Record<string, string> = {
 	"\r": "Enter",
 	"\t": "Tab",
-	[SHIFT_TAB]: "Tab",
 	"\x7f": "Backspace",
 	"\x1b": "Escape",
-	"\x1b[1~": "Home",
-	"\x1b[4~": "End",
 };
 
-const MODIFIED_CURSOR_KEYS: Record<string, string> = {};
+// The keys that CSI <letter> and xterm's CSI 1 ; <mod> <letter> name by
+// their final byte, and CSI <code> ~ and CSI <code> ; <mod> ~ by their
+// code. CSI 1 ~ and CSI 4 ~ are Home and End from the VT220 editing
+// keypad.
+const KEY_BY_FINAL: Record<string, string> = {};
+const KEY_BY_TILDE_CODE: Record<number, string> = {1: "Home", 4: "End"};
 
 for (const [key, letter] of Object.entries({...CSI_KEYS, ...SS3_KEYS})) {
-	MODIFIED_CURSOR_KEYS[letter] = key;
+	KEY_BY_FINAL[letter] = key;
 	KEY_BY_TOKEN[`\x1bO${letter}`] = key;
 }
-for (const [key, letter] of Object.entries(CSI_KEYS)) {
-	KEY_BY_TOKEN[`\x1b[${letter}`] = key;
-}
 for (const [key, code] of Object.entries(TILDE_KEYS)) {
-	KEY_BY_TOKEN[`\x1b[${code}~`] = key;
+	KEY_BY_TILDE_CODE[code] = key;
 }
-
-// xterm's modified cursor and F1-F4 keys: CSI 1 ; <mod> <letter>, e.g.
-// Alt+Up = CSI 1;3A.
-const MODIFIED_CURSOR_KEY = /^\x1b\[1;(\d+)([ABCDHFPQRS])$/;
-
-// xterm's modified tilde keys: CSI <n> ; <mod> ~, e.g. Ctrl+Delete =
-// CSI 3;5~.
-const MODIFIED_TILDE_KEY = /^\x1b\[(\d+);(\d+)~$/;
-
-// A key with its modifiers spelled out, sent by a terminal that reports
-// them all: CSI u (fixterms and kitty) as CSI <code>[:...] ; <mod>[:...]
-// [; <text>] u, and xterm's modifyOtherKeys as CSI 27 ; <mod> ; <code> ~.
-const CSI_U_KEY = /^\x1b\[(\d+)(?::[\d:]*)?(?:;(\d*)(?::\d*)?)?(?:;[\d:]*)?u$/;
-const OTHER_KEY = /^\x1b\[27;(\d+);(\d+)~$/;
 
 // The keys CSI u names by their control code rather than a character.
 const KEY_BY_CODE: Record<number, string> = {
@@ -370,11 +332,9 @@ const KEY_BY_CODE: Record<number, string> = {
 };
 
 // mod - 1 is a bitmask: 1 Shift, 2 Alt, 4 Ctrl, 8 Super, and in CSI u 32
-// Meta. Super is the Meta key a browser reports.
-function decodeModifiers(
-	mod: string | undefined,
-): {shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean} {
-	const bits = mod === undefined || mod === "" ? 0 : parseInt(mod, 10) - 1;
+// Meta. Super is the Meta key a browser reports. An empty mod is 0.
+function decodeModifiers(mod: number): Omit<WireKey, "kind" | "key" | "char"> {
+	const bits = Math.max(mod - 1, 0);
 	return {
 		shiftKey: (bits & 1) !== 0,
 		altKey: (bits & 2) !== 0,
@@ -383,7 +343,13 @@ function decodeModifiers(
 	};
 }
 
-function decodeCodedKey(codepoint: number, mod: string | undefined): WireKey {
+function decodeNamedKey(key: string | undefined, mod: number): WireKey | null {
+	return key === undefined
+		? null
+		: {kind: "key", key, char: "", ...decodeModifiers(mod)};
+}
+
+function decodeCodedKey(codepoint: number, mod: number): WireKey {
 	const modifiers = decodeModifiers(mod);
 	const named = KEY_BY_CODE[codepoint];
 	let key = named ?? String.fromCodePoint(codepoint);
@@ -435,33 +401,6 @@ function decodeKeyToken(token: string): WireKey {
 		};
 	}
 
-	const modified = token.match(MODIFIED_CURSOR_KEY);
-	if (modified) {
-		return {
-			kind: "key",
-			key: MODIFIED_CURSOR_KEYS[modified[2]],
-			char: "",
-			...decodeModifiers(modified[1]),
-		};
-	}
-	const other = token.match(OTHER_KEY);
-	if (other) {
-		return decodeCodedKey(parseInt(other[2], 10), other[1]);
-	}
-	const tilde = token.match(MODIFIED_TILDE_KEY);
-	if (tilde && KEY_BY_TOKEN[`\x1b[${tilde[1]}~`] !== undefined) {
-		return {
-			kind: "key",
-			key: KEY_BY_TOKEN[`\x1b[${tilde[1]}~`],
-			char: "",
-			...decodeModifiers(tilde[2]),
-		};
-	}
-	const coded = token.match(CSI_U_KEY);
-	if (coded) {
-		return decodeCodedKey(parseInt(coded[1], 10), coded[2]);
-	}
-
 	// A character outside the basic plane is one character across two
 	// units.
 	const astral = token.length === 2 && code >= 0xd800 && code <= 0xdbff;
@@ -471,11 +410,88 @@ function decodeKeyToken(token: string): WireKey {
 		kind: "key",
 		key: KEY_BY_TOKEN[token] ?? token,
 		char: printable ? token : "",
-		shiftKey: token === SHIFT_TAB,
+		shiftKey: false,
 		ctrlKey: false,
 		altKey: false,
 		metaKey: false,
 	};
+}
+
+/**
+ * What a whole CSI the terminal sent means: a key, a report, or for
+ * CSI 200 ~, a paste's opening fence, as an empty paste. None takes
+ * subparameters but CSI u, a key with its modifiers spelled out, sent by
+ * a terminal that reports them all: CSI <code>[:...] ; <mod>[:<event>]
+ * [; <text>] u (fixterms and kitty). xterm's modifyOtherKeys sends
+ * CSI 27 ; <mod> ; <code> ~.
+ */
+function decodeCSI(parser: Parser, final: string): WireItem | null {
+	const {prefix, params, intermediates} = parser;
+	const [a, b = 0, c = 0] = params.map(([value]) => value);
+	const count = params.every((param) => param.length === 1) ? params.length : 0;
+	switch (prefix + intermediates + final) {
+		case "<M":
+		case "<m":
+			return count === 3
+				? {
+					kind: "mouse",
+					button: a,
+					col: b,
+					row: c,
+					release: final === "m",
+					ticks: 1,
+				}
+				: null;
+		case "I":
+		case "O":
+			return count === 1 && a === 0
+				? {kind: "focus", focused: final === "I"}
+				: null;
+		case "?c":
+			return count === 0 ? null : {kind: "device-attributes"};
+		case ">c":
+			return count === 0
+				? null
+				: {kind: "secondary-attributes", params: params.join(";")};
+		case "$y":
+		case "?$y":
+			return count === 2
+				? {kind: "mode-report", mode: prefix + a, value: b}
+				: null;
+		// XTWINOPS reports the cell height before its width.
+		case "t":
+			return count === 3 && a === 6
+				? {kind: "cell-size", height: b, width: c}
+				: null;
+		case "u":
+			return a > 0 && params.length <= 3 && (params[1]?.length ?? 0) <= 2
+				? decodeCodedKey(a, b)
+				: null;
+		case "~":
+			if (count === 1 && a === 200) {
+				return {kind: "paste", text: ""};
+			}
+			if (count === 3 && a === 27) {
+				return decodeCodedKey(c, b);
+			}
+			return count === 1 || count === 2
+				? decodeNamedKey(KEY_BY_TILDE_CODE[a], b)
+				: null;
+		case "Z":
+			return count === 1 && a === 0 ? decodeNamedKey("Tab", 2) : null;
+		// A cursor report has the shape of xterm's modified F3, and wins.
+		case "R":
+			if (count === 2) {
+				return {kind: "cursor-report", row: a, col: b};
+			}
+	}
+	const key = prefix + intermediates === "" ? KEY_BY_FINAL[final] : undefined;
+	if (count === 2 && a === 1) {
+		return decodeNamedKey(key, b);
+	}
+	return count === 1 && a === 0 && key !== undefined && CSI_KEYS[key] === final
+		? decodeNamedKey(key, 0)
+		: null;
 }
 
 // A larger reply is not a clipboard. It is given up as null.
@@ -488,21 +504,10 @@ const HOLD_LIMIT = 4096;
 
 const STRING_OPENERS = "]P_^X";
 
-// The reader decodes a sequence from its text, so its parser only finds
-// where each one ends.
-const IGNORED_HANDLERS: ParserHandlers = {
-	print() {},
-	execute() {},
-	csi() {},
-	esc() {},
-	osc() {},
-	dcs() {},
-};
-
 // OSC 11 answered: the default background, each channel one to four hex
-// digits, ended by BEL or ST.
+// digits.
 const BACKGROUND_REPLY =
-	/^\x1b\]11;rgba?:([0-9a-f]{1,4})\/([0-9a-f]{1,4})\/([0-9a-f]{1,4})(?:\/[0-9a-f]{1,4})?(?:\x07|\x1b\\)/i;
+	/^11;rgba?:([0-9a-f]{1,4})\/([0-9a-f]{1,4})\/([0-9a-f]{1,4})(?:\/[0-9a-f]{1,4})?$/i;
 
 const BACKGROUND_QUERY = "\x1b]11;?\x1b\\";
 
@@ -520,11 +525,11 @@ function readChannel(hex: string): number {
 // DECRQSS answered for SGR: the parameters of the terminal's current
 // style, as `0;53`, between DCS 1 $ r and m ST. DCS 0 $ r is a terminal
 // (tmux, say) that has no answer for the request.
-const SGR_REPORT = /^\x1bP([01])\$r([\d;:]*)m?\x1b\\/;
+const SGR_REPORT = /^([01])\$r([\d;:]*)m?$/;
 
 // XTGETTCAP answered: DCS 1 + r for a capability the terminal has, with
 // its value when it has one, and DCS 0 + r for one it does not.
-const CAPABILITY_REPORT = /^\x1bP([01])\+r[^\x1b]*\x1b\\/;
+const CAPABILITY_REPORT = /^([01])\+r/;
 
 // Asked after setting a 24-bit color: the color comes back in the
 // terminal's style when it keeps 24-bit color. Some write the color space
@@ -549,13 +554,16 @@ const TMUX_ATTRIBUTES = /^84;/;
  * dropped at a size, and a clipboard reply is only kept open while a
  * query is waiting for it.
  */
-class WireReader {
+class WireReader implements ParserHandlers {
 	tail: string;
 	pasteBody: string | null;
 	pasteOverflowed: boolean;
 	replyBody: string | null;
 	expectingReply: boolean;
 	parser: Parser;
+	// What the sequence the parser read last meant, when it was a reply or
+	// a key.
+	item: WireItem | null;
 
 	constructor() {
 		this.tail = "";
@@ -563,7 +571,8 @@ class WireReader {
 		this.pasteOverflowed = false;
 		this.replyBody = null;
 		this.expectingReply = false;
-		this.parser = new Parser(IGNORED_HANDLERS);
+		this.parser = new Parser(this);
+		this.item = null;
 	}
 
 	holdsEscape(): boolean {
@@ -678,9 +687,13 @@ class WireReader {
 			return i + 1;
 		}
 		if (next === "[" || STRING_OPENERS.includes(next)) {
+			this.item = null;
 			const end = this.parser.parse(data, i, "input");
 			if (end !== -1) {
-				this.readSequence(data.slice(i, end), items);
+				// A sequence nothing here names is not a keystroke.
+				if (this.item !== null) {
+					items.push(this.item);
+				}
 				return end;
 			}
 			// A CSI the chunk cuts waits for the rest of it. OSC, DCS, APC,
@@ -726,19 +739,45 @@ class WireReader {
 		return i + 1 + width;
 	}
 
-	// A whole CSI is a key, a report or a paste's opening fence. A whole
-	// string is a reply, or is discarded.
-	readSequence(token: string, items: WireItem[]): void {
-		if (token === PASTE_START) {
+	print(): void {}
+
+	execute(): void {}
+
+	esc(): void {}
+
+	csi(final: string): void {
+		const item = decodeCSI(this.parser, final);
+		if (item?.kind === "paste") {
 			this.pasteBody = "";
-			return;
+		} else {
+			this.item = item;
 		}
-		const item = token[1] === "["
-			? decodeControlToken(token)
-			: decodeString(token);
-		// A sequence nothing here names is not a keystroke.
-		if (item !== null && (item.kind !== "key" || !item.key.includes("\x1b"))) {
-			items.push(item);
+	}
+
+	// A whole string is a reply, or is discarded.
+	osc(text: string): void {
+		const background = BACKGROUND_REPLY.exec(text);
+		if (background !== null) {
+			this.item = {
+				kind: "background",
+				red: readChannel(background[1]),
+				green: readChannel(background[2]),
+				blue: readChannel(background[3]),
+			};
+		}
+	}
+
+	dcs(text: string): void {
+		const report = SGR_REPORT.exec(text);
+		if (report !== null) {
+			this.item = {
+				kind: "sgr-report",
+				params: report[1] === "1" ? report[2] : null,
+			};
+		}
+		const capability = CAPABILITY_REPORT.exec(text);
+		if (capability !== null) {
+			this.item = {kind: "capability-report", known: capability[1] === "1"};
 		}
 	}
 }
@@ -759,28 +798,6 @@ function readKey(data: string, i: number, items: WireItem[]): number {
 function getKeyWidth(data: string, i: number): number {
 	const code = data.charCodeAt(i);
 	return code >= 0xd800 && code <= 0xdbff && i + 1 < data.length ? 2 : 1;
-}
-
-// What a string the terminal wrote means, with its opener and its
-// terminator, when it is a reply.
-function decodeString(token: string): WireItem | null {
-	const report = SGR_REPORT.exec(token);
-	if (report !== null) {
-		return {kind: "sgr-report", params: report[1] === "1" ? report[2] : null};
-	}
-	const capability = CAPABILITY_REPORT.exec(token);
-	if (capability !== null) {
-		return {kind: "capability-report", known: capability[1] === "1"};
-	}
-	const background = BACKGROUND_REPLY.exec(token);
-	return background === null
-		? null
-		: {
-			kind: "background",
-			red: readChannel(background[1]),
-			green: readChannel(background[2]),
-			blue: readChannel(background[3]),
-		};
 }
 
 /**
@@ -816,49 +833,6 @@ function findFenceStart(data: string, from: number, replyDue: boolean): number {
 		? replyDue && data[esc - 1] !== "\x1b"
 		: PASTE_END.startsWith(data.slice(esc));
 	return held ? esc : data.length;
-}
-
-function decodeControlToken(token: string): WireItem {
-	const mouse = decodeMouseEscape(token);
-	if (mouse) {
-		return {kind: "mouse", ...mouse, ticks: 1};
-	}
-	if (token === "\x1b[I" || token === "\x1b[O") {
-		return {kind: "focus", focused: token === "\x1b[I"};
-	}
-	if (/^\x1b\[\?[\d;]*c$/.test(token)) {
-		return {kind: "device-attributes"};
-	}
-	const secondary = token.match(/^\x1b\[>([\d;]*)c$/);
-	if (secondary) {
-		return {kind: "secondary-attributes", params: secondary[1]};
-	}
-	const cursor = token.match(/^\x1b\[(\d+);(\d+)R$/);
-	if (cursor) {
-		return {
-			kind: "cursor-report",
-			row: parseInt(cursor[1], 10),
-			col: parseInt(cursor[2], 10),
-		};
-	}
-	const mode = token.match(/^\x1b\[(\??)(\d+);(\d+)\$y$/);
-	if (mode) {
-		return {
-			kind: "mode-report",
-			mode: (mode[1] ? "?" : "") + mode[2],
-			value: parseInt(mode[3], 10),
-		};
-	}
-	// XTWINOPS reports the cell height before its width.
-	const cell = token.match(/^\x1b\[6;(\d+);(\d+)t$/);
-	if (cell) {
-		return {
-			kind: "cell-size",
-			height: parseInt(cell[1], 10),
-			width: parseInt(cell[2], 10),
-		};
-	}
-	return decodeKeyToken(token);
 }
 
 // A question awaiting its reply. The first pending question an item
