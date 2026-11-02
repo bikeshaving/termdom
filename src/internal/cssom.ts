@@ -105,7 +105,7 @@ import {
 	UA_DOCUMENT_STYLES,
 	UA_ELEMENT_STYLES,
 } from "./useragent.ts";
-import {runInRealm, windowMember} from "./webidl.ts";
+import {getActiveRealm, runInRealm, windowMember} from "./webidl.ts";
 
 // A regular expression literal is a new object each time it runs, so the
 // ones that run for every match and mutation are made once.
@@ -1524,10 +1524,8 @@ function syncViewIndices(view: CSSStyleDeclaration): void {
 
 // An error thrown out of a stylesheet has to be the document's own
 // DOMException. A sheet reaches its document through its owner node. A
-// constructed sheet has none, and uses the window its constructor came
-// from.
-let cssomWindow: Window | null = null;
-
+// constructed sheet has none, and uses the realm whose bindings are
+// running, the one its methods came from.
 function getSheetView(
 	sheet: CSSStyleSheet | null | undefined,
 ): object | undefined {
@@ -1537,7 +1535,7 @@ function getSheetView(
 }
 
 function typeError(message: string, sheet?: CSSStyleSheet | null): TypeError {
-	const view = getSheetView(sheet) ?? cssomWindow ?? undefined;
+	const view = getSheetView(sheet) ?? getActiveRealm()?.global;
 	const Constructor =
 		(view as unknown as {TypeError?: typeof TypeError} | undefined)
 			?.TypeError ?? TypeError;
@@ -1549,7 +1547,7 @@ function domException(
 	name: string,
 	sheet?: CSSStyleSheet | null,
 ): DOMException {
-	const view = getSheetView(sheet) ?? cssomWindow ?? undefined;
+	const view = getSheetView(sheet) ?? getActiveRealm()?.global;
 	const Exception =
 		(view as unknown as {DOMException?: typeof DOMException} | undefined)
 			?.DOMException ?? DOMException;
@@ -12809,8 +12807,6 @@ function installWindowMembers(cascade: Cascade): void {
 				),
 			),
 	) as typeof window.getComputedStyle;
-	// An error thrown out of a constructed sheet belongs to this realm.
-	cssomWindow = window;
 	Object.assign(window, {CSS: createCSSNamespace(cascade.document)});
 }
 
