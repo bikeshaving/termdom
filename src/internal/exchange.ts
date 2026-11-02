@@ -26,7 +26,14 @@ import {
 	invalidateTextMeasurement,
 	type Layout,
 } from "./layout.ts";
-import {CSI_KEYS, SHIFT_TAB, SS3_KEYS, TILDE_KEYS} from "./pty.ts";
+import {
+	CSI_KEYS,
+	PASTE_END,
+	PASTE_START,
+	SHIFT_TAB,
+	SS3_KEYS,
+	TILDE_KEYS,
+} from "./pty.ts";
 import {_, type internals} from "./slots.ts";
 import {isControlByte, recordClusterAdvance} from "./text.ts";
 import {
@@ -254,9 +261,6 @@ function decodeMouseEscape(
 		release: match[4] === "m",
 	};
 }
-
-const PASTE_START = "\x1b[200~";
-const PASTE_END = "\x1b[201~";
 
 const CLIPBOARD_START = "\x1b]52;";
 // The payload stops at ESC so a reply ended by ST is still bounded.

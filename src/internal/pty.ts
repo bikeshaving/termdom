@@ -314,6 +314,10 @@ export const SS3_KEYS: Record<string, string> = {
 // The one named spelling that carries a modifier.
 export const SHIFT_TAB = "\x1b[Z";
 
+// The fences around a bracketed paste, mode 2004.
+export const PASTE_START = "\x1b[200~";
+export const PASTE_END = "\x1b[201~";
+
 interface KeyLike {
 	key: string;
 	ctrlKey: boolean;
@@ -613,7 +617,7 @@ export class PTYSession {
 	paste(text: string): void {
 		const body = text.replace(/\r?\n/g, "\r");
 		this.input(
-			this.terminal.bracketedPaste ? `\x1b[200~${body}\x1b[201~` : body,
+			this.terminal.bracketedPaste ? PASTE_START + body + PASTE_END : body,
 		);
 	}
 
