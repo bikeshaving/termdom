@@ -2576,6 +2576,82 @@ export const DEFAULT_ROWS = 24;
  * Inert until the first read of `readable` engages raw mode and the
  * listeners. Cancelling it hands the tty back.
  */
+// The terminal's size, each time SIGWINCH says it changed.
+function watchResizes(proc: ProcessLike): ReadableStream<TerminalSize> {
+	let resizeListener: (() => void) | null = null;
+	return new ReadableStream<TerminalSize>(
+		{
+			pull: (controller) => {
+				if (resizeListener) {
+					return;
+				}
+				resizeListener = () => {
+					controller.enqueue({
+						cols: proc.stdout.columns || DEFAULT_COLS,
+						rows: proc.stdout.rows || DEFAULT_ROWS,
+					});
+				};
+				proc.on("SIGWINCH", resizeListener);
+			},
+			cancel: () => {
+				if (resizeListener) {
+					proc.removeListener?.("SIGWINCH", resizeListener);
+					resizeListener = null;
+				}
+			},
+		},
+		{highWaterMark: 0},
+	);
+}
+
+// Job control stops a job with SIGTSTP, which raw mode keeps the
+// terminal from sending, so the process sends it to its process
+// group, as the terminal would. A launcher that runs it as a child
+// and waits on it stops too, and the shell sees the job stop.
+// Windows has no such signal.
+function createSuspend(
+	proc: ProcessLike,
+	isEngaged: () => boolean,
+): (() => Promise<void>) | undefined {
+	if (
+		proc.kill === undefined || (proc.platform ?? process.platform) === "win32"
+	) {
+		return undefined;
+	}
+	return () => new Promise<void>((resolve) => {
+		const stdin = proc.stdin;
+		if (!isEngaged() || stdin === undefined) {
+			resolve();
+			return;
+		}
+		stdin.setRawMode?.(false);
+		stdin.pause();
+		// The timer holds the process open while it waits, as paused
+		// stdin no longer does. A process the signal did not stop,
+		// as the kernel discards it for a session leader, finds the
+		// timer on time, and goes on.
+		const sent = performance.now();
+		let continued = false;
+		const onContinue = () => {
+			continued = true;
+			proc.removeListener?.("SIGCONT", onContinue);
+			stdin.setRawMode?.(true);
+			stdin.resume();
+			resolve();
+		};
+		const watch = setInterval(() => {
+			if (!continued && performance.now() - sent < STOP_GRACE) {
+				onContinue();
+			}
+			if (continued) {
+				clearInterval(watch);
+			}
+		}, STOP_CHECK);
+		proc.on("SIGCONT", onContinue);
+		proc.kill!(0, "SIGTSTP");
+	});
+}
+
 export function transportFromProcess(
 	proc: ProcessLike = process as unknown as ProcessLike,
 	// The global process sits below a shell. A mock or relay owns its
@@ -2767,31 +2843,6 @@ export function transportFromProcess(
 		},
 	});
 
-	let resizeListener: (() => void) | null = null;
-	const resizes = new ReadableStream<TerminalSize>(
-		{
-			pull: (controller) => {
-				if (resizeListener) {
-					return;
-				}
-				resizeListener = () => {
-					controller.enqueue({
-						cols: proc.stdout.columns || DEFAULT_COLS,
-						rows: proc.stdout.rows || DEFAULT_ROWS,
-					});
-				};
-				proc.on("SIGWINCH", resizeListener);
-			},
-			cancel: () => {
-				if (resizeListener) {
-					proc.removeListener?.("SIGWINCH", resizeListener);
-					resizeListener = null;
-				}
-			},
-		},
-		{highWaterMark: 0},
-	);
-
 	const transport: TerminalTransport & {[kReadsNoReplies]: boolean} = {
 		get cols() {
 			return proc.stdout.columns || DEFAULT_COLS;
@@ -2818,51 +2869,11 @@ export function transportFromProcess(
 			stderr.write(text + "\n");
 			return true;
 		},
-		// Job control stops a job with SIGTSTP, which raw mode keeps the
-		// terminal from sending, so the process sends it to its process
-		// group, as the terminal would. A launcher that runs it as a child
-		// and waits on it stops too, and the shell sees the job stop.
-		// Windows has no such signal.
-		suspend:
-			proc.kill === undefined ||
-			(proc.platform ?? process.platform) === "win32"
-				? undefined
-				: () => new Promise<void>((resolve) => {
-					const stdin = proc.stdin;
-					if (!engaged || stdin === undefined) {
-						resolve();
-						return;
-					}
-					stdin.setRawMode?.(false);
-					stdin.pause();
-					// The timer holds the process open while it waits, as paused
-					// stdin no longer does. A process the signal did not stop,
-					// as the kernel discards it for a session leader, finds the
-					// timer on time, and goes on.
-					const sent = performance.now();
-					let continued = false;
-					const onContinue = () => {
-						continued = true;
-						proc.removeListener?.("SIGCONT", onContinue);
-						stdin.setRawMode?.(true);
-						stdin.resume();
-						resolve();
-					};
-					const watch = setInterval(() => {
-						if (!continued && performance.now() - sent < STOP_GRACE) {
-							onContinue();
-						}
-						if (continued) {
-							clearInterval(watch);
-						}
-					}, STOP_CHECK);
-					proc.on("SIGCONT", onContinue);
-					proc.kill!(0, "SIGTSTP");
-				}),
+		suspend: createSuspend(proc, () => engaged),
 		ready: Promise.resolve(),
 		readable,
 		writable,
-		resizes,
+		resizes: watchResizes(proc),
 		closed,
 		close(info?: TerminalCloseInfo) {
 			disengage();
