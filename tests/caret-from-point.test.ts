@@ -76,3 +76,23 @@ test("CaretPosition cannot be constructed by script", async () => {
 	expect(() => new (dom.window.CaretPosition as any)()).toThrow(TypeError);
 	dom.dispose();
 });
+
+test("a point beside a shadow tree's text finds that text", async () => {
+	const dom = await open(
+		"<p>light</p><div id=host style=\"padding-left: 4px\">" +
+			"<b>slotted</b></div>",
+	);
+	const {document} = dom;
+	const host = document.getElementById("host")!;
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = "<span>shadow</span><div><slot></slot></div>";
+	await nextFrame(dom);
+	const inside = {shadowRoots: [root]};
+	const shadow = document.caretPositionFromPoint(1, 1, inside)!;
+	expect(shadow.offsetNode).toBe(root.querySelector("span")!.firstChild);
+	expect(shadow.offset).toBe(0);
+	const slotted = document.caretPositionFromPoint(1, 2, inside)!;
+	expect(slotted.offsetNode).toBe(host.querySelector("b")!.firstChild);
+	expect(slotted.offset).toBe(0);
+	dom.dispose();
+});
