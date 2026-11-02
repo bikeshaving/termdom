@@ -2572,10 +2572,6 @@ const STOP_GRACE = 1000;
 const DEFAULT_COLS = 80;
 export const DEFAULT_ROWS = 24;
 
-/**
- * Inert until the first read of `readable` engages raw mode and the
- * listeners. Cancelling it hands the tty back.
- */
 // The terminal's size, each time SIGWINCH says it changed.
 function watchResizes(proc: ProcessLike): ReadableStream<TerminalSize> {
 	let resizeListener: (() => void) | null = null;
@@ -2652,6 +2648,10 @@ function createSuspend(
 	});
 }
 
+/**
+ * Inert until the first read of `readable` engages raw mode and the
+ * listeners. Cancelling it hands the tty back.
+ */
 export function transportFromProcess(
 	proc: ProcessLike = process as unknown as ProcessLike,
 	// The global process sits below a shell. A mock or relay owns its
