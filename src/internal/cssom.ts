@@ -7427,6 +7427,67 @@ const LIST_NUMBERING_ATTRIBUTES = new Set([
 	"type",
 ]);
 
+// What one batch of records has done, for the work that waits until
+// the batch ends.
+interface MutationBatch {
+
+	// A root's sheets sync once a batch, after its records: each sync
+	// restyles the whole tree, and a page that fills its sheets a rule at
+	// a time sent a record per rule.
+	rootsToSync: Set<ShadowRoot>;
+
+	// A <style> whose text changed holds other rules than the cascade
+	// read. One that joined or left a tree is caught up with alone.
+	sheetTextChanged: boolean;
+	sheetsMoved: boolean;
+	removedElements: boolean;
+
+	// Each parent whose children came or went, with the first child a
+	// forward sibling test could see differently: the one after the
+	// change, null for every child, or undefined for none.
+	changedParents: Map<Element, Element | null | undefined>;
+
+	// Every record describes the tree as the batch left it, so a subtree
+	// invalidated once is not walked again for a later record, as a page
+	// setting hundreds of custom properties on <html> one at a time sent
+	// a record for each.
+	invalidated: Map<Element, boolean>;
+}
+
+function invalidateOnce(
+	cascade: Cascade,
+	batch: MutationBatch,
+	element: Element,
+	notifyLayout = true,
+): void {
+	if (!isInvalidatedUnder(batch.invalidated, element, notifyLayout)) {
+		batch.invalidated.set(element, notifyLayout);
+		invalidateSubtree(cascade, element, notifyLayout);
+	}
+}
+
+// A shadow sheet's sync stays inside its root.
+function noteStyleText(batch: MutationBatch, style: Element): void {
+	reparseOwnerText(getSheet(style));
+	const root = style.getRootNode();
+	if (isShadowRoot(root)) {
+		batch.rootsToSync.add(root);
+	} else {
+		batch.sheetTextChanged = true;
+	}
+}
+
+// A sheet that joined a tree. Null for one whose tree is not known to
+// be a shadow tree.
+function noteSheetMoved(batch: MutationBatch, style: Element | null): void {
+	const root = style?.getRootNode();
+	if (root !== undefined && isShadowRoot(root)) {
+		batch.rootsToSync.add(root);
+	} else {
+		batch.sheetsMoved = true;
+	}
+}
+
 export function handleMutations(
 	cascade: Cascade,
 	mutations: MutationRecord[],
@@ -7449,291 +7510,38 @@ export function handleMutations(
 		}
 	}
 	cascade.filteredSiblingsForMatching = null;
-	// A <style> whose text changed holds other rules than the cascade
-	// read. One that joined or left a tree is caught up with alone.
-	let sheetTextChanged = false;
-	let sheetsMoved = false;
-	let removedElements = false;
-	// Each parent whose children came or went, with the first child a
-	// forward sibling test could see differently: the one after the
-	// change, null for every child, or undefined for none.
-	const changedParents = new Map<Element, Element | null | undefined>();
-	// Every record describes the tree as the batch left it, so a subtree
-	// invalidated once is not walked again for a later record, as a page
-	// setting hundreds of custom properties on <html> one at a time sent
-	// a record for each.
-	const invalidated = new Map<Element, boolean>();
-	const invalidateOnce = (element: Element, notifyLayout = true): void => {
-		if (!isInvalidatedUnder(invalidated, element, notifyLayout)) {
-			invalidated.set(element, notifyLayout);
-			invalidateSubtree(cascade, element, notifyLayout);
-		}
+	const batch: MutationBatch = {
+		rootsToSync: new Set(),
+		sheetTextChanged: false,
+		sheetsMoved: false,
+		removedElements: false,
+		changedParents: new Map(),
+		invalidated: new Map(),
 	};
-
-	// A :has() anchor sits above what changed it, or before it among its
-	// siblings for :has(+ x) and :has(~ x), and the rule can style the
-	// anchor's descendants too. So each such element a :has() could be
-	// tested on restyles, with everything under it.
-	if (cascade.hasRulesExist) {
-		const anchors = new Set<Element>();
-		for (const mutation of mutations) {
-			const start = getNodeType(mutation.target) === ELEMENT_NODE
-				? (mutation.target as Element)
-				: mutation.target.parentElement;
-			for (
-				let ancestor: Element | null = start;
-				ancestor;
-				ancestor = flatParentElement(ancestor)
-			) {
-				for (
-					let element: Element | null = ancestor;
-					element !== null;
-					element = cascade.hasSiblingRules
-						? element.previousElementSibling
-						: null
-				) {
-					if (!anchors.has(element) && couldAnchorHas(cascade, element)) {
-						anchors.add(element);
-						if (hasAnswersChanged(cascade, element)) {
-							invalidateOnce(element);
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// A root's sheets sync once a batch, after its records: each sync
-	// restyles the whole tree, and a page that fills its sheets a rule at
-	// a time sent a record per rule.
-	const rootsToSync = new Set<ShadowRoot>();
+	invalidateHasAnchors(cascade, batch, mutations);
 	for (const mutation of mutations) {
 		if (mutation.type === "childList") {
-			// A <style>'s children ARE its stylesheet text. A shadow
-			// sheet's sync stays inside its root.
-			if (getHTMLLocalName(mutation.target as Element) === "style") {
-				reparseOwnerText(getSheet(mutation.target as Element));
-				const styleRoot = mutation.target.getRootNode();
-				if (isShadowRoot(styleRoot)) {
-					rootsToSync.add(styleRoot);
-				} else {
-					sheetTextChanged = true;
-				}
-			}
-			// A list's gutter is derived from its items' markers, so a
-			// change to the ITEMS invalidates the list: a wider marker added
-			// later overran the gutter the original items set. A change
-			// inside an item's content moves no marker.
-			if (mutationChangesListItems(mutation)) {
-				invalidateEnclosingList(cascade, mutation);
-			}
-
-			for (const node of getAddedNodes(mutation)) {
-				if (getNodeType(node) === ELEMENT_NODE) {
-					const element = node as Element;
-					if (isStyleElement(element)) {
-						const addedRoot = getHTMLLocalName(element) === "style"
-							? element.getRootNode()
-							: null;
-						if (addedRoot !== null && isShadowRoot(addedRoot)) {
-							rootsToSync.add(addedRoot);
-						} else {
-							sheetsMoved = true;
-						}
-					} else {
-						// A detached tree's pseudo-elements and shadow roots wait
-						// for the record that brings it into the document. Its
-						// styles still answer getComputedStyle.
-						const connected = isConnectedNode(element);
-						const elements: Element[] = [];
-						for (
-							let next: DOMNode | null = element as unknown as DOMNode;
-							next !== null;
-							next = nextInTree(next, element as unknown as DOMNode)
-						) {
-							if (getNodeType(next) === ELEMENT_NODE) {
-								elements.push(next as unknown as Element);
-							}
-						}
-						for (const each of elements) {
-							// A sheet brought in inside what was added, a <style>
-							// in an added <head>, is synced as one added alone.
-							if (each !== element && isStyleElement(each)) {
-								const styleRoot = each.getRootNode();
-								if (isShadowRoot(styleRoot)) {
-									rootsToSync.add(styleRoot);
-								} else {
-									sheetsMoved = true;
-								}
-							}
-							invalidateElementCaches(cascade, each);
-							if (connected) {
-								attachPseudoElementsToElement(cascade, each);
-								registerConnectedShadowRoots(cascade, each);
-							}
-						}
-					}
-				}
-			}
-
-			for (const node of getRemovedNodes(mutation)) {
-				if (getNodeType(node) === ELEMENT_NODE) {
-					const element = node as Element;
-					if (isStyleElement(element)) {
-						sheetsMoved = true;
-					}
-					removedElements = true;
-					if (cascade.countersCounted && !cascade.countersStale) {
-						cascade.countersStale = declaresCounters(cascade, element);
-					}
-				}
-			}
-			// A child that came or went changes what `li + li`,
-			// `:first-child` and `:empty` match on the children around it
-			// and on the parent, none of which the mutation names. Once
-			// per parent per batch: appending n children one at a time
-			// is n records against the same parent.
-			if (
-				getNodeType(mutation.target) === ELEMENT_NODE &&
-				getSiblingRuleIndex(
-					cascade,
-					mutation.target as Element,
-				)?.reachesSiblings
-			) {
-				const parent = mutation.target as Element;
-				const from = getFirstChildAfterChange(mutation);
-				changedParents.set(
-					parent,
-					changedParents.has(parent)
-						? earlierChild(changedParents.get(parent), from)
-						: from,
-				);
-			}
+			handleChildListMutation(cascade, batch, mutation);
 		} else if (mutation.type === "attributes") {
-			const element = mutation.target as Element;
-			// A value written over itself changes no style.
-			if (
-				mutation.oldValue !== null &&
-				mutation.oldValue ===
-				getAttributeValue(element, mutation.attributeName!)
-			) {
-				continue;
-			}
-			// A list's numbering reads these, and renumbers markers that
-			// belong to other elements than the one changed.
-			if (
-				LIST_NUMBERING_ATTRIBUTES.has(mutation.attributeName!) &&
-				(getLocalName(element) === "ol" || getLocalName(element) === "li")
-			) {
-				noteCounterChange(cascade, element);
-				cascade.layout.invalidateFrame();
-			}
-			// A change to keys whose rules declare only paint properties
-			// leaves every box where it was. The styles are dropped so the
-			// next read resolves them, and layout is not told.
-			// Under a subtree the batch has already restyled and told layout
-			// of, there is nothing left to work out.
-			const covered = isInvalidatedUnder(invalidated, element, true);
-			const notifyLayout =
-				covered ||
-				!isPaintOnlyChange(
-					cascade,
-					element,
-					mutation.attributeName!,
-					mutation.oldValue,
-				);
-			// Only a change the sheets USE that way reaches descendants.
-			// When no rule tests the class outside its own subject and none
-			// declares an inherited property, descendant styles are
-			// unchanged.
-			const subjects = !covered && mutation.attributeName === "class"
-				? classChangeSubjects(cascade, element, mutation.oldValue)
-				: null;
-			if (covered) {
-				// Restyled with the subtree it is in.
-			} else if (subjects !== null) {
-				invalidateElementCaches(cascade, element, notifyLayout);
-				attachPseudoElementsToElement(cascade, element);
-				if (subjects.length > 0) {
-					// The flat tree, where a box's children are: a host's are
-					// its shadow tree's, a form control's included.
-					for (const descendant of flatDescendants(element)) {
-						const parent = flatParentElement(descendant);
-						if (
-							subjects.some(
-								(anchor) =>
-									couldAnchor(descendant, anchor) ||
-									// A display change blockifies the changed element's
-									// own children, and those of anyone else it anchors.
-									(anchor.children === true &&
-										parent !== null &&
-										(parent === element || couldAnchor(parent, anchor))),
-							)
-						) {
-							invalidateElementCaches(cascade, descendant, notifyLayout);
-							attachPseudoElementsToElement(cascade, descendant);
-						}
-					}
-				}
-			} else if (
-				attributeReachesDescendants(
-					cascade,
-					element,
-					mutation.attributeName!,
-					mutation.oldValue,
-				)
-			) {
-				invalidateOnce(element, notifyLayout);
-			} else {
-				invalidateElementCaches(cascade, element, notifyLayout);
-				attachPseudoElementsToElement(cascade, element);
-			}
-			// Each element restyled names its rows for the frame.
-			if (!notifyLayout) {
-				cascade.layout.invalidateFrame(false);
-			}
-			// `.on ~ .light` matches a FOLLOWING sibling whose cached
-			// styles know nothing of this change.
-			if (
-				changeReachesLaterSiblings(
-					getSiblingRuleIndex(cascade, element),
-					element,
-					mutation.attributeName!,
-					mutation.oldValue,
-				)
-			) {
-				for (
-					let sibling = element.nextElementSibling;
-					sibling;
-					sibling = sibling.nextElementSibling
-				) {
-					invalidateSibling(cascade, sibling);
-				}
-			}
+			handleAttributeMutation(cascade, batch, mutation);
 		} else if (mutation.type === "characterData") {
 			const owner = mutation.target.parentElement;
 			if (owner !== null && getHTMLLocalName(owner) === "style") {
-				reparseOwnerText(getSheet(owner));
-				const ownerRoot = owner.getRootNode();
-				if (isShadowRoot(ownerRoot)) {
-					rootsToSync.add(ownerRoot);
-				} else {
-					sheetTextChanged = true;
-				}
+				noteStyleText(batch, owner);
 			}
 		}
 	}
-	for (const root of rootsToSync) {
+	for (const root of batch.rootsToSync) {
 		syncShadowRoot(cascade, root);
 	}
 
-	for (const [parent, from] of changedParents) {
+	for (const [parent, from] of batch.changedParents) {
 		invalidateChildren(cascade, parent, from);
 	}
 	// What left the document is let go: elements given a pseudo-element,
 	// and shadow roots with their rules. A host connected again registers
 	// its root on the way in.
-	if (removedElements) {
+	if (batch.removedElements) {
 		for (const host of cascade.pseudoHosts) {
 			if (!host.isConnected) {
 				cascade.pseudoHosts.delete(host);
@@ -7748,15 +7556,249 @@ export function handleMutations(
 		releaseRemovedNodes(cascade.document);
 	}
 	refreshCounters(cascade);
-	if (sheetTextChanged) {
+	if (batch.sheetTextChanged) {
 		cascade.syncStylesheets();
-	} else if (sheetsMoved) {
+	} else if (batch.sheetsMoved) {
 		parseStylesheetsIfStale(cascade);
 		// As syncStylesheets() does, for the boxes built under the styles
 		// before, even when a read in the same tick caught the sheets up.
 		const body = cascade.document.body;
 		if (body) {
 			cascade.layout.invalidate(body);
+		}
+	}
+}
+
+// A :has() anchor sits above what changed it, or before it among its
+// siblings for :has(+ x) and :has(~ x), and the rule can style the
+// anchor's descendants too. So each such element a :has() could be
+// tested on restyles, with everything under it.
+function invalidateHasAnchors(
+	cascade: Cascade,
+	batch: MutationBatch,
+	mutations: MutationRecord[],
+): void {
+	if (!cascade.hasRulesExist) {
+		return;
+	}
+	const anchors = new Set<Element>();
+	for (const mutation of mutations) {
+		const start = getNodeType(mutation.target) === ELEMENT_NODE
+			? (mutation.target as Element)
+			: mutation.target.parentElement;
+		for (
+			let ancestor: Element | null = start;
+			ancestor;
+			ancestor = flatParentElement(ancestor)
+		) {
+			for (
+				let element: Element | null = ancestor;
+				element !== null;
+				element = cascade.hasSiblingRules
+					? element.previousElementSibling
+					: null
+			) {
+				if (!anchors.has(element) && couldAnchorHas(cascade, element)) {
+					anchors.add(element);
+					if (hasAnswersChanged(cascade, element)) {
+						invalidateOnce(cascade, batch, element);
+					}
+				}
+			}
+		}
+	}
+}
+
+function handleChildListMutation(
+	cascade: Cascade,
+	batch: MutationBatch,
+	mutation: MutationRecord,
+): void {
+	// A <style>'s children ARE its stylesheet text.
+	if (getHTMLLocalName(mutation.target as Element) === "style") {
+		noteStyleText(batch, mutation.target as Element);
+	}
+	// A list's gutter is derived from its items' markers, so a
+	// change to the ITEMS invalidates the list: a wider marker added
+	// later overran the gutter the original items set. A change
+	// inside an item's content moves no marker.
+	if (mutationChangesListItems(mutation)) {
+		invalidateEnclosingList(cascade, mutation);
+	}
+
+	for (const node of getAddedNodes(mutation)) {
+		if (getNodeType(node) === ELEMENT_NODE) {
+			const element = node as Element;
+			if (isStyleElement(element)) {
+				noteSheetMoved(
+					batch,
+					getHTMLLocalName(element) === "style" ? element : null,
+				);
+			} else {
+				// A detached tree's pseudo-elements and shadow roots wait
+				// for the record that brings it into the document. Its
+				// styles still answer getComputedStyle.
+				const connected = isConnectedNode(element);
+				const elements: Element[] = [];
+				for (
+					let next: DOMNode | null = element as unknown as DOMNode;
+					next !== null;
+					next = nextInTree(next, element as unknown as DOMNode)
+				) {
+					if (getNodeType(next) === ELEMENT_NODE) {
+						elements.push(next as unknown as Element);
+					}
+				}
+				for (const each of elements) {
+					// A sheet brought in inside what was added, a <style>
+					// in an added <head>, is synced as one added alone.
+					if (each !== element && isStyleElement(each)) {
+						noteSheetMoved(batch, each);
+					}
+					invalidateElementCaches(cascade, each);
+					if (connected) {
+						attachPseudoElementsToElement(cascade, each);
+						registerConnectedShadowRoots(cascade, each);
+					}
+				}
+			}
+		}
+	}
+
+	for (const node of getRemovedNodes(mutation)) {
+		if (getNodeType(node) === ELEMENT_NODE) {
+			const element = node as Element;
+			if (isStyleElement(element)) {
+				batch.sheetsMoved = true;
+			}
+			batch.removedElements = true;
+			if (cascade.countersCounted && !cascade.countersStale) {
+				cascade.countersStale = declaresCounters(cascade, element);
+			}
+		}
+	}
+	// A child that came or went changes what `li + li`,
+	// `:first-child` and `:empty` match on the children around it
+	// and on the parent, none of which the mutation names. Once
+	// per parent per batch: appending n children one at a time
+	// is n records against the same parent.
+	if (
+		getNodeType(mutation.target) === ELEMENT_NODE &&
+		getSiblingRuleIndex(cascade, mutation.target as Element)?.reachesSiblings
+	) {
+		const parent = mutation.target as Element;
+		const from = getFirstChildAfterChange(mutation);
+		batch.changedParents.set(
+			parent,
+			batch.changedParents.has(parent)
+				? earlierChild(batch.changedParents.get(parent), from)
+				: from,
+		);
+	}
+}
+
+function handleAttributeMutation(
+	cascade: Cascade,
+	batch: MutationBatch,
+	mutation: MutationRecord,
+): void {
+	const element = mutation.target as Element;
+	// A value written over itself changes no style.
+	if (
+		mutation.oldValue !== null &&
+		mutation.oldValue === getAttributeValue(element, mutation.attributeName!)
+	) {
+		return;
+	}
+	// A list's numbering reads these, and renumbers markers that
+	// belong to other elements than the one changed.
+	if (
+		LIST_NUMBERING_ATTRIBUTES.has(mutation.attributeName!) &&
+		(getLocalName(element) === "ol" || getLocalName(element) === "li")
+	) {
+		noteCounterChange(cascade, element);
+		cascade.layout.invalidateFrame();
+	}
+	// A change to keys whose rules declare only paint properties
+	// leaves every box where it was. The styles are dropped so the
+	// next read resolves them, and layout is not told.
+	// Under a subtree the batch has already restyled and told layout
+	// of, there is nothing left to work out.
+	const covered = isInvalidatedUnder(batch.invalidated, element, true);
+	const notifyLayout =
+		covered ||
+		!isPaintOnlyChange(
+			cascade,
+			element,
+			mutation.attributeName!,
+			mutation.oldValue,
+		);
+	// Only a change the sheets USE that way reaches descendants.
+	// When no rule tests the class outside its own subject and none
+	// declares an inherited property, descendant styles are
+	// unchanged.
+	const subjects = !covered && mutation.attributeName === "class"
+		? classChangeSubjects(cascade, element, mutation.oldValue)
+		: null;
+	if (covered) {
+		// Restyled with the subtree it is in.
+	} else if (subjects !== null) {
+		invalidateElementCaches(cascade, element, notifyLayout);
+		attachPseudoElementsToElement(cascade, element);
+		if (subjects.length > 0) {
+			// The flat tree, where a box's children are: a host's are
+			// its shadow tree's, a form control's included.
+			for (const descendant of flatDescendants(element)) {
+				const parent = flatParentElement(descendant);
+				if (
+					subjects.some(
+						(anchor) =>
+							couldAnchor(descendant, anchor) ||
+							// A display change blockifies the changed element's
+							// own children, and those of anyone else it anchors.
+							(anchor.children === true &&
+								parent !== null &&
+								(parent === element || couldAnchor(parent, anchor))),
+					)
+				) {
+					invalidateElementCaches(cascade, descendant, notifyLayout);
+					attachPseudoElementsToElement(cascade, descendant);
+				}
+			}
+		}
+	} else if (
+		attributeReachesDescendants(
+			cascade,
+			element,
+			mutation.attributeName!,
+			mutation.oldValue,
+		)
+	) {
+		invalidateOnce(cascade, batch, element, notifyLayout);
+	} else {
+		invalidateElementCaches(cascade, element, notifyLayout);
+		attachPseudoElementsToElement(cascade, element);
+	}
+	// Each element restyled names its rows for the frame.
+	if (!notifyLayout) {
+		cascade.layout.invalidateFrame(false);
+	}
+	// `.on ~ .light` matches a FOLLOWING sibling whose cached
+	// styles know nothing of this change.
+	if (
+		changeReachesLaterSiblings(
+			getSiblingRuleIndex(cascade, element),
+			element,
+			mutation.attributeName!,
+			mutation.oldValue,
+		)
+	) {
+		for (
+			let sibling = element.nextElementSibling;
+			sibling;
+			sibling = sibling.nextElementSibling
+		) {
+			invalidateSibling(cascade, sibling);
 		}
 	}
 }
