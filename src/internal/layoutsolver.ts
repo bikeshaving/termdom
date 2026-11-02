@@ -6563,6 +6563,66 @@ function hasWidthDependentChild(node: LayoutNode): boolean {
 	return false;
 }
 
+// A sizing result goes among the entries of its slot, in place of one
+// under the same constraints, or else after them. A full slot drops its
+// oldest entry.
+function storeSizeEntry(
+	node: LayoutNode,
+	entry: CacheEntry,
+	slot: number,
+): void {
+	reserveCache(
+		node,
+		Math.max((hasCache(node) ? node.cachedSizeCount : 0) + 2, 3),
+	);
+	const cache = node.pool.data;
+	const base = node.cacheAt * ENTRY;
+	const count = node.cachedSizeCount;
+	let start = 1;
+	while (start <= count && cache[base + start * ENTRY + SLOT] < slot) {
+		start++;
+	}
+	let end = start;
+	while (end <= count && cache[base + end * ENTRY + SLOT] === slot) {
+		end++;
+	}
+	let index = start;
+	while (
+		index < end &&
+		!isMatchingConstraints(
+			cache,
+			base + index * ENTRY,
+			entry.availableWidth,
+			entry.availableHeight,
+			entry.widthCode,
+			entry.heightCode,
+			entry.ownerWidth,
+			entry.ownerHeight,
+			false,
+		)
+	) {
+		index++;
+	}
+	if (index < end) {
+		writeCacheEntry(cache, base + index * ENTRY, slot, entry);
+	} else if (end - start < CACHE_SLOT_DEPTH) {
+		cache.copyWithin(
+			base + (end + 1) * ENTRY,
+			base + end * ENTRY,
+			base + (count + 1) * ENTRY,
+		);
+		writeCacheEntry(cache, base + end * ENTRY, slot, entry);
+		node.cachedSizeCount = count + 1;
+	} else {
+		cache.copyWithin(
+			base + start * ENTRY,
+			base + (start + 1) * ENTRY,
+			base + end * ENTRY,
+		);
+		writeCacheEntry(cache, base + (end - 1) * ENTRY, slot, entry);
+	}
+}
+
 // The entry point for every mode and every probe.
 function layoutNode(
 	node: LayoutNode,
@@ -6794,62 +6854,11 @@ function layoutNode(
 		if (node.measure === null || !node.ownerFree) {
 			node.hasCachedLayout = false;
 		}
-		reserveCache(
+		storeSizeEntry(
 			node,
-			Math.max((hasCache(node) ? node.cachedSizeCount : 0) + 2, 3),
+			entry,
+			getCacheSlot(availableWidth, availableHeight, widthSpace, heightSpace),
 		);
-		const cache = node.pool.data;
-		const base = node.cacheAt * ENTRY;
-		const count = node.cachedSizeCount;
-		const slot = getCacheSlot(
-			availableWidth,
-			availableHeight,
-			widthSpace,
-			heightSpace,
-		);
-		let start = 1;
-		while (start <= count && cache[base + start * ENTRY + SLOT] < slot) {
-			start++;
-		}
-		let end = start;
-		while (end <= count && cache[base + end * ENTRY + SLOT] === slot) {
-			end++;
-		}
-		let index = start;
-		while (
-			index < end &&
-			!isMatchingConstraints(
-				cache,
-				base + index * ENTRY,
-				availableWidth,
-				availableHeight,
-				widthCode,
-				heightCode,
-				ownerWidth,
-				ownerHeight,
-				false,
-			)
-		) {
-			index++;
-		}
-		if (index < end) {
-			writeCacheEntry(cache, base + index * ENTRY, slot, entry);
-		} else if (end - start < CACHE_SLOT_DEPTH) {
-			cache.copyWithin(
-				base + (end + 1) * ENTRY,
-				base + end * ENTRY,
-				base + (count + 1) * ENTRY,
-			);
-			writeCacheEntry(cache, base + end * ENTRY, slot, entry);
-			node.cachedSizeCount = count + 1;
-		} else {
-			cache.copyWithin(
-				base + start * ENTRY,
-				base + (start + 1) * ENTRY,
-				base + end * ENTRY,
-			);
-			writeCacheEntry(cache, base + (end - 1) * ENTRY, slot, entry);
-		}
 	}
 	node.stale = false;
 	node.selfStale = false;
