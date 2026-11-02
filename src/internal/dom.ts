@@ -29511,28 +29511,45 @@ export class Document extends Node implements globalThis.Document {
 		return "";
 	}
 
-	// APIs that need a window manager, a network, or a compositor.
-
 	caretPositionFromPoint(
 		x: number,
 		y: number,
 		options?: globalThis.CaretPositionFromPointOptions,
 	): globalThis.CaretPosition | null {
-		toDouble(x);
-		toDouble(y);
-		toDictionary(options ?? {}, "A CaretPositionFromPointOptions");
-		throw domError(
-			"NotSupportedError",
-			"caretPositionFromPoint is not implemented",
-		);
+		const left = toDouble(x);
+		const top = toDouble(y);
+		const shadowRoots = Array.from(
+			toDictionary<globalThis.CaretPositionFromPointOptions>(
+				options,
+				"A CaretPositionFromPointOptions",
+			).shadowRoots ?? [],
+		) as unknown as ShadowRoot[];
+		if (!shadowRoots.every((root) => isShadowRoot(root))) {
+			throw new TypeError("shadowRoots holds only shadow roots");
+		}
+		const caret = getCaretAtPoint(this, left, top);
+		if (caret === null) {
+			return null;
+		}
+		const [node, offset] = caret.control === null
+			? retargetCaret(caret.node, caret.offset, shadowRoots)
+			: [caret.control, caret.offset];
+		return constructInternal(() =>
+			new CaretPosition(node, offset, caret.node, caret.offset),
+		) as unknown as globalThis.CaretPosition;
 	}
 
-	caretRangeFromPoint(_x: number, _y: number): globalThis.Range | null {
-		throw domError(
-			"NotSupportedError",
-			"caretRangeFromPoint is not implemented",
-		);
+	caretRangeFromPoint(x: number, y: number): globalThis.Range | null {
+		const caret = getCaretAtPoint(this, toDouble(x), toDouble(y));
+		if (caret === null) {
+			return null;
+		}
+		const range = this.createRange();
+		range.setStart(...retargetCaret(caret.node, caret.offset, []));
+		return range;
 	}
+
+	// APIs that need a window manager, a network, or a compositor.
 
 	exitPictureInPicture(): Promise<void> {
 		throw domError(
@@ -29925,6 +29942,151 @@ function getOutsideUAShadowTrees(
 	}
 	return element as unknown as globalThis.Element | null;
 }
+
+interface CaretAtPoint {
+	node: Node;
+	offset: number;
+	control: Element | null;
+}
+
+/**
+ * The caret position under a viewport point, as layout places the caret
+ * for a click. Over a text control it is the offset in the control's
+ * value, in the value text of its UA shadow tree. Elsewhere it is a
+ * position in the text under the point, or in the nearest line of the
+ * nearest box that has text. An empty editable line holds its own
+ * position. Null off the viewport, or where there is no text.
+ */
+function getCaretAtPoint(
+	document: Document,
+	x: number,
+	y: number,
+): CaretAtPoint | null {
+	const attached = getAttachedDocument(document);
+	const cell = getCellSize(document);
+	const column = x / cell.width;
+	const row = y / cell.height;
+	if (attached === undefined || column < 0 || row < 0) {
+		return null;
+	}
+	const {framebuffer, layout} = _(attached).extra;
+	if (column > framebuffer.cols || row > framebuffer.rows) {
+		return null;
+	}
+	const top = row + framebuffer.scrollTop;
+	const element =
+		elementAtDocumentPoint(document, column, top, null) as Element |
+		null;
+	if (element === null) {
+		return null;
+	}
+	if (takesTextCursor(element)) {
+		return {
+			node: (getTextControlValueText(element) as Text | null) ?? element,
+			offset: getTextControlCaretOffset(element, column, top) ?? 0,
+			control: element,
+		};
+	}
+	let found = layout.caretPositionFromPoint(column, top, element);
+	if (
+		found === null &&
+		(element as HTMLElement).isContentEditable &&
+		(element.textContent ?? "") === ""
+	) {
+		return {node: element, offset: 0, control: null};
+	}
+	for (
+		let box: globalThis.Element | null = element;
+		found === null && box !== null;
+		box = flatParentElement(box)
+	) {
+		found = layout.caretPositionFromPoint(column, top, box, true);
+	}
+	return found === null
+		? null
+		: {
+			node: found.node as unknown as Node,
+			offset: found.offset,
+			control: null,
+		};
+}
+
+/**
+ * CSSOM View's caret position from a point, moved out of each shadow tree
+ * the caller did not pass in `shadowRoots`: a position in such a tree
+ * becomes the position of its host.
+ */
+function retargetCaret(
+	node: Node,
+	offset: number,
+	shadowRoots: readonly ShadowRoot[],
+): [Node, number] {
+	for (
+		let root = getRoot(node);
+		isShadowRoot(root) &&
+		!shadowRoots.some((listed) =>
+			isShadowIncludingInclusiveAncestor(root, listed),
+		);
+		root = getRoot(node)
+	) {
+		const host = _(root).extra.host as Element;
+		offset = getNodeIndex(host);
+		node = getObject(_(host).parent)!;
+	}
+	return [node, offset];
+}
+
+interface CaretPositionSlots {
+	offsetNode: Node;
+	offset: number;
+	rangeNode: Node;
+	rangeOffset: number;
+}
+
+interface CaretPosition {
+	readonly [internals]: CaretPositionSlots;
+}
+
+/**
+ * A caret position from caretPositionFromPoint(): the node and offset a
+ * caller sees, and the position layout found, which getClientRect()
+ * measures.
+ */
+class CaretPosition {
+	constructor(
+		offsetNode?: Node,
+		offset?: number,
+		rangeNode?: Node,
+		rangeOffset?: number,
+	) {
+		seal(this, new.target, CaretPosition);
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		const slots = _(this);
+		slots.offsetNode = offsetNode!;
+		slots.offset = offset!;
+		slots.rangeNode = rangeNode!;
+		slots.rangeOffset = rangeOffset!;
+	}
+
+	get offsetNode(): Node {
+		return _(this).offsetNode;
+	}
+
+	get offset(): number {
+		return _(this).offset;
+	}
+
+	getClientRect(): globalThis.DOMRect | null {
+		const slots = _(this);
+		const range = getOwnerDocument(slots.rangeNode)!.createRange();
+		range.setStart(slots.rangeNode, slots.rangeOffset);
+		return range.getBoundingClientRect();
+	}
+}
+
+declareSealedRoot(CaretPosition);
 
 // Hit testing. The point is viewport-relative, and the engine tests it.
 // A headless document renders nothing, so nothing is under any point.
@@ -40341,6 +40503,7 @@ export const platform = {
 	Attr,
 	BeforeUnloadEvent,
 	CDATASection,
+	CaretPosition,
 	CharacterData,
 	Clipboard,
 	ClipboardEvent,
@@ -40844,6 +41007,7 @@ export type {
 	DOMTokenList,
 	CharacterData,
 	CDATASection,
+	CaretPosition,
 	ProcessingInstruction,
 	DocumentType,
 	Attr,

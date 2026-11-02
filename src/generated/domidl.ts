@@ -141,6 +141,13 @@ export const DOM_INTERFACES: Readonly<Record<string, IdlInterface>> = {
 			["translate", "o2"],
 		],
 	},
+	CaretPosition: {
+		members: [
+			["offset", "r"],
+			["offsetNode", "r:Node"],
+			["getClientRect", "o0"],
+		],
+	},
 	CDATASection: {parent: "Text", members: []},
 	CharacterData: {
 		parent: "Node",
