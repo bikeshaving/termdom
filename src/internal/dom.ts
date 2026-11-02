@@ -194,8 +194,7 @@ export function setStyleHooks(given: StyleHooks): void {
 // when this returns. A control that was removed and re-inserted keeps its
 // tree and only updates the state it missed.
 function ensureUAShadowTree(element: globalThis.Element): void {
-	(_(element) as unknown as Record<string, (() => void) | undefined>)
-		._ensureUAShadowTree?.();
+	_(element as Element)._ensureUAShadowTree?.();
 }
 
 // Built-in tags that get a UA shadow tree when they connect.
@@ -238,10 +237,7 @@ function ensureUAShadowTrees(root: globalThis.Node): void {
 export function getSelectionRecord(
 	control: globalThis.Element,
 ): {start: number; end: number; direction: string} | null {
-	const slots = _(control) as unknown as {
-		_uaSelection?: () => ReturnType<typeof getSelectionRecord>;
-	};
-	return slots._uaSelection?.() ?? null;
+	return _(control as Element)._uaSelection?.() ?? null;
 }
 
 /** Set a text control's selection, without the type check authors get. */
@@ -251,15 +247,7 @@ export function setUASelection(
 	end: number,
 	direction?: string,
 ): void {
-	(
-		_(control) as unknown as {
-			_setUASelection(
-				start: number,
-				end: number,
-				direction?: string,
-			): void;
-		}
-	)._setUASelection!(start, end, direction);
+	_(control as Element)._setUASelection!(start, end, direction);
 }
 
 // The pseudo-classes that read a control's state rather than its
@@ -329,8 +317,7 @@ function reportControlStates(element: Element): void {
 // selected. Its shadow tree redraws, and the rules that read that state
 // are told, since no mutation record says so.
 function syncUAShadowTree(element: Element): void {
-	(_(element) as unknown as Record<string, (() => void) | undefined>)
-		._syncUAShadowTree?.();
+	_(element)._syncUAShadowTree?.();
 	reportControlStates(element);
 	// A form and every fieldset around the control are :valid or :invalid
 	// by what they hold, so they are told as well.
@@ -381,10 +368,7 @@ export function takesTextCursor(
 export function getTextControlValueText(
 	textControl: globalThis.Element,
 ): globalThis.Text | null {
-	return (
-		(_(textControl) as unknown as {_uaValueText?: globalThis.Text | null})
-			._uaValueText ?? null
-	);
+	return _(textControl as Element)._uaValueText ?? null;
 }
 
 /**
@@ -10735,6 +10719,16 @@ export interface ElementSlots extends NodeSlots {
 	pseudoName: string | null;
 	_qualifiedName: Step<Element["_qualifiedName"]>;
 	_attributeChangeSteps: Step<Element["_attributeChangeSteps"]>;
+	// The steps of UA controls and replaced elements. The family record
+	// dispatches each to the element's class, which reads undefined when the
+	// class does not define it.
+	_ensureUAShadowTree?: () => void;
+	_syncUAShadowTree?: () => void;
+	_uaSelection?: () => {start: number; end: number; direction: string};
+	_setUASelection?: (start: number, end: number, direction?: string) => void;
+	_uaSelectionRange?: () => globalThis.Range | null;
+	_resetControl?: () => void;
+	readonly _uaValueText?: globalThis.Text | null;
 	// Set on the first selectionchange a text control schedules.
 	textSelectionChangeScheduled?: boolean;
 }
@@ -17752,7 +17746,7 @@ function resetControl(control: Element): void {
 	if (isFormAssociatedCustom(control)) {
 		enqueueCallbackReaction(control, "formResetCallback", []);
 	} else {
-		(_(control) as unknown as {_resetControl?: () => void})._resetControl?.();
+		_(control)._resetControl?.();
 	}
 }
 
