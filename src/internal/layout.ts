@@ -1529,6 +1529,92 @@ function getTextStyle(element: Element): TextStyle {
 	return getStyleGroup(element, TEXT_STYLE);
 }
 
+// A box's aspect ratio, margins, padding and borders, in cells.
+function applyBoxEdges(style: Style, element: Element): void {
+	const ratio = CSSValues.parseAspectRatio(
+		getComputedValue(element, "aspect-ratio"),
+	);
+	// The ratio is of CSS pixels, and layout's is of cells.
+	const cell = getCellSize(element);
+	style.aspectRatio = ratio !== undefined && Number.isFinite(ratio) && ratio > 0
+		? (ratio * cell.height) / cell.width
+		: NaN;
+
+	// A blockified inline, a flex item or a positioned span, keeps its
+	// padding, margin and border like any block (css-display-3 §2.7).
+	const padding = getCellPadding(element);
+	const borders = getCellBorderWidths(element);
+	for (const edge of EDGES) {
+		const property = `margin-${edge}`;
+		const vertical = edge === "top" || edge === "bottom";
+		const margin = vertical
+			? getCellBlockMargin(element, edge as "top" | "bottom")
+			: toCellLength(
+				CSSValues.parseSignedUnitValue(getComputedValue(element, property)),
+				false,
+				element,
+			);
+		style.margin[edge] = toValue(
+			margin ??
+			(getComputedValue(element, property) === "auto" ? "auto" : undefined),
+		);
+		style.padding[edge] = toValue(padding[edge]);
+		style.border[edge] = borders[edge] > 0 ? borders[edge] : 0;
+	}
+}
+
+// An absolutely positioned part of a table is a block (css2 §9.7). It
+// leaves the table, and lays out as any positioned box does.
+function applyDisplayType(
+	style: Style,
+	element: Element,
+	display: Display,
+	position: Position,
+): void {
+	const outOfFlow = position === "absolute" || position === "fixed";
+	if (outOfFlow && BLOCKIFIED_TABLE_PARTS.has(display)) {
+		style.displayType = "block";
+	} else if (
+		display === "none" ||
+		display === "table-column" ||
+		display === "table-column-group"
+	) {
+		// Columns carry style, not a box of their own.
+		style.displayType = "none";
+	} else if (display === "grid" || display === "inline-grid") {
+		style.displayType = "grid";
+		applyGridContainer(style, element);
+	} else if (display === "flex" || display === "inline-flex") {
+		style.displayType = "flex";
+		applyFlexContainer(style, element);
+	} else if (display === "table" || display === "inline-table") {
+		applyTableContainer(style, element);
+		// An inline-table's own node is its run's. The table is its context
+		// root.
+		if (display === "inline-table") {
+			style.displayType = "block";
+		}
+	} else if (
+		display === "table-header-group" ||
+		display === "table-footer-group" ||
+		display === "table-row-group" ||
+		display === "table-caption" ||
+		display === "table-row"
+	) {
+		style.displayType = display;
+	} else if (display === "table-cell") {
+		style.displayType = "table-cell";
+		style.alignContent = getCellAlignment(getTextStyle(element).verticalAlign);
+		// The reflected properties carry HTML's ranges. rowspan 0 ("to the end
+		// of the row group") is not implemented. Such a cell covers one row.
+		const cell = element as {colSpan?: number; rowSpan?: number};
+		style.colSpan = Math.max(1, Math.floor(cell.colSpan ?? 1) || 1);
+		style.rowSpan = Math.max(1, Math.floor(cell.rowSpan ?? 1) || 1);
+	} else {
+		style.displayType = "block";
+	}
+}
+
 // Fills a fresh record, so a property the element no longer declares
 // falls back to its initial value rather than to the last restyle's.
 function styleLayoutNodeProperties(
@@ -1585,39 +1671,7 @@ function styleLayoutNodeProperties(
 	}
 
 	if (!inlineBox) {
-		const ratio = CSSValues.parseAspectRatio(
-			getComputedValue(element, "aspect-ratio"),
-		);
-		// The ratio is of CSS pixels, and layout's is of cells.
-		const cell = getCellSize(element);
-		style.aspectRatio =
-			ratio !== undefined &&
-			Number.isFinite(ratio) &&
-			ratio > 0
-				? (ratio * cell.height) / cell.width
-				: NaN;
-
-		// A blockified inline, a flex item or a positioned span, keeps its
-		// padding, margin and border like any block (css-display-3 §2.7).
-		const padding = getCellPadding(element);
-		const borders = getCellBorderWidths(element);
-		for (const edge of EDGES) {
-			const property = `margin-${edge}`;
-			const vertical = edge === "top" || edge === "bottom";
-			const margin = vertical
-				? getCellBlockMargin(element, edge as "top" | "bottom")
-				: toCellLength(
-					CSSValues.parseSignedUnitValue(getComputedValue(element, property)),
-					false,
-					element,
-				);
-			style.margin[edge] = toValue(
-				margin ??
-				(getComputedValue(element, property) === "auto" ? "auto" : undefined),
-			);
-			style.padding[edge] = toValue(padding[edge]);
-			style.border[edge] = borders[edge] > 0 ? borders[edge] : 0;
-		}
+		applyBoxEdges(style, element);
 		applyLegacyAlignment(style, element, display, parentIsFlex);
 	}
 
@@ -1689,51 +1743,8 @@ function styleLayoutNodeProperties(
 		}
 	}
 
-	// An absolutely positioned part of a table is a block (css2 §9.7). It
-	// leaves the table, and lays out as any positioned box does.
 	const position = getPosition(element);
-	const outOfFlow = position === "absolute" || position === "fixed";
-	if (outOfFlow && BLOCKIFIED_TABLE_PARTS.has(display)) {
-		style.displayType = "block";
-	} else if (
-		display === "none" ||
-		display === "table-column" ||
-		display === "table-column-group"
-	) {
-		// Columns carry style, not a box of their own.
-		style.displayType = "none";
-	} else if (display === "grid" || display === "inline-grid") {
-		style.displayType = "grid";
-		applyGridContainer(style, element);
-	} else if (display === "flex" || display === "inline-flex") {
-		style.displayType = "flex";
-		applyFlexContainer(style, element);
-	} else if (display === "table" || display === "inline-table") {
-		applyTableContainer(style, element);
-		// An inline-table's own node is its run's. The table is its context
-		// root.
-		if (display === "inline-table") {
-			style.displayType = "block";
-		}
-	} else if (
-		display === "table-header-group" ||
-		display === "table-footer-group" ||
-		display === "table-row-group" ||
-		display === "table-caption" ||
-		display === "table-row"
-	) {
-		style.displayType = display;
-	} else if (display === "table-cell") {
-		style.displayType = "table-cell";
-		style.alignContent = getCellAlignment(getTextStyle(element).verticalAlign);
-		// The reflected properties carry HTML's ranges. rowspan 0 ("to the end
-		// of the row group") is not implemented. Such a cell covers one row.
-		const cell = element as {colSpan?: number; rowSpan?: number};
-		style.colSpan = Math.max(1, Math.floor(cell.colSpan ?? 1) || 1);
-		style.rowSpan = Math.max(1, Math.floor(cell.rowSpan ?? 1) || 1);
-	} else {
-		style.displayType = "block";
-	}
+	applyDisplayType(style, element, display, position);
 
 	// Only block and list-item join the formatting context around them
 	// (css2 §8.3.1, §9.4.1). BODY is the box the document scroll measures the
