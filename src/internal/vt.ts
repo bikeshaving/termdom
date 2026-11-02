@@ -40,6 +40,7 @@ const MAX_PARAMS = 32;
 const MAX_SUBPARAMS = 8;
 const MAX_OSC = 4096;
 const MAX_DCS = 64;
+const PARAM_LIMIT = {output: 0xffff, input: Infinity};
 
 // Printable characters, ending before a high surrogate whose pair the
 // text may cut, and a CSI with no control inside it.
@@ -174,9 +175,9 @@ export interface ParserHandlers {
  * How a Parser reads. "output" is what a program writes, read as xterm
  * reads it, with a sequence or a surrogate pair that one text cuts going
  * on in the next. "input" is one sequence a terminal sends, read from its
- * ESC: a control inside it belongs to it, and a string ends only at BEL
- * or ST. An "input" read finds where the sequence ends, and the caller
- * decodes it from the text.
+ * ESC: a control or DEL inside it belongs to it, and a CSI with one or
+ * with a non-ASCII character is ignored. A string ends only at BEL or ST,
+ * and neither a parameter's value nor a DCS's length has a limit.
  */
 export type ParseMode = "output" | "input";
 
@@ -228,20 +229,20 @@ export class Parser {
 			if (mode === "output") {
 				this.read(code);
 			} else if (
-				this.state <= ESCAPE || (code >= 0x20 && (code < 0x80 || code >= 0xa0))
+				this.state <= ESCAPE ||
+				(code >= 0x20 && code < 0x7f) ||
+				(code >= 0xa0 && this.state >= OSC_STRING)
 			) {
-				this.consume(code);
+				this.consume(code, mode);
 				if (this.state === GROUND) {
 					return index + 1;
 				}
 			} else if (this.state < OSC_STRING) {
 				this.state = CSI_IGNORE;
-			} else if (code === 0x07) {
+			} else if (code === 0x07 || (code === 0x1b && text[index + 1] === "\\")) {
+				this.endString();
 				this.state = GROUND;
-				return index + 1;
-			} else if (code === 0x1b && text[index + 1] === "\\") {
-				this.state = GROUND;
-				return index + 2;
+				return index + (code === 0x07 ? 1 : 2);
 			}
 		}
 		if (mode === "input") {
@@ -253,7 +254,7 @@ export class Parser {
 	/**
 	 * Reads the printable characters or the whole CSI at `index` with one
 	 * regular expression, and returns where they end, or -1 when neither
-	 * starts there. An "input" read skips the CSI's parameters. A high surrogate inside the run pairs with the unit
+	 * starts there. A high surrogate inside the run pairs with the unit
 	 * after it, or is U+FFFD followed by that unit, as read() takes them.
 	 */
 	readRun(text: string, index: number, mode: ParseMode): number {
@@ -280,16 +281,14 @@ export class Parser {
 			return -1;
 		}
 		const end = CSI_SEQUENCE.lastIndex;
-		if (mode === "output") {
-			this.readCSI(text, index + 2, end - 1);
-			this.handlers.csi(text[end - 1]);
-		}
+		this.readCSI(text, index + 2, end - 1, mode);
+		this.handlers.csi(text[end - 1]);
 		return end;
 	}
 
 	// Sets the prefix, parameters and intermediates of a CSI from the
 	// bytes between its opener and its final byte, as consume() would.
-	readCSI(text: string, start: number, end: number): void {
+	readCSI(text: string, start: number, end: number, mode: ParseMode): void {
 		const params = [[0]];
 		let param = params[0];
 		let index = start;
@@ -302,7 +301,10 @@ export class Parser {
 			const code = text.charCodeAt(index);
 			if (code >= 0x30 && code <= 0x39) {
 				const last = param.length - 1;
-				param[last] = Math.min(param[last] * 10 + code - 0x30, 0xffff);
+				param[last] = Math.min(
+					param[last] * 10 + code - 0x30,
+					PARAM_LIMIT[mode],
+				);
 			} else if (code === 0x3b) {
 				if (params.length < MAX_PARAMS) {
 					param = [0];
@@ -336,7 +338,7 @@ export class Parser {
 		this.consume(code);
 	}
 
-	consume(code: number): void {
+	consume(code: number, mode: ParseMode = "output"): void {
 		if (
 			this.state === GROUND &&
 			(code >= 0x20 && code !== 0x7f) &&
@@ -407,7 +409,10 @@ export class Parser {
 				} else if (code >= 0x30 && code <= 0x39) {
 					const param = this.params[this.params.length - 1];
 					const last = param.length - 1;
-					param[last] = Math.min(param[last] * 10 + code - 0x30, 0xffff);
+					param[last] = Math.min(
+						param[last] * 10 + code - 0x30,
+						PARAM_LIMIT[mode],
+					);
 					this.state = CSI_PARAM;
 				} else if (code === 0x3b) {
 					if (this.params.length < MAX_PARAMS) {
@@ -468,7 +473,7 @@ export class Parser {
 				}
 				return;
 			case DCS_STRING:
-				if (this.dcs.length < MAX_DCS) {
+				if (mode === "input" || this.dcs.length < MAX_DCS) {
 					this.dcs += String.fromCodePoint(code);
 				}
 				return;
