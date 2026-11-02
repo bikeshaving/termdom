@@ -7017,12 +7017,14 @@ function isStyleElement(element: Element): boolean {
 // cascade. Computing it during block layout deletes this.
 function mutationChangesListItems(mutation: MutationRecord): boolean {
 	const target = mutation.target;
-	if (getNodeType(target) === 1 && isListElement(target as Element)) {
+	if (
+		getNodeType(target) === ELEMENT_NODE && isListElement(target as Element)
+	) {
 		return true;
 	}
 	for (const list of [getAddedNodes(mutation), getRemovedNodes(mutation)]) {
 		for (const node of list) {
-			if (getNodeType(node) !== 1) {
+			if (getNodeType(node) !== ELEMENT_NODE) {
 				continue;
 			}
 			const element = node as Element;
@@ -7452,7 +7454,6 @@ export function handleMutations(
 		}
 	}
 	cascade.filteredSiblingsForMatching = null;
-	const Node = cascade.window.Node;
 	// A <style> whose text changed holds other rules than the cascade
 	// read. One that joined or left a tree is caught up with alone.
 	let sheetTextChanged = false;
@@ -7481,7 +7482,7 @@ export function handleMutations(
 	if (cascade.hasRulesExist) {
 		const anchors = new Set<Element>();
 		for (const mutation of mutations) {
-			const start = getNodeType(mutation.target) === 1
+			const start = getNodeType(mutation.target) === ELEMENT_NODE
 				? (mutation.target as Element)
 				: mutation.target.parentElement;
 			for (
@@ -7533,7 +7534,7 @@ export function handleMutations(
 			}
 
 			for (const node of getAddedNodes(mutation)) {
-				if (getNodeType(node) === Node.ELEMENT_NODE) {
+				if (getNodeType(node) === ELEMENT_NODE) {
 					const element = node as Element;
 					if (isStyleElement(element)) {
 						const addedRoot = getHTMLLocalName(element) === "style"
@@ -7555,7 +7556,7 @@ export function handleMutations(
 							next !== null;
 							next = nextInTree(next, element as unknown as DOMNode)
 						) {
-							if (getNodeType(next) === Node.ELEMENT_NODE) {
+							if (getNodeType(next) === ELEMENT_NODE) {
 								elements.push(next as unknown as Element);
 							}
 						}
@@ -7581,7 +7582,7 @@ export function handleMutations(
 			}
 
 			for (const node of getRemovedNodes(mutation)) {
-				if (getNodeType(node) === Node.ELEMENT_NODE) {
+				if (getNodeType(node) === ELEMENT_NODE) {
 					const element = node as Element;
 					if (isStyleElement(element)) {
 						sheetsMoved = true;
@@ -7598,7 +7599,7 @@ export function handleMutations(
 			// per parent per batch: appending n children one at a time
 			// is n records against the same parent.
 			if (
-				getNodeType(mutation.target) === Node.ELEMENT_NODE &&
+				getNodeType(mutation.target) === ELEMENT_NODE &&
 				getSiblingRuleIndex(
 					cascade,
 					mutation.target as Element,
@@ -10243,7 +10244,7 @@ function getFirstChildAfterChange(
 		return null;
 	}
 	for (let node = before.nextSibling; node; node = node.nextSibling) {
-		if (getNodeType(node) === 1) {
+		if (getNodeType(node) === ELEMENT_NODE) {
 			return node as Element;
 		}
 	}
@@ -10631,7 +10632,7 @@ function couldChangeMarkers(list: Element, mutation: MutationRecord): boolean {
 	}
 	for (const nodes of [getAddedNodes(mutation), getRemovedNodes(mutation)]) {
 		for (const node of nodes) {
-			if (getNodeType(node) !== 1) {
+			if (getNodeType(node) !== ELEMENT_NODE) {
 				continue;
 			}
 			const element = node as Element;
