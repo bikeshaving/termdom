@@ -6479,6 +6479,16 @@ export interface NodeSlots extends EventTargetSlots {
 	children: HTMLCollection | null;
 	// Set on the first collection a node is asked for by kind and name.
 	collectionCaches?: Map<string, HTMLCollection>;
+	// The live ranges whose boundaries are in the tree this node is the
+	// root of. Both boundaries always share one root, because the boundary
+	// setters collapse the other point on a root change, as the spec says.
+	// The ranges go with the root when it is unreachable. They are held
+	// strongly, which keeps garbage collection unobservable where a WeakRef
+	// would expose it.
+	liveRanges: Set<Range> | null;
+	// The node iterators of the tree, held as the ranges are and re-homed
+	// by the same moves.
+	nodeIterators: Set<NodeIterator> | null;
 }
 
 export interface Node {
@@ -7237,9 +7247,6 @@ function preInsert(node: Node, parent: Node, child: Node | null): Node {
 	return node;
 }
 
-// Held the same way as the ranges below and re-homed by the same moves.
-const nodeIteratorsByRoot = new WeakMap<Node, Set<NodeIterator>>();
-
 // Leaves the tree as remove-then-insert would, but as one primitive: no
 // removing or insertion steps run, no disconnected or connected callbacks
 // fire, and everything the node carries (shadow trees, selection, focus,
@@ -7278,8 +7285,8 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	const nodeSlots = _(node);
 	const oldParent = getObject(nodeSlots.parent) as Node;
 	liveRangePreRemoveSteps(node);
-	const iterators = nodeIteratorsByRoot.get(getRoot(node));
-	if (iterators !== undefined) {
+	const iterators = _(getRoot(node)).nodeIterators;
+	if (iterators !== null) {
 		for (const iterator of iterators) {
 			preRemoveFromIterator(iterator, node);
 		}
@@ -7324,7 +7331,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 		) {
 			_(moved).treeRoot = newRoot;
 		}
-		if (iterators !== undefined) {
+		if (iterators !== null) {
 			for (const iterator of iterators) {
 				if (isInclusiveAncestor(node, _(iterator).root)) {
 					iterators.delete(iterator);
@@ -7379,13 +7386,6 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	queueTreeMutationRecord(newParent, [node], [], newPreviousSibling, child);
 }
 
-// Both boundaries always share one root, because the boundary setters
-// collapse the other point on a root change, as the spec says. The root
-// is held weakly, so an unreachable tree takes its ranges with it. The
-// ranges are held strongly, which keeps garbage collection unobservable
-// where a WeakRef would expose it.
-const liveRangesByRoot = new WeakMap<Node, Set<Range>>();
-
 function insertNode(
 	node: Node,
 	parent: Node,
@@ -7416,23 +7416,24 @@ function insertNode(
 	for (const inserted of nodes) {
 		// The inserted node was its own tree's root. Everything registered
 		// under it now belongs to the tree it is joining.
-		const carriedRanges = liveRangesByRoot.get(inserted);
-		const carriedIterators = nodeIteratorsByRoot.get(inserted);
-		if (carriedRanges !== undefined || carriedIterators !== undefined) {
+		const insertedSlots = getSlots(inserted);
+		const carriedRanges = insertedSlots.liveRanges;
+		const carriedIterators = insertedSlots.nodeIterators;
+		if (carriedRanges !== null || carriedIterators !== null) {
 			const newRoot = getRoot(parent);
-			if (carriedRanges !== undefined && inserted !== newRoot) {
-				liveRangesByRoot.delete(inserted);
-				const set = liveRangesByRoot.get(newRoot);
-				if (set === undefined) {
-					liveRangesByRoot.set(newRoot, carriedRanges);
+			if (carriedRanges !== null && inserted !== newRoot) {
+				insertedSlots.liveRanges = null;
+				const set = _(newRoot).liveRanges;
+				if (set === null) {
+					_(newRoot).liveRanges = carriedRanges;
 				} else {
 					for (const range of carriedRanges) {
 						set.add(range);
 					}
 				}
 			}
-			if (carriedIterators !== undefined && inserted !== newRoot) {
-				nodeIteratorsByRoot.delete(inserted);
+			if (carriedIterators !== null && inserted !== newRoot) {
+				insertedSlots.nodeIterators = null;
 				for (const iterator of carriedIterators) {
 					registerNodeIterator(newRoot, iterator);
 				}
@@ -7443,7 +7444,6 @@ function insertNode(
 		// The inserted tree's root is now the parent's. The walk follows the
 		// light tree only. A shadow tree under it keeps its own root.
 		const treeRoot = parentSlots.treeRoot;
-		const insertedSlots = getSlots(inserted);
 		for (
 			let joined: Slots<Node> | null = insertedSlots;
 			joined !== null;
@@ -7712,8 +7712,8 @@ function removeNode(node: Node, suppressObservers = false): void {
 		return;
 	}
 	liveRangePreRemoveSteps(node);
-	const iterators = nodeIteratorsByRoot.get(getRoot(node));
-	if (iterators !== undefined) {
+	const iterators = _(getRoot(node)).nodeIterators;
+	if (iterators !== null) {
 		for (const iterator of iterators) {
 			preRemoveFromIterator(iterator, node);
 			// The removal makes `node` a root. An iterator rooted inside the
@@ -11680,6 +11680,8 @@ const RARE_FIELDS: ReadonlyArray<readonly [string, unknown]> = [
 	["popoverState", null],
 	["attributeElements", null],
 	["scrollOffsets", null],
+	["liveRanges", null],
+	["nodeIterators", null],
 ];
 
 function createRareData(): Record<string, unknown> {
@@ -31234,12 +31236,7 @@ function comparePoints(
 }
 
 function registerNodeIterator(treeRoot: Node, iterator: NodeIterator): void {
-	let set = nodeIteratorsByRoot.get(treeRoot);
-	if (set === undefined) {
-		set = new Set();
-		nodeIteratorsByRoot.set(treeRoot, set);
-	}
-	set.add(iterator);
+	(_(treeRoot).nodeIterators ??= new Set()).add(iterator);
 }
 
 // The mutation steps' fast path.
@@ -31250,21 +31247,16 @@ function rehomeLiveRange(range: Range, oldRoot: Node): void {
 	if (newRoot === oldRoot) {
 		return;
 	}
-	liveRangesByRoot.get(oldRoot)?.delete(range);
-	let set = liveRangesByRoot.get(newRoot);
-	if (set === undefined) {
-		set = new Set();
-		liveRangesByRoot.set(newRoot, set);
-	}
-	set.add(range);
+	_(oldRoot).liveRanges?.delete(range);
+	(_(newRoot).liveRanges ??= new Set()).add(range);
 }
 
 function forEachLiveRange(context: Node, steps: (range: Range) => void): void {
 	if (liveRangesEver === 0) {
 		return;
 	}
-	const set = liveRangesByRoot.get(getRoot(context));
-	if (set === undefined) {
+	const set = _(getRoot(context)).liveRanges;
+	if (set === null) {
 		return;
 	}
 	for (const range of set) {
@@ -32184,20 +32176,14 @@ class Range extends AbstractRange implements globalThis.Range {
 }
 
 function registerLiveRange(range: Range): void {
-	const root = getRoot(_(range).startNode);
-	let set = liveRangesByRoot.get(root);
-	if (set === undefined) {
-		set = new Set();
-		liveRangesByRoot.set(root, set);
-	}
-	set.add(range);
+	(_(getRoot(_(range).startNode)).liveRanges ??= new Set()).add(range);
 	liveRangesEver++;
 }
 
 // For a range the engine made for itself and is done with. An author's
 // range stays live for as long as the author holds it.
 function releaseLiveRange(range: Range): void {
-	liveRangesByRoot.get(getRoot(_(range).startNode))?.delete(range);
+	_(getRoot(_(range).startNode)).liveRanges?.delete(range);
 }
 
 function selectNodeWithin(range: Range, node: Node): void {
