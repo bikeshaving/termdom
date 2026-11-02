@@ -810,8 +810,6 @@ const LINE_WIDTH_KEYWORDS = new Set(["thin", "medium", "thick"]);
 
 const EDGES = ["top", "right", "bottom", "left"] as const;
 
-const AXIS_ENDS = ["start", "end"] as const;
-
 const CORNERS =
 	["top-left", "top-right", "bottom-right", "bottom-left"] as const;
 
@@ -1679,6 +1677,77 @@ const TEXT_WRAP_STYLES = new Set(["auto", "balance", "stable", "pretty"]);
 
 const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
 
+// How a shorthand's value serializes, classified once.
+type ShorthandShape =
+	"box" |
+	"radius" |
+	"pair" |
+	"line" |
+	"border" |
+	"grid-line" |
+	"grid-template" |
+	"sequence";
+
+const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
+
+// The shorthands whose longhands take the value by the shorthand's shape:
+// one value per edge, one per end of an axis, or the width, style and
+// color of a line. Other shorthands of those shapes are kept whole.
+const SHAPED_SHORTHANDS = new Set([
+	"border-color",
+	"border-style",
+	"border-width",
+	"inset",
+	"margin",
+	"padding",
+	// The flow-relative pairs (css-logical-1 §4): one value for both ends
+	// of the axis, or one for each.
+	"border-block-color",
+	"border-block-style",
+	"border-block-width",
+	"border-inline-color",
+	"border-inline-style",
+	"border-inline-width",
+	"inset-block",
+	"inset-inline",
+	"margin-block",
+	"margin-inline",
+	"padding-block",
+	"padding-inline",
+	"gap",
+	// The legacy spelling of `gap`, which browsers still accept. Its
+	// longhands share a cascade slot with row-gap/column-gap, so declaring
+	// them is declaring the modern pair.
+	"grid-gap",
+	"overflow",
+	// One line on four edges, on both ends of an axis, or on one edge.
+	"border",
+	"border-block",
+	"border-inline",
+	"border-top",
+	"border-right",
+	"border-bottom",
+	"border-left",
+	"border-block-start",
+	"border-block-end",
+	"border-inline-start",
+	"border-inline-end",
+	"outline",
+]);
+
+// Serialized from their longhands on read, so the shorthand itself is
+// not kept.
+const SERIALIZED_SHORTHANDS = new Set([
+	"margin",
+	"padding",
+	"inset-block",
+	"inset-inline",
+	"margin-block",
+	"margin-inline",
+	"padding-block",
+	"padding-inline",
+]);
+
 // Declarations are consulted per property, so a shorthand that is never
 // expanded to longhands does not exist downstream. Order is preserved,
 // so an explicit longhand after a shorthand still overrides it. A
@@ -1690,15 +1759,32 @@ export function expandShorthands(
 	declarations: Record<string, string>,
 ): Record<string, string> {
 	const out: Record<string, string> = Object.create(null);
-	const setEdges = (kind: string, values: string[]) => {
-		const edgeValues = perEdge(values);
-		EDGES.forEach((edge, i) => {
-			out[`border-${edge}-${kind}`] = edgeValues[i];
-		});
-	};
-
 	for (const [property, value] of Object.entries(declarations)) {
 		const values = splitComponents(value);
+		const shape = SHAPED_SHORTHANDS.has(property)
+			? SHORTHAND_SHAPES.get(property)
+			: undefined;
+		if (shape === "box" || shape === "pair") {
+			const spread = shape === "box" ? perEdge(values) : perEnd(values);
+			SHORTHAND_LONGHANDS.get(property)!.forEach((longhand, i) => {
+				out[longhand] = spread[i];
+			});
+		} else if (shape !== undefined) {
+			const {width, lineStyle, color} = splitLineValue(property, value);
+			const line: Record<string, string | null | undefined> = {
+				width: width ?? "medium",
+				style: lineStyle ?? "none",
+				color,
+			};
+			for (const longhand of SHORTHAND_LONGHANDS.get(property)!) {
+				const component = line[longhand.slice(longhand.lastIndexOf("-") + 1)];
+				if (
+					component && !CSS_RESET_ONLY_LONGHANDS[property]?.includes(longhand)
+				) {
+					out[longhand] = component;
+				}
+			}
+		}
 		switch (property) {
 			// css-fonts-4 §6.1: `normal` and `none` are whole values; otherwise
 			// each keyword belongs to the one longhand whose grammar takes it,
@@ -1779,26 +1865,8 @@ export function expandShorthands(
 				}
 				break;
 			}
-			case "border": {
-				const {width, lineStyle, color} = splitLineValue(property, value);
-				setEdges("width", [width ?? "medium"]);
-				setEdges("style", [lineStyle ?? "none"]);
-				if (color) {
-					setEdges("color", [color]);
-				}
-				break;
-			}
 			case "border-image":
 				Object.assign(out, expandBorderImage(value));
-				break;
-			case "border-width":
-				setEdges("width", values);
-				break;
-			case "border-style":
-				setEdges("style", values);
-				break;
-			case "border-color":
-				setEdges("color", values);
 				break;
 			case "border-radius": {
 				const corners = expandBorderRadius(value);
@@ -1808,110 +1876,6 @@ export function expandShorthands(
 				Object.assign(out, corners);
 				// The shorthand itself is serialized from these on read.
 				continue;
-			}
-			// One edge's line, physical or flow-relative: `border-top: 1px
-			// solid`, `border-inline-start: 1px solid`. The edge is whatever
-			// follows `border-`, which covers both kinds.
-			case "border-top":
-			case "border-right":
-			case "border-bottom":
-			case "border-left":
-			case "border-block-start":
-			case "border-block-end":
-			case "border-inline-start":
-			case "border-inline-end": {
-				const edge = property.slice("border-".length);
-				const {width, lineStyle, color} = splitLineValue(property, value);
-				out[`border-${edge}-width`] = width ?? "medium";
-				out[`border-${edge}-style`] = lineStyle ?? "none";
-				if (color) {
-					out[`border-${edge}-color`] = color;
-				}
-				break;
-			}
-			case "outline": {
-				const {width, lineStyle, color} = splitLineValue(property, value);
-				out["outline-width"] = width ?? "medium";
-				out["outline-style"] = lineStyle ?? "none";
-				if (color) {
-					out["outline-color"] = color;
-				}
-				break;
-			}
-			// The flow-relative pairs (css-logical-1 §4): one value for both
-			// ends of the axis, or one for each. They set their longhands and,
-			// like `margin` and `padding`, are serialized back from them.
-			case "margin-block":
-			case "margin-inline":
-			case "padding-block":
-			case "padding-inline":
-			case "inset-block":
-			case "inset-inline": {
-				const axis = property.slice(property.lastIndexOf("-") + 1);
-				const kind = property.slice(0, property.lastIndexOf("-"));
-				const ends = perEnd(values);
-				AXIS_ENDS.forEach((end, i) => {
-					out[`${kind}-${axis}-${end}`] = ends[i];
-				});
-				continue;
-			}
-			// `border-block` / `border-inline`: one line on both ends of the
-			// axis.
-			case "border-block":
-			case "border-inline": {
-				const axis = property.slice("border-".length);
-				const {width, lineStyle, color} = splitLineValue(property, value);
-				for (const end of AXIS_ENDS) {
-					out[`border-${axis}-${end}-width`] = width ?? "medium";
-					out[`border-${axis}-${end}-style`] = lineStyle ?? "none";
-					if (color) {
-						out[`border-${axis}-${end}-color`] = color;
-					}
-				}
-				break;
-			}
-			// One line component across an axis: `border-inline-width: 1px 2px`.
-			case "border-block-width":
-			case "border-block-style":
-			case "border-block-color":
-			case "border-inline-width":
-			case "border-inline-style":
-			case "border-inline-color": {
-				const [, axis, kind] = property.split("-");
-				const ends = perEnd(values);
-				AXIS_ENDS.forEach((end, i) => {
-					out[`border-${axis}-${end}-${kind}`] = ends[i];
-				});
-				break;
-			}
-			case "padding":
-			case "margin": {
-				const edgeValues = perEdge(values);
-				EDGES.forEach((edge, i) => {
-					out[`${property}-${edge}`] = edgeValues[i];
-				});
-				// The shorthand itself is serialized from these on read.
-				continue;
-			}
-			case "inset": {
-				const edgeValues = perEdge(values);
-				EDGES.forEach((edge, i) => {
-					out[edge] = edgeValues[i];
-				});
-				break;
-			}
-			case "gap": {
-				out["row-gap"] = values[0];
-				out["column-gap"] = values[1] ?? values[0];
-				break;
-			}
-			// The legacy spelling of `gap`, which browsers still accept. Its
-			// longhands share a cascade slot with row-gap/column-gap, so
-			// declaring them is declaring the modern pair.
-			case "grid-gap": {
-				out["grid-row-gap"] = values[0];
-				out["grid-column-gap"] = values[1] ?? values[0];
-				break;
 			}
 			case "grid-row":
 				Object.assign(
@@ -1938,11 +1902,6 @@ export function expandShorthands(
 			case "grid":
 				Object.assign(out, expandGrid(value));
 				break;
-			case "overflow": {
-				out["overflow-x"] = values[0];
-				out["overflow-y"] = values[1] ?? values[0];
-				break;
-			}
 			case "flex": {
 				Object.assign(out, expandFlex(value) ?? {});
 				break;
@@ -2002,7 +1961,9 @@ export function expandShorthands(
 				break;
 			}
 		}
-		out[property] = value;
+		if (!SERIALIZED_SHORTHANDS.has(property)) {
+			out[property] = value;
+		}
 	}
 	return out;
 }
@@ -3150,19 +3111,6 @@ export function getSlotNames(
 		(name) => getPhysicalProperty(name, direction) === property,
 	);
 }
-
-// How a shorthand's value serializes, classified once.
-type ShorthandShape =
-	"box" |
-	"radius" |
-	"pair" |
-	"line" |
-	"border" |
-	"grid-line" |
-	"grid-template" |
-	"sequence";
-
-const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
 
 const GRID_LINE_SHORTHANDS = new Set(["grid-area", "grid-column", "grid-row"]);
 
