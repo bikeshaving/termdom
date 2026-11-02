@@ -10737,6 +10737,8 @@ export interface ElementSlots extends NodeSlots {
 	// separately. The getter returns it only while the element is in a tree
 	// the invoker composes into.
 	attributeElements: Map<string, Element> | null;
+	// The offsets of a box that has been scrolled.
+	scrollOffsets: {left: number; top: number} | null;
 }
 
 export interface Element {
@@ -11677,6 +11679,7 @@ const RARE_FIELDS: ReadonlyArray<readonly [string, unknown]> = [
 	["validityState", null],
 	["popoverState", null],
 	["attributeElements", null],
+	["scrollOffsets", null],
 ];
 
 function createRareData(): Record<string, unknown> {
@@ -11708,12 +11711,6 @@ for (const [key, fallback] of RARE_FIELDS) {
 	});
 }
 
-/** The scroll offsets of every box that has been scrolled. */
-const scrollOffsets = new WeakMap<
-	globalThis.Element,
-	{left: number; top: number}
->();
-
 /**
  * How far a box is scrolled, in cells: what layout and paint offset its
  * content by. scrollTop and scrollLeft report it in CSS pixels.
@@ -11722,7 +11719,7 @@ export function getScrollOffset(
 	element: globalThis.Element,
 	axis: "left" | "top",
 ): number {
-	return scrollOffsets.get(element as unknown as Element)?.[axis] ?? 0;
+	return _(element as unknown as Element).scrollOffsets?.[axis] ?? 0;
 }
 
 Object.defineProperty(Element.prototype, Symbol.toStringTag, {
@@ -11779,7 +11776,7 @@ Object.defineProperties(Element.prototype, {
 			if (isDocumentScroller(this)) {
 				return 0;
 			}
-			const left = scrollOffsets.get(this)?.left ?? 0;
+			const left = _(this).scrollOffsets?.left ?? 0;
 			return getAttachedDocument(this) === undefined
 				? left
 				: pxFromCells(left, false, this);
@@ -11798,7 +11795,7 @@ Object.defineProperties(Element.prototype, {
 			if (attached) {
 				return pxFromCells(_(attached).extra.framebuffer.scrollTop, true, this);
 			}
-			const top = scrollOffsets.get(this)?.top ?? 0;
+			const top = _(this).scrollOffsets?.top ?? 0;
 			return getAttachedDocument(this) === undefined
 				? top
 				: pxFromCells(top, true, this);
@@ -28115,6 +28112,27 @@ export interface DocumentExtra extends NodeExtra {
 	popoverHidingCount: number;
 	// Made on the first read of document.all.
 	all?: HTMLAllCollection;
+	// The boxes scrolled away from the origin, which clampScrollOffsets
+	// visits.
+	scrolledElements?: Set<Element>;
+	// The scroll steps of "update the rendering": each box scrolled since
+	// the last frame gets one "scroll" event, and the document one that
+	// bubbles to the window, before the frame's callbacks run.
+	pendingScrollTargets?: Set<Element>;
+	reportedScrollTop?: number;
+	scrollEnd?: {
+		targets: Set<Document | Element>;
+		timer: ReturnType<typeof setTimeout>;
+	};
+	// The one box whose vertical scroll this frame can express as a scroll
+	// shift, meaning rows the terminal may shift instead of repainting.
+	// Repeated scrolls on one box add up. A second box scrolling means no
+	// single shift describes the frame, so the record is dropped in favor
+	// of the screen's dirty bit.
+	scrollShift?: {element: Element; delta: number};
+	// The layout pass the document's offsets were last clamped after. A
+	// write clamps itself, so until layout solves again they still fit.
+	clampedAfterSolve?: number;
 }
 
 export interface DocumentSlots extends NodeSlots {
@@ -30640,16 +30658,11 @@ function scrollElementTo(
 }
 
 function writeScrollOffset(
-	element: globalThis.Element,
+	element: Element,
 	axis: "left" | "top",
 	value: number,
 ): void {
-	let offsets = scrollOffsets.get(element);
-	if (offsets === undefined) {
-		offsets = {left: 0, top: 0};
-		scrollOffsets.set(element, offsets);
-	}
-	offsets[axis] = value;
+	(_(element).scrollOffsets ??= {left: 0, top: 0})[axis] = value;
 }
 
 /** html and body scroll the document. */
@@ -30661,14 +30674,6 @@ function isDocumentScroller(element: Element): boolean {
 			element === (document.body as unknown))
 	);
 }
-
-const scrolledElements = new WeakMap<Document, Set<Element>>();
-
-// The scroll steps of "update the rendering": each box scrolled since the
-// last frame gets one "scroll" event, and the document one that bubbles
-// to the window, before the frame's callbacks run.
-const pendingScrollTargets = new WeakMap<Document, Set<Element>>();
-const reportedDocumentScrollTop = new WeakMap<Document, number>();
 
 // A write on an attached document rounds to whole cells (everything
 // paints on the cell grid, like the document scroll), clamps into the
@@ -30706,19 +30711,15 @@ function setScrollOffset(
 			next = Math.min(next, room);
 		}
 	}
-	const previous = scrollOffsets.get(element)?.[axis] ?? 0;
+	const previous = elementSlots.scrollOffsets?.[axis] ?? 0;
 	if (previous === next) {
 		return;
 	}
 	writeScrollOffset(element, axis, next);
 	const document = elementSlots.document;
+	const documentExtra = _(document).extra;
 	if (next !== 0) {
-		let held = scrolledElements.get(document);
-		if (held === undefined) {
-			held = new Set();
-			scrolledElements.set(document, held);
-		}
-		held.add(element);
+		(documentExtra.scrolledElements ??= new Set()).add(element);
 	}
 	// A vertical scroll is a run of rows the terminal may be able to shift for
 	// us. A horizontal one is not, and dirties the frame like anything else.
@@ -30727,12 +30728,7 @@ function setScrollOffset(
 	} else {
 		invalidate(_(attached).extra.framebuffer);
 	}
-	let pending = pendingScrollTargets.get(document);
-	if (pending === undefined) {
-		pending = new Set();
-		pendingScrollTargets.set(document, pending);
-	}
-	pending.add(element);
+	(documentExtra.pendingScrollTargets ??= new Set()).add(element);
 	void _(attached).extra.render();
 }
 
@@ -30741,16 +30737,17 @@ export function runScrollSteps(document: globalThis.Document): void {
 	if (attached === undefined) {
 		return;
 	}
-	const top = _(attached).extra.framebuffer.scrollTop;
-	if (top !== (reportedDocumentScrollTop.get(attached) ?? 0)) {
-		reportedDocumentScrollTop.set(attached, top);
+	const extra = _(attached).extra;
+	const top = extra.framebuffer.scrollTop;
+	if (top !== (extra.reportedScrollTop ?? 0)) {
+		extra.reportedScrollTop = top;
 		dispatchAsUserAgent(
 			attached,
 			constructInternal(() => new Event("scroll", {bubbles: true})),
 		);
 		awaitScrollEnd(attached, attached);
 	}
-	const pending = pendingScrollTargets.get(attached);
+	const pending = extra.pendingScrollTargets;
 	if (pending === undefined || pending.size === 0) {
 		return;
 	}
@@ -30767,13 +30764,9 @@ export function runScrollSteps(document: globalThis.Document): void {
 // gesture ends once.
 const SCROLL_END_MS = 100;
 
-const scrollEnds = new WeakMap<
-	Document,
-	{targets: Set<Document | Element>; timer: ReturnType<typeof setTimeout>}
->();
-
 function awaitScrollEnd(document: Document, target: Document | Element): void {
-	const waiting = scrollEnds.get(document);
+	const extra = _(document).extra;
+	const waiting = extra.scrollEnd;
 	if (waiting !== undefined) {
 		clearTimeout(waiting.timer);
 	}
@@ -30787,7 +30780,7 @@ function awaitScrollEnd(document: Document, target: Document | Element): void {
 	}
 	targets.add(target);
 	const timer = setTimeout(() => {
-		scrollEnds.delete(document);
+		extra.scrollEnd = undefined;
 		if (getAttachedDocument(document) === undefined) {
 			return;
 		}
@@ -30805,15 +30798,8 @@ function awaitScrollEnd(document: Document, target: Document | Element): void {
 			}
 		}
 	}, SCROLL_END_MS);
-	scrollEnds.set(document, {targets, timer});
+	extra.scrollEnd = {targets, timer};
 }
-
-// The one box whose vertical scroll this frame can express as a scroll shift,
-// meaning rows the terminal may shift instead of repainting. Repeated
-// scrolls on one box add up. A second box scrolling means no single shift
-// describes the frame, so the record is dropped in favor of the screen's
-// dirty bit.
-const scrollShifts = new WeakMap<Document, {element: Element; delta: number}>();
 
 /**
  * Pull every stored scroll offset back into its box's scrollable range
@@ -30824,24 +30810,21 @@ const scrollShifts = new WeakMap<Document, {element: Element; delta: number}>();
  * and requests a repaint. A clamp is not a scroll shift: it moves offsets the
  * journal already priced, and can move several boxes at once.
  */
-// The layout pass each document's offsets were last clamped after. A
-// write clamps itself, so until layout solves again they still fit.
-const clampedAfterSolve = new WeakMap<Document, number>();
-
 export function clampScrollOffsets(document: globalThis.Document): void {
 	const attached = getAttachedDocument(document);
-	const held = scrolledElements.get(document as Document);
+	const extra = _(document as Document).extra;
+	const held = extra.scrolledElements;
 	if (attached === undefined || held === undefined) {
 		return;
 	}
 	const solves = _(attached).extra.layout.solves;
-	if (clampedAfterSolve.get(document as Document) === solves) {
+	if (extra.clampedAfterSolve === solves) {
 		return;
 	}
-	clampedAfterSolve.set(document as Document, solves);
+	extra.clampedAfterSolve = solves;
 	let changed = false;
 	for (const element of held) {
-		const offsets = scrollOffsets.get(element) ?? {left: 0, top: 0};
+		const offsets = _(element).scrollOffsets ?? {left: 0, top: 0};
 		if (offsets.left === 0 && offsets.top === 0) {
 			held.delete(element);
 			continue;
@@ -30849,7 +30832,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 		// A removed box has no box to be scrolled in, so it keeps no offset,
 		// as a browser's does not, and the set does not keep it alive.
 		if (!element.isConnected) {
-			scrollOffsets.delete(element);
+			_(element).scrollOffsets = null;
 			held.delete(element);
 			continue;
 		}
@@ -30871,7 +30854,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 		changed = true;
 	}
 	if (changed) {
-		scrollShifts.delete(document as Document);
+		extra.scrollShift = undefined;
 		invalidate(_(attached).extra.framebuffer);
 		void _(attached).extra.render();
 	}
@@ -30883,13 +30866,14 @@ function recordScrollShift(
 	element: Element,
 	delta: number,
 ): void {
-	const shift = scrollShifts.get(document);
+	const extra = _(document).extra;
+	const shift = extra.scrollShift;
 	if (shift === undefined) {
-		scrollShifts.set(document, {element, delta});
+		extra.scrollShift = {element, delta};
 	} else if (shift.element === element) {
 		shift.delta += delta;
 	} else {
-		scrollShifts.delete(document);
+		extra.scrollShift = undefined;
 		invalidate(_(attached).extra.framebuffer);
 	}
 }
@@ -30898,11 +30882,12 @@ function recordScrollShift(
 export function takeScrollShift(
 	document: globalThis.Document,
 ): {element: globalThis.Element; delta: number} | null {
-	const shift = scrollShifts.get(document as Document);
+	const extra = _(document as Document).extra;
+	const shift = extra.scrollShift;
 	if (shift === undefined) {
 		return null;
 	}
-	scrollShifts.delete(document as Document);
+	extra.scrollShift = undefined;
 	return shift as unknown as {element: globalThis.Element; delta: number};
 }
 
