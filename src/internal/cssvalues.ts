@@ -548,7 +548,216 @@ export function parseColor(
 		return parseColorFunction(functionMatch[1], functionMatch[2]);
 	}
 
+	if (color.startsWith("color-mix(") && color.endsWith(")")) {
+		return parseColorMix(color.slice(10, -1));
+	}
+
 	return null;
+}
+
+type Triple = [number, number, number];
+
+// sRGB's transfer function, between its 0..1 channels and linear light.
+function toLinearLight(channel: number): number {
+	return channel <= 0.04045
+		? channel / 12.92
+		: ((channel + 0.055) / 1.055) ** 2.4;
+}
+
+function fromLinearLight(light: number): number {
+	const channel = Math.min(1, Math.max(0, light));
+	return channel <= 0.0031308
+		? channel * 12.92
+		: 1.055 * channel ** (1 / 2.4) - 0.055;
+}
+
+function multiplyMatrix(matrix: number[], [x, y, z]: Triple): Triple {
+	return [0, 3, 6].map((row) =>
+		matrix[row] * x + matrix[row + 1] * y + matrix[row + 2] * z,
+	) as Triple;
+}
+
+// The OKLab matrices: linear sRGB to LMS, cube-rooted LMS to OKLab, and
+// their inverses.
+const LINEAR_TO_LMS = [
+	0.4122214708,
+	0.5363325363,
+	0.0514459929,
+	0.2119034982,
+	0.6806995451,
+	0.1073969566,
+	0.0883024619,
+	0.2817188376,
+	0.6299787005,
+];
+const LMS_TO_OKLAB = [
+	0.2104542553,
+	0.793617785,
+	-0.0040720468,
+	1.9779984951,
+	-2.428592205,
+	0.4505937099,
+	0.0259040371,
+	0.7827717662,
+	-0.808675766,
+];
+const OKLAB_TO_LMS = [
+	1,
+	0.3963377774,
+	0.2158037573,
+	1,
+	-0.1055613458,
+	-0.0638541728,
+	1,
+	-0.0894841775,
+	-1.291485548,
+];
+const LMS_TO_LINEAR = [
+	4.0767416621,
+	-3.3077115913,
+	0.2309699292,
+	-1.2684380046,
+	2.6097574011,
+	-0.3413193965,
+	-0.0041960863,
+	-0.7034186147,
+	1.707614701,
+];
+
+function toOKLab(rgb: Triple): Triple {
+	const lms = multiplyMatrix(LINEAR_TO_LMS, rgb.map(toLinearLight) as Triple);
+	return multiplyMatrix(LMS_TO_OKLAB, lms.map(Math.cbrt) as Triple);
+}
+
+function fromOKLab(lab: Triple): Triple {
+	const lms = multiplyMatrix(OKLAB_TO_LMS, lab).map((c) => c ** 3) as Triple;
+	return multiplyMatrix(LMS_TO_LINEAR, lms).map(fromLinearLight) as Triple;
+}
+
+// An achromatic color's hue is powerless, and is NaN here: a missing
+// component, which takes the other color's hue when mixed.
+function toOKLCh(rgb: Triple): Triple {
+	const [l, a, b] = toOKLab(rgb);
+	const chroma = Math.hypot(a, b);
+	const hue = (Math.atan2(b, a) * 180) / Math.PI;
+	return [l, chroma, chroma < 4e-6 ? NaN : (hue + 360) % 360];
+}
+
+function fromOKLCh([l, chroma, hue]: Triple): Triple {
+	const radians = ((Number.isNaN(hue) ? 0 : hue) * Math.PI) / 180;
+	return fromOKLab([l, chroma * Math.cos(radians), chroma * Math.sin(radians)]);
+}
+
+// The color spaces color-mix() interpolates in, each with its conversion
+// from and back to sRGB's 0..1 channels.
+const MIX_SPACES: Record<
+	string,
+	[(rgb: Triple) => Triple, (c: Triple) => Triple]
+> = {
+	srgb: [(rgb) => rgb, (rgb) => rgb],
+	"srgb-linear": [
+		(rgb) => rgb.map(toLinearLight) as Triple,
+		(light) => light.map(fromLinearLight) as Triple,
+	],
+	oklab: [toOKLab, fromOKLab],
+	oklch: [toOKLCh, fromOKLCh],
+};
+
+// css-color-4 §12.4: the hues are moved a turn apart so that the
+// interpolation goes the way the method names.
+function fixHues(
+	method: string,
+	first: number,
+	second: number,
+): [number, number] {
+	const delta = second - first;
+	if (
+		(method === "shorter" && delta > 180) ||
+		(method === "longer" && delta > 0 && delta < 180) ||
+		(method === "decreasing" && delta > 0)
+	) {
+		first += 360;
+	} else if (
+		(method === "shorter" && delta < -180) ||
+		(method === "longer" && delta <= 0 && delta > -180) ||
+		(method === "increasing" && delta < 0)
+	) {
+		second += 360;
+	}
+	return [first, second];
+}
+
+const HUE_METHODS = new Set(["shorter", "longer", "increasing", "decreasing"]);
+
+// css-color-5 §2: the percentages normalized to a sum of 100, a sum under
+// 100 scaling the result's alpha, and the colors interpolated with
+// premultiplied alpha. A hue is not premultiplied.
+function parseColorMix(args: string): {color: number; alpha: number} | null {
+	const parts = splitCommaList(args);
+	const method = parts[0]?.split(WHITESPACE_RUN) ?? [];
+	const space = MIX_SPACES[method[1]];
+	const polar = method[1] === "oklch";
+	const hueMethod = method.length === 4 && polar && method[3] === "hue"
+		? method[2]
+		: method.length === 2 ? "shorter" : "";
+	if (
+		parts.length !== 3 ||
+		method[0] !== "in" ||
+		!space ||
+		!HUE_METHODS.has(hueMethod)
+	) {
+		return null;
+	}
+	const sides = parts.slice(1).map((part) => {
+		const components = splitComponents(part);
+		const at = components.findIndex((c) => c.endsWith("%"));
+		const percent = at === -1 ? null : Number(components[at].slice(0, -1));
+		const text = components.filter((_, index) => index !== at).join(" ");
+		const color = text === "transparent"
+			? {color: 0, alpha: 0}
+			: parseColor(text);
+		return components.length > 2 ||
+			(percent !== null && !(percent >= 0 && percent <= 100)) ||
+			color === null
+			? null
+			: {...color, percent};
+	});
+	const [first, second] = sides;
+	if (first === null || second === null) {
+		return null;
+	}
+	const p2 = second.percent ?? 100 - (first.percent ?? 50);
+	const p1 = first.percent ?? 100 - p2;
+	const sum = p1 + p2;
+	if (sum === 0) {
+		return null;
+	}
+	const [toSpace, fromSpace] = space;
+	const unpack = (packed: number) =>
+		toSpace([16, 8, 0].map((s) => ((packed >> s) & 0xff) / 255) as Triple);
+	const a = unpack(first.color);
+	const b = unpack(second.color);
+	const w1 = (p1 / sum) * first.alpha;
+	const w2 = (p2 / sum) * second.alpha;
+	const alpha = w1 + w2;
+	if (polar) {
+		const [h1, h2] = [a[2], b[2]].map((h, i, hues) =>
+			Number.isNaN(h) ? hues[1 - i] : h,
+		);
+		[a[2], b[2]] = fixHues(hueMethod, h1, h2);
+	}
+	const mixed = [0, 1, 2].map((i) =>
+		polar && i === 2
+			? a[i] + ((b[i] - a[i]) * p2) / sum
+			: alpha === 0 ? 0 : (a[i] * w1 + b[i] * w2) / alpha,
+	) as Triple;
+	const [r, g, bl] = fromSpace(mixed).map((c) =>
+		Math.round(Math.min(1, Math.max(0, c)) * 255),
+	);
+	return {
+		color: (r << 16) | (g << 8) | bl,
+		alpha: alpha * Math.min(1, sum / 100),
+	};
 }
 
 // rgb() and hsl() take the legacy comma list and the modern

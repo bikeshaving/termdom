@@ -650,3 +650,52 @@ test("a filled page under a prompt fills to the bottom row without scrolling, an
 	expect(line(3)).toBe("second");
 	dom.dispose();
 });
+
+test("color-mix() mixes in sRGB, linear sRGB, OKLab and OKLCh", async () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 20, rows: 4}).transport,
+		colorDepth: "rgb",
+	});
+	const {document} = dom;
+	const div = document.createElement("div");
+	document.body.appendChild(div);
+	const mix = (value: string) => {
+		div.style.color = "";
+		div.style.color = value;
+		return dom.window.getComputedStyle(div).color;
+	};
+	expect(mix("color-mix(in srgb, red, blue)")).toBe("rgb(128, 0, 128)");
+	expect(mix("color-mix(in srgb, red 25%, blue)")).toBe("rgb(64, 0, 191)");
+	expect(mix("color-mix(in srgb, red 25%, blue 25%)")).toBe(
+		"rgba(128, 0, 128, 0.5)",
+	);
+	expect(mix("color-mix(in srgb-linear, red, blue)")).toBe("rgb(188, 0, 188)");
+	expect(mix("color-mix(in oklab, red, blue)")).toBe("rgb(140, 83, 162)");
+	expect(mix("color-mix(in oklch, red, blue)")).toBe("rgb(186, 0, 194)");
+	expect(mix("color-mix(in oklch longer hue, red, blue)")).toBe(
+		"rgb(0, 147, 0)",
+	);
+	// Alpha is premultiplied, so a transparent side thins the color
+	// without darkening it.
+	expect(mix("color-mix(in oklab, rgb(10 20 30) 40%, transparent)")).toBe(
+		"rgba(10, 20, 30, 0.4)",
+	);
+	dom.dispose();
+});
+
+test("a color-mix() of variables and currentcolor paints", async () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 20, rows: 4}).transport,
+		colorDepth: "rgb",
+	});
+	const out = dom.renderANSI(
+		"<style>:root{--muted:#0000ff}" +
+			".a{background-color:color-mix(in oklab,var(--muted) 50%,#ff0000)}" +
+			".b{color:#00ff00;" +
+			"background-color:color-mix(in srgb,currentcolor 50%,#000)}" +
+			"</style><div class=a>a</div><div class=b>b</div>",
+	);
+	expect(out).toContain("48;2;140;83;162m");
+	expect(out).toContain("48;2;0;128;0m");
+	dom.dispose();
+});

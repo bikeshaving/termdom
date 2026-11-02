@@ -5953,6 +5953,8 @@ function blockifyDisplay(element: Element | null, display: string): string {
 	return display;
 }
 
+const CURRENT_COLOR = /\bcurrentcolor\b/gi;
+
 // What the cascade leaves, with var() substituted, `currentcolor`
 // replaced by the color it names, and display blockified.
 function resolvePropertyValue(
@@ -6028,18 +6030,19 @@ function resolveCascadedValue(
 		}
 	}
 	// `currentcolor` is the element's own color, which is what a resolved
-	// value reports. On `color` itself it means the parent's.
+	// value reports, alone or inside a color-mix(). On `color` itself it
+	// means the parent's.
 	if (
-		value.length === 12 &&
-		toASCIILowercase(value) === "currentcolor" &&
-		CSSValues.isColorProperty(property)
+		CSSValues.isColorProperty(property) &&
+		toASCIILowercase(value).includes("currentcolor")
 	) {
 		// The COMPUTED color, on the engine's own read path. The author path
 		// flushes, from inside the resolution of a style that layout is waiting
 		// on.
-		return property === "color"
+		const current = property === "color"
 			? (resolveFromParent(declaration, "color") ?? "")
 			: _(declaration)._computedValue("color");
+		return value.replace(CURRENT_COLOR, current);
 	}
 	return value;
 }
