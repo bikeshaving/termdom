@@ -165,9 +165,10 @@ export interface ParserHandlers {
 }
 
 /**
- * The DEC state machine. It reads one code point at a time and keeps
- * the sequence in progress, whose prefix, parameters and intermediates a
- * handler reads when the sequence ends.
+ * The DEC state machine. It reads text one code point at a time and
+ * keeps the sequence in progress, whose prefix, parameters and
+ * intermediates a handler reads when the sequence ends. A sequence or a
+ * surrogate pair that one text cuts goes on in the next.
  */
 export class Parser {
 	handlers: ParserHandlers;
@@ -177,6 +178,7 @@ export class Parser {
 	intermediates: string;
 	osc: string;
 	dcs: string;
+	highSurrogate: number;
 
 	constructor(handlers: ParserHandlers) {
 		this.handlers = handlers;
@@ -186,6 +188,26 @@ export class Parser {
 		this.intermediates = "";
 		this.osc = "";
 		this.dcs = "";
+		this.highSurrogate = 0;
+	}
+
+	parse(text: string): void {
+		for (let index = 0; index < text.length; index++) {
+			let code = text.charCodeAt(index);
+			if (this.highSurrogate !== 0) {
+				if (code >= 0xdc00 && code <= 0xdfff) {
+					code =
+						((this.highSurrogate - 0xd800) << 10) + (code - 0xdc00) + 0x10000;
+				} else {
+					this.consume(0xfffd);
+				}
+				this.highSurrogate = 0;
+			} else if (code >= 0xd800 && code <= 0xdbff) {
+				this.highSurrogate = code;
+				continue;
+			}
+			this.consume(code);
+		}
 	}
 
 	consume(code: number): void {
@@ -426,7 +448,6 @@ export class Terminal {
 	reply: (data: string) => void;
 
 	parser: Parser;
-	highSurrogate: number;
 	decoder: TextDecoder;
 
 	constructor(cols: number, rows: number, reply: (data: string) => void) {
@@ -469,7 +490,6 @@ export class Terminal {
 		this.mouseTracking = 0;
 		this.mouseEncoding = 0;
 		this.parser = new Parser(this);
-		this.highSurrogate = 0;
 	}
 
 	get lines(): Line[] {
@@ -502,25 +522,11 @@ export class Terminal {
 	}
 
 	write(data: Uint8Array | string): void {
-		const text = typeof data === "string"
-			? data
-			: this.decoder.decode(data, {stream: true});
-		for (let index = 0; index < text.length; index++) {
-			let code = text.charCodeAt(index);
-			if (this.highSurrogate !== 0) {
-				if (code >= 0xdc00 && code <= 0xdfff) {
-					code =
-						((this.highSurrogate - 0xd800) << 10) + (code - 0xdc00) + 0x10000;
-				} else {
-					this.parser.consume(0xfffd);
-				}
-				this.highSurrogate = 0;
-			} else if (code >= 0xd800 && code <= 0xdbff) {
-				this.highSurrogate = code;
-				continue;
-			}
-			this.parser.consume(code);
-		}
+		this.parser.parse(
+			typeof data === "string"
+				? data
+				: this.decoder.decode(data, {stream: true}),
+		);
 	}
 
 	resize(cols: number, rows: number): void {
