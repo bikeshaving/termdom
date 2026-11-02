@@ -109,7 +109,6 @@ import {runInRealm, windowMember} from "./webidl.ts";
 
 // A regular expression literal is a new object each time it runs, so the
 // ones that run for every match and mutation are made once.
-const WHITESPACE_RUN = /\s+/;
 const PART_PSEUDO = /^::part\((.+)\)$/;
 
 // Per-element defaults that are STATE, not stylesheet: the fullscreen
@@ -6678,7 +6677,7 @@ export function resolveBorderSides(element: Element): BorderSides {
 	// off a collapsed ellipse. A cell grid has one size of curve.
 	const roundedCorner = (corner: string): "round" | undefined => {
 		const radii = getComputedValue(element, `border-${corner}-radius`)
-			.split(WHITESPACE_RUN)
+			.split(CSSValues.WHITESPACE_RUN)
 			.filter(Boolean);
 		if (radii.length === 0) {
 			return undefined;
@@ -12300,7 +12299,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 				: null;
 			if (partArg) {
 				partNames ??= (getAttributeValue(element, "part") ?? "")
-					.split(WHITESPACE_RUN)
+					.split(CSSValues.WHITESPACE_RUN)
 					.filter(Boolean);
 				const names = partNames;
 				if (
@@ -12465,7 +12464,7 @@ function getPartPseudos(element: Element, root: Node): string[] {
 	}
 	const host = getHTMLLocalName((root as unknown as ShadowRoot).host) ?? "";
 	const pseudos: string[] = [];
-	for (const name of part.split(WHITESPACE_RUN)) {
+	for (const name of part.split(CSSValues.WHITESPACE_RUN)) {
 		pseudos.push(
 			...(PART_PSEUDOS["*"][name] ?? PART_PSEUDOS[host]?.[name] ?? []),
 		);

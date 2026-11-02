@@ -23,7 +23,7 @@ import * as CSSTree from "./csstree.ts";
 
 // A regular expression literal is a new object each time it runs, so the
 // ones that run for every value are made once.
-const WHITESPACE_RUN = /\s+/;
+export const WHITESPACE_RUN = /\s+/;
 const HEX_DIGITS = /^[0-9a-f]+$/;
 const COLOR_FUNCTION = /^(rgba?|hsla?)\(\s*(.*?)\s*\)$/;
 const SUBSTITUTION_FUNCTION = /\b(?:var|env|attr)\(/i;
