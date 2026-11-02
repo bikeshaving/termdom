@@ -1990,6 +1990,39 @@ function safeProbeCell(grid: CellGrid): {row: number; col: number} | null {
 	return null;
 }
 
+// Clusters the margin has deferred are probed off to the side, before
+// the frame paints anything. The probes go to cells the first painted
+// row covers, and that row's own content lands on top of them in this
+// same write, so nothing of them is ever on screen.
+function probeDeferred(
+	grid: CellGrid,
+	writer: FrameWriter,
+	measurer: Exchange,
+	startRow: number,
+): {output: string; row: number; run: number} | null {
+	const cell = safeProbeCell(grid);
+	if (cell === null) {
+		return null;
+	}
+	let output = moveCursor(writer, 0, 0, cell.row, 0, startRow);
+	let run = 0;
+	// probe() takes the cluster out of the set being iterated.
+	for (const cluster of [...measurer.deferredWidths()]) {
+		writer.carriageReturn();
+		if (cell.col > 0) {
+			writer.cursorForward(cell.col);
+		}
+		// Each probe is reached by naming its column outright, so
+		// no probed glyph's advance carries into the next.
+		run++;
+		output +=
+			writer.text(cluster).take() +
+			measurer.probeWidth(cluster, run, cell.col, getStringWidth(cluster));
+	}
+	output += writer.carriageReturn().take();
+	return {output, row: cell.row, run: run + 1};
+}
+
 let plainCodes = new Uint16Array(0);
 
 function generateANSI(
@@ -2024,39 +2057,12 @@ function generateANSI(
 	let run = 0;
 	let unknownInRow: number;
 
-	// Clusters the margin has deferred are probed off to the side, before
-	// the frame paints anything. The probes go to cells the first painted
-	// row covers, and that row's own content lands on top of them in this
-	// same write, so nothing of them is ever on screen.
-	if (measurer !== undefined) {
-		const deferred = measurer.deferredWidths();
-		if (deferred.size > 0) {
-			const cell = safeProbeCell(grid);
-			if (cell !== null) {
-				output += moveCursor(writer, 0, 0, cell.row, 0, startRow);
-				cursorRow = cell.row;
-				cursorCol = 0;
-				// probe() takes the cluster out of the set being iterated.
-				for (const cluster of [...deferred]) {
-					writer.carriageReturn();
-					if (cell.col > 0) {
-						writer.cursorForward(cell.col);
-					}
-					// Each probe is reached by naming its column outright, so
-					// no probed glyph's advance carries into the next.
-					run++;
-					output +=
-						writer.text(cluster).take() +
-						measurer.probeWidth(
-							cluster,
-							run,
-							cell.col,
-							getStringWidth(cluster),
-						);
-				}
-				output += writer.carriageReturn().take();
-				run++;
-			}
+	if (measurer !== undefined && measurer.deferredWidths().size > 0) {
+		const probes = probeDeferred(grid, writer, measurer, startRow);
+		if (probes !== null) {
+			output = probes.output;
+			cursorRow = probes.row;
+			run = probes.run;
 		}
 	}
 
