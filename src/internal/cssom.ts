@@ -7081,8 +7081,8 @@ export class Cascade {
 	// sheets declared them: the document, or a shadow root. A rule matches
 	// only in its own tree (css-scoping-1 §3.3), so `* + *` in a shadow
 	// root restyles nothing in the document.
-	siblingIndexes: Map<Node, SiblingIndex>;
-	uaSiblingIndex: SiblingIndex | undefined;
+	siblingRuleIndexes: Map<Node, SiblingRuleIndex>;
+	uaSiblingRuleIndex: SiblingRuleIndex | undefined;
 
 	// The keys whose change can affect an element's DESCENDANTS: those a
 	// selector tests left of a combinator (`.editing .view`), and those on
@@ -7265,8 +7265,8 @@ export class Cascade {
 		this.stylesheetsDirty = false;
 		this.parsing = false;
 		this.pseudoHosts = new Set();
-		this.siblingIndexes = new Map();
-		this.uaSiblingIndex = undefined;
+		this.siblingRuleIndexes = new Map();
+		this.uaSiblingRuleIndex = undefined;
 		this.reachingClasses = new Set<string>();
 		this.keyPaintsOnly = new Map<string, boolean>();
 		this.reachingIds = new Set<string>();
@@ -7599,7 +7599,10 @@ export function handleMutations(
 			// is n records against the same parent.
 			if (
 				getNodeType(mutation.target) === Node.ELEMENT_NODE &&
-				getSiblingIndex(cascade, mutation.target as Element)?.reachesSiblings
+				getSiblingRuleIndex(
+					cascade,
+					mutation.target as Element,
+				)?.reachesSiblings
 			) {
 				const parent = mutation.target as Element;
 				const from = getFirstChildAfterChange(mutation);
@@ -7697,7 +7700,7 @@ export function handleMutations(
 			// styles know nothing of this change.
 			if (
 				changeReachesLaterSiblings(
-					getSiblingIndex(cascade, element),
+					getSiblingRuleIndex(cascade, element),
 					element,
 					mutation.attributeName!,
 					mutation.oldValue,
@@ -8197,7 +8200,7 @@ function hasAnswersChanged(cascade: Cascade, element: Element): boolean {
 
 function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	dropScopedRules(cascade, root);
-	cascade.siblingIndexes.delete(root);
+	cascade.siblingRuleIndexes.delete(root);
 	// The root's :has() rules went with it, and so does what they asked for.
 	cascade.hasRulesExist = false;
 	cascade.hasAnchors = new Set();
@@ -8243,7 +8246,7 @@ function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 		return;
 	}
 	dropScopedRules(cascade, root);
-	cascade.siblingIndexes.delete(root);
+	cascade.siblingRuleIndexes.delete(root);
 	const before = cascade.parsedRules.length;
 	for (const sheet of getShadowStyleSheets(root)) {
 		parseStyleSheet(cascade, sheet, root);
@@ -10220,9 +10223,11 @@ function invalidateChildren(
 	from: Element | null | undefined = null,
 ): void {
 	invalidateSibling(cascade, element);
-	let child = getSiblingIndex(cascade, element)?.countsFromEnd || from === null
-		? element.firstElementChild
-		: from;
+	let child =
+		getSiblingRuleIndex(cascade, element)?.countsFromEnd ||
+		from === null
+			? element.firstElementChild
+			: from;
 	for (; child; child = child.nextElementSibling) {
 		invalidateSibling(cascade, child as Element);
 	}
@@ -10261,7 +10266,7 @@ function earlierChild(
 // `:focus ~ .card` and `:hover + label` match siblings AFTER the element
 // whose state changed, and their cached styles know nothing of it.
 function invalidateLaterSiblings(cascade: Cascade, element: Element): void {
-	if (!getSiblingIndex(cascade, element)?.reachesSiblings) {
+	if (!getSiblingRuleIndex(cascade, element)?.reachesSiblings) {
 		return;
 	}
 	for (
@@ -10274,7 +10279,7 @@ function invalidateLaterSiblings(cascade: Cascade, element: Element): void {
 }
 
 function invalidateSibling(cascade: Cascade, element: Element): void {
-	const index = getSiblingIndex(cascade, element);
+	const index = getSiblingRuleIndex(cascade, element);
 	if (index === undefined || !isSiblingTested(index, element)) {
 		return;
 	}
@@ -10286,7 +10291,7 @@ function invalidateSibling(cascade: Cascade, element: Element): void {
 	attachPseudoElementsToElement(cascade, element);
 }
 
-interface SiblingIndex {
+interface SiblingRuleIndex {
 	// Whether a selector can reach OUTSIDE a mutated element's subtree, to
 	// its following siblings. The string tests are deliberately loose. A
 	// false positive only widens the rebuild.
@@ -10312,24 +10317,24 @@ interface SiblingIndex {
 // The index of the tree whose rules could match the element: its shadow
 // root's, or the document's. The UA sheet's rules match in every tree, so
 // each tree's index starts from theirs.
-function getSiblingIndex(
+function getSiblingRuleIndex(
 	cascade: Cascade,
 	element: Element,
-): SiblingIndex | undefined {
+): SiblingRuleIndex | undefined {
 	const root = element.getRootNode();
-	return cascade.siblingIndexes.get(
+	return cascade.siblingRuleIndexes.get(
 		isShadowRoot(root) ? root : cascade.document,
-	) ?? cascade.uaSiblingIndex;
+	) ?? cascade.uaSiblingRuleIndex;
 }
 
-function getOrCreateSiblingIndex(
+function getOrCreateSiblingRuleIndex(
 	cascade: Cascade,
 	scope: Node | undefined,
-): SiblingIndex {
+): SiblingRuleIndex {
 	const key = scope ?? cascade.document;
-	let index = cascade.siblingIndexes.get(key);
+	let index = cascade.siblingRuleIndexes.get(key);
 	if (index === undefined) {
-		const ua = cascade.uaSiblingIndex;
+		const ua = cascade.uaSiblingRuleIndex;
 		index = {
 			reachesSiblings: ua?.reachesSiblings ?? false,
 			reachesDescendants: ua?.reachesDescendants ?? false,
@@ -10339,7 +10344,7 @@ function getOrCreateSiblingIndex(
 			anchorKeys: new Set(ua?.anchorKeys),
 			anchorsUniversal: ua?.anchorsUniversal ?? false,
 		};
-		cascade.siblingIndexes.set(key, index);
+		cascade.siblingRuleIndexes.set(key, index);
 	}
 	return index;
 }
@@ -10349,7 +10354,7 @@ function getOrCreateSiblingIndex(
 // Only a class, id or attribute such a compound names can: `.on ~ .light`
 // cares about `on`, and `summary:first-of-type` about no attribute at all.
 function changeReachesLaterSiblings(
-	index: SiblingIndex | undefined,
+	index: SiblingRuleIndex | undefined,
 	element: Element,
 	attributeName: string,
 	oldValue: string | null,
@@ -10386,7 +10391,7 @@ function changeReachesLaterSiblings(
 }
 
 // Whether some sibling-tested compound could name the element.
-function isSiblingTested(index: SiblingIndex, element: Element): boolean {
+function isSiblingTested(index: SiblingRuleIndex, element: Element): boolean {
 	if (index.universal) {
 		return true;
 	}
@@ -10676,8 +10681,8 @@ function parseAllStylesheets(cascade: Cascade): void {
 	cascade.parsedRules = [];
 	cascade.sharedRoot = new Map();
 	cascade.passedTokens = new Map();
-	cascade.siblingIndexes = new Map();
-	cascade.uaSiblingIndex = undefined;
+	cascade.siblingRuleIndexes = new Map();
+	cascade.uaSiblingRuleIndex = undefined;
 	cascade.reachingClasses.clear();
 	cascade.keyPaintsOnly.clear();
 	cascade.reachingIds.clear();
@@ -10708,9 +10713,9 @@ function parseAllStylesheets(cascade: Cascade): void {
 	// Origin ordering, not source order, keeps the UA sheet beneath every
 	// author rule.
 	parseStyleSheet(cascade, getUAStyleSheet(), undefined, true);
-	const uaIndex = cascade.siblingIndexes.get(document);
+	const uaIndex = cascade.siblingRuleIndexes.get(document);
 	if (uaIndex !== undefined) {
-		cascade.uaSiblingIndex = {
+		cascade.uaSiblingRuleIndex = {
 			...uaIndex,
 			keys: new Set(uaIndex.keys),
 			anchorKeys: new Set(uaIndex.anchorKeys),
@@ -11569,7 +11574,7 @@ function indexReachingKeys(
 	inherits ||= blockifies;
 	const compounds = reading.compounds;
 	if (reading.reachesSiblings) {
-		const index = getOrCreateSiblingIndex(cascade, scope);
+		const index = getOrCreateSiblingRuleIndex(cascade, scope);
 		index.reachesSiblings = true;
 		if (reading.siblingsReachDescendants || inherits) {
 			index.reachesDescendants = true;
@@ -11600,7 +11605,7 @@ function indexReachingKeys(
 		if (!keys.siblingTested) {
 			continue;
 		}
-		const index = getOrCreateSiblingIndex(cascade, scope);
+		const index = getOrCreateSiblingRuleIndex(cascade, scope);
 		if (
 			keys.anyElement ||
 			(keys.tag === null &&
