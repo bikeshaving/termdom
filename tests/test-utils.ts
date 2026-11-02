@@ -12,7 +12,6 @@ import {
 	type TerminalTransport,
 	transportFromProcess,
 } from "../src/index.ts";
-import {styleCheck} from "../src/internal/cssom.ts";
 import {controlCheck, framePainted} from "../src/internal/dom.ts";
 import type {ColorDepth} from "../src/internal/exchange.ts";
 import {
@@ -27,9 +26,6 @@ import {getStringWidth} from "../src/internal/text.ts";
 // A frame that repaints only the rows that changed must match one painted
 // whole, and every test's frames are held to that.
 partialFrameCheck.enabled = true;
-// And every style value served must be what the cascade resolves with
-// every cache dropped.
-styleCheck.enabled = true;
 // And every form control must show its state before a frame redraws it.
 controlCheck.enabled = true;
 

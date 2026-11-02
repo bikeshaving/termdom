@@ -8373,13 +8373,10 @@ function flushCascadeStyle(cascade: Cascade): void {
 /**
  * Checks each frame's styles against styles resolved from nothing, for
  * tests: every value an element's cached style has served must be what
- * the cascade resolves with every cache dropped. Set, a value served
+ * the cascade resolves with every cache dropped. A value served
  * otherwise throws, naming it.
  */
-export const styleCheck = {enabled: false, checked: 0};
-
 export function checkStylesFromScratch(cascade: Cascade): void {
-	styleCheck.checked++;
 	const elements: Element[] =
 		[...cascade.document.querySelectorAll("*")] as Element[];
 	for (const root of cascade.shadowRoots) {

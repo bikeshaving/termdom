@@ -8,7 +8,6 @@ import {
 	dispose,
 	hoverRulesExist,
 	setReducedMotion,
-	styleCheck,
 } from "./internal/cssom.ts";
 import {
 	applyMutations,
@@ -1891,7 +1890,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	runFocusFixup(termDOM.document);
 
 	// The checks run under test only, and the build strips them.
-	if (import.meta.litest && styleCheck.enabled) {
+	if (import.meta.litest) {
 		checkStylesFromScratch(termDOMSlots.cascade);
 	}
 	termDOMSlots.layout.performLayout();
