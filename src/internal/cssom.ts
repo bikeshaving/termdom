@@ -11689,19 +11689,6 @@ function indexReachingKeys(
 
 // A selector this engine cannot read compiles to neither reading, and
 // the rule styles nothing.
-// A selector written alike under the same namespaces compiles alike, so
-// a sheet that repeats another's rules, or a page that loads one twice,
-// compiles each selector once, and its rules share the matcher.
-const compiledSelectors = new Map<string, CompiledSelector | null>();
-
-function getNamespacesKey(namespaces: SelectorNamespaces): string {
-	let key = namespaces.default ?? "";
-	for (const [prefix, uri] of namespaces.prefixes) {
-		key += ` ${prefix}=${uri}`;
-	}
-	return key;
-}
-
 function compileRuleSelector(
 	selector: string,
 	namespaces: SelectorNamespaces | undefined,
@@ -11709,28 +11696,13 @@ function compileRuleSelector(
 	pseudoElements = false,
 ): Pick<ParsedCSSRule, "matcher" | "relativeMatcher"> {
 	const read = (relative: boolean): CompiledSelector | null => {
-		const key = `${relative ? "r" : ""}${pseudoElements ? "p" : ""} ${
-			namespaces === undefined ? "" : getNamespacesKey(namespaces)
-		}\0${selector}`;
-		let compiled = compiledSelectors.get(key);
-		if (compiled === undefined) {
-			try {
-				compiled = compileSelector(selector, {
-					namespaces,
-					relative,
-					pseudoElements,
-				});
-			} catch (_err) {
-				// Only the shape of a sheet's selector was checked when the rule
-				// was parsed. A prefix no `@namespace` declared is rejected here.
-				compiled = null;
-			}
-			if (compiledSelectors.size > 16384) {
-				compiledSelectors.clear();
-			}
-			compiledSelectors.set(key, compiled);
+		try {
+			return compileSelector(selector, {namespaces, relative, pseudoElements});
+		} catch (_err) {
+			// Only the shape of a sheet's selector was checked when the rule
+			// was parsed. A prefix no `@namespace` declared is rejected here.
+			return null;
 		}
-		return compiled;
 	};
 	return {matcher: read(false), relativeMatcher: scopes ? read(true) : null};
 }
