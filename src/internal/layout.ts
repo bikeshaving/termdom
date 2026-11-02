@@ -9623,17 +9623,24 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	let currentBreakResult = breakResult;
 	let accumulatedOffsetX = 0;
 	let accumulatedOffsetY = 0;
-	let currentNode = node;
 	// Whose text-align governs these lines: the block container, until the
 	// walk descends into an inline-block's nested breakResult, a fresh
 	// formatting context with its own alignment.
 	let alignContainer: Element | null = flatParentElement(runHead);
 
-	// Flat-tree parents. A UA shadow tree's UA shadow text has no parentElement
-	// chain to its host, and the walk would stop at the shadow boundary.
-	while (currentNode !== runHead && flatParentElement(currentNode)) {
-		const parent = flatParentElement(currentNode)!;
-
+	// Flat-tree parents, outermost first, since each nested breakResult is
+	// found in the one its parent's hop descended into. A UA shadow tree's
+	// UA shadow text has no parentElement chain to its host, and the walk
+	// would stop at the shadow boundary.
+	const enclosing: Element[] = [];
+	for (
+		let current = node;
+		current !== runHead && flatParentElement(current);
+		current = flatParentElement(current)!
+	) {
+		enclosing.unshift(flatParentElement(current)!);
+	}
+	for (const parent of enclosing) {
 		if (establishesIndependentFormattingContext(parent)) {
 			// A text control's windowed value shifts its content by its own
 			// scroll, so the caret stays in view, independent of whether its
@@ -9672,7 +9679,6 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 				}
 			}
 		}
-		currentNode = parent;
 	}
 
 	containerX += accumulatedOffsetX;

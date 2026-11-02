@@ -259,3 +259,28 @@ test("an inline-block two boxes deep paints inside its own border", async () => 
 
 	dom.dispose();
 });
+
+test("a text node three inline-blocks deep reports the rects it paints at", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<div style=\"display: inline-block\">a" +
+		"<div style=\"display: inline-block; border: 1px solid\">b" +
+		"<div id=\"inner\" style=\"display: inline-block\">c<br>d</div>" +
+		"</div></div>";
+
+	await nextFrame(dom);
+
+	const lines = terminal.getVisibleText().split("\n");
+	expect(lines[1]).toBe("a│ c│");
+	expect(lines[2]).toBe(" │bd│");
+	const inner = document.getElementById("inner")!;
+	const [c, , d] = Array.from(inner.childNodes) as Text[];
+	const [cRect] = lineRects(c);
+	const [dRect] = lineRects(d);
+	expect([cRect.x, cRect.y, cRect.width, cRect.height]).toEqual([3, 1, 1, 1]);
+	expect([dRect.x, dRect.y, dRect.width, dRect.height]).toEqual([3, 2, 1, 1]);
+
+	dom.dispose();
+});
