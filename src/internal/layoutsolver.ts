@@ -1891,6 +1891,62 @@ interface FlexLine {
 	mainDim: number;
 }
 
+// css-flexbox-1 §9.3: the items in order, broken into lines where a
+// wrapping container's main size runs out.
+function collectFlexLines(
+	node: LayoutNode,
+	inFlow: LayoutNode[],
+	itemOwnerWidth: number,
+	itemOwnerHeight: number,
+): FlexLine[] {
+	const mainAxis = node.style.flexDirection;
+	const mainIsRow = isRow(mainAxis);
+	const innerMain = mainIsRow ? itemOwnerWidth : itemOwnerHeight;
+	const wrap = node.style.flexWrap !== "nowrap";
+	const mainGap = getAxisGap(node, mainAxis);
+	const lines: FlexLine[] = [];
+	let index = 0;
+	while (index < inFlow.length) {
+		const line: FlexLine = {
+			items: [],
+			sizeConsumed: 0,
+			crossDim: 0,
+			mainDim: 0,
+		};
+
+		for (; index < inFlow.length; index++) {
+			const child = inFlow[index];
+			const childMarginMain = getAxisMargin(child, mainAxis, itemOwnerWidth);
+			const basis = boundAxisWithinMinMax(
+				child,
+				mainAxis,
+				child.result.computedFlexBasis,
+				innerMain,
+			);
+
+			const precedingGap = line.items.length > 0 ? mainGap : 0;
+
+			if (
+				wrap &&
+				!Number.isNaN(innerMain) &&
+				line.items.length > 0 &&
+				line.sizeConsumed + precedingGap + basis + childMarginMain > innerMain
+			) {
+				break;
+			}
+
+			line.sizeConsumed += precedingGap + basis + childMarginMain;
+			line.items.push(child);
+		}
+
+		lines.push(line);
+		if (line.items.length === 0) {
+			break;
+		}
+	}
+	return lines;
+}
+
 // css-flexbox-1 §9.2-9.7.
 function layoutFlexbox(
 	node: LayoutNode,
@@ -1991,46 +2047,7 @@ function layoutFlexbox(
 		inFlow.sort((a, b) => a.style.order - b.style.order);
 	}
 
-	const lines: FlexLine[] = [];
-	let index = 0;
-	while (index < inFlow.length) {
-		const line: FlexLine = {
-			items: [],
-			sizeConsumed: 0,
-			crossDim: 0,
-			mainDim: 0,
-		};
-
-		for (; index < inFlow.length; index++) {
-			const child = inFlow[index];
-			const childMarginMain = getAxisMargin(child, mainAxis, itemOwnerWidth);
-			const basis = boundAxisWithinMinMax(
-				child,
-				mainAxis,
-				child.result.computedFlexBasis,
-				mainIsRow ? itemOwnerWidth : itemOwnerHeight,
-			);
-
-			const precedingGap = line.items.length > 0 ? mainGap : 0;
-
-			if (
-				wrap &&
-				!Number.isNaN(innerMain) &&
-				line.items.length > 0 &&
-				line.sizeConsumed + precedingGap + basis + childMarginMain > innerMain
-			) {
-				break;
-			}
-
-			line.sizeConsumed += precedingGap + basis + childMarginMain;
-			line.items.push(child);
-		}
-
-		lines.push(line);
-		if (line.items.length === 0) {
-			break;
-		}
-	}
+	const lines = collectFlexLines(node, inFlow, itemOwnerWidth, itemOwnerHeight);
 
 	let totalCrossDim = 0;
 	let maxMainDim = 0;
