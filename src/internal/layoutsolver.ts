@@ -5613,7 +5613,7 @@ function snapTrackSizes(tracks: GridTrack[], gap: number): number[] {
 	let edge = 0;
 	tracks.forEach((track, index) => {
 		const next = edge + track.base;
-		sizes[index] = Math.round(next) - Math.round(edge);
+		sizes[index] = roundValue(next, false) - roundValue(edge, false);
 		edge = track.collapsed ? next : next + gap;
 	});
 	return sizes;
