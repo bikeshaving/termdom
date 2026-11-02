@@ -4026,27 +4026,27 @@ function measureAtomicInline(
 		);
 		if (
 			widthValue !== null &&
-				typeof widthValue === "object" &&
-				Number.isFinite(availableWidth) &&
-				availableWidth < Number.MAX_SAFE_INTEGER
+			typeof widthValue === "object" &&
+			Number.isFinite(availableWidth) &&
+			availableWidth < Number.MAX_SAFE_INTEGER
 		) {
-				boxModel.width = Math.max(
-					0,
-					(widthValue.percentage / 100) * availableWidth,
-				);
+			boxModel.width = Math.max(
+				0,
+				(widthValue.percentage / 100) * availableWidth,
+			);
 		}
 	}
 
 	const horizontalBoxSpace =
 		boxModel.paddingLeft +
-			boxModel.paddingRight +
-			boxModel.borderLeftWidth +
-			boxModel.borderRightWidth;
+		boxModel.paddingRight +
+		boxModel.borderLeftWidth +
+		boxModel.borderRightWidth;
 	const verticalBoxSpace =
 		boxModel.paddingTop +
-			boxModel.paddingBottom +
-			boxModel.borderTopWidth +
-			boxModel.borderBottomWidth;
+		boxModel.paddingBottom +
+		boxModel.borderTopWidth +
+		boxModel.borderBottomWidth;
 
 	let contentWidth = Number.MAX_SAFE_INTEGER;
 	let contentHeight = Number.MAX_SAFE_INTEGER;
@@ -4061,43 +4061,43 @@ function measureAtomicInline(
 		: "none";
 	const widthSizing =
 		declaredSizing === "none" &&
-				boxModel.width === undefined &&
-				getHTMLLocalName(element) !== "textarea" &&
-				Number.isFinite(availableWidth) &&
-				availableWidth < Number.MAX_SAFE_INTEGER
+			boxModel.width === undefined &&
+			getHTMLLocalName(element) !== "textarea" &&
+			Number.isFinite(availableWidth) &&
+			availableWidth < Number.MAX_SAFE_INTEGER
 			? "fit-content"
 			: declaredSizing;
 	if (boxModel.width !== undefined) {
-			contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
-			contentWidthMode = "definite";
+		contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
+		contentWidthMode = "definite";
 	} else if (widthSizing === "min-content") {
-			contentWidth = 0;
-			contentWidthMode = "shrink-to-fit";
+		contentWidth = 0;
+		contentWidthMode = "shrink-to-fit";
 	} else if (
 		widthSizing === "fit-content" &&
-			Number.isFinite(availableWidth) &&
-			availableWidth < Number.MAX_SAFE_INTEGER
+		Number.isFinite(availableWidth) &&
+		availableWidth < Number.MAX_SAFE_INTEGER
 	) {
-			// The content's widest line, capped at the space the line
-			// offers less the box's own edges (css2 §10.3.9, §10.3.5).
-			contentWidth = Math.max(
-				0,
-				availableWidth -
-				horizontalBoxSpace -
-				boxModel.marginLeft -
-				boxModel.marginRight,
-			);
-			contentWidthMode = "shrink-to-fit";
+		// The content's widest line, capped at the space the line
+		// offers less the box's own edges (css2 §10.3.9, §10.3.5).
+		contentWidth = Math.max(
+			0,
+			availableWidth -
+			horizontalBoxSpace -
+			boxModel.marginLeft -
+			boxModel.marginRight,
+		);
+		contentWidthMode = "shrink-to-fit";
 	} else if (getHTMLLocalName(element) === "textarea") {
 		// cols sizes the CONTENT box (spec default 20). The UA
 		// sheet carries no width for it. A constant that pre-baked
 		// the UA chrome could not be undone by an author's `border:
 		// none`.
 		const cols = parseInt(getAttributeValue(element, "cols") ?? "", 10);
-			contentWidth = Number.isFinite(cols) && cols > 0
-				? Math.min(cols, MAX_TEXTAREA_SIZE)
-				: 20;
-			contentWidthMode = "definite";
+		contentWidth = Number.isFinite(cols) && cols > 0
+			? Math.min(cols, MAX_TEXTAREA_SIZE)
+			: 20;
+		contentWidthMode = "definite";
 	}
 
 	// On a row flex item's main axis the flex engine owns the used
@@ -4112,15 +4112,15 @@ function measureAtomicInline(
 	if (Number.isFinite(availableWidth) && isRowFlexItem(element)) {
 		const offered = Math.max(0, availableWidth - horizontalBoxSpace);
 		if (availableWidthMode === "definite") {
-				contentWidth = offered;
-				contentWidthMode = "definite";
-				offerOwnsWidth = true;
+			contentWidth = offered;
+			contentWidthMode = "definite";
+			offerOwnsWidth = true;
 		} else if (
 			availableWidthMode === "shrink-to-fit" && offered < contentWidth
 		) {
-				contentWidth = offered;
-				contentWidthMode = "shrink-to-fit";
-				offerOwnsWidth = true;
+			contentWidth = offered;
+			contentWidthMode = "shrink-to-fit";
+			offerOwnsWidth = true;
 		}
 	}
 
@@ -4137,28 +4137,28 @@ function measureAtomicInline(
 	);
 	let maxWidthCap: number | undefined;
 	if (typeof maxWidthValue === "number") {
-			maxWidthCap = maxWidthValue;
+		maxWidthCap = maxWidthValue;
 	} else if (
 		maxWidthValue &&
-			"percentage" in maxWidthValue &&
-			Number.isFinite(availableWidth) &&
-			availableWidth < Number.MAX_SAFE_INTEGER
+		"percentage" in maxWidthValue &&
+		Number.isFinite(availableWidth) &&
+		availableWidth < Number.MAX_SAFE_INTEGER
 	) {
-			maxWidthCap = (maxWidthValue.percentage / 100) * availableWidth;
+		maxWidthCap = (maxWidthValue.percentage / 100) * availableWidth;
 	}
 	if (maxWidthCap !== undefined) {
 		const cap = Math.max(0, maxWidthCap - horizontalBoxSpace);
 		if (cap < contentWidth) {
-				contentWidth = cap;
-				if (contentWidthMode === "indefinite") {
-					contentWidthMode = "shrink-to-fit";
-				}
+			contentWidth = cap;
+			if (contentWidthMode === "indefinite") {
+				contentWidthMode = "shrink-to-fit";
+			}
 		}
 	}
 
 	if (boxModel.height !== undefined) {
-			contentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
-			contentHeightMode = "definite";
+		contentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
+		contentHeightMode = "definite";
 	}
 
 	// The COMPOSED first child. A shadow host renders its shadow
@@ -4173,8 +4173,8 @@ function measureAtomicInline(
 		// shrinks the axis to fit. A sizing keyword on the root
 		// turns a passed width into the matching probe.
 		if (independentFormattingContext.style.widthSizing !== widthSizing) {
-				independentFormattingContext.style.widthSizing = widthSizing;
-				independentFormattingContext.invalidate();
+			independentFormattingContext.style.widthSizing = widthSizing;
+			independentFormattingContext.invalidate();
 		}
 		independentFormattingContext.performLayout(
 			contentWidthMode === "definite" ||
@@ -4185,42 +4185,42 @@ function measureAtomicInline(
 		);
 		computePaintExtents(layout, independentFormattingContext, 0, 0);
 		contextLayouts++;
-			finalContentWidth = getComputedWidth(independentFormattingContext);
-			finalContentHeight = getComputedHeight(independentFormattingContext);
+		finalContentWidth = getComputedWidth(independentFormattingContext);
+		finalContentHeight = getComputedHeight(independentFormattingContext);
 	} else {
 		const contentStart = flatFirstRenderableChild(element);
 		if (contentStart) {
-				inlineBlockResult = breakNodes(
-					layout,
-					getPrincipalBox(layout, contentStart),
-					contentWidth,
-					contentWidthMode,
-				);
+			inlineBlockResult = breakNodes(
+				layout,
+				getPrincipalBox(layout, contentStart),
+				contentWidth,
+				contentWidthMode,
+			);
 		}
-			finalContentWidth = inlineBlockResult?.maxLineWidth ?? 0;
-			finalContentHeight = inlineBlockResult?.totalHeight ?? 0;
-			// Shrink-to-fit is the lesser of the preferred width and the
-			// space offered, so content that had to wrap takes all the
-			// space, not its longest line (css2 §10.3.5).
-			if (
-				contentStart &&
-				widthSizing === "fit-content" &&
-				contentWidthMode === "shrink-to-fit" &&
-				inlineBlockResult !== undefined &&
-				inlineBlockResult.lines.length > 1 &&
-				finalContentWidth < contentWidth
-			) {
-				const preferred = breakNodes(
-					layout,
-					getPrincipalBox(layout, contentStart),
-					Number.MAX_SAFE_INTEGER,
-					"indefinite",
-				).maxLineWidth;
-				finalContentWidth = Math.max(
-					finalContentWidth,
-					Math.min(preferred, contentWidth),
-				);
-			}
+		finalContentWidth = inlineBlockResult?.maxLineWidth ?? 0;
+		finalContentHeight = inlineBlockResult?.totalHeight ?? 0;
+		// Shrink-to-fit is the lesser of the preferred width and the
+		// space offered, so content that had to wrap takes all the
+		// space, not its longest line (css2 §10.3.5).
+		if (
+			contentStart &&
+			widthSizing === "fit-content" &&
+			contentWidthMode === "shrink-to-fit" &&
+			inlineBlockResult !== undefined &&
+			inlineBlockResult.lines.length > 1 &&
+			finalContentWidth < contentWidth
+		) {
+			const preferred = breakNodes(
+				layout,
+				getPrincipalBox(layout, contentStart),
+				Number.MAX_SAFE_INTEGER,
+				"indefinite",
+			).maxLineWidth;
+			finalContentWidth = Math.max(
+				finalContentWidth,
+				Math.min(preferred, contentWidth),
+			);
+		}
 	}
 
 	// And the REPORTED box. Content that cannot wrap (a single-line
@@ -4228,15 +4228,15 @@ function measureAtomicInline(
 	// stretching the box, or the text control's horizontal scroll
 	// has nothing to window.
 	if (maxWidthCap !== undefined) {
-			finalContentWidth = Math.min(
-				finalContentWidth,
-				Math.max(0, maxWidthCap - horizontalBoxSpace),
-			);
+		finalContentWidth = Math.min(
+			finalContentWidth,
+			Math.max(0, maxWidthCap - horizontalBoxSpace),
+		);
 	}
 
 	// An input whose UA parts are all empty text still occupies a row.
 	if (!element.firstChild && finalContentHeight === 0) {
-			finalContentHeight = 1;
+		finalContentHeight = 1;
 	}
 
 	// rows floor the content height (spec default 2). A floor, not
@@ -4247,15 +4247,15 @@ function measureAtomicInline(
 	if (getHTMLLocalName(element) === "textarea") {
 		if (boxModel.height === undefined) {
 			const rows = parseInt(getAttributeValue(element, "rows") ?? "", 10);
-				finalContentHeight = Math.max(
-					finalContentHeight,
-					Number.isFinite(rows) && rows > 0
-						? Math.min(rows, MAX_TEXTAREA_SIZE)
-						: 2,
-				);
+			finalContentHeight = Math.max(
+				finalContentHeight,
+				Number.isFinite(rows) && rows > 0
+					? Math.min(rows, MAX_TEXTAREA_SIZE)
+					: 2,
+			);
 		}
 		if (boxModel.width === undefined && !offerOwnsWidth) {
-				finalContentWidth = contentWidth;
+			finalContentWidth = contentWidth;
 		}
 	}
 
@@ -4268,30 +4268,30 @@ function measureAtomicInline(
 		element,
 	);
 	if (typeof minWidthValue === "number") {
-			finalContentWidth = Math.max(
-				finalContentWidth,
-				minWidthValue - horizontalBoxSpace,
-			);
+		finalContentWidth = Math.max(
+			finalContentWidth,
+			minWidthValue - horizontalBoxSpace,
+		);
 	}
 	const minHeightValue = getCellBlockSize(element, "min-height");
 	if (typeof minHeightValue === "number") {
-			finalContentHeight = Math.max(
-				finalContentHeight,
-				minHeightValue - verticalBoxSpace,
-			);
+		finalContentHeight = Math.max(
+			finalContentHeight,
+			minHeightValue - verticalBoxSpace,
+		);
 	}
 	if (typeof maxWidthValue === "number") {
-			finalContentWidth = Math.min(
-				finalContentWidth,
-				maxWidthValue - horizontalBoxSpace,
-			);
+		finalContentWidth = Math.min(
+			finalContentWidth,
+			maxWidthValue - horizontalBoxSpace,
+		);
 	}
 	const maxHeightValue = getCellBlockSize(element, "max-height");
 	if (typeof maxHeightValue === "number") {
-			finalContentHeight = Math.min(
-				finalContentHeight,
-				maxHeightValue - verticalBoxSpace,
-			);
+		finalContentHeight = Math.min(
+			finalContentHeight,
+			maxHeightValue - verticalBoxSpace,
+		);
 	}
 
 	// Explicit dimensions win, unless the request owned the width
@@ -4301,21 +4301,21 @@ function measureAtomicInline(
 	if (boxModel.width !== undefined && !offerOwnsWidth) {
 		let width = boxModel.width;
 		if (maxWidthCap !== undefined) {
-				width = Math.min(width, maxWidthCap);
+			width = Math.min(width, maxWidthCap);
 		}
 		if (typeof minWidthValue === "number") {
-				width = Math.max(width, minWidthValue);
+			width = Math.max(width, minWidthValue);
 		}
-			finalContentWidth = Math.max(0, width - horizontalBoxSpace);
+		finalContentWidth = Math.max(0, width - horizontalBoxSpace);
 	}
 	if (boxModel.height !== undefined) {
-			finalContentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
+		finalContentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
 	}
 
 	// Its lines align within the box it ended up in, as text-align
 	// asks, not within the space they were broken in.
 	if (inlineBlockResult !== undefined) {
-			inlineBlockResult.containerWidth = finalContentWidth;
+		inlineBlockResult.containerWidth = finalContentWidth;
 	}
 	return {
 		type: "inline-block",
