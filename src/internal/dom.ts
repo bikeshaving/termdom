@@ -17749,11 +17749,10 @@ function implicitlySubmit(input: HTMLInputElement): void {
 function resetControl(control: Element): void {
 	editedSinceChange.delete(control);
 	setUserValidity(control, false);
-	const slots = _(control) as unknown as {_resetControl?: () => void};
-	if (typeof slots._resetControl === "function") {
-		slots._resetControl();
-	} else if (isFormAssociatedCustom(control)) {
+	if (isFormAssociatedCustom(control)) {
 		enqueueCallbackReaction(control, "formResetCallback", []);
+	} else {
+		(_(control) as unknown as {_resetControl?: () => void})._resetControl?.();
 	}
 }
 

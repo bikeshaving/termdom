@@ -43,3 +43,35 @@ test("a form-associated custom element is disabled by its attribute or a fieldse
 	expect(control.matches(":disabled")).toBe(true);
 	expect(history).toEqual([true, false, true, false, true]);
 });
+
+test("resetting a form calls a form-associated custom element's formResetCallback", () => {
+	const window = createWindow("<!DOCTYPE html><body></body>");
+	const {document, customElements} = window;
+	let resets = 0;
+
+	class Control extends window.HTMLElement {
+		constructor() {
+			super();
+			this.attachInternals();
+		}
+
+		static get formAssociated(): boolean {
+			return true;
+		}
+
+		formResetCallback(): void {
+			resets++;
+		}
+	}
+
+	customElements.define("x-control", Control);
+
+	const form = document.createElement("form");
+	form.innerHTML = "<input value=\"a\"><x-control></x-control>";
+	document.body.append(form);
+	const input = form.querySelector("input")!;
+	input.value = "b";
+	form.reset();
+	expect(resets).toBe(1);
+	expect(input.value).toBe("a");
+});
