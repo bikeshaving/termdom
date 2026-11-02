@@ -5602,6 +5602,85 @@ function snapTrackSizes(tracks: GridTrack[], gap: number): number[] {
 	return sizes;
 }
 
+function buildTracks(
+	count: number,
+	base: number,
+	template: ExpandedTracks,
+	autoSizes: CSSValues.TrackSize[],
+	ownerSize: number,
+): GridTrack[] {
+	const tracks: GridTrack[] = [];
+	let implicit = 0;
+	for (let i = 0; i < count; i++) {
+		const line = base + i;
+		const explicit = line >= 0 && line < template.sizes.length;
+		const size = explicit
+			? template.sizes[line]
+			: autoSizes[implicit++ % autoSizes.length];
+		tracks.push(createTrack(size, ownerSize));
+	}
+	return tracks;
+}
+
+// css-grid-2 §7.2.3.2.
+function collapseAutoFit(
+	tracks: GridTrack[],
+	template: ExpandedTracks,
+	base: number,
+	occupiedTracks: Set<number>,
+): void {
+	if (!template.autoFit) {
+		return;
+	}
+	for (let i = 0; i < template.autoFit.count; i++) {
+		const index = template.autoFit.start + i - base;
+		if (index < 0 || index >= tracks.length) {
+			continue;
+		}
+		if (occupiedTracks.has(index)) {
+			continue;
+		}
+		tracks[index].collapsed = true;
+		tracks[index].base = 0;
+		tracks[index].growthLimit = 0;
+	}
+}
+
+function getTrackTotal(tracks: GridTrack[], gap: number): number {
+	let total = 0;
+	let live = 0;
+	for (const track of tracks) {
+		if (track.collapsed) {
+			continue;
+		}
+		total += track.base;
+		live++;
+	}
+	return total + gap * Math.max(0, live - 1);
+}
+
+// A line has two positions once tracks are spread by justify-content or
+// a gap. An area takes the inner pair, so the space between tracks
+// stays between them.
+function getLineStart(tracks: GridTrack[], line: number): number {
+	if (tracks.length === 0) {
+		return 0;
+	}
+	if (line >= tracks.length) {
+		const last = tracks[tracks.length - 1];
+		return last.position + last.base;
+	}
+	return tracks[Math.max(0, line)].position;
+}
+
+function getLineEnd(tracks: GridTrack[], line: number): number {
+	if (tracks.length === 0) {
+		return 0;
+	}
+	const track = tracks[Math.min(Math.max(0, line - 1), tracks.length - 1)];
+	return track.position + track.base;
+}
+
 // css-grid-2 §12.1. Columns before rows, because a row contribution is
 // a height, and a paragraph's height depends on where it wraps.
 function layoutGrid(
@@ -5747,50 +5826,6 @@ function layoutGrid(
 		item.rowEnd = item.rowStart + item.row.span;
 	}
 
-	const buildTracks = (
-		count: number,
-		base: number,
-		template: ExpandedTracks,
-		autoSizes: CSSValues.TrackSize[],
-		ownerSize: number,
-	): GridTrack[] => {
-		const tracks: GridTrack[] = [];
-		let implicit = 0;
-		for (let i = 0; i < count; i++) {
-			const line = base + i;
-			const explicit = line >= 0 && line < template.sizes.length;
-			const size = explicit
-				? template.sizes[line]
-				: autoSizes[implicit++ % autoSizes.length];
-			tracks.push(createTrack(size, ownerSize));
-		}
-		return tracks;
-	};
-
-	// css-grid-2 §7.2.3.2.
-	const collapseAutoFit = (
-		tracks: GridTrack[],
-		template: ExpandedTracks,
-		base: number,
-		occupiedTracks: Set<number>,
-	) => {
-		if (!template.autoFit) {
-			return;
-		}
-		for (let i = 0; i < template.autoFit.count; i++) {
-			const index = template.autoFit.start + i - base;
-			if (index < 0 || index >= tracks.length) {
-				continue;
-			}
-			if (occupiedTracks.has(index)) {
-				continue;
-			}
-			tracks[index].collapsed = true;
-			tracks[index].base = 0;
-			tracks[index].growthLimit = 0;
-		}
-	};
-
 	const occupiedColumns = new Set<number>();
 	const occupiedRows = new Set<number>();
 	for (const item of items) {
@@ -5833,20 +5868,7 @@ function layoutGrid(
 	};
 
 	let columnTracks = sizeColumns(definiteWidth ? innerWidth : NaN);
-	const getTotal = (tracks: GridTrack[], gap: number) => {
-		let total = 0;
-		let live = 0;
-		for (const track of tracks) {
-			if (track.collapsed) {
-				continue;
-			}
-			total += track.base;
-			live++;
-		}
-		return total + gap * Math.max(0, live - 1);
-	};
-
-	let columnsTotal = getTotal(columnTracks, columnGap);
+	let columnsTotal = getTrackTotal(columnTracks, columnGap);
 	// A shrink-to-fit grid that overflows its bound is re-sized against it.
 	if (
 		widthSpace === "shrink-to-fit" &&
@@ -5854,7 +5876,7 @@ function layoutGrid(
 		columnsTotal > innerWidth + EPSILON
 	) {
 		columnTracks = sizeColumns(innerWidth);
-		columnsTotal = getTotal(columnTracks, columnGap);
+		columnsTotal = getTrackTotal(columnTracks, columnGap);
 	}
 
 	const columnSizes = columnTracks.map((track) => track.base);
@@ -5895,14 +5917,14 @@ function layoutGrid(
 	};
 
 	let rowTracks = sizeRows(definiteHeight ? innerHeight : NaN);
-	let rowsTotal = getTotal(rowTracks, rowGap);
+	let rowsTotal = getTrackTotal(rowTracks, rowGap);
 	if (
 		heightSpace === "shrink-to-fit" &&
 		!Number.isNaN(innerHeight) &&
 		rowsTotal > innerHeight + EPSILON
 	) {
 		rowTracks = sizeRows(innerHeight);
-		rowsTotal = getTotal(rowTracks, rowGap);
+		rowsTotal = getTrackTotal(rowTracks, rowGap);
 	}
 
 	const width = widthSpace === "definite"
@@ -5948,32 +5970,11 @@ function layoutGrid(
 	node.result.gridColumnOffset = -columnBase || 0;
 	node.result.gridRowOffset = -rowBase || 0;
 
-	// A line has two positions once tracks are spread by justify-content or
-	// a gap. An area takes the inner pair, so the space between tracks
-	// stays between them.
-	const lineStart = (tracks: GridTrack[], line: number): number => {
-		if (tracks.length === 0) {
-			return 0;
-		}
-		if (line >= tracks.length) {
-			const last = tracks[tracks.length - 1];
-			return last.position + last.base;
-		}
-		return tracks[Math.max(0, line)].position;
-	};
-	const lineEnd = (tracks: GridTrack[], line: number): number => {
-		if (tracks.length === 0) {
-			return 0;
-		}
-		const track = tracks[Math.min(Math.max(0, line - 1), tracks.length - 1)];
-		return track.position + track.base;
-	};
-
 	for (const item of items) {
-		const areaLeft = lineStart(columnTracks, item.columnStart);
-		const areaRight = lineEnd(columnTracks, item.columnEnd);
-		const areaTop = lineStart(rowTracks, item.rowStart);
-		const areaBottom = lineEnd(rowTracks, item.rowEnd);
+		const areaLeft = getLineStart(columnTracks, item.columnStart);
+		const areaRight = getLineEnd(columnTracks, item.columnEnd);
+		const areaTop = getLineStart(rowTracks, item.rowStart);
+		const areaBottom = getLineEnd(rowTracks, item.rowEnd);
 
 		layoutGridItem(
 			node,
@@ -6016,8 +6017,6 @@ function layoutGrid(
 				rowBase,
 				contentLeft,
 				contentTop,
-				lineStart,
-				lineEnd,
 			),
 		);
 	}
@@ -6039,8 +6038,6 @@ function getAbsoluteGridArea(
 	rowBase: number,
 	contentLeft: number,
 	contentTop: number,
-	lineStart: (tracks: GridTrack[], line: number) => number,
-	lineEnd: (tracks: GridTrack[], line: number) => number,
 ): {left: number; top: number; width: number; height: number} | null {
 	const style = child.style;
 	const placed =
@@ -6077,7 +6074,7 @@ function getAbsoluteGridArea(
 		if (line.kind !== "line") {
 			return fallback;
 		}
-		const at = which === "start" ? lineStart : lineEnd;
+		const at = which === "start" ? getLineStart : getLineEnd;
 		return leading + at(tracks, line.index - base);
 	};
 
