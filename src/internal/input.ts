@@ -487,8 +487,6 @@ export class Input {
 	get mouseCaptureYielded(): boolean {
 		return this.captureYielded;
 	}
-
-	dispose(): void {}
 }
 
 export function dispatchInput(

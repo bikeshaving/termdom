@@ -1054,8 +1054,6 @@ export class TermDOM extends EventTarget {
 		// as typing.
 		const drained = slots.exchange.dispose();
 
-		slots.input.dispose();
-
 		if (slots.staticSibling) {
 			void slots.staticSibling.dispose();
 			slots.staticSibling = null;
