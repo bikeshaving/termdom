@@ -690,28 +690,7 @@ export class TermDOM extends EventTarget {
 
 		const document = this.document = this.window.document;
 		setReducedMotion(document, toReducedMotion(options.reducedMotion));
-		const requestPolicy: RequestPolicy = {
-			policies: parseContentSecurityPolicies(options.csp ?? ""),
-			signal: slots.loads.signal,
-			extend: (promise) => {
-				const lifetime = promise.then(() => {}, () => {});
-				const lifetimes = _(slots.fetchTarget).lifetimes;
-				lifetimes.add(lifetime);
-				void lifetime.then(() => lifetimes.delete(lifetime));
-			},
-			violate: (at, init) => {
-				const window = this.window as unknown as typeof globalThis;
-				dispatchAsUserAgent(
-					at as never,
-					constructInternal(() =>
-						new window.SecurityPolicyViolationEvent(
-							"securitypolicyviolation",
-							init,
-						),
-					) as never,
-				);
-			},
-		};
+		const requestPolicy = createRequestPolicy(this);
 
 		// The page's fetch is held to the policy and offered to the fetch
 		// listeners as the markup's loads are, and so are a frame's, which
@@ -816,35 +795,7 @@ export class TermDOM extends EventTarget {
 			slots.framebuffer,
 		);
 
-		// A canceled or untrusted beforeunload does not close.
-		exchange.addEventListener("beforeunload", (event) => {
-			if (
-				!event.isTrusted ||
-				event.defaultPrevented ||
-				(event as BeforeUnloadEvent).returnValue !== ""
-			) {
-				return;
-			}
-			closeTermDOM(this);
-		});
-
-		// A page can dispatch an event of the same name on the document.
-		// Only the exchange's own reach these. document.close() flushes the
-		// document into the scrollback and seals it. The next mutation
-		// starts a fresh one below it.
-		exchange.addEventListener("seal", (event) => {
-			if (
-				event.target === exchange && isAttached(this) && slots.renderCount > 0
-			) {
-				flushDocument(this);
-				slots.sealed = true;
-			}
-		});
-		exchange.addEventListener("terminalclose", (event) => {
-			if (event.target === exchange) {
-				closeTermDOM(this);
-			}
-		});
+		listenToExchange(this, exchange);
 	}
 
 	/**
@@ -890,110 +841,7 @@ export class TermDOM extends EventTarget {
 			}
 
 			started = true;
-			startExchange(slots.exchange, slots.input);
-			if (slots.transport.interactive) {
-				setDisplayType(slots.exchange, "bracketedPaste", true);
-				setDisplayType(slots.exchange, "focusReporting", true);
-				// So dispose can restore the title.
-				setDisplayType(slots.exchange, "titleStack", true);
-				if (this.document.title) {
-					void slots.exchange.setTitle(this.document.title);
-				}
-			}
-			syncMouseReporting(this);
-			syncHoverReporting(this);
-			// The terminal's background, asked first so the first frame can
-			// wait for it.
-			const schemeBefore = slots.exchange.colorScheme;
-			void negotiateColorScheme(slots.exchange).then(() => {
-				if (isAttached(this) && slots.exchange.colorScheme !== schemeBefore) {
-					slots.cascade.syncStylesheets();
-					syncMediaQueries(this.document);
-					void render(this);
-				}
-			});
-			// What colors the terminal shows, when the program leaves it to the
-			// terminal to say. Asked before DA1, like the background.
-			const depthSettled = slots.colorDepth === undefined
-				? negotiateColorDepth(slots.exchange).then((depth) => {
-					if (isAttached(this) && depth !== slots.framebuffer.colorDepth) {
-						rebind(slots.framebuffer, depth);
-						syncMediaQueries(this.document);
-						void render(this);
-					}
-				})
-				: Promise.resolve();
-			// A terminal answers in the order it was asked, so once it answers
-			// DA1, one that said nothing of its background never will.
-			const answered = queryDeviceAttributes(slots.exchange);
-			initializeCursorDetection(slots.exchange);
-			// A terminal that answers nothing is not waited on past the cursor
-			// question the anchor already waits for.
-			const cursor = slots.exchange.cursorDetectionPending;
-			const schemeSettled = (
-				cursor === null ? answered : Promise.race([answered, cursor])
-			).then(() => {
-				abandonColorSchemeQuery(slots.exchange);
-				abandonColorDepthQuery(slots.exchange);
-			});
-			void negotiateBidi(slots.exchange);
-			void negotiateGraphemeClusters(slots.exchange);
-			// Math draws its bars as overlines once the terminal has agreed
-			// to them, so what was measured before the answer measures again.
-			void negotiateOverline(slots.exchange).then((agreed) => {
-				if (agreed && isAttached(this)) {
-					invalidateTextMeasurement(slots.layout);
-					void render(this);
-				}
-			});
-			scrubProbeEcho(slots.exchange);
-			// After the erase, which is for the mode probes' echo. What was
-			// painted against the guessed cell repaints when the answer lands.
-			// When the cell sizes the page, the first frame waits for it, so
-			// the page never lays out against the guess.
-			const measuresCell = getCellSizeSetting(this.document) === "auto";
-			const cellAnswered = negotiateCellPixels(slots.exchange).then(
-				(cellChanged) => {
-					if (!isAttached(this)) {
-						return;
-					}
-					if (cellChanged) {
-						cellMeasured(this);
-					}
-					void render(this);
-				},
-			);
-			// The first frame is drawn in the colors the terminal chose and can
-			// show, and, when the cell sizes the page, at the size it reported.
-			// Input does not wait for any of them.
-			slots.firstFrame = Promise.all([
-				schemeSettled,
-				depthSettled,
-				...(measuresCell ? [cellAnswered] : []),
-			]).then(() => {});
-			// A font zoom resizes the grid, and the cell with it, so the cell
-			// is asked again. When the cell sizes the page, the page hears of
-			// the resize once, when the cell is known.
-			if (measuresCell) {
-				deferResizeEvent(slots.exchange);
-			}
-			slots.exchange.addEventListener("terminalresize", (event) => {
-				const {sizeChanged} = event as TerminalResizeEvent;
-				void negotiateCellPixels(slots.exchange).then((cellChanged) => {
-					if (!isAttached(this)) {
-						return;
-					}
-					if (cellChanged) {
-						cellMeasured(this);
-						void render(this);
-					} else if (sizeChanged && measuresCell) {
-						dispatchAsUserAgent(
-							this.window,
-							constructInternal(() => new this.window.Event("resize")),
-						);
-					}
-				});
-			});
+			startSession(this);
 			slots.lifecycle = "attached";
 			begun();
 
@@ -1225,6 +1073,173 @@ export class TermDOM extends EventTarget {
 		]).then(() => {});
 		return slots.disposal;
 	}
+}
+
+function createRequestPolicy(term: TermDOM): RequestPolicy {
+	const slots = _(term);
+	return {
+		policies: parseContentSecurityPolicies(slots.staticOptions.csp ?? ""),
+		signal: slots.loads.signal,
+		extend: (promise) => {
+			const lifetime = promise.then(() => {}, () => {});
+			const lifetimes = _(slots.fetchTarget).lifetimes;
+			lifetimes.add(lifetime);
+			void lifetime.then(() => lifetimes.delete(lifetime));
+		},
+		violate: (at, init) => {
+			const window = term.window as unknown as typeof globalThis;
+			dispatchAsUserAgent(
+				at as never,
+				constructInternal(() =>
+					new window.SecurityPolicyViolationEvent(
+						"securitypolicyviolation",
+						init,
+					),
+				) as never,
+			);
+		},
+	};
+}
+
+function listenToExchange(term: TermDOM, exchange: Exchange): void {
+	const slots = _(term);
+	// A canceled or untrusted beforeunload does not close.
+	exchange.addEventListener("beforeunload", (event) => {
+		if (
+			!event.isTrusted ||
+			event.defaultPrevented ||
+			(event as BeforeUnloadEvent).returnValue !== ""
+		) {
+			return;
+		}
+		closeTermDOM(term);
+	});
+
+	// A page can dispatch an event of the same name on the document.
+	// Only the exchange's own reach these. document.close() flushes the
+	// document into the scrollback and seals it. The next mutation
+	// starts a fresh one below it.
+	exchange.addEventListener("seal", (event) => {
+		if (
+			event.target === exchange && isAttached(term) && slots.renderCount > 0
+		) {
+			flushDocument(term);
+			slots.sealed = true;
+		}
+	});
+	exchange.addEventListener("terminalclose", (event) => {
+		if (event.target === exchange) {
+			closeTermDOM(term);
+		}
+	});
+}
+
+function startSession(term: TermDOM): void {
+	const slots = _(term);
+	startExchange(slots.exchange, slots.input);
+	if (slots.transport.interactive) {
+		setDisplayType(slots.exchange, "bracketedPaste", true);
+		setDisplayType(slots.exchange, "focusReporting", true);
+		// So dispose can restore the title.
+		setDisplayType(slots.exchange, "titleStack", true);
+		if (term.document.title) {
+			void slots.exchange.setTitle(term.document.title);
+		}
+	}
+	syncMouseReporting(term);
+	syncHoverReporting(term);
+	// The terminal's background, asked first so the first frame can
+	// wait for it.
+	const schemeBefore = slots.exchange.colorScheme;
+	void negotiateColorScheme(slots.exchange).then(() => {
+		if (isAttached(term) && slots.exchange.colorScheme !== schemeBefore) {
+			slots.cascade.syncStylesheets();
+			syncMediaQueries(term.document);
+			void render(term);
+		}
+	});
+	// What colors the terminal shows, when the program leaves it to the
+	// terminal to say. Asked before DA1, like the background.
+	const depthSettled = slots.colorDepth === undefined
+		? negotiateColorDepth(slots.exchange).then((depth) => {
+			if (isAttached(term) && depth !== slots.framebuffer.colorDepth) {
+				rebind(slots.framebuffer, depth);
+				syncMediaQueries(term.document);
+				void render(term);
+			}
+		})
+		: Promise.resolve();
+	// A terminal answers in the order it was asked, so once it answers
+	// DA1, one that said nothing of its background never will.
+	const answered = queryDeviceAttributes(slots.exchange);
+	initializeCursorDetection(slots.exchange);
+	// A terminal that answers nothing is not waited on past the cursor
+	// question the anchor already waits for.
+	const cursor = slots.exchange.cursorDetectionPending;
+	const schemeSettled = (
+		cursor === null ? answered : Promise.race([answered, cursor])
+	).then(() => {
+		abandonColorSchemeQuery(slots.exchange);
+		abandonColorDepthQuery(slots.exchange);
+	});
+	void negotiateBidi(slots.exchange);
+	void negotiateGraphemeClusters(slots.exchange);
+	// Math draws its bars as overlines once the terminal has agreed
+	// to them, so what was measured before the answer measures again.
+	void negotiateOverline(slots.exchange).then((agreed) => {
+		if (agreed && isAttached(term)) {
+			invalidateTextMeasurement(slots.layout);
+			void render(term);
+		}
+	});
+	scrubProbeEcho(slots.exchange);
+	// After the erase, which is for the mode probes' echo. What was
+	// painted against the guessed cell repaints when the answer lands.
+	// When the cell sizes the page, the first frame waits for it, so
+	// the page never lays out against the guess.
+	const measuresCell = getCellSizeSetting(term.document) === "auto";
+	const cellAnswered = negotiateCellPixels(slots.exchange).then(
+		(cellChanged) => {
+			if (!isAttached(term)) {
+				return;
+			}
+			if (cellChanged) {
+				cellMeasured(term);
+			}
+			void render(term);
+		},
+	);
+	// The first frame is drawn in the colors the terminal chose and can
+	// show, and, when the cell sizes the page, at the size it reported.
+	// Input does not wait for any of them.
+	slots.firstFrame = Promise.all([
+		schemeSettled,
+		depthSettled,
+		...(measuresCell ? [cellAnswered] : []),
+	]).then(() => {});
+	// A font zoom resizes the grid, and the cell with it, so the cell
+	// is asked again. When the cell sizes the page, the page hears of
+	// the resize once, when the cell is known.
+	if (measuresCell) {
+		deferResizeEvent(slots.exchange);
+	}
+	slots.exchange.addEventListener("terminalresize", (event) => {
+		const {sizeChanged} = event as TerminalResizeEvent;
+		void negotiateCellPixels(slots.exchange).then((cellChanged) => {
+			if (!isAttached(term)) {
+				return;
+			}
+			if (cellChanged) {
+				cellMeasured(term);
+				void render(term);
+			} else if (sizeChanged && measuresCell) {
+				dispatchAsUserAgent(
+					term.window,
+					constructInternal(() => new term.window.Event("resize")),
+				);
+			}
+		});
+	});
 }
 
 /**
