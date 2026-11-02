@@ -995,133 +995,6 @@ export function installInterfaces(
 		}
 	}
 
-	// The definition an object of `type` runs for `owner`'s `key`: a
-	// descendant's that moved up into it, then the owner's own, then one
-	// it inherits.
-	function makeResolve(owner: Constructor, key: string): Resolve | null {
-		let base: PropertyDescriptor | undefined = originals
-			.get(owner.prototype)
-			?.get(key);
-		if (base === undefined) {
-			for (const ancestor of ancestors(owner)) {
-				base =
-					originals.get(ancestor.prototype)?.get(key) ??
-					Object.getOwnPropertyDescriptor(ancestor.prototype, key);
-				if (base !== undefined) {
-					break;
-				}
-			}
-		}
-		if (base === undefined) {
-			for (
-				let prototype = Object.getPrototypeOf(owner.prototype) as object | null;
-				prototype !== null && base === undefined;
-				prototype = Object.getPrototypeOf(prototype) as object | null
-			) {
-				base = Object.getOwnPropertyDescriptor(prototype, key);
-			}
-		}
-		let overrides: Map<Constructor, PropertyDescriptor> | null = null;
-		for (const type of misplacedTypes.get(key) ?? []) {
-			if (type !== owner && inheritsInterface(type, owner)) {
-				overrides ??= new Map();
-				overrides.set(type, originals.get(type.prototype)!.get(key)!);
-			}
-		}
-		if (overrides === null) {
-			return base === undefined
-				? null
-				: {
-					fixed: base,
-					direct: undefined,
-					enter: enterFixed,
-					leave: leaveFixed,
-				};
-		}
-		const overridden = overrides;
-		const chainFor = (type: Constructor) => {
-			const chain: Array<PropertyDescriptor | undefined> = [];
-			for (const current of [type, ...ancestors(type)]) {
-				if (current === owner) {
-					break;
-				}
-				const override = overridden.get(current);
-				if (override !== undefined) {
-					chain.push(override);
-				}
-			}
-			chain.push(base);
-			return chain;
-		};
-		if (![...overridden.values()].some(callsSuper)) {
-			const firsts = new WeakMap<Constructor, PropertyDescriptor | undefined>();
-			let lastType: Constructor | null = null;
-			let lastFirst: PropertyDescriptor | undefined;
-			let priorType: Constructor | null = null;
-			let priorFirst: PropertyDescriptor | undefined;
-			onForgetClasses(() => {
-				lastType = null;
-				lastFirst = undefined;
-				priorType = null;
-				priorFirst = undefined;
-			});
-			const direct = (type: Constructor) => {
-				if (type === lastType) {
-					return lastFirst;
-				}
-				if (type === priorType) {
-					return priorFirst;
-				}
-				if (!firsts.has(type)) {
-					firsts.set(type, chainFor(type)[0]);
-				}
-				priorType = lastType;
-				priorFirst = lastFirst;
-				lastType = type;
-				lastFirst = firsts.get(type);
-				return lastFirst;
-			};
-			return {fixed: undefined, direct, enter: direct, leave() {}};
-		}
-		const chains = new WeakMap<
-			Constructor,
-			Array<PropertyDescriptor | undefined>
-		>();
-		const objects: unknown[] = [];
-		const depths: number[] = [];
-		let calls = 0;
-		let lastType: Constructor | null = null;
-		let lastChain: Array<PropertyDescriptor | undefined> = [];
-		onForgetClasses(() => {
-			lastType = null;
-			lastChain = [];
-		});
-		return {
-			fixed: undefined,
-			direct: undefined,
-			enter(type, object) {
-				let chain = type === lastType ? lastChain : chains.get(type);
-				if (chain === undefined) {
-					chain = chainFor(type);
-					chains.set(type, chain);
-				}
-				lastType = type;
-				lastChain = chain;
-				const depth = calls > 0 && objects[calls - 1] === object
-					? Math.min(depths[calls - 1] + 1, chain.length - 1)
-					: 0;
-				objects[calls] = object;
-				depths[calls] = depth;
-				calls++;
-				return chain[depth];
-			},
-			leave() {
-				calls--;
-				objects[calls] = undefined;
-			},
-		};
-	}
-
 	const wrapped = new Map<Constructor, Map<string, PropertyDescriptor>>();
 	for (const [name, type] of byName) {
 		const idl = DOM_INTERFACES[name];
@@ -1132,7 +1005,7 @@ export function installInterfaces(
 			if (member.kind === "c") {
 				continue;
 			}
-			const resolve = makeResolve(type, key);
+			const resolve = makeResolve(originals, misplacedTypes, type, key);
 			const onObject = member.unforgeable || idl.global === true;
 			if (
 				resolve === null || (onObject && ![type, ...ancestors(type)].some((t) =>
@@ -1254,6 +1127,133 @@ export function installInterfaces(
 	onSeal(defineInstanceMembers);
 	listingClassCaches = false;
 	return interfaceObjects;
+}
+
+// The definition an object of `type` runs for `owner`'s `key`: a
+// descendant's that moved up into it, then the owner's own, then one
+// it inherits.
+function makeResolve(
+	originals: ReadonlyMap<object, Map<string, PropertyDescriptor>>,
+	misplacedTypes: ReadonlyMap<string, Constructor[]>,
+	owner: Constructor,
+	key: string,
+): Resolve | null {
+	let base: PropertyDescriptor | undefined = originals
+		.get(owner.prototype)
+		?.get(key);
+	if (base === undefined) {
+		for (const ancestor of ancestors(owner)) {
+			base =
+				originals.get(ancestor.prototype)?.get(key) ??
+				Object.getOwnPropertyDescriptor(ancestor.prototype, key);
+			if (base !== undefined) {
+				break;
+			}
+		}
+	}
+	if (base === undefined) {
+		for (
+			let prototype = Object.getPrototypeOf(owner.prototype) as object | null;
+			prototype !== null && base === undefined;
+			prototype = Object.getPrototypeOf(prototype) as object | null
+		) {
+			base = Object.getOwnPropertyDescriptor(prototype, key);
+		}
+	}
+	let overrides: Map<Constructor, PropertyDescriptor> | null = null;
+	for (const type of misplacedTypes.get(key) ?? []) {
+		if (type !== owner && inheritsInterface(type, owner)) {
+			overrides ??= new Map();
+			overrides.set(type, originals.get(type.prototype)!.get(key)!);
+		}
+	}
+	if (overrides === null) {
+		return base === undefined
+			? null
+			: {fixed: base, direct: undefined, enter: enterFixed, leave: leaveFixed};
+	}
+	const overridden = overrides;
+	const chainFor = (type: Constructor) => {
+		const chain: Array<PropertyDescriptor | undefined> = [];
+		for (const current of [type, ...ancestors(type)]) {
+			if (current === owner) {
+				break;
+			}
+			const override = overridden.get(current);
+			if (override !== undefined) {
+				chain.push(override);
+			}
+		}
+		chain.push(base);
+		return chain;
+	};
+	if (![...overridden.values()].some(callsSuper)) {
+		const firsts = new WeakMap<Constructor, PropertyDescriptor | undefined>();
+		let lastType: Constructor | null = null;
+		let lastFirst: PropertyDescriptor | undefined;
+		let priorType: Constructor | null = null;
+		let priorFirst: PropertyDescriptor | undefined;
+		onForgetClasses(() => {
+			lastType = null;
+			lastFirst = undefined;
+			priorType = null;
+			priorFirst = undefined;
+		});
+		const direct = (type: Constructor) => {
+			if (type === lastType) {
+				return lastFirst;
+			}
+			if (type === priorType) {
+				return priorFirst;
+			}
+			if (!firsts.has(type)) {
+				firsts.set(type, chainFor(type)[0]);
+			}
+			priorType = lastType;
+			priorFirst = lastFirst;
+			lastType = type;
+			lastFirst = firsts.get(type);
+			return lastFirst;
+		};
+		return {fixed: undefined, direct, enter: direct, leave() {}};
+	}
+	const chains = new WeakMap<
+		Constructor,
+		Array<PropertyDescriptor | undefined>
+	>();
+	const objects: unknown[] = [];
+	const depths: number[] = [];
+	let calls = 0;
+	let lastType: Constructor | null = null;
+	let lastChain: Array<PropertyDescriptor | undefined> = [];
+	onForgetClasses(() => {
+		lastType = null;
+		lastChain = [];
+	});
+	return {
+		fixed: undefined,
+		direct: undefined,
+		enter(type, object) {
+			let chain = type === lastType ? lastChain : chains.get(type);
+			if (chain === undefined) {
+				chain = chainFor(type);
+				chains.set(type, chain);
+			}
+			lastType = type;
+			lastChain = chain;
+			const depth = calls > 0 && objects[calls - 1] === object
+				? Math.min(depths[calls - 1] + 1, chain.length - 1)
+				: 0;
+			objects[calls] = object;
+			depths[calls] = depth;
+			calls++;
+			return chain[depth];
+		},
+		leave() {
+			calls--;
+			objects[calls] = undefined;
+		},
+	};
 }
 
 // Every window wraps the same operations, so each is parsed once.
