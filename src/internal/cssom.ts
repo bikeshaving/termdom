@@ -6511,27 +6511,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 defineLonghandIndices(ComputedStyleDeclaration.prototype);
 defineLonghandIndices(PseudoStyleDeclaration.prototype);
 
-function getPseudoTransitionValue(
-	declaration: PseudoStyleDeclaration,
-	property: string,
-): string | null {
-	const declarationSlots = _(declaration);
-	const cascade = declarationSlots.cascade;
-	if (
-		cascade === null ||
-		declarationSlots.element === null ||
-		cascade.activeTransitions.size === 0
-	) {
-		return null;
-	}
-	return getTransitionValue(
-		cascade,
-		declarationSlots.element,
-		declarationSlots.pseudoElement,
-		property,
-	);
-}
-
 // The same cascade with the pseudo-element's own node in place of the
 // element. One view per node: composition may drop a node and make
 // another, and a view naming the old one would measure a rect no layout
@@ -6557,24 +6536,6 @@ function getBoxView(
 		declarationSlots.boxView = view;
 	}
 	return view;
-}
-
-// A transitioning value reaches the element's descendants through
-// inheritance, so the subtree under each transitioning element is what
-// the style cache cannot hold.
-function isTransitioning(cascade: Cascade, element: Element): boolean {
-	const active = cascade.activeTransitions;
-	if (active.size === 0) {
-		return false;
-	}
-	for (let node: Element | null = element;
-		node;
-		node = flatParentElement(node)) {
-		if (active.has(node)) {
-			return true;
-		}
-	}
-	return false;
 }
 
 // A declaration of nothing, which CSSOM specifies for a bad pseudo
@@ -9451,6 +9412,45 @@ function getResolvedStyle(
 	return getIndexedDeclaration(
 		cascade.declarationFor(element),
 	) as unknown as globalThis.CSSStyleDeclaration;
+}
+
+function getPseudoTransitionValue(
+	declaration: PseudoStyleDeclaration,
+	property: string,
+): string | null {
+	const declarationSlots = _(declaration);
+	const cascade = declarationSlots.cascade;
+	if (
+		cascade === null ||
+		declarationSlots.element === null ||
+		cascade.activeTransitions.size === 0
+	) {
+		return null;
+	}
+	return getTransitionValue(
+		cascade,
+		declarationSlots.element,
+		declarationSlots.pseudoElement,
+		property,
+	);
+}
+
+// A transitioning value reaches the element's descendants through
+// inheritance, so the subtree under each transitioning element is what
+// the style cache cannot hold.
+function isTransitioning(cascade: Cascade, element: Element): boolean {
+	const active = cascade.activeTransitions;
+	if (active.size === 0) {
+		return false;
+	}
+	for (let node: Element | null = element;
+		node;
+		node = flatParentElement(node)) {
+		if (active.has(node)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 interface QueuedTransitionEvent {
