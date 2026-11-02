@@ -7586,15 +7586,6 @@ function paintsOwnBox(layout: Layout, node: LayoutNode): boolean {
 		getComputedValue(element, "display") === "list-item";
 }
 
-/**
- * Checks each frame's layout against a solve from nothing, for tests:
- * every box where a solve that forgot every cache would place it. Run at
- * every frame, not every solve, since a change that wrongly asks for no
- * solve leaves the last one standing. Set, a box placed elsewhere throws,
- * naming the boxes.
- */
-export const layoutCheck = {enabled: false, checked: 0};
-
 // Every box of the document's tree and of the formatting contexts boxes
 // in it lay out for themselves.
 function forEachLayoutNode(
@@ -7700,8 +7691,14 @@ function checkTreeShape(layout: Layout): string[] {
 	return problems;
 }
 
+/**
+ * Checks each frame's layout against a solve from nothing, for tests:
+ * every box where a solve that forgot every cache would place it. Run at
+ * every frame, not every solve, since a change that wrongly asks for no
+ * solve leaves the last one standing. A box placed elsewhere throws,
+ * naming the boxes.
+ */
 export function checkLayoutFromScratch(layout: Layout): void {
-	layoutCheck.checked++;
 	const shape = checkTreeShape(layout);
 	if (shape.length > 0) {
 		throw new Error(
@@ -7717,8 +7714,10 @@ export function checkLayoutFromScratch(layout: Layout): void {
 			: `${rect.x},${rect.y} ${rect.width}x${rect.height}`;
 	});
 	const before = describe();
-	// The frame's own damage stands: the check repaints nothing.
+	// The frame's own damage and solve count stand: the check repaints
+	// nothing and counts as no solve.
 	const damage = [...layout.damage];
+	const solves = layout.solves;
 	const wholeDamage = layout.wholeDamage;
 	const geometryMoved = layout.geometryMoved;
 	// Every box derived again and styled again, then solved with nothing
@@ -7729,6 +7728,7 @@ export function checkLayoutFromScratch(layout: Layout): void {
 	layout.damage = damage;
 	layout.wholeDamage = wholeDamage;
 	layout.geometryMoved = geometryMoved;
+	layout.solves = solves;
 	const after = describe();
 	const differences: string[] = [];
 	for (let index = 0; index < elements.length; index++) {

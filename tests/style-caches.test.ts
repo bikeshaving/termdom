@@ -2,7 +2,6 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {getBoxModel, getDeclaredDisplay} from "../src/internal/cssom.ts";
-import {layoutCheck} from "../src/internal/layout.ts";
 import {_} from "../src/internal/slots.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
@@ -221,24 +220,18 @@ test("a block's color change lays out none of its inlines again, and an inline's
 	const p = document.querySelector("p")!;
 	const b = document.querySelector("b")!;
 	const layout = (_(dom) as unknown as {layout: {solves: number}}).layout;
-	// The check lays a frame out from scratch, which counts as solves.
-	layoutCheck.enabled = false;
-	try {
-		const solves = layout.solves;
-		for (const step of ["add", "remove", "add"] as const) {
-			p.classList[step]("on");
-			await nextFrame(dom);
-		}
-		expect(layout.solves).toBe(solves);
-		expect(window.getComputedStyle(b).color).toBe("rgb(255, 255, 255)");
-		b.classList.add("wide");
+	const solves = layout.solves;
+	for (const step of ["add", "remove", "add"] as const) {
+		p.classList[step]("on");
 		await nextFrame(dom);
-		expect(layout.solves).toBeGreaterThan(solves);
-		expect(terminal.getPlainText()).toContain("one   two   three");
-	} finally {
-		layoutCheck.enabled = true;
-		dom.dispose();
 	}
+	expect(layout.solves).toBe(solves);
+	expect(window.getComputedStyle(b).color).toBe("rgb(255, 255, 255)");
+	b.classList.add("wide");
+	await nextFrame(dom);
+	expect(layout.solves).toBeGreaterThan(solves);
+	expect(terminal.getPlainText()).toContain("one   two   three");
+	dom.dispose();
 });
 
 test("a class that sets the background shorthand sends nothing to layout", async () => {

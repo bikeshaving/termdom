@@ -109,7 +109,6 @@ import {
 	framePainted,
 	invalidateTextMeasurement,
 	Layout,
-	layoutCheck,
 	takeDamageBands,
 } from "./internal/layout.ts";
 import {
@@ -1896,7 +1895,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		checkStylesFromScratch(termDOMSlots.cascade);
 	}
 	termDOMSlots.layout.performLayout();
-	if (import.meta.litest && layoutCheck.enabled) {
+	if (import.meta.litest) {
 		checkLayoutFromScratch(termDOMSlots.layout);
 	}
 	clampScrollOffsets(termDOM.document);
