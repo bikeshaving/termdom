@@ -7316,23 +7316,7 @@ export class Cascade {
 		this.document = window.document;
 
 		documentCascades.set(this.document, this);
-		window.getComputedStyle = windowMember(
-			window,
-			"getComputedStyle",
-			(
-				element: Element,
-				pseudoElt?: string | null,
-			): globalThis.CSSStyleDeclaration =>
-				getPageView(
-					getResolvedStyle(this, element, pseudoElt) as unknown as
-						CSSStyleDeclaration,
-					element,
-					pseudoElt ?? "",
-				) as unknown as globalThis.CSSStyleDeclaration,
-		) as typeof window.getComputedStyle;
-
-		setupInvalidationHooks(this);
-
+		installWindowMembers(this);
 		parseStylesheets(this);
 	}
 
@@ -12794,10 +12778,27 @@ export const CSSOM_INTERFACES = {
 	CSSStyleProperties,
 };
 
-function setupInvalidationHooks(cascade: Cascade): void {
+// The window's getComputedStyle and CSS namespace, which read this
+// cascade.
+function installWindowMembers(cascade: Cascade): void {
+	const window = cascade.window;
+	window.getComputedStyle = windowMember(
+		window,
+		"getComputedStyle",
+		(
+			element: Element,
+			pseudoElt?: string | null,
+		): globalThis.CSSStyleDeclaration =>
+			getPageView(
+				getResolvedStyle(cascade, element, pseudoElt) as unknown as
+					CSSStyleDeclaration,
+				element,
+				pseudoElt ?? "",
+			) as unknown as globalThis.CSSStyleDeclaration,
+	) as typeof window.getComputedStyle;
 	// An error thrown out of a constructed sheet belongs to this realm.
-	cssomWindow = cascade.window;
-	Object.assign(cascade.window, {CSS: createCSSNamespace(cascade.document)});
+	cssomWindow = window;
+	Object.assign(window, {CSS: createCSSNamespace(cascade.document)});
 }
 
 /** The element's inline style declaration, one per element for its lifetime. */
