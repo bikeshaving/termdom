@@ -54,7 +54,7 @@
     "bidi-js": "1.1.0",
     "css-tree": "^3.2.1",
     "linebreak": "1.1.0",
-    "parse5": "^8.0.1"
+    "parse5": "^8.1.0"
   },
   "peerDependencies": {
     "node-pty": "^1.1.0"

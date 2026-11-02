@@ -53,10 +53,10 @@ const CORPUS: Array<[string, string]> = [
 	["<p>a &amp; b &lt; c &gt; d</p>", "<p>a &amp; b &lt; c &gt; d</p>"],
 	["<p>&nbsp;</p>", "<p>&nbsp;</p>"],
 	["<p>&lt;script&gt;</p>", "<p>&lt;script&gt;</p>"],
-	// Escapes in attributes: the quote and the ampersand, but not the angles.
+	// Escapes in attributes: the quote, the ampersand and the angles.
 	['<p title="a &amp; b"></p>', '<p title="a &amp; b"></p>'],
 	['<p title="&quot;quoted&quot;"></p>', '<p title="&quot;quoted&quot;"></p>'],
-	['<p title="a < b > c"></p>', '<p title="a < b > c"></p>'],
+	['<p title="a < b > c"></p>', '<p title="a &lt; b &gt; c"></p>'],
 	['<p title="&nbsp;"></p>', '<p title="&nbsp;"></p>'],
 	// Raw text takes no escaping at all.
 	[

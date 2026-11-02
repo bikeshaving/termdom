@@ -36851,7 +36851,9 @@ function escapeAttribute(value: string): string {
 	return value
 		.replace(/&/g, "&amp;")
 		.replace(/\u00a0/g, "&nbsp;")
-		.replace(/"/g, "&quot;");
+		.replace(/"/g, "&quot;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
 }
 
 function getAttributeSerializedName(attribute: Attr): string {
