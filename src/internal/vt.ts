@@ -41,6 +41,12 @@ const MAX_SUBPARAMS = 8;
 const MAX_OSC = 4096;
 const MAX_DCS = 64;
 
+// Printable characters, ending before a high surrogate whose pair the
+// text may cut, and a CSI with no control inside it.
+const PRINTABLE_RUN =
+	/[^\x00-\x1f\x7f-\x9f]*[^\x00-\x1f\x7f-\x9f\ud800-\udbff]/y;
+const CSI_SEQUENCE = /\x1b\[[<-?]?[\d:;]*[ -/]*[@-~]/y;
+
 // The DEC special graphics set, for line drawing, from _ to ~.
 const DEC_GRAPHICS =
 	" ◆▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£·";
@@ -169,14 +175,16 @@ export interface ParserHandlers {
  * reads it, with a sequence or a surrogate pair that one text cuts going
  * on in the next. "input" is one sequence a terminal sends, read from its
  * ESC: a control inside it belongs to it, and a string ends only at BEL
- * or ST.
+ * or ST. An "input" read finds where the sequence ends, and the caller
+ * decodes it from the text.
  */
 export type ParseMode = "output" | "input";
 
 /**
- * The DEC state machine. It reads text one code point at a time and
- * keeps the sequence in progress, whose prefix, parameters and
- * intermediates a handler reads when the sequence ends.
+ * The DEC state machine. It reads text one code point at a time, or a
+ * printable run or a whole CSI at once, and keeps the sequence in
+ * progress, whose prefix, parameters and intermediates a handler reads
+ * when the sequence ends.
  */
 export class Parser {
 	handlers: ParserHandlers;
@@ -206,6 +214,16 @@ export class Parser {
 	 */
 	parse(text: string, from = 0, mode: ParseMode = "output"): number {
 		for (let index = from; index < text.length; index++) {
+			if (this.state === GROUND && this.highSurrogate === 0) {
+				const end = this.readRun(text, index, mode);
+				if (end !== -1) {
+					if (mode === "input") {
+						return end;
+					}
+					index = end - 1;
+					continue;
+				}
+			}
 			const code = text.charCodeAt(index);
 			if (mode === "output") {
 				this.read(code);
@@ -230,6 +248,76 @@ export class Parser {
 			this.state = GROUND;
 		}
 		return -1;
+	}
+
+	/**
+	 * Reads the printable characters or the whole CSI at `index` with one
+	 * regular expression, and returns where they end, or -1 when neither
+	 * starts there. An "input" read skips the CSI's parameters. A high surrogate inside the run pairs with the unit
+	 * after it, or is U+FFFD followed by that unit, as read() takes them.
+	 */
+	readRun(text: string, index: number, mode: ParseMode): number {
+		PRINTABLE_RUN.lastIndex = index;
+		if (PRINTABLE_RUN.test(text)) {
+			const end = PRINTABLE_RUN.lastIndex;
+			for (; index < end; index++) {
+				let code = text.charCodeAt(index);
+				if (code >= 0xd800 && code <= 0xdbff) {
+					const next = text.charCodeAt(++index);
+					if (next >= 0xdc00 && next <= 0xdfff) {
+						code = ((code - 0xd800) << 10) + (next - 0xdc00) + 0x10000;
+					} else {
+						this.handlers.print(0xfffd);
+						code = next;
+					}
+				}
+				this.handlers.print(code);
+			}
+			return end;
+		}
+		CSI_SEQUENCE.lastIndex = index;
+		if (!CSI_SEQUENCE.test(text)) {
+			return -1;
+		}
+		const end = CSI_SEQUENCE.lastIndex;
+		if (mode === "output") {
+			this.readCSI(text, index + 2, end - 1);
+			this.handlers.csi(text[end - 1]);
+		}
+		return end;
+	}
+
+	// Sets the prefix, parameters and intermediates of a CSI from the
+	// bytes between its opener and its final byte, as consume() would.
+	readCSI(text: string, start: number, end: number): void {
+		const params = [[0]];
+		let param = params[0];
+		let index = start;
+		const first = text.charCodeAt(index);
+		this.prefix = "";
+		if (first >= 0x3c && first <= 0x3f) {
+			this.prefix = text[index++];
+		}
+		for (; index < end; index++) {
+			const code = text.charCodeAt(index);
+			if (code >= 0x30 && code <= 0x39) {
+				const last = param.length - 1;
+				param[last] = Math.min(param[last] * 10 + code - 0x30, 0xffff);
+			} else if (code === 0x3b) {
+				if (params.length < MAX_PARAMS) {
+					param = [0];
+					params.push(param);
+				}
+			} else if (code === 0x3a) {
+				if (param.length < MAX_SUBPARAMS) {
+					param.push(0);
+				}
+			} else {
+				break;
+			}
+		}
+		this.params = params;
+		this.intermediates = text.slice(index, end);
 	}
 
 	read(code: number): void {
