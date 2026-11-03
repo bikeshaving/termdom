@@ -537,6 +537,16 @@ export interface TermDOMEventMap {
 // takes its streams for good.
 const transportUsers = new WeakMap<TerminalTransport, TermDOM>();
 
+// The sessions holding errors not yet written. However the process ends,
+// by dispose, process.exit(), a signal or a crash, its exit writes what is
+// left, after the transport has restored the terminal.
+const sessionsHoldingErrors = new Set<TermDOM>();
+
+// The sessions whose document a stdout that is not a terminal has not
+// been given. It gets the document once, as it stands when the session
+// ends. An exit before dispose() prints it.
+const sessionsUnprinted = new Set<TermDOM>();
+
 interface TermDOMSlots extends EventTargetSlots {
 	framebuffer: Framebuffer;
 	layout: Layout;
@@ -967,7 +977,7 @@ export class TermDOM extends EventTarget {
 			? "\r\n"
 			: "\n";
 		if (html === undefined) {
-			markPrinted(this);
+			sessionsUnprinted.delete(this);
 		}
 		const output = html === undefined
 			? renderStatic(this, lineEnding)
@@ -1324,15 +1334,6 @@ function failTermDOM(termDOM: TermDOM): void {
 	})();
 }
 
-// The sessions holding errors not yet written. However the process ends,
-// by dispose, process.exit(), a signal or a crash, its exit writes what is
-// left, after the transport has restored the terminal.
-const sessionsHoldingErrors = new Set<TermDOM>();
-
-// The sessions whose document a stdout that is not a terminal has not
-// been given. It gets the document once, as it stands when the session
-// ends. An exit before dispose() prints it.
-const sessionsUnprinted = new Set<TermDOM>();
 let exitHookInstalled = false;
 
 function installExitHook(): void {
@@ -1730,10 +1731,6 @@ function takeUnprinted(termDOM: TermDOM): string | null {
 		return null;
 	}
 	return renderStatic(termDOM, "\n") || null;
-}
-
-function markPrinted(termDOM: TermDOM): void {
-	sessionsUnprinted.delete(termDOM);
 }
 
 /**
