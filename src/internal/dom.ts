@@ -41891,7 +41891,7 @@ export class Window extends EventTarget {
 		if (parent !== null && (url === "about:srcdoc" || url === "about:blank")) {
 			return parent.origin;
 		}
-		return URL.canParse(url) ? new URL(url).origin : "null";
+		return parseURL(url)?.origin ?? "null";
 	}
 
 	get localStorage(): Storage {
@@ -42164,13 +42164,14 @@ export class Window extends EventTarget {
 		if (targetOrigin === "/") {
 			targetOrigin = source.origin;
 		} else if (targetOrigin !== "*") {
-			if (!URL.canParse(targetOrigin)) {
+			const parsed = parseURL(targetOrigin);
+			if (parsed === null) {
 				throw domError(
 					"SyntaxError",
 					`Failed to execute 'postMessage' on 'Window': Invalid target origin '${targetOrigin}'.`,
 				);
 			}
-			targetOrigin = new URL(targetOrigin).origin;
+			targetOrigin = parsed.origin;
 		}
 		const realm = slots.realm;
 		const data = runInRealm(realm, () => {
