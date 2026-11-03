@@ -383,9 +383,30 @@ export type FilteredSiblingIndexes = WeakMap<
 
 type Predicate = (element: Element, state: MatchState) => boolean;
 
-type Combinator = " " | ">" | "+" | "~";
+export type Combinator = " " | ">" | "+" | "~";
 
-interface CompiledCompound {
+/** A pseudo-class, with the selectors it takes compiled. */
+export interface CompiledPseudoClass {
+	name: string;
+
+	// `:not(.a, .b)`, `:has(> .b)` and `:nth-child(2n of .a)` hold
+	// selectors. `:hover` and `:lang(en)` hold none.
+	args: CompiledComplex[];
+}
+
+/** A pseudo-element, as a style rule for one is written. */
+export interface CompiledPseudoElement {
+	name: string;
+
+	// What it names, as `::part(label)` names `label`, or null.
+	argument: string | null;
+
+	// The pseudo-classes written after it, which the pseudo-element itself
+	// must match: `::part(inner):dir(rtl)`.
+	after: CompiledCompound | null;
+}
+
+export interface CompiledCompound {
 
 	tests: Predicate[];
 
@@ -399,13 +420,29 @@ interface CompiledCompound {
 
 	// May match a featureless shadow host.
 	host: boolean;
+
+	// The compound's own simple selectors, none inside an argument. The
+	// type is the lowercase local name, null for none or `*`, and an
+	// attribute is the lowercase local name a mutation reports.
+	tag: string | null;
+	ids: string[];
+	classes: string[];
+	attributes: string[];
+	pseudoClasses: CompiledPseudoClass[];
+
+	// The `::part()` or `::slotted()` the compound selects through.
+	pseudoElement: CompiledPseudoElement | null;
 }
 
-interface CompiledComplex {
+export interface CompiledComplex {
 	compounds: CompiledCompound[];
 
 	// Joins compound `index` to compound `index + 1`.
 	combinators: Combinator[];
+
+	// Ids, then classes, then types, packed so a greater number is the
+	// greater weight.
+	specificity: number;
 }
 
 /** A compiled selector list, ready to match against an element. */
@@ -618,17 +655,46 @@ function compileList(
 	return {list: compiled};
 }
 
+function createCompound(): CompiledCompound {
+	return {
+		tests: [],
+		origin: null,
+		originTests: [],
+		host: false,
+		tag: null,
+		ids: [],
+		classes: [],
+		attributes: [],
+		pseudoClasses: [],
+		pseudoElement: null,
+	};
+}
+
 // The compound a relative selector hangs from: the element `:has()` was
 // asked about. That can be a featureless shadow host, asked as :host.
 const ANCHOR_COMPOUND: CompiledCompound = {
+	...createCompound(),
 	tests: [
 		(element: Element, state: MatchState): boolean =>
 			element === state.anchor,
 	],
-	origin: null,
-	originTests: [],
 	host: true,
 };
+
+// The anchor of a `:has()` argument written with no combinator of its
+// own, which reaches down from it.
+const IMPLIED_ANCHOR: CompiledCompound = {...ANCHOR_COMPOUND};
+
+/** Whether the selector opens with a combinator, as a relative one may. */
+export function opensWithCombinator(complex: CompiledComplex): boolean {
+	return complex.compounds[0] === ANCHOR_COMPOUND;
+}
+
+/** Whether the selector is written with a combinator. */
+export function writesCombinator(complex: CompiledComplex): boolean {
+	return complex.combinators.length >
+		(complex.compounds[0] === IMPLIED_ANCHOR ? 1 : 0);
+}
 
 function mentionsScope(node: CSSTree.SelectorNode): boolean {
 	if (
@@ -659,7 +725,7 @@ function compileComplex(
 	let started = false;
 	// `:has(span + span)` is `:has(:scope span + span)`.
 	if (anchored && parts[0].type !== "Combinator") {
-		compounds.push(ANCHOR_COMPOUND);
+		compounds.push(IMPLIED_ANCHOR);
 		combinators.push(" ");
 		started = true;
 	}
@@ -695,19 +761,128 @@ function compileComplex(
 		throw new SelectorError("a combinator joins two compounds");
 	}
 	compounds.push(compileCompound(pending, compiling));
-	return {compounds, combinators};
+	return {compounds, combinators, specificity: getSpecificity(selector)};
+}
+
+// selectors-4 §17: ids, then classes/attributes/pseudo-classes, then
+// types/pseudo-elements.
+type Specificity = [number, number, number];
+
+// Their weight is their most specific argument's. The name itself
+// counts nothing.
+const ARGUMENT_WEIGHTED_PSEUDO_CLASSES = new Set([
+	"has",
+	"is",
+	"matches",
+	"not",
+	"-moz-any",
+	"-webkit-any",
+]);
+
+// Weigh as a class AND add their most specific argument's weight.
+const COMPOUND_WEIGHTED_PSEUDO_CLASSES = new Set([
+	"host",
+	"host-context",
+	"nth-child",
+	"nth-last-child",
+]);
+
+function getSpecificity(selector: CSSTree.SelectorNode): number {
+	const [ids, classes, types] = getSelectorSpecificity(selector);
+	return (ids * 2 ** 16 + classes) * 2 ** 16 + types;
+}
+
+function getListSpecificity(list: CSSTree.SelectorNode): Specificity {
+	let most: Specificity = [0, 0, 0];
+	for (const selector of getChildren(list)) {
+		const weight = getSelectorSpecificity(selector);
+		if (
+			weight[0] > most[0] ||
+			(weight[0] === most[0] &&
+				(weight[1] > most[1] || (weight[1] === most[1] && weight[2] > most[2])))
+		) {
+			most = weight;
+		}
+	}
+	return most;
+}
+
+function getSelectorSpecificity(selector: CSSTree.SelectorNode): Specificity {
+	const total: Specificity = [0, 0, 0];
+	const add = (weight: Specificity): void => {
+		total[0] += weight[0];
+		total[1] += weight[1];
+		total[2] += weight[2];
+	};
+	const argumentWeight = (node: CSSTree.SelectorNode): Specificity => {
+		for (const child of getChildren(node)) {
+			if (child.type === "SelectorList") {
+				return getListSpecificity(child);
+			}
+			if (child.type === "Selector") {
+				return getSelectorSpecificity(child);
+			}
+			if (child.type === "Nth" && child.selector) {
+				return getListSpecificity(child.selector);
+			}
+		}
+		return [0, 0, 0];
+	};
+	for (const part of getChildren(selector)) {
+		switch (part.type) {
+			case "IdSelector":
+				total[0]++;
+				break;
+			case "ClassSelector":
+			case "AttributeSelector":
+				total[1]++;
+				break;
+			// The universal selector weighs nothing, in any namespace.
+			case "TypeSelector": {
+				const name = String(part.name ?? "");
+				if (!name.endsWith("*")) {
+					total[2]++;
+				}
+				break;
+			}
+			// `::slotted(.a)` and `::part(name)`: the pseudo-element weighs as
+			// an element, and a compound argument adds to that.
+			case "PseudoElementSelector":
+				total[2]++;
+				add(argumentWeight(part));
+				break;
+			case "PseudoClassSelector": {
+				const name = pseudoName(String(part.name ?? ""));
+				// `:before` is the CSS 2 spelling of a pseudo-element, and
+				// weighs as one.
+				if (isLegacyPseudoElement(name)) {
+					total[2]++;
+					break;
+				}
+				// `:where()` contributes nothing at all, arguments included.
+				if (name === "where") {
+					break;
+				}
+				if (ARGUMENT_WEIGHTED_PSEUDO_CLASSES.has(name)) {
+					add(argumentWeight(part));
+					break;
+				}
+				total[1]++;
+				if (COMPOUND_WEIGHTED_PSEUDO_CLASSES.has(name)) {
+					add(argumentWeight(part));
+				}
+				break;
+			}
+		}
+	}
+	return total;
 }
 
 function compileCompound(
 	parts: CSSTree.SelectorNode[],
 	compiling: Compiling,
 ): CompiledCompound {
-	const compound: CompiledCompound = {
-		tests: [],
-		origin: null,
-		originTests: [],
-		host: false,
-	};
+	const compound = createCompound();
 	// A type selector is only a type selector when written first.
 	for (const [index, part] of parts.entries()) {
 		if (part.type === "TypeSelector" && index !== 0) {
@@ -738,13 +913,14 @@ function compileSimple(
 ): void {
 	switch (part.type) {
 		case "TypeSelector":
-			compound.tests.push(compileType(String(part.name ?? ""), compiling));
+			compileType(String(part.name ?? ""), compound, compiling);
 			return;
 		case "IdSelector": {
 			const id = CSSTree.ident.decode(String(part.name ?? ""));
 			if (id === "") {
 				throw new SelectorError("an id selector names an id");
 			}
+			compound.ids.push(id);
 			const folded = toASCIILowercase(id);
 			compound.tests.push((element) => {
 				const value = getAttributeValue(element, "id");
@@ -762,6 +938,7 @@ function compileSimple(
 			if (name === "") {
 				throw new SelectorError("a class selector names a class");
 			}
+			compound.classes.push(name);
 			const folded = toASCIILowercase(name);
 			compound.tests.push((element) => {
 				const value = getAttributeValue(element, "class");
@@ -781,7 +958,7 @@ function compileSimple(
 			return;
 		}
 		case "AttributeSelector":
-			compound.tests.push(compileAttribute(part, compiling));
+			compileAttribute(part, compound, compiling);
 			return;
 		case "PseudoClassSelector":
 			compilePseudoClass(part, compound, compiling);
@@ -851,10 +1028,15 @@ function qualifiedName(
 // ASCII case-insensitive against an HTML element in an HTML document,
 // case-sensitive everywhere else. That keeps `feGaussianBlur` selectable
 // and lets `DIV` match a `div`.
-function compileType(name: string, compiling: Compiling): Predicate {
+function compileType(
+	name: string,
+	compound: CompiledCompound,
+	compiling: Compiling,
+): void {
 	const {namespace, local} = qualifiedName(name, compiling.namespaces, false);
 	const folded = local === null ? null : toASCIILowercase(local);
-	return (element) => {
+	compound.tag = folded;
+	compound.tests.push((element) => {
 		if (getNodeType(element) !== ELEMENT_NODE) {
 			return false;
 		}
@@ -874,7 +1056,7 @@ function compileType(name: string, compiling: Compiling): Predicate {
 			states.isHTMLNode(element) &&
 			toASCIILowercase(elementLocal) === folded
 		);
-	};
+	});
 }
 
 // Compared case-insensitively on an HTML element in an HTML document
@@ -933,8 +1115,9 @@ const ATTRIBUTE_OPERATORS = new Set(["=", "~=", "|=", "^=", "$=", "*="]);
 
 function compileAttribute(
 	part: CSSTree.SelectorNode,
+	compound: CompiledCompound,
 	compiling: Compiling,
-): Predicate {
+): void {
 	const qualified = (part.name as {name?: string} | undefined)?.name;
 	const {namespace, local} = qualifiedName(
 		String(qualified ?? ""),
@@ -945,6 +1128,7 @@ function compileAttribute(
 		throw new SelectorError("an attribute selector names an attribute");
 	}
 	const folded = toASCIILowercase(local);
+	compound.attributes.push(folded);
 	const flags = part.flags == null ? "" : toASCIILowercase(String(part.flags));
 	if (flags !== "" && flags !== "i" && flags !== "s") {
 		throw new SelectorError(`unknown attribute flag ${flags}`);
@@ -969,7 +1153,8 @@ function compileAttribute(
 	};
 	const operator = part.matcher ?? null;
 	if (operator === null) {
-		return (element) => read(element) !== null;
+		compound.tests.push((element) => read(element) !== null);
+		return;
 	}
 	if (!ATTRIBUTE_OPERATORS.has(operator)) {
 		throw new SelectorError(`unknown attribute operator ${operator}`);
@@ -984,7 +1169,7 @@ function compileAttribute(
 		throw new SelectorError("an attribute selector compares to one value");
 	}
 	const foldedWanted = toASCIILowercase(wanted);
-	return (element) => {
+	compound.tests.push((element) => {
 		const value = read(element);
 		if (value === null) {
 			return false;
@@ -1016,7 +1201,7 @@ function compileAttribute(
 			default:
 				return target !== "" && subject.includes(target);
 		}
-	};
+	});
 }
 
 // The pseudo-classes that take no argument and test the element alone,
@@ -1098,6 +1283,8 @@ function compilePseudoClass(
 ): void {
 	const name = pseudoName(String(part.name ?? ""));
 	const args = getChildren(part);
+	const pseudoClass: CompiledPseudoClass = {name, args: []};
+	compound.pseudoClasses.push(pseudoClass);
 	if (LEGACY_PSEUDO_ELEMENTS.has(name) && !PSEUDO_CLASSES.has(name)) {
 		compilePseudoElement(part, compound, compiling);
 		return;
@@ -1120,6 +1307,7 @@ function compilePseudoClass(
 		case "where":
 		case "matches": {
 			const inner = compileForgiving(args, compiling);
+			pseudoClass.args = inner;
 			compound.tests.push((element, state) =>
 				inner.some((complex) => matchComplex(complex, element, state, false)),
 			);
@@ -1127,6 +1315,7 @@ function compilePseudoClass(
 		}
 		case "not": {
 			const inner = compileArgumentList(args, compiling, false);
+			pseudoClass.args = inner;
 			compound.tests.push(
 				(element, state) =>
 					!inner.some((complex) =>
@@ -1137,6 +1326,7 @@ function compilePseudoClass(
 		}
 		case "has": {
 			const inner = compileArgumentList(args, compiling, true, true);
+			pseudoClass.args = inner;
 			// Without :scope, whose meaning changes with each query, the
 			// answer depends only on the anchor and the document, so a caller
 			// can keep it for as long as the document is unchanged.
@@ -1152,6 +1342,7 @@ function compilePseudoClass(
 			const inner = args.length === 0
 				? null
 				: compileArgumentList(args, compiling, false);
+			pseudoClass.args = inner ?? [];
 			const context = name === "host-context";
 			compound.tests.push((element, state) => {
 				const shadow = state.shadow;
@@ -1186,7 +1377,7 @@ function compilePseudoClass(
 		case "nth-last-child":
 		case "nth-of-type":
 		case "nth-last-of-type":
-			compound.tests.push(compileNth(name, args, compiling));
+			compound.tests.push(compileNth(pseudoClass, args, compiling));
 			return;
 		case "lang":
 			compound.tests.push(compileLang(args));
@@ -1372,6 +1563,7 @@ function compilePseudoElement(
 		// before `::slotted()` describes the slot it landed in.
 		compound.originTests = compound.tests;
 		compound.tests = [];
+		compound.pseudoElement = {name, argument: null, after: null};
 		compound.origin = (element) => states.getOpenAssignedSlot(element);
 		compound.tests.push(
 			(element, state) =>
@@ -1390,6 +1582,7 @@ function compilePseudoElement(
 		// `::part()` describes the host whose tree the part lives in.
 		compound.originTests = compound.tests;
 		compound.tests = [];
+		compound.pseudoElement = {name, argument: wanted.join(" "), after: null};
 		compound.origin = (element) => states.getShadowHost(getRoot(element));
 		compound.tests.push((element) => {
 			const names = states.getPartNames(element);
@@ -1411,10 +1604,11 @@ function compilePseudoElement(
 }
 
 function compileNth(
-	name: string,
+	pseudoClass: CompiledPseudoClass,
 	args: CSSTree.SelectorNode[],
 	compiling: Compiling,
 ): Predicate {
+	const name = pseudoClass.name;
 	const nth = args.find((argument) => argument.type === "Nth");
 	if (!nth) {
 		throw new SelectorError(`:${name} takes an An+B`);
@@ -1426,6 +1620,7 @@ function compileNth(
 	if (filter !== null && !name.endsWith("child")) {
 		throw new SelectorError(`:${name} takes no "of" selector`);
 	}
+	pseudoClass.args = filter ?? [];
 	const fromEnd = name === "nth-last-child" || name === "nth-last-of-type";
 	const ofType = name === "nth-of-type" || name === "nth-last-of-type";
 	return (element, state) => {
