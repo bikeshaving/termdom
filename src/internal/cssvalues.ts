@@ -58,41 +58,38 @@ const LINE_STYLES = new Set(CSS_LINE_STYLES);
 
 const EASING_KEYWORDS = new Set(CSS_EASING_KEYWORDS);
 
+// A value's parse, and its top-level nodes, which hold their offsets in
+// the value's text.
+interface ParsedValue {
+	root: CSSTree.CSSTreeNode;
+	nodes: CSSTree.ValueNode[];
+}
+
 // Value parsing runs during style computation, and a document re-reads
 // the same handful of values many times, so each value is parsed once.
-const valueNodes = new Map<string, CSSTree.ValueNode[] | null>();
+const parsedValues = new Map<string, ParsedValue | null>();
+
+function getParsedValue(value: string): ParsedValue | null {
+	let parsed = parsedValues.get(value);
+	if (parsed === undefined) {
+		try {
+			const root = CSSTree.parse(value, {context: "value", positions: true});
+			const {children} = root as unknown as CSSTree.ValueNode;
+			parsed = {root, nodes: children ? children.toArray() : []};
+		} catch (_err) {
+			parsed = null;
+		}
+		if (parsedValues.size > 1024) {
+			parsedValues.clear();
+		}
+		parsedValues.set(value, parsed);
+	}
+	return parsed;
+}
 
 /** A value's top-level nodes, or null if css-tree cannot parse the text. */
 export function getCSSValueChildren(value: string): CSSTree.ValueNode[] | null {
-	let nodes = valueNodes.get(value);
-	if (nodes === undefined) {
-		try {
-			const ast = CSSTree.parse(value, {
-				context: "value",
-			}) as unknown as CSSTree.ValueNode;
-			nodes = ast.children ? ast.children.toArray() : [];
-		} catch (_err) {
-			nodes = null;
-		}
-		if (valueNodes.size > 1024) {
-			valueNodes.clear();
-		}
-		valueNodes.set(value, nodes);
-	}
-	return nodes;
-}
-
-// Only a value whose canonical spelling matches the authored text may
-// seed the cache. For that value, the sheet's parse is the same parse
-// getCSSValueChildren would produce for the key.
-function seedValueNodes(value: string, nodes: CSSTree.ValueNode[]): void {
-	if (valueNodes.has(value)) {
-		return;
-	}
-	if (valueNodes.size > 1024) {
-		valueNodes.clear();
-	}
-	valueNodes.set(value, nodes);
+	return getParsedValue(value)?.nodes ?? null;
 }
 
 function getSingleValueNode(value: string): CSSTree.ValueNode | undefined {
@@ -858,15 +855,17 @@ interface ValueTerm {
 // to reading by shape. The text is the component as the declaration
 // spells it.
 function getGrammarTerms(property: string, value: string): ValueTerm[] | null {
-	let ast: {children?: {toArray(): CSSTree.ValueNode[]} | null};
+	const parsed = getParsedValue(value);
+	if (parsed === null) {
+		return null;
+	}
 	// getTrace returns one step of the match per term the node matched.
 	let match: {
 		matched: unknown;
 		getTrace(node: unknown): Array<{type: string; name: string}> | null;
 	};
 	try {
-		ast = CSSTree.parse(value, {context: "value", positions: true}) as never;
-		match = grammarLexer.matchProperty(property, ast as never) as never;
+		match = grammarLexer.matchProperty(property, parsed.root) as never;
 	} catch (_err) {
 		return null;
 	}
@@ -874,7 +873,7 @@ function getGrammarTerms(property: string, value: string): ValueTerm[] | null {
 		return null;
 	}
 	const out: ValueTerm[] = [];
-	for (const node of ast.children?.toArray() ?? []) {
+	for (const node of parsed.nodes) {
 		const source = node as unknown as {loc?: {
 			start: {offset: number};
 			end: {offset: number};
@@ -4634,9 +4633,8 @@ export function getNodes(
 	return container.children ? container.children.toArray() : [];
 }
 
-// Value nodes from the sheet parse are kept when the canonical spelling
-// is the authored one. The value TEXT always serializes from the source,
-// which the parsed spelling cannot replace.
+// The value TEXT always serializes from the source, which the parsed
+// spelling cannot replace.
 export function getBlockDeclarations(
 	node: CSSTree.StyleSheetNode,
 	source: string,
@@ -4666,12 +4664,6 @@ export function getDeclarations(
 		const value = serializeCSSValue(raw, name);
 		if (!value) {
 			continue;
-		}
-		if (child.value.type === "Value" && value === raw.trim()) {
-			seedValueNodes(
-				value,
-				getNodes(child.value as never) as CSSTree.ValueNode[],
-			);
 		}
 		declarations.push({name, value, important: child.important === true});
 	}
