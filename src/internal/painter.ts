@@ -228,12 +228,41 @@ export function paintsAsBefore(
 	return before === after;
 }
 
+// The text cells of a box or one of its pseudo-elements: color, weight,
+// style and lines.
+function readTextCell(element: Element, pseudo = ""): CellStyle {
+	const color = getComputedValue(element, "color", pseudo);
+	const decoration = CSSValues.parseTextDecorationLine(
+		getComputedValue(element, "text-decoration-line", pseudo),
+	);
+	const {bold, dim} = resolveFontWeight(
+		getComputedValue(element, "font-weight", pseudo),
+	);
+	return {
+		fg: color && color !== "initial" && !CSSValues.isHighlightColor(color)
+			? CSSValues.numberFromCSSColor(color)
+			: undefined,
+		bold,
+		dim,
+		italic: getComputedValue(element, "font-style", pseudo) === "italic",
+		underline: decoration.underline,
+		underlineStyle:
+			getComputedValue(
+				element,
+				"text-decoration-style",
+				pseudo,
+			) ===
+			"double"
+				? "double"
+				: undefined,
+		strikethrough: decoration.lineThrough,
+	};
+}
+
 function readPaintStyle(element: Element): SharedPaintStyle {
-	const color = getComputedValue(element, "color");
+	const text = readTextCell(element);
+	const fg = text.fg as number | undefined;
 	const backgroundColor = getComputedValue(element, "background-color");
-	const fg = color && color !== "initial" && !CSSValues.isHighlightColor(color)
-		? CSSValues.numberFromCSSColor(color)
-		: undefined;
 	// Canvas clears the box to the terminal's default background, opaque in
 	// every theme. Highlight fills it with inverse.
 	const isCanvasBg =
@@ -328,12 +357,6 @@ function readPaintStyle(element: Element): SharedPaintStyle {
 		shiftX = typeof left === "number" ? left : 0;
 		shiftY = typeof top === "number" ? top : 0;
 	}
-	const decoration = CSSValues.parseTextDecorationLine(
-		getComputedValue(element, "text-decoration-line"),
-	);
-	const {bold, dim} = resolveFontWeight(
-		getComputedValue(element, "font-weight"),
-	);
 	const gradient = getGradient(element);
 	const model = getBoxModel(element);
 	return {
@@ -363,7 +386,7 @@ function readPaintStyle(element: Element): SharedPaintStyle {
 		shiftX,
 		shiftY,
 		cell: {
-			fg,
+			...text,
 			// A gradient gives every cell its own background, so naming one
 			// here would repaint the run flat under the text. An undefined
 			// background leaves each cell the color the gradient put there.
@@ -377,16 +400,6 @@ function readPaintStyle(element: Element): SharedPaintStyle {
 			// The background alone carries inverse. color: HighlightText alone
 			// resolves to nothing, so an author color does not defeat it.
 			inverse: isHighlightBox || undefined,
-			bold,
-			dim,
-			italic: getComputedValue(element, "font-style") === "italic",
-			underline: decoration.underline,
-			underlineStyle:
-				getComputedValue(element, "text-decoration-style") ===
-				"double"
-					? ("double" as const)
-					: undefined,
-			strikethrough: decoration.lineThrough,
 		},
 	};
 }
@@ -2240,68 +2253,35 @@ function renderOutsideMarker(
 }
 
 // A marker's text style, by the object its element's style keeps until it
-// changes.
+// changes, while a ::marker rule exists. A marker no rule styles takes its
+// item's. A marker takes no background, inverse, double underline or
+// line-through.
 const markerTextStyles = new WeakMap<object, CellStyle>();
-
-// A marker no rule styles reads what its item reads, so items that read
-// alike share one style, through any restyle.
-const itemMarkerStyles = new Map<string, CellStyle>();
-
-const ITEM_MARKER_STYLES = 256;
 
 function getMarkerTextStyle(painter: Painter, element: Element): CellStyle {
 	if (!painter.cascade.pseudoRulesByType.has("::marker")) {
-		const color = getComputedValue(element, "color");
-		const weight = getComputedValue(element, "font-weight");
-		const fontStyle = getComputedValue(element, "font-style");
-		const line = getComputedValue(element, "text-decoration-line");
-		const values = `${color} ${weight} ${fontStyle} ${line}`;
-		let style = itemMarkerStyles.get(values);
-		if (style === undefined) {
-			if (itemMarkerStyles.size === ITEM_MARKER_STYLES) {
-				itemMarkerStyles.clear();
-			}
-			style = createMarkerTextStyle(color, weight, fontStyle, line);
-			itemMarkerStyles.set(values, style);
-		}
-		return style;
+		return toMarkerStyle(getPaintStyle(painter, element).cell);
 	}
 	const key = painter.cascade.getStyleKey(element);
 	const known = key === null ? undefined : markerTextStyles.get(key);
 	if (known !== undefined) {
 		return known;
 	}
-	const color =
-		getComputedValue(element, "color", "::marker") ||
-		getComputedValue(element, "color");
-	const style = createMarkerTextStyle(
-		color,
-		getComputedValue(element, "font-weight", "::marker"),
-		getComputedValue(element, "font-style", "::marker"),
-		getComputedValue(element, "text-decoration-line", "::marker"),
-	);
+	const style = toMarkerStyle(readTextCell(element, "::marker"));
 	if (key !== null) {
 		markerTextStyles.set(key, style);
 	}
 	return style;
 }
 
-function createMarkerTextStyle(
-	color: string,
-	weight: string,
-	fontStyle: string,
-	line: string,
-): CellStyle {
-	const {bold, dim} = resolveFontWeight(weight);
-	return {
-		fg: color && color !== "initial"
-			? CSSValues.numberFromCSSColor(color)
-			: undefined,
-		bold,
-		dim,
-		italic: fontStyle === "italic",
-		underline: CSSValues.parseTextDecorationLine(line).underline,
-	};
+function toMarkerStyle({
+	fg,
+	bold,
+	dim,
+	italic,
+	underline,
+}: CellStyle): CellStyle {
+	return {fg, bold, dim, italic, underline};
 }
 
 // A focused editing host parks the cursor at the document selection's
