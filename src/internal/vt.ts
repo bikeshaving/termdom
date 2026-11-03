@@ -38,9 +38,10 @@ const DCS_STRING = 9;
 
 const MAX_PARAMS = 32;
 const MAX_SUBPARAMS = 8;
-const MAX_OSC = 4096;
 const MAX_DCS = 64;
 const PARAM_LIMIT = {output: 0xffff, input: Infinity};
+// A clipboard reply in "input" mode may reach 64K.
+export const OSC_LIMIT = {output: 4096, input: 1 << 16};
 
 // Printable characters, ending before a high surrogate whose pair the
 // text may cut, and a CSI with no control inside it.
@@ -463,7 +464,7 @@ export class Parser {
 				if (code === 0x07) {
 					this.state = GROUND;
 					this.handlers.osc(this.osc);
-				} else if (code >= 0x20 && this.osc.length < MAX_OSC) {
+				} else if (code >= 0x20 && this.osc.length < OSC_LIMIT[mode]) {
 					this.osc += String.fromCodePoint(code);
 				}
 				return;

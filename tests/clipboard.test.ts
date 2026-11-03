@@ -203,6 +203,24 @@ test("a clipboard reply survives arriving in pieces, and glued to typing", async
 	dom.dispose();
 });
 
+test("a reply past the output limit is read whole, across pieces", async () => {
+	const {proc, dom} = await mount();
+	let reading: Promise<string> | null = null;
+	dom.document.addEventListener("keydown", (event: any) => {
+		if (event.key === "v") {
+			reading = dom.window.navigator.clipboard.readText();
+		}
+	});
+	await send(proc, "v");
+	const text = "abcdefgh".repeat(4000);
+	const payload = Buffer.from(text, "utf8").toString("base64");
+	await send(proc, `\x1b]52;c;${payload.slice(0, 20000)}`);
+	await send(proc, payload.slice(20000, 30000));
+	await send(proc, `${payload.slice(30000)}\x07`);
+	expect(await reading).toBe(text);
+	dom.dispose();
+});
+
 test("a reply whose base64 will not decode reads as an empty clipboard", async () => {
 	const {proc, dom} = await mount();
 	const {document} = dom;

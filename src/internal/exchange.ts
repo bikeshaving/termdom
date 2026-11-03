@@ -36,7 +36,7 @@ import {
 	setInterval,
 	setTimeout,
 } from "./timers.ts";
-import {Parser, type ParserHandlers} from "./vt.ts";
+import {OSC_LIMIT, Parser, type ParserHandlers} from "./vt.ts";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
 
@@ -238,8 +238,6 @@ const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 }).join("");
 
 const CLIPBOARD_START = "\x1b]52;";
-// The payload stops at ESC so a reply ended by ST is still bounded.
-const CLIPBOARD_REPLY = /^\x1b\]52;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/;
 
 /**
  * `key` is a name ("ArrowUp") or the character itself. `char` is empty when the
@@ -277,8 +275,8 @@ export interface WireFocus {
 	focused: boolean;
 }
 
-// A clipboard reply's text is null when it outgrew the held-reply
-// limit.
+// A clipboard reply's text is null when it outgrew the parser's
+// string limit for input.
 type WireItem =
 	WireKey |
 	WireMouse |
@@ -490,8 +488,6 @@ function decodeCSI(parser: Parser, final: string): WireItem | null {
 		: null;
 }
 
-// A larger reply is not a clipboard. It is given up as null.
-const REPLY_LIMIT = 1 << 16;
 // A paste this large is delivered as it stands, and the rest of it as it
 // arrives, up to the end fence: as paste, never as keystrokes.
 const PASTE_LIMIT = 1 << 20;
@@ -544,17 +540,15 @@ const TMUX_ATTRIBUTES = /^84;/;
 /**
  * Decodes one chunk into what it meant. Keeps what a chunk boundary can
  * cut: a split escape (never a bare trailing ESC, which may be the
- * Escape key), an open paste body, and an open clipboard reply. Nothing
- * here may hold the keystrokes that follow it for long: a paste that
- * grows past a size is delivered in parts, a sequence that never finishes is
- * dropped at a size, and a clipboard reply is only kept open while a
- * query is waiting for it.
+ * Escape key), an open paste body, and a clipboard reply while a query is
+ * waiting for it. Nothing here may hold the keystrokes that follow it for
+ * long: a paste that grows past a size is delivered in parts, and a
+ * sequence that never finishes is dropped at a size.
  */
 class WireReader implements ParserHandlers {
 	tail: string;
 	pasteBody: string | null;
 	pasteOverflowed: boolean;
-	replyBody: string | null;
 	expectingReply: boolean;
 	parser: Parser;
 	// What the sequence the parser read last meant, when it was a reply or
@@ -565,7 +559,6 @@ class WireReader implements ParserHandlers {
 		this.tail = "";
 		this.pasteBody = null;
 		this.pasteOverflowed = false;
-		this.replyBody = null;
 		this.expectingReply = false;
 		this.parser = new Parser(this);
 		this.item = null;
@@ -587,8 +580,8 @@ class WireReader implements ParserHandlers {
 	 */
 	expectClipboardReply(expecting: boolean): void {
 		this.expectingReply = expecting;
-		if (!expecting) {
-			this.replyBody = null;
+		if (!expecting && this.tail.startsWith(CLIPBOARD_START)) {
+			this.tail = "";
 		}
 	}
 
@@ -598,7 +591,7 @@ class WireReader implements ParserHandlers {
 	 * it waits for the next chunk or for release().
 	 */
 	feed(chunk: string, holdEscape = false): WireItem[] {
-		let data = this.tail + chunk;
+		const data = this.tail + chunk;
 		this.tail = "";
 		const items: WireItem[] = [];
 		let i = 0;
@@ -626,35 +619,6 @@ class WireReader implements ParserHandlers {
 				this.pasteBody = null;
 				this.pasteOverflowed = false;
 				i = end + PASTE_END.length;
-				continue;
-			}
-			// A payload no decoding rescues is reported as an empty clipboard.
-			if (this.replyBody !== null) {
-				const reply = this.replyBody + data.slice(i);
-				const opened = this.replyBody === "";
-				this.replyBody = null;
-				const match = reply.match(CLIPBOARD_REPLY);
-				if (!match) {
-					if (opened && isHeldString(reply, holdEscape)) {
-						this.tail = reply;
-					} else if (reply.length <= REPLY_LIMIT) {
-						this.replyBody = reply;
-					} else {
-						items.push({kind: "clipboard", text: null});
-					}
-					return items;
-				}
-				const decoded = decode64(match[1]);
-				items.push({
-					kind: "clipboard",
-					text: decoded === null ? "" : new TextDecoder().decode(decoded),
-				});
-				data = reply;
-				i = match[0].length;
-				continue;
-			}
-			if (data.startsWith(CLIPBOARD_START, i) && this.expectingReply) {
-				this.replyBody = "";
 				continue;
 			}
 			i = data[i] === "\x1b"
@@ -700,6 +664,14 @@ class WireReader implements ParserHandlers {
 			if (next === "[") {
 				if (opened.length <= HOLD_LIMIT) {
 					this.tail = opened;
+				}
+				return data.length;
+			}
+			if (this.expectingReply && opened.startsWith(CLIPBOARD_START)) {
+				if (opened.length < OSC_LIMIT.input) {
+					this.tail = opened;
+				} else {
+					items.push({kind: "clipboard", text: null});
 				}
 				return data.length;
 			}
@@ -752,6 +724,16 @@ class WireReader implements ParserHandlers {
 
 	// A whole string is a reply, or is discarded.
 	osc(text: string): void {
+		if (this.expectingReply && text.startsWith("52;")) {
+			const decoded = decode64(text.slice(text.indexOf(";", 3) + 1));
+			this.item = {
+				kind: "clipboard",
+				text: text.length >= OSC_LIMIT.input
+					? null
+					: decoded === null ? "" : new TextDecoder().decode(decoded),
+			};
+			return;
+		}
 		const background = BACKGROUND_REPLY.exec(text);
 		if (background !== null) {
 			this.item = {
