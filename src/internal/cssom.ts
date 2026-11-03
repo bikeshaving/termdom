@@ -6,6 +6,8 @@ import {
 	CSS_SHORTHANDS,
 } from "../generated/cssproperties.ts";
 import {
+	type Combinator,
+	type CompiledComplex,
 	type CompiledCompound,
 	type CompiledSelector,
 	compileSelector,
@@ -18,6 +20,7 @@ import {
 	selectAllCompiled,
 	type SelectorNamespaces,
 	type SiblingIndexes,
+	writesCombinator,
 } from "./cssselectors.ts";
 import * as CSSTree from "./csstree.ts";
 import * as CSSValues from "./cssvalues.ts";
@@ -6817,9 +6820,9 @@ interface ParsedCSSRule {
 	// originates on the part element, inside the host's shadow tree.
 	ofPart?: boolean;
 
-	// For a rule with a :has(), what the cascade's :has() tables gather
-	// from it.
-	has?: CSSValues.HasReading;
+	// Whether the rule holds a :has(), whose asks the cascade's :has()
+	// tables gather.
+	has: boolean;
 
 	// The bits, in an element's ancestor filter, of the names, ids and
 	// classes the rule's compounds left of a descendant or child
@@ -7185,7 +7188,7 @@ export class Cascade {
 	// tested on its own. What each anchor answered them last, as a string
 	// of 0s and 1s in their order, so a change under an anchor that leaves
 	// every answer the same restyles nothing.
-	hasCompounds: Set<string>;
+	hasCompounds: Set<CompiledCompound>;
 	hasCompoundsUntestable: boolean;
 	hasAnswers: WeakMap<Element, string>;
 
@@ -7982,25 +7985,61 @@ function registerConnectedShadowRoots(
 
 // In place rather than by a full parse, which renews every rule's id and
 // leaves no shared table reusable.
-function noteHasRule(cascade: Cascade, has: CSSValues.HasReading): void {
-	cascade.hasRulesExist = true;
-	for (const compound of has.compounds) {
-		if (compound === null) {
-			cascade.hasCompoundsUntestable = true;
-		} else if (!cascade.hasCompounds.has(compound)) {
-			cascade.hasCompounds.add(compound);
-			cascade.hasAnswers = new WeakMap();
+// What the :has()es in a selector ask of the cascade, at any depth, and
+// whether it holds one. A compound holding a pseudo-element or :host, or a
+// second :has(), only means something in its tree, and is not tested on
+// its own.
+function noteHasRules(cascade: Cascade, complex: CompiledComplex): boolean {
+	let found = false;
+	const after = complex.pseudoElement?.after ?? null;
+	const compounds = after === null
+		? complex.compounds
+		: [...complex.compounds, after];
+	for (const [index, compound] of compounds.entries()) {
+		const names = getPseudoClassNames(getNestedCompounds(compound));
+		if (compound.pseudoClasses.some(({name}) => name === "has")) {
+			found = true;
+			cascade.hasRulesExist = true;
+			const required = getRequiredKeys(compound);
+			cascade.hasAnchors.add(
+				required.ids.length > 0
+					? `#${required.ids[0]}`
+					: required.classes.length > 0
+					? `.${required.classes[0]}`
+					: (required.tag ?? "*"),
+			);
+			if (
+				compound.pseudoElement !== null ||
+				(complex.pseudoElement !== null &&
+					index >= complex.compounds.length - 1) ||
+				names.filter((name) => name === "has").length > 1 ||
+				names.some((name) => name.startsWith("host"))
+			) {
+				cascade.hasCompoundsUntestable = true;
+			} else if (!cascade.hasCompounds.has(compound)) {
+				cascade.hasCompounds.add(compound);
+				cascade.hasAnswers = new WeakMap();
+			}
+		}
+		for (const {name, args} of compound.pseudoClasses) {
+			for (const argument of args) {
+				if (name === "has") {
+					if (isSiblingCombinator(argument.combinators[0])) {
+						cascade.hasSiblingRules = true;
+					}
+					for (const inner of argument.compounds) {
+						for (const state of getPseudoClassNames(
+							getNestedCompounds(inner),
+						)) {
+							cascade.hasStates.add(state);
+						}
+					}
+				}
+				found = noteHasRules(cascade, argument) || found;
+			}
 		}
 	}
-	if (has.siblings) {
-		cascade.hasSiblingRules = true;
-	}
-	for (const anchor of has.anchors) {
-		cascade.hasAnchors.add(anchor);
-	}
-	for (const state of has.states) {
-		cascade.hasStates.add(state);
-	}
+	return found;
 }
 
 function couldAnchorHas(cascade: Cascade, element: Element): boolean {
@@ -8030,11 +8069,9 @@ function hasAnswersChanged(cascade: Cascade, element: Element): boolean {
 	}
 	let answers = "";
 	for (const compound of cascade.hasCompounds) {
-		answers += matchesCompiled(
-			element as unknown as DOMElement,
-			compileSelector(compound),
-			{hasResults: null},
-		)
+		answers += matchesCompound(element as unknown as DOMElement, compound, {
+			hasResults: null,
+		})
 			? "1"
 			: "0";
 	}
@@ -8055,8 +8092,8 @@ function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	cascade.hasCompoundsUntestable = false;
 	cascade.hasAnswers = new WeakMap();
 	for (const rule of cascade.parsedRules) {
-		if (rule.has !== undefined) {
-			noteHasRule(cascade, rule.has);
+		if (rule.has) {
+			noteHasRules(cascade, (rule.matcher ?? rule.relativeMatcher)!.list[0]);
 		}
 	}
 }
@@ -11385,15 +11422,167 @@ interface StateAnchor {
 	attributes: string[];
 }
 
-function getStateAnchor(
-	keys: CSSValues.SelectorReading["compounds"][number],
-): StateAnchor {
+function getStateAnchor(nested: CompiledCompound[]): StateAnchor {
+	const names = getPseudoClassNames(nested);
 	return {
 		anyElement:
-			keys.nestedCombinator || keys.pseudoClasses.includes("host-context"),
-		host: keys.pseudoClasses.includes("host"),
-		...keys.required,
+			writesNestedCombinator(nested) || names.includes("host-context"),
+		host: names.includes("host"),
+		...getRequiredKeys(nested[0]),
 	};
+}
+
+// A selector testing one of these on an ancestor affects the ancestor's
+// descendants when the attribute behind it changes, and no attribute
+// NAME in the selector reveals that.
+const STATE_PSEUDO_CLASSES = new Set([
+	"-moz-meter-optimum",
+	"-moz-meter-sub-optimum",
+	"-moz-meter-sub-sub-optimum",
+	"any-link",
+	"checked",
+	"heading",
+	"high-value",
+	"closed",
+	"default",
+	"defined",
+	"disabled",
+	"enabled",
+	"in-range",
+	"indeterminate",
+	"invalid",
+	"link",
+	"low-value",
+	"open",
+	"optimal-value",
+	"optional",
+	"out-of-range",
+	"placeholder-shown",
+	"popover-open",
+	"read-only",
+	"read-write",
+	"required",
+	"target",
+	"valid",
+	"visited",
+]);
+
+const STRUCTURAL_PSEUDO_CLASS = /^(?:nth-|first-|last-|only-|empty)/;
+
+function isSiblingCombinator(combinator: Combinator | undefined): boolean {
+	return combinator === "+" || combinator === "~";
+}
+
+// The compound and every compound in its arguments, at any depth. A class
+// inside :not() or :is() is tested on the element the compound matches,
+// or on one it leads to.
+function getNestedCompounds(compound: CompiledCompound): CompiledCompound[] {
+	const nested = [compound];
+	for (const {args} of compound.pseudoClasses) {
+		for (const argument of args) {
+			for (const inner of argument.compounds) {
+				nested.push(...getNestedCompounds(inner));
+			}
+		}
+	}
+	return nested;
+}
+
+// What compound `index` of a selector names, the pseudo-classes written
+// after the pseudo-element it ends with included.
+function getWrittenCompounds(
+	complex: CompiledComplex,
+	index: number,
+): CompiledCompound[] {
+	const nested = getNestedCompounds(complex.compounds[index]);
+	const after = complex.pseudoElement?.after ?? null;
+	if (index === complex.compounds.length - 1 && after !== null) {
+		nested.push(...getNestedCompounds(after));
+	}
+	return nested;
+}
+
+function getPseudoClassNames(nested: CompiledCompound[]): string[] {
+	return nested.flatMap((compound) =>
+		compound.pseudoClasses.map((pseudoClass) => pseudoClass.name));
+}
+
+// The class, id and attribute keys the compounds name, as `.name`,
+// `#name` and `[name]`.
+function getNamedKeys(nested: CompiledCompound[]): string[] {
+	return nested.flatMap((compound) => [
+		...compound.classes.map((name) => `.${name}`),
+		...compound.ids.map((name) => `#${name}`),
+		...compound.attributes.map((name) => `[${name}]`),
+	]);
+}
+
+// Whether an argument holds a combinator, and so describes elements
+// other than the one the compound matches.
+function writesNestedCombinator(nested: CompiledCompound[]): boolean {
+	return nested.some((compound) =>
+		compound.pseudoClasses.some((pseudoClass) =>
+			pseudoClass.args.some(writesCombinator)));
+}
+
+// Whether the keys the compounds name can fail to name the element: some
+// of them sit inside :not(), or inside an argument with combinators of its
+// own, where they describe another element. `:not(.b ~ *)` matches
+// elements with no class at all.
+function describesAnyElement(nested: CompiledCompound[]): boolean {
+	return writesNestedCombinator(nested) ||
+		getPseudoClassNames(nested).includes("not");
+}
+
+// Whether matching compound `index` reads the element's siblings or
+// children: it follows a sibling combinator, or tests a tree-structural
+// pseudo-class or :empty, or holds an argument with a sibling combinator.
+function testsSiblings(complex: CompiledComplex, index: number): boolean {
+	return isSiblingCombinator(complex.combinators[index - 1]) ||
+		getWrittenCompounds(complex, index).some((compound) =>
+			compound.pseudoClasses.some((pseudoClass) =>
+				STRUCTURAL_PSEUDO_CLASS.test(pseudoClass.name) ||
+				pseudoClass.args.some((argument) =>
+					argument.combinators.some(isSiblingCombinator))));
+}
+
+interface RequiredKeys {
+	tag: string | null;
+	classes: string[];
+	ids: string[];
+	attributes: string[];
+	root: boolean;
+}
+
+// The keys the element a compound matches has all of, and whether it must
+// be the root: the compound's own, and those of a lone compound in :is()
+// or :where(). With alternatives, or a combinator, nothing one of them
+// names is required of the element.
+function getRequiredKeys(compound: CompiledCompound): RequiredKeys {
+	const required: RequiredKeys = {
+		tag: compound.tag,
+		classes: [...compound.classes],
+		ids: [...compound.ids],
+		attributes: [...compound.attributes],
+		root: false,
+	};
+	for (const {name, args} of compound.pseudoClasses) {
+		if (name === "root") {
+			required.root = true;
+		} else if (
+			(name === "is" || name === "where") &&
+			args.length === 1 &&
+			args[0].compounds.length === 1
+		) {
+			const inner = getRequiredKeys(args[0].compounds[0]);
+			required.tag ??= inner.tag;
+			required.classes.push(...inner.classes);
+			required.ids.push(...inner.ids);
+			required.attributes.push(...inner.attributes);
+			required.root ||= inner.root;
+		}
+	}
+	return required;
 }
 
 function addStateAnchor(
@@ -11429,8 +11618,7 @@ function couldAnchor(element: Element, anchor: StateAnchor): boolean {
 // changes nothing but the element's own box.
 function indexReachingKeys(
 	cascade: Cascade,
-	selector: string,
-	reading: CSSValues.SelectorReading,
+	complex: CompiledComplex,
 	declarations: Record<string, string>,
 	scope: Node | undefined,
 ): void {
@@ -11447,115 +11635,108 @@ function indexReachingKeys(
 	}
 	const subjectInherits = inherits;
 	inherits ||= blockifies;
-	const compounds = reading.compounds;
-	if (reading.reachesSiblings) {
+	const compounds = complex.compounds.map((_, index) =>
+		getWrittenCompounds(complex, index));
+	const siblingTested = compounds.map((_, index) =>
+		testsSiblings(complex, index));
+	const precedesSibling = compounds.map((_, index) =>
+		isSiblingCombinator(complex.combinators[index]));
+	const names = getPseudoClassNames(compounds.flat());
+	if (siblingTested.includes(true)) {
 		const index = getOrCreateSiblingRuleIndex(cascade, scope);
 		index.reachesSiblings = true;
-		if (reading.siblingsReachDescendants || inherits) {
+		if (siblingTested.slice(0, -1).includes(true) || inherits) {
 			index.reachesDescendants = true;
 		}
-		if (/:nth-[a-z-]*\([^)]*\bof\b/i.test(selector)) {
+		if (compounds.flat().some((compound) =>
+			compound.pseudoClasses.some((pseudoClass) =>
+				pseudoClass.name.startsWith("nth-") && pseudoClass.args.length > 0))) {
 			index.anchorsUniversal = true;
 		}
-		if (/:(?:last-|only-|nth-last-)/i.test(selector)) {
+		if (names.some((name) => /^(?:last-|only-|nth-last-)/.test(name))) {
 			index.countsFromEnd = true;
 		}
-		for (const keys of compounds) {
-			if (!keys.precedesSibling) {
+		for (const [i, nested] of compounds.entries()) {
+			if (!precedesSibling[i]) {
 				continue;
 			}
-			if (keys.anyElement || keys.pseudoClasses.length > 0 || keys.states) {
+			if (
+				describesAnyElement(nested) || getPseudoClassNames(nested).length > 0
+			) {
 				index.anchorsUniversal = true;
 			}
-			for (const key of [
-				...keys.classes.map((name) => `.${name}`),
-				...keys.ids.map((name) => `#${name}`),
-				...keys.attributes.map((name) => `[${name}]`),
-			]) {
+			for (const key of getNamedKeys(nested)) {
 				index.anchorKeys.add(key);
 			}
 		}
 	}
-	for (const keys of compounds) {
-		if (!keys.siblingTested) {
+	for (const [i, nested] of compounds.entries()) {
+		if (!siblingTested[i]) {
 			continue;
 		}
 		const index = getOrCreateSiblingRuleIndex(cascade, scope);
+		const keys = getNamedKeys(nested);
+		const tags = nested.flatMap((compound) => compound.tag ?? []);
 		if (
-			keys.anyElement ||
-			(keys.tag === null &&
-				keys.classes.length === 0 &&
-				keys.ids.length === 0 &&
-				keys.attributes.length === 0)
+			describesAnyElement(nested) || (tags.length === 0 && keys.length === 0)
 		) {
 			index.universal = true;
 		}
-		if (keys.tag !== null) {
-			index.keys.add(keys.tag);
-		}
-		for (const key of [
-			...keys.classes.map((name) => `.${name}`),
-			...keys.ids.map((name) => `#${name}`),
-			...keys.attributes.map((name) => `[${name}]`),
-		]) {
+		for (const key of [...tags, ...keys]) {
 			index.keys.add(key);
 		}
 	}
 	const paintsOnly = Object.keys(declarations).every((name) =>
 		PAINT_ONLY_PROPERTIES.has(name));
-	for (const keys of compounds) {
-		for (const key of [
-			...keys.classes.map((name) => `.${name}`),
-			...keys.ids.map((name) => `#${name}`),
-			...keys.attributes.map((name) => `[${name}]`),
-		]) {
-			cascade.keyPaintsOnly.set(
-				key,
-				paintsOnly && (cascade.keyPaintsOnly.get(key) ?? true),
-			);
-		}
+	for (const key of getNamedKeys(compounds.flat())) {
+		cascade.keyPaintsOnly.set(
+			key,
+			paintsOnly && (cascade.keyPaintsOnly.get(key) ?? true),
+		);
 	}
 	const last = inherits ? compounds.length : compounds.length - 1;
-	for (const [i, keys] of compounds.entries()) {
+	for (const [i, nested] of compounds.entries()) {
 		// A compound with a combinator inside an argument describes other
 		// elements too, so what it tests can reach anywhere, from anyone.
-		const nested = keys.nestedCombinator;
-		const anchor = getStateAnchor(keys);
-		for (const name of keys.pseudoClasses) {
-			if (i < last || nested) {
+		const inner = writesNestedCombinator(nested);
+		const anchor = getStateAnchor(nested);
+		for (const name of getPseudoClassNames(nested)) {
+			if (i < last || inner) {
 				addStateAnchor(cascade.descendantPseudoClasses, name, anchor);
 			}
-			if (keys.precedesSibling || nested) {
+			if (precedesSibling[i] || inner) {
 				addStateAnchor(cascade.siblingPseudoClasses, name, anchor);
 			}
 		}
 	}
-	const subject = compounds.length === 0
-		? null
-		: getStateAnchor(compounds[compounds.length - 1]);
-	const reach = subjectInherits || subject === null || subject.anyElement
+	const subject = getStateAnchor(compounds[compounds.length - 1]);
+	const reach = subjectInherits || subject.anyElement
 		? null
 		: {...subject, children: blockifies};
 	for (let i = 0; i < last; i++) {
-		const keys = compounds[i];
-		for (const name of keys.classes) {
-			cascade.reachingClasses.add(name);
-			const subjects = cascade.classSubjects.get(name);
-			if (reach === null || subjects === null) {
-				cascade.classSubjects.set(name, null);
-			} else if (subjects === undefined) {
-				cascade.classSubjects.set(name, [reach]);
-			} else {
-				subjects.push(reach);
+		const nested = compounds[i];
+		for (const compound of nested) {
+			for (const name of compound.classes) {
+				cascade.reachingClasses.add(name);
+				const subjects = cascade.classSubjects.get(name);
+				if (reach === null || subjects === null) {
+					cascade.classSubjects.set(name, null);
+				} else if (subjects === undefined) {
+					cascade.classSubjects.set(name, [reach]);
+				} else {
+					subjects.push(reach);
+				}
+			}
+			for (const name of compound.ids) {
+				cascade.reachingIds.add(name);
+			}
+			for (const name of compound.attributes) {
+				cascade.reachingAttributes.add(name);
 			}
 		}
-		for (const name of keys.ids) {
-			cascade.reachingIds.add(name);
-		}
-		for (const name of keys.attributes) {
-			cascade.reachingAttributes.add(name);
-		}
-		if (keys.states) {
+		if (
+			getPseudoClassNames(nested).some((name) => STATE_PSEUDO_CLASSES.has(name))
+		) {
 			cascade.reachingStates = true;
 		}
 	}
@@ -11577,23 +11758,6 @@ function parseSelector(
 		cascade.transitionsExist = true;
 	}
 	const layer = context.layer;
-	const reading = CSSValues.readSelector(selector);
-	// A :has() rule reads DOWN the tree, the one relational direction the
-	// per-target invalidation cannot see, so the flag enables the ancestor
-	// sweep only for documents that need it.
-	const has = reading.has;
-	if (has) {
-		noteHasRule(cascade, has);
-	}
-	const pseudoClasses = reading.compounds.flatMap((keys) => keys.pseudoClasses);
-	if (pseudoClasses.includes("hover")) {
-		cascade.hoverRulesDeclared = true;
-	}
-	let scopes: readonly CSSValues.ScopeCondition[] | undefined;
-	if (context.scopes.length > 0) {
-		scopes = context.scopes;
-		cascade.scopedRulesExist = true;
-	}
 	let compiled: CompiledSelector;
 	try {
 		compiled = compileSelector(selector, {
@@ -11607,7 +11771,24 @@ function parseSelector(
 		return;
 	}
 	const complex = compiled.list[0];
-	indexReachingKeys(cascade, selector, reading, declarations, scope);
+	// A :has() rule reads DOWN the tree, the one relational direction the
+	// per-target invalidation cannot see, so the flag enables the ancestor
+	// sweep only for documents that need it.
+	const has = noteHasRules(cascade, complex);
+	const pseudoClasses = getPseudoClassNames(
+		complex.compounds.flatMap((_, index) =>
+			getWrittenCompounds(complex, index),
+		),
+	);
+	if (pseudoClasses.includes("hover")) {
+		cascade.hoverRulesDeclared = true;
+	}
+	let scopes: readonly CSSValues.ScopeCondition[] | undefined;
+	if (context.scopes.length > 0) {
+		scopes = context.scopes;
+		cascade.scopedRulesExist = true;
+	}
+	indexReachingKeys(cascade, complex, declarations, scope);
 	if (
 		declarations["counter-reset"] ||
 		declarations["counter-increment"] ||
@@ -11634,12 +11815,10 @@ function parseSelector(
 		cascade.insideMarkerRulesExist = true;
 	}
 
-	const required = reading.compounds.at(-1)?.required;
+	const required = getRequiredKeys(complex.compounds.at(-1)!);
 	// `:where(svg)` requires its name as `svg` does.
-	const subjectTag = reading.subjectTag ?? required?.tag ?? undefined;
-	const subjectKey = required === undefined
-		? undefined
-		: required.root
+	const subjectTag = required.tag ?? undefined;
+	const subjectKey = required.root
 		? ":root"
 		: required.ids.length > 0
 			? `#${required.ids[0]}`
@@ -11697,9 +11876,9 @@ function parseSelector(
 		cascade.parsedRules.push({
 			matcher,
 			relativeMatcher,
-			ancestorBits: scopes || reachesHost || reading.nests
+			ancestorBits: scopes || reachesHost
 				? undefined
-				: getAncestorBits(reading),
+				: getAncestorBits(complex),
 			subjectTag,
 			subjectKey,
 			declarations,
@@ -12053,23 +12232,19 @@ function hasAncestorBits(filter: Uint32Array, bits: Uint32Array): boolean {
 	return true;
 }
 
-// The keys a reading's compounds require of the subject's ancestors: a
+// The keys a selector's compounds require of the subject's ancestors: a
 // compound followed by a descendant or child combinator matches an
 // ancestor of the compound after it, and that compound is the subject,
 // one of its ancestors, or a sibling of one, so an ancestor of the
 // subject either way. One followed by a sibling combinator need not be.
-function getAncestorBits(
-	reading: CSSValues.SelectorReading,
-): Uint32Array | undefined {
+function getAncestorBits(complex: CompiledComplex): Uint32Array | undefined {
 	const bits = new Uint32Array(FILTER_WORDS);
 	let any = false;
-	const compounds = reading.compounds;
-	for (let i = 0; i < compounds.length - 1; i++) {
-		const compound = compounds[i];
-		if (compound.precedesSibling) {
+	for (let i = 0; i < complex.compounds.length - 1; i++) {
+		if (isSiblingCombinator(complex.combinators[i])) {
 			continue;
 		}
-		const {tag, ids, classes} = compound.required;
+		const {tag, ids, classes} = getRequiredKeys(complex.compounds[i]);
 		if (tag !== null) {
 			addFilterKey(bits, `<${toASCIILowercase(tag)}`);
 			any = true;
