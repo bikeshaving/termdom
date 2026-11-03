@@ -6820,10 +6820,6 @@ interface ParsedCSSRule {
 	// originates on the part element, inside the host's shadow tree.
 	ofPart?: boolean;
 
-	// Whether the rule holds a :has(), whose asks the cascade's :has()
-	// tables gather.
-	has: boolean;
-
 	// The bits, in an element's ancestor filter, of the names, ids and
 	// classes the rule's compounds left of a descendant or child
 	// combinator require, so an element whose ancestors have none of one
@@ -7107,21 +7103,10 @@ export class Cascade {
 
 	// Whether any rule is scoped, which is what adds proximity to the sort.
 	scopedRulesExist: boolean;
-	hasRulesExist: boolean;
 
-	// What an element must have for a :has() to be tested on it: an id as
-	// "#id", a class as ".class", a local name, or "*" for anything. A
-	// change inside an element that has none of them leaves every :has()
-	// as it was.
-	hasAnchors: Set<string>;
-	// Whether a :has() argument starts with + or ~, which an element's
-	// earlier siblings can match from, and not only its ancestors.
-	hasSiblingRules: boolean;
-
-	// The engine reads this to decide whether the terminal must report
-	// pointer motion. A sheet that never tests :hover cannot show it, and
-	// motion reporting has a per-cell cost.
-	hoverRulesDeclared: boolean;
+	// What each tree's rules ask of the cascade, by the tree whose sheets
+	// declared them, as siblingRuleIndexes keeps it.
+	scopeRules: Map<Node, ScopeRules>;
 
 	// The document's own sheets as the last parse read them, in order, or
 	// null before the first. A style element that joined since is read on
@@ -7179,17 +7164,9 @@ export class Cascade {
 	// change, so they are dropped with any change.
 	filteredSiblingsForMatching: FilteredSiblingIndexes | null;
 
-	// The pseudo-classes named anywhere inside a :has() argument. A change
-	// to one of those states can restyle an anchor's whole subtree, far
-	// from the element whose state changed.
-	hasStates: Set<string>;
-
-	// Every compound a :has() is written in, and whether one can't be
-	// tested on its own. What each anchor answered them last, as a string
-	// of 0s and 1s in their order, so a change under an anchor that leaves
+	// What each anchor answered the :has() compounds last, as a string of
+	// 0s and 1s in their order, so a change under an anchor that leaves
 	// every answer the same restyles nothing.
-	hasCompounds: Set<CompiledCompound>;
-	hasCompoundsUntestable: boolean;
 	hasAnswers: WeakMap<Element, string>;
 
 	// Set by the layout engine when geometry changed under the used values.
@@ -7252,14 +7229,8 @@ export class Cascade {
 		this.flatTree = null;
 		this.listNumberings = new WeakMap();
 		this.scopedRulesExist = false;
-		this.hasRulesExist = false;
-		this.hasAnchors = new Set();
-		this.hasSiblingRules = false;
-		this.hasStates = new Set();
-		this.hasCompounds = new Set();
-		this.hasCompoundsUntestable = false;
+		this.scopeRules = new Map();
 		this.hasAnswers = new WeakMap();
-		this.hoverRulesDeclared = false;
 		this.documentSheets = null;
 		this.flushing = false;
 		this.usedValues = new WeakMap();
@@ -7529,9 +7500,10 @@ function invalidateHasAnchors(
 	batch: MutationBatch,
 	mutations: MutationRecord[],
 ): void {
-	if (!cascade.hasRulesExist) {
+	if (!someScopeRules(cascade, (rules) => rules.hasAnchors.size > 0)) {
 		return;
 	}
+	const siblings = someScopeRules(cascade, (rules) => rules.hasSiblings);
 	const anchors = new Set<Element>();
 	for (const mutation of mutations) {
 		const start = getNodeType(mutation.target) === ELEMENT_NODE
@@ -7545,9 +7517,7 @@ function invalidateHasAnchors(
 			for (
 				let element: Element | null = ancestor;
 				element !== null;
-				element = cascade.hasSiblingRules
-					? element.previousElementSibling
-					: null
+				element = siblings ? element.previousElementSibling : null
 			) {
 				if (!anchors.has(element) && couldAnchorHas(cascade, element)) {
 					anchors.add(element);
@@ -7761,7 +7731,7 @@ export function handleFocusChange(
 	cascade: Cascade,
 	...elements: Array<Element | null>
 ): void {
-	if (FOCUS_STATES.some((state) => cascade.hasStates.has(state))) {
+	if (FOCUS_STATES.some((state) => hasStateRules(cascade, state))) {
 		restyleAll(cascade);
 		return;
 	}
@@ -7788,7 +7758,7 @@ export function handleStateChange(
 	element: Element,
 	states: readonly string[],
 ): void {
-	if (states.some((state) => cascade.hasStates.has(state))) {
+	if (states.some((state) => hasStateRules(cascade, state))) {
 		restyleAll(cascade);
 		return;
 	}
@@ -7825,7 +7795,7 @@ export function handleActiveChange(
 // describes the current document.
 export function hoverRulesExist(cascade: Cascade): boolean {
 	parseStylesheetsIfStale(cascade);
-	return cascade.hoverRulesDeclared;
+	return someScopeRules(cascade, (rules) => rules.hover);
 }
 
 // The slots of the declaration, which the cache holds, so a read of a
@@ -7983,14 +7953,76 @@ function registerConnectedShadowRoots(
 	}
 }
 
-// In place rather than by a full parse, which renews every rule's id and
-// leaves no shared table reusable.
-// What the :has()es in a selector ask of the cascade, at any depth, and
-// whether it holds one. A compound holding a pseudo-element or :host, or a
-// second :has(), only means something in its tree, and is not tested on
-// its own.
-function noteHasRules(cascade: Cascade, complex: CompiledComplex): boolean {
-	let found = false;
+// What one tree's rules ask of the cascade.
+interface ScopeRules {
+
+	// The engine reads this to decide whether the terminal must report
+	// pointer motion. A sheet that never tests :hover cannot show it, and
+	// motion reporting has a per-cell cost.
+	hover: boolean;
+
+	// What an element must have for a :has() to be tested on it: an id as
+	// "#id", a class as ".class", a local name, or "*" for anything. A
+	// change inside an element that has none of them leaves every :has()
+	// as it was.
+	hasAnchors: Set<string>;
+
+	// Whether a :has() argument starts with + or ~, which an element's
+	// earlier siblings can match from, and not only its ancestors.
+	hasSiblings: boolean;
+
+	// The pseudo-classes named anywhere inside a :has() argument. A change
+	// to one of those states can restyle an anchor's whole subtree, far
+	// from the element whose state changed.
+	hasStates: Set<string>;
+
+	// Every compound a :has() is written in, and whether one can't be
+	// tested on its own.
+	hasCompounds: Set<CompiledCompound>;
+	hasUntestable: boolean;
+}
+
+function getScopeRules(cascade: Cascade, scope: Node | undefined): ScopeRules {
+	const key = scope ?? cascade.document;
+	let rules = cascade.scopeRules.get(key);
+	if (rules === undefined) {
+		rules = {
+			hover: false,
+			hasAnchors: new Set(),
+			hasSiblings: false,
+			hasStates: new Set(),
+			hasCompounds: new Set(),
+			hasUntestable: false,
+		};
+		cascade.scopeRules.set(key, rules);
+	}
+	return rules;
+}
+
+function someScopeRules(
+	cascade: Cascade,
+	test: (rules: ScopeRules) => boolean,
+): boolean {
+	for (const rules of cascade.scopeRules.values()) {
+		if (test(rules)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function hasStateRules(cascade: Cascade, state: string): boolean {
+	return someScopeRules(cascade, (rules) => rules.hasStates.has(state));
+}
+
+// What the :has()es in a selector ask of the cascade, at any depth. A
+// compound holding a pseudo-element or :host, or a second :has(), only
+// means something in its tree, and is not tested on its own.
+function noteHasRules(
+	cascade: Cascade,
+	rules: ScopeRules,
+	complex: CompiledComplex,
+): void {
 	const after = complex.pseudoElement?.after ?? null;
 	const compounds = after === null
 		? complex.compounds
@@ -7998,10 +8030,8 @@ function noteHasRules(cascade: Cascade, complex: CompiledComplex): boolean {
 	for (const [index, compound] of compounds.entries()) {
 		const names = getPseudoClassNames(getNestedCompounds(compound));
 		if (compound.pseudoClasses.some(({name}) => name === "has")) {
-			found = true;
-			cascade.hasRulesExist = true;
 			const required = getRequiredKeys(compound);
-			cascade.hasAnchors.add(
+			rules.hasAnchors.add(
 				required.ids.length > 0
 					? `#${required.ids[0]}`
 					: required.classes.length > 0
@@ -8015,9 +8045,9 @@ function noteHasRules(cascade: Cascade, complex: CompiledComplex): boolean {
 				names.filter((name) => name === "has").length > 1 ||
 				names.some((name) => name.startsWith("host"))
 			) {
-				cascade.hasCompoundsUntestable = true;
-			} else if (!cascade.hasCompounds.has(compound)) {
-				cascade.hasCompounds.add(compound);
+				rules.hasUntestable = true;
+			} else if (!rules.hasCompounds.has(compound)) {
+				rules.hasCompounds.add(compound);
 				cascade.hasAnswers = new WeakMap();
 			}
 		}
@@ -8025,77 +8055,74 @@ function noteHasRules(cascade: Cascade, complex: CompiledComplex): boolean {
 			for (const argument of args) {
 				if (name === "has") {
 					if (isSiblingCombinator(argument.combinators[0])) {
-						cascade.hasSiblingRules = true;
+						rules.hasSiblings = true;
 					}
 					for (const inner of argument.compounds) {
 						for (const state of getPseudoClassNames(
 							getNestedCompounds(inner),
 						)) {
-							cascade.hasStates.add(state);
+							rules.hasStates.add(state);
 						}
 					}
 				}
-				found = noteHasRules(cascade, argument) || found;
+				noteHasRules(cascade, rules, argument);
 			}
 		}
 	}
-	return found;
 }
 
 function couldAnchorHas(cascade: Cascade, element: Element): boolean {
-	const anchors = cascade.hasAnchors;
-	if (
-		anchors.has("*") || anchors.has(toASCIILowercase(getLocalName(element)))
-	) {
-		return true;
-	}
+	const tag = toASCIILowercase(getLocalName(element));
 	const id = getAttributeValue(element, "id");
-	if (id !== null && anchors.has(`#${id}`)) {
-		return true;
-	}
-	for (const className of element.classList) {
-		if (anchors.has(`.${className}`)) {
+	return someScopeRules(cascade, ({hasAnchors: anchors}) => {
+		if (anchors.size === 0) {
+			return false;
+		}
+		if (
+			anchors.has("*") ||
+			anchors.has(tag) ||
+			(id !== null && anchors.has(`#${id}`))
+		) {
 			return true;
 		}
-	}
-	return false;
+		for (const className of element.classList) {
+			if (anchors.has(`.${className}`)) {
+				return true;
+			}
+		}
+		return false;
+	});
 }
 
 // Whether the element answers any :has() compound otherwise than it did
 // when last asked, which a first ask always counts as.
 function hasAnswersChanged(cascade: Cascade, element: Element): boolean {
-	if (cascade.hasCompoundsUntestable) {
+	if (someScopeRules(cascade, (rules) => rules.hasUntestable)) {
 		return true;
 	}
 	let answers = "";
-	for (const compound of cascade.hasCompounds) {
-		answers += matchesCompound(element as unknown as DOMElement, compound, {
-			hasResults: null,
-		})
-			? "1"
-			: "0";
+	for (const rules of cascade.scopeRules.values()) {
+		for (const compound of rules.hasCompounds) {
+			answers += matchesCompound(element as unknown as DOMElement, compound, {
+				hasResults: null,
+			})
+				? "1"
+				: "0";
+		}
 	}
 	const previous = cascade.hasAnswers.get(element);
 	cascade.hasAnswers.set(element, answers);
 	return previous !== answers;
 }
 
+// In place rather than by a full parse, which renews every rule's id and
+// leaves no shared table reusable. The root's rules go, and so does what
+// they asked for.
 function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	dropScopedRules(cascade, root);
 	cascade.siblingRuleIndexes.delete(root);
-	// The root's :has() rules went with it, and so does what they asked for.
-	cascade.hasRulesExist = false;
-	cascade.hasAnchors = new Set();
-	cascade.hasSiblingRules = false;
-	cascade.hasStates = new Set();
-	cascade.hasCompounds = new Set();
-	cascade.hasCompoundsUntestable = false;
+	cascade.scopeRules.delete(root);
 	cascade.hasAnswers = new WeakMap();
-	for (const rule of cascade.parsedRules) {
-		if (rule.has) {
-			noteHasRules(cascade, (rule.matcher ?? rule.relativeMatcher)!.list[0]);
-		}
-	}
 }
 
 // A tree's rules, wherever the cascade files them: the pseudo-element rules
@@ -8123,6 +8150,8 @@ function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	}
 	dropScopedRules(cascade, root);
 	cascade.siblingRuleIndexes.delete(root);
+	cascade.scopeRules.delete(root);
+	cascade.hasAnswers = new WeakMap();
 	const before = cascade.parsedRules.length;
 	for (const sheet of getShadowStyleSheets(root)) {
 		parseStyleSheet(cascade, sheet, root);
@@ -8534,7 +8563,7 @@ function chainStateChange(
 	next: Element | null,
 	state: string,
 ): void {
-	if (cascade.hasStates.has(state)) {
+	if (hasStateRules(cascade, state)) {
 		restyleAll(cascade);
 		return;
 	}
@@ -10609,14 +10638,8 @@ function parseAllStylesheets(cascade: Cascade): void {
 	cascade.listItemRulesExist = false;
 	cascade.insideMarkerRulesExist = false;
 	cascade.scopedRulesExist = false;
-	cascade.hasRulesExist = false;
-	cascade.hasAnchors = new Set();
-	cascade.hasSiblingRules = false;
-	cascade.hasStates = new Set();
-	cascade.hasCompounds = new Set();
-	cascade.hasCompoundsUntestable = false;
+	cascade.scopeRules = new Map();
 	cascade.hasAnswers = new WeakMap();
-	cascade.hoverRulesDeclared = false;
 	cascade.stylesheetsDirty = false;
 	cascade.layerPaths = [];
 	cascade.anonymousLayers = 0;
@@ -11772,16 +11795,17 @@ function parseSelector(
 	}
 	const complex = compiled.list[0];
 	// A :has() rule reads DOWN the tree, the one relational direction the
-	// per-target invalidation cannot see, so the flag enables the ancestor
-	// sweep only for documents that need it.
-	const has = noteHasRules(cascade, complex);
+	// per-target invalidation cannot see, so its anchors enable the
+	// ancestor sweep only for documents that need it.
+	const rules = getScopeRules(cascade, scope);
+	noteHasRules(cascade, rules, complex);
 	const pseudoClasses = getPseudoClassNames(
 		complex.compounds.flatMap((_, index) =>
 			getWrittenCompounds(complex, index),
 		),
 	);
 	if (pseudoClasses.includes("hover")) {
-		cascade.hoverRulesDeclared = true;
+		rules.hover = true;
 	}
 	let scopes: readonly CSSValues.ScopeCondition[] | undefined;
 	if (context.scopes.length > 0) {
@@ -11860,7 +11884,6 @@ function parseSelector(
 			scope,
 			uaOrigin,
 			reachesHost,
-			has,
 			layer,
 			layerRank: 0,
 			scopes,
@@ -11888,7 +11911,6 @@ function parseSelector(
 			scope,
 			uaOrigin,
 			reachesHost,
-			has,
 			layer,
 			layerRank: 0,
 			scopes,
