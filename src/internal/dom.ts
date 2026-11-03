@@ -9443,7 +9443,9 @@ function createStaticNodeList(nodes: Node[]): NodeList {
 	return list;
 }
 
-// Keyed by kind and name, so identity is stable across calls.
+// Keyed by kind and name, so identity is stable across calls. Document
+// collections use their bare kind, which has no colon; the other keys
+// start with a prefix and a colon.
 function getCollectionCache(node: Node): Map<string, HTMLCollection> {
 	const slots = _(node);
 	let cache = slots.collectionCaches;
@@ -28533,9 +28535,6 @@ export interface DocumentExtra extends NodeExtra {
 	// goes one way. A change in a document that never registered a
 	// collection skips the ancestor climb.
 	heldLists?: boolean;
-	// One live collection per kind, so `document.forms` is the same object
-	// on every read, as the HTML Standard requires.
-	collections?: Map<string, HTMLCollection>;
 	// The document's ResizeObservers and IntersectionObservers. They are
 	// kept by document, not by a registry object, because the document is
 	// what an observer can reach from the target it was given. That is why
@@ -30100,8 +30099,8 @@ function getDocumentCollection(
 	match: (element: Element) => boolean,
 	watched: string | null = null,
 ): HTMLCollection {
-	const collections = _(document).extra.collections ??= new Map();
-	let collection = collections.get(kind);
+	const cache = getCollectionCache(document);
+	let collection = cache.get(kind);
 	if (collection === undefined) {
 		collection = live(
 			new HTMLCollection(() =>
@@ -30109,7 +30108,7 @@ function getDocumentCollection(
 					match,
 				), document, null, watched),
 		);
-		collections.set(kind, collection);
+		cache.set(kind, collection);
 	}
 	return collection;
 }
