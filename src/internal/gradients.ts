@@ -7,8 +7,8 @@ import * as CSSTree from "./csstree.ts";
 import {
 	getCSSValueChildren,
 	isLengthUnit,
-	parseAngle,
 	parseColor,
+	readAngle,
 	toCellColor,
 } from "./cssvalues.ts";
 import {type CellContext, drawRect} from "./framebuffer.ts";
@@ -64,7 +64,7 @@ const VERTICAL_SIDES = new Set(["top", "bottom"]);
 // color stop instead.
 function readGradientDirection(nodes: CSSTree.ValueNode[]): number | null {
 	if (nodes.length === 1 && nodes[0].type === "Dimension") {
-		return parseAngle(CSSTree.generate(nodes[0] as never));
+		return readAngle(nodes[0]);
 	}
 	if (
 		nodes.length < 2 ||

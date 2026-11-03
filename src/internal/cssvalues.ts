@@ -2129,14 +2129,10 @@ const ANGLE_DEGREES: Record<string, number> = {
 };
 
 /**
- * An `<angle>` in degrees, the canonical unit CSS serializes every angle
- * in, normalized to [0, 360). Null when not one.
+ * A Dimension node's `<angle>` in degrees, the canonical unit CSS
+ * serializes every angle in, normalized to [0, 360). Null when not one.
  */
-export function parseAngle(value: string): number | null {
-	const node = getSingleValueNode(value);
-	if (!node || node.type !== "Dimension") {
-		return null;
-	}
+export function readAngle(node: CSSTree.ValueNode): number | null {
 	const factor = ANGLE_DEGREES[toASCIILowercase(node.unit ?? "")];
 	const number = parseFloat(node.value ?? "");
 	if (factor === undefined || !Number.isFinite(number)) {
