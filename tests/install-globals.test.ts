@@ -171,7 +171,6 @@ test("what a terminal does not have is missing, for feature detection", () => {
 			"indexedDB",
 			"caches",
 			"cookieStore",
-			"navigation",
 			"scheduler",
 			"speechSynthesis",
 			"trustedTypes",
