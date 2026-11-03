@@ -354,22 +354,6 @@ export function getCellBorderWidths(
 	};
 }
 
-// The engine's own classes and the lib.dom interfaces they implement are
-// typed apart, though each is the other at run time. A value crosses
-// between the two here.
-function retype(node: Element): DOMElement;
-function retype(node: Document): DOMDocument;
-function retype(node: Node): DOMNode;
-function retype(style: CSSStyleDeclaration): globalThis.CSSStyleDeclaration;
-function retype(list: StyleSheetList): globalThis.StyleSheetList;
-function retype(sheet: CSSStyleSheet): globalThis.CSSStyleSheet;
-function retype(sheets: CSSStyleSheet[]): globalThis.CSSStyleSheet[];
-function retype(node: DOMElement): Element;
-function retype(nodes: DOMElement[]): Element[];
-function retype(value: object): object {
-	return value;
-}
-
 // The entry point for every read of the cascade from a node, including
 // reads deep inside the cascade itself that have no Cascade in
 // hand.
@@ -6905,8 +6889,8 @@ function isSelectedBy(
 	shadow: Node | null = null,
 ): boolean {
 	const cascade = documentCascades.get(getOwnerDocument(element) as object);
-	return matchesCompiled(retype(element), selector, {
-		scope: retype(scope),
+	return matchesCompiled(element as unknown as DOMElement, selector, {
+		scope: scope as unknown as DOMNode,
 		shadow: shadow as DOMNode | null,
 		hasResults: cascade === undefined
 			? null
@@ -7603,12 +7587,12 @@ function handleChildListMutation(
 				const connected = isConnectedNode(element);
 				const elements: Element[] = [];
 				for (
-					let next: DOMNode | null = retype(element);
+					let next: DOMNode | null = element as unknown as DOMNode;
 					next !== null;
-					next = nextInTree(next, retype(element))
+					next = nextInTree(next, element as unknown as DOMNode)
 				) {
 					if (getNodeType(next) === ELEMENT_NODE) {
-						elements.push(retype(next as DOMElement));
+						elements.push(next as unknown as Element);
 					}
 				}
 				for (const each of elements) {
@@ -8047,9 +8031,11 @@ function hasAnswersChanged(cascade: Cascade, element: Element): boolean {
 	}
 	let answers = "";
 	for (const compound of cascade.hasCompounds) {
-		answers += matchesCompiled(retype(element), compileSelector(compound), {
-			hasResults: null,
-		})
+		answers += matchesCompiled(
+			element as unknown as DOMElement,
+			compileSelector(compound),
+			{hasResults: null},
+		)
 			? "1"
 			: "0";
 	}
@@ -9395,20 +9381,24 @@ function getResolvedStyle(
 	cascade: Cascade,
 	element: Element,
 	pseudoElt?: string | null,
-): CSSStyleDeclaration {
+): globalThis.CSSStyleDeclaration {
 	flushCascadeStyle(cascade);
 	parseStylesheetsIfStale(cascade);
 	// An element out of the document, or out of the flat tree it composes,
 	// has no style to report. Only an author read comes through here.
 	if (!isBeingRendered(element)) {
-		return runInRealm(null, () => new EmptyStyleDeclaration(element));
+		return runInRealm(null, () =>
+			new EmptyStyleDeclaration(element),
+		) as unknown as globalThis.CSSStyleDeclaration;
 	}
 
 	let pseudoElement = "";
 	if (pseudoElt) {
 		const parsed = CSSValues.parsePseudoElementArgument(String(pseudoElt));
 		if (parsed === null) {
-			return runInRealm(null, () => new EmptyStyleDeclaration(element));
+			return runInRealm(null, () =>
+				new EmptyStyleDeclaration(element),
+			) as unknown as globalThis.CSSStyleDeclaration;
 		}
 		pseudoElement = unescapeHighlightName(parsed);
 	}
@@ -9416,10 +9406,12 @@ function getResolvedStyle(
 	if (pseudoElement) {
 		return getIndexedDeclaration(
 			getPseudoDeclaration(cascade, element, pseudoElement),
-		);
+		) as unknown as globalThis.CSSStyleDeclaration;
 	}
 
-	return getIndexedDeclaration(cascade.declarationFor(element));
+	return getIndexedDeclaration(
+		cascade.declarationFor(element),
+	) as unknown as globalThis.CSSStyleDeclaration;
 }
 
 function getPseudoTransitionValue(
@@ -9854,7 +9846,7 @@ function parseStylesheetsIfStale(cascade: Cascade): void {
 	if (cascade.parsing) {
 		return;
 	}
-	const trees = takeStyleTrees(retype(cascade.document));
+	const trees = takeStyleTrees(cascade.document as unknown as DOMDocument);
 	if (trees === null) {
 		return;
 	}
@@ -10592,7 +10584,7 @@ function parseAllStylesheets(cascade: Cascade): void {
 	cascade.stylesheetsDirty = false;
 	cascade.layerPaths = [];
 	cascade.anonymousLayers = 0;
-	takeStyleTrees(retype(document));
+	takeStyleTrees(document as unknown as DOMDocument);
 
 	// Origin ordering, not source order, keeps the UA sheet beneath every
 	// author rule.
@@ -12225,12 +12217,10 @@ function selectForRule(root: Node, rule: ParsedCSSRule): Element[] {
 	if (rule.matcher === null) {
 		return [];
 	}
-	return retype(
-		selectAllCompiled(retype(root), rule.matcher, {
-			scope: retype(root),
-			shadow: ruleShadow(rule) as DOMNode | null,
-		}),
-	);
+	return selectAllCompiled(root as unknown as DOMNode, rule.matcher, {
+		scope: root as unknown as DOMNode,
+		shadow: ruleShadow(rule) as DOMNode | null,
+	}) as unknown as Element[];
 }
 
 function ruleShadow(rule: ParsedCSSRule): Node | null {
@@ -12797,15 +12787,16 @@ function installWindowMembers(cascade: Cascade): void {
 	window.getComputedStyle = windowMember(
 		window,
 		"getComputedStyle",
-		(element: Element, pseudoElt?: string |
-			null): globalThis.CSSStyleDeclaration =>
-			retype(
-				getPageView(
-					getResolvedStyle(cascade, element, pseudoElt),
-					element,
-					pseudoElt ?? "",
-				),
-			),
+		(
+			element: Element,
+			pseudoElt?: string | null,
+		): globalThis.CSSStyleDeclaration =>
+			getPageView(
+				getResolvedStyle(cascade, element, pseudoElt) as unknown as
+					CSSStyleDeclaration,
+				element,
+				pseudoElt ?? "",
+			) as unknown as globalThis.CSSStyleDeclaration,
 	) as typeof window.getComputedStyle;
 	Object.assign(window, {CSS: createCSSNamespace(cascade.document)});
 }
@@ -12819,7 +12810,7 @@ export function getInlineStyle(
 		style = new CSSStyleProperties({element});
 		inlineStyles.set(element, style);
 	}
-	return retype(style);
+	return style as unknown as globalThis.CSSStyleDeclaration;
 }
 
 /** The sheets a tree declares, as document.styleSheets lists them. */
@@ -12828,7 +12819,7 @@ export function getStyleSheets(
 ): globalThis.StyleSheetList {
 	const list = new StyleSheetList(getDeclaredStyleSheets(tree));
 	syncIndexed(list);
-	return retype(list);
+	return list as unknown as globalThis.StyleSheetList;
 }
 
 /** The tree's adopted sheets, as the observable array the setter replaces. */
@@ -12837,7 +12828,7 @@ export function getAdoptedStyleSheets(tree: Node): globalThis.CSSStyleSheet[] {
 	if (!list) {
 		adoptedSheets.set(tree, (list = []));
 	}
-	return retype(observableAdopted(tree, list));
+	return observableAdopted(tree, list) as unknown as globalThis.CSSStyleSheet[];
 }
 
 export function adoptStyleSheets(tree: Node, sheets: unknown): void {
@@ -12876,7 +12867,9 @@ function syncAdoptedSheets(tree: Node, rulesChanged: boolean): void {
 export function styleElementSheet(
 	element: Element,
 ): globalThis.CSSStyleSheet | null {
-	return element.parentNode ? retype(getSheet(element)) : null;
+	return element.parentNode
+		? (getSheet(element) as unknown as globalThis.CSSStyleSheet)
+		: null;
 }
 
 /**
