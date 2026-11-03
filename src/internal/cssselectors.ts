@@ -443,6 +443,10 @@ export interface CompiledComplex {
 	// Ids, then classes, then types, packed so a greater number is the
 	// greater weight.
 	specificity: number;
+
+	// The pseudo-element a style rule styles, read when compiled with
+	// `pseudoElements`. The compounds select the element it belongs to.
+	pseudoElement: CompiledPseudoElement | null;
 }
 
 /** A compiled selector list, ready to match against an element. */
@@ -531,8 +535,9 @@ interface CompileOptions {
 	namespaces?: SelectorNamespaces | null;
 
 	// The DOM's own query methods accept `a::before` and match nothing with
-	// it. The cascade, which matches `::slotted()` and `::part()` for real,
-	// sets this.
+	// it. The cascade sets this: a selector ending with a pseudo-element
+	// selects the element the pseudo-element belongs to, and records the
+	// pseudo-element, and its `::slotted()` and `::part()` match for real.
 	pseudoElements?: boolean;
 
 	// Allow the selector to open with a combinator, as `@scope` does.
@@ -711,14 +716,23 @@ function mentionsScope(node: CSSTree.SelectorNode): boolean {
 // matches where it stands and is limited by its root elsewhere.
 function compileComplex(
 	selector: CSSTree.SelectorNode,
-	compiling: Compiling,
+	outer: Compiling,
 	relative: boolean,
 	anchored = false,
 ): CompiledComplex {
-	const parts = getChildren(selector);
-	if (parts.length === 0) {
+	const written = getChildren(selector);
+	if (written.length === 0) {
 		throw new SelectorError("a selector selects something");
 	}
+	// A style rule's own selector may end with the pseudo-element it styles.
+	// Anywhere else a pseudo-element selects nothing.
+	const trailing = outer.pseudoElements && !outer.nested
+		? findTrailingPseudoElement(written)
+		: -1;
+	const compiling = trailing === -1 && outer.pseudoElements
+		? {...outer, pseudoElements: false}
+		: outer;
+	const parts = trailing === -1 ? written : written.slice(0, trailing);
 	const compounds: CompiledCompound[] = [];
 	const combinators: Combinator[] = [];
 	let pending: CSSTree.SelectorNode[] = [];
@@ -757,11 +771,22 @@ function compileComplex(
 		pending = [];
 		started = true;
 	}
-	if (pending.length === 0) {
+	if (pending.length === 0 && trailing === -1) {
 		throw new SelectorError("a combinator joins two compounds");
 	}
 	compounds.push(compileCompound(pending, compiling));
-	return {compounds, combinators, specificity: getSpecificity(selector)};
+	return {
+		compounds,
+		combinators,
+		specificity: getSpecificity(selector),
+		pseudoElement: trailing === -1
+			? null
+			: compileTrailingPseudoElement(
+				written[trailing],
+				written.slice(trailing + 1),
+				compiling,
+			),
+	};
 }
 
 // selectors-4 §17: ids, then classes/attributes/pseudo-classes, then
@@ -1540,7 +1565,7 @@ function compilePseudoElement(
 	part: CSSTree.SelectorNode,
 	compound: CompiledCompound,
 	compiling: Compiling,
-): void {
+): CompiledPseudoElement {
 	const name = pseudoName(String(part.name ?? ""));
 	if (!PSEUDO_ELEMENTS.has(name)) {
 		throw new SelectorError(`unknown pseudo-element ::${name}`);
@@ -1553,54 +1578,87 @@ function compilePseudoElement(
 	} else if (args.length === 0) {
 		throw new SelectorError(`::${name} takes an argument`);
 	}
+	const pseudoElement: CompiledPseudoElement = {
+		name,
+		argument: null,
+		after: null,
+	};
 	if (name === "slotted") {
 		const inner = compileArgumentList(args, compiling, false);
 		if (!compiling.pseudoElements) {
 			compound.tests.push(matchNothing);
-			return;
+			return pseudoElement;
 		}
 		// The slotted element is what the compound selects. Everything written
 		// before `::slotted()` describes the slot it landed in.
 		compound.originTests = compound.tests;
 		compound.tests = [];
-		compound.pseudoElement = {name, argument: null, after: null};
+		compound.pseudoElement = pseudoElement;
 		compound.origin = (element) => states.getOpenAssignedSlot(element);
 		compound.tests.push(
 			(element, state) =>
 				states.getOpenAssignedSlot(element) !== null &&
 				inner.some((complex) => matchComplex(complex, element, state, false)),
 		);
-		return;
+		return pseudoElement;
 	}
 	if (name === "part") {
 		const wanted = getIdentifierListArgument(args, "part");
+		pseudoElement.argument = wanted.join(" ");
 		if (!compiling.pseudoElements) {
 			compound.tests.push(matchNothing);
-			return;
+			return pseudoElement;
 		}
 		// The part is what the compound selects. What is written before
 		// `::part()` describes the host whose tree the part lives in.
 		compound.originTests = compound.tests;
 		compound.tests = [];
-		compound.pseudoElement = {name, argument: wanted.join(" "), after: null};
+		compound.pseudoElement = pseudoElement;
 		compound.origin = (element) => states.getShadowHost(getRoot(element));
 		compound.tests.push((element) => {
 			const names = states.getPartNames(element);
 			return wanted.every((name) => names.includes(name));
 		});
-		return;
+		return pseudoElement;
 	}
-	if (name === "picker") {
-		const argument = getIdentifierArgument(args, "picker");
-		if (argument !== "select") {
-			throw new SelectorError("::picker names the select it belongs to");
-		}
-	} else if (FUNCTIONAL_PSEUDO_ELEMENTS.has(name)) {
-		getIdentifierArgument(args, name);
+	if (FUNCTIONAL_PSEUDO_ELEMENTS.has(name)) {
+		pseudoElement.argument = getIdentifierArgument(args, name);
+	}
+	if (name === "picker" && pseudoElement.argument !== "select") {
+		throw new SelectorError("::picker names the select it belongs to");
 	}
 	// Every other pseudo-element names a box the tree has no node for, so a
 	// query over the tree never selects one.
 	compound.tests.push(matchNothing);
+	return pseudoElement;
+}
+
+// The pseudo-element a style rule's selector ends with, which only
+// pseudo-classes may follow, read apart from the compound it is written
+// on. The rule styles that pseudo-element of what the rest selects.
+function compileTrailingPseudoElement(
+	part: CSSTree.SelectorNode,
+	after: CSSTree.SelectorNode[],
+	compiling: Compiling,
+): CompiledPseudoElement {
+	const pseudoElement = compilePseudoElement(part, createCompound(), {
+		...compiling,
+		pseudoElements: false,
+	});
+	if (after.length > 0) {
+		pseudoElement.after = compileCompound(after, compiling);
+	}
+	return pseudoElement;
+}
+
+function findTrailingPseudoElement(parts: CSSTree.SelectorNode[]): number {
+	let index = parts.length - 1;
+	while (index >= 0 && parts[index].type === "PseudoClassSelector") {
+		index--;
+	}
+	return index >= 0 && parts[index].type === "PseudoElementSelector"
+		? index
+		: -1;
 }
 
 function compileNth(
@@ -2063,6 +2121,42 @@ function matchComplex(
 	);
 }
 
+// The element the compound describes when it matches, which the
+// combinator to its left steps from, or null.
+function matchCompound(
+	compound: CompiledCompound,
+	element: Element,
+	state: MatchState,
+	featureless: boolean,
+): Element | null {
+	if (featureless && !compound.host) {
+		return null;
+	}
+	if (getNodeType(element) !== ELEMENT_NODE) {
+		return null;
+	}
+	const tests = compound.tests;
+	for (let at = 0; at < tests.length; at++) {
+		if (!tests[at](element, state)) {
+			return null;
+		}
+	}
+	if (compound.origin === null) {
+		return element;
+	}
+	const origin = compound.origin(element, state);
+	if (origin === null) {
+		return null;
+	}
+	const originTests = compound.originTests;
+	for (let at = 0; at < originTests.length; at++) {
+		if (!originTests[at](origin, state)) {
+			return null;
+		}
+	}
+	return origin;
+}
+
 function matchFrom(
 	complex: CompiledComplex,
 	index: number,
@@ -2070,32 +2164,14 @@ function matchFrom(
 	state: MatchState,
 	featureless: boolean,
 ): boolean {
-	const compound = complex.compounds[index];
-	if (featureless && !compound.host) {
+	const subject = matchCompound(
+		complex.compounds[index],
+		element,
+		state,
+		featureless,
+	);
+	if (subject === null) {
 		return false;
-	}
-	if (getNodeType(element) !== ELEMENT_NODE) {
-		return false;
-	}
-	const tests = compound.tests;
-	for (let at = 0; at < tests.length; at++) {
-		if (!tests[at](element, state)) {
-			return false;
-		}
-	}
-	let subject = element;
-	if (compound.origin !== null) {
-		const origin = compound.origin(element, state);
-		if (origin === null) {
-			return false;
-		}
-		const originTests = compound.originTests;
-		for (let at = 0; at < originTests.length; at++) {
-			if (!originTests[at](origin, state)) {
-				return false;
-			}
-		}
-		subject = origin;
 	}
 	if (index === 0) {
 		return true;
@@ -2487,6 +2563,16 @@ export function matchesCompiled(
 	options: MatchOptions = {},
 ): boolean {
 	return matchesAny(selector, element, createMatchState(options));
+}
+
+/** Whether the element matches one compound, with no combinator. */
+export function matchesCompound(
+	element: Element,
+	compound: CompiledCompound,
+	options: MatchOptions = {},
+): boolean {
+	return matchCompound(compound, element, createMatchState(options), false) !==
+		null;
 }
 
 /** In tree order. */

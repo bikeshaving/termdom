@@ -6,11 +6,14 @@ import {
 	CSS_SHORTHANDS,
 } from "../generated/cssproperties.ts";
 import {
+	type CompiledCompound,
 	type CompiledSelector,
 	compileSelector,
 	type FilteredSiblingIndexes,
 	type HasResults,
 	matchesCompiled,
+	matchesCompound,
+	opensWithCombinator,
 	parseSelectorList,
 	selectAllCompiled,
 	type SelectorNamespaces,
@@ -6798,10 +6801,6 @@ interface ParsedCSSRule {
 	specificity: string;
 	pseudoElement?: string;
 
-	// The pseudo-classes written after `::part()`, which the part element
-	// itself must match: `::part(inner):dir(rtl)`.
-	partMatcher?: CompiledSelector | null;
-
 	// The tree scope whose stylesheet declared this rule. Undefined for
 	// document rules. A rule only ever matches elements of its own tree,
 	// which is the cascade's encapsulation boundary in both directions.
@@ -6884,12 +6883,12 @@ function isInScope(
 // names, cast here.
 function isSelectedBy(
 	element: Element,
-	selector: CompiledSelector,
+	selector: CompiledSelector | CompiledCompound,
 	scope: Node,
 	shadow: Node | null = null,
 ): boolean {
 	const cascade = documentCascades.get(getOwnerDocument(element) as object);
-	return matchesCompiled(element as unknown as DOMElement, selector, {
+	const options = {
 		scope: scope as unknown as DOMNode,
 		shadow: shadow as DOMNode | null,
 		hasResults: cascade === undefined
@@ -6901,7 +6900,11 @@ function isSelectedBy(
 		filteredSiblings: cascade === undefined
 			? null
 			: (cascade.filteredSiblingsForMatching ??= new WeakMap()),
-	});
+	};
+	const subject = element as unknown as DOMElement;
+	return "list" in selector
+		? matchesCompiled(subject, selector, options)
+		: matchesCompound(subject, selector, options);
 }
 
 function shouldCreatePseudoElement(
@@ -11559,26 +11562,6 @@ function indexReachingKeys(
 	}
 }
 
-// A selector this engine cannot read compiles to neither reading, and
-// the rule styles nothing.
-function compileRuleSelector(
-	selector: string,
-	namespaces: SelectorNamespaces | undefined,
-	scopes: readonly CSSValues.ScopeCondition[] | undefined,
-	pseudoElements = false,
-): Pick<ParsedCSSRule, "matcher" | "relativeMatcher"> {
-	const read = (relative: boolean): CompiledSelector | null => {
-		try {
-			return compileSelector(selector, {namespaces, relative, pseudoElements});
-		} catch (_err) {
-			// Only the shape of a sheet's selector was checked when the rule
-			// was parsed. A prefix no `@namespace` declared is rejected here.
-			return null;
-		}
-	};
-	return {matcher: read(false), relativeMatcher: scopes ? read(true) : null};
-}
-
 function parseSelector(
 	cascade: Cascade,
 	selector: string,
@@ -11612,12 +11595,19 @@ function parseSelector(
 		scopes = context.scopes;
 		cascade.scopedRulesExist = true;
 	}
-	if (
-		selector.includes("|") &&
-		!CSSValues.namespacePrefixesDeclared(selector, namespaces)
-	) {
+	let compiled: CompiledSelector;
+	try {
+		compiled = compileSelector(selector, {
+			namespaces,
+			relative: true,
+			pseudoElements: true,
+		});
+	} catch (_err) {
+		// Only the shape of a sheet's selector was checked when the rule was
+		// parsed. A prefix no `@namespace` declared is rejected here.
 		return;
 	}
+	const complex = compiled.list[0];
 	indexReachingKeys(cascade, selector, reading, declarations, scope);
 	if (
 		declarations["counter-reset"] ||
@@ -11665,33 +11655,22 @@ function parseSelector(
 		scope !== undefined &&
 		pseudoClasses.some((name) => name.startsWith("host"));
 
+	// The relative reading is the one an @scope rule matches from its root.
+	// Anywhere else a selector opening with a combinator selects nothing.
+	const matcher = opensWithCombinator(complex) ? null : compiled;
+	const relativeMatcher = scopes ? compiled : null;
 	// Any pseudo-element, not just the ones this engine gives a box. A rule
 	// for `::highlight(x)` still has to be visible through
 	// getComputedStyle.
-	const pseudoMatch = selector.match(
-		/^(.*?)(::[-\w]+(?:\([^)]*\))?)((?::[-\w]+(?:\([^)]*\))?)*)$/,
-	);
-
-	if (pseudoMatch) {
-		const [, baseSelector, , trailing] = pseudoMatch;
-		const pseudoElement = unescapeHighlightName(pseudoMatch[2]);
-		let partMatcher: CompiledSelector | null | undefined;
-		if (trailing && pseudoElement.startsWith("::part(")) {
-			try {
-				partMatcher = compileSelector(`*${trailing}`, {namespaces});
-			} catch (_err) {
-				partMatcher = null;
-			}
-		}
-		const ofPart = baseSelector.includes("::part(");
-		// A pseudo-element written with no compound of its own originates on
-		// every element, which is what `*` means: `a > ::before` is
-		// `a > *::before`.
-		const origin = /(?:^|[\s>+~])$/.test(baseSelector)
-			? `${baseSelector}*`
-			: baseSelector;
+	const pseudo = complex.pseudoElement;
+	if (pseudo !== null) {
+		const pseudoElement = pseudo.argument === null
+			? `::${pseudo.name}`
+			: `::${pseudo.name}(${pseudo.argument})`;
+		const ofPart = complex.compounds.at(-1)!.pseudoElement?.name === "part";
 		const rule: ParsedCSSRule = {
-			...compileRuleSelector(origin, namespaces, scopes, ofPart),
+			matcher,
+			relativeMatcher,
 			subjectTag: ofPart ? undefined : subjectTag,
 			subjectKey: ofPart ? undefined : subjectKey,
 			ofPart,
@@ -11700,7 +11679,6 @@ function parseSelector(
 			order,
 			specificity,
 			pseudoElement,
-			partMatcher,
 			scope,
 			uaOrigin,
 			reachesHost,
@@ -11718,7 +11696,8 @@ function parseSelector(
 		}
 	} else {
 		cascade.parsedRules.push({
-			...compileRuleSelector(selector, namespaces, scopes),
+			matcher,
+			relativeMatcher,
 			ancestorBits: scopes || reachesHost || reading.nests
 				? undefined
 				: getAncestorBits(reading),
@@ -12138,14 +12117,14 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 					.split(CSSValues.WHITESPACE_RUN)
 					.filter(Boolean);
 				const names = partNames;
+				const after = (rule.matcher ?? rule.relativeMatcher)!.list[0]
+					.pseudoElement!.after;
 				if (
 					(rule.uaOrigin || !isUAShadowTree(root)) &&
 					splitOnASCIIWhitespace(partArg[1])
 						.every((name) => names.includes(name)) &&
 					isRuleMatch(shadowHost, rule) &&
-					(rule.partMatcher === undefined ||
-						(rule.partMatcher !== null &&
-							isSelectedBy(element, rule.partMatcher, element)))
+					(after === null || isSelectedBy(element, after, element))
 				) {
 					matched.push(rule);
 				}
