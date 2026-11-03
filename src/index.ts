@@ -63,6 +63,7 @@ import {
 	eraseBelow,
 	Exchange,
 	flushExchange,
+	hasDisplayType,
 	initializeCursorDetection,
 	negotiateBidi,
 	negotiateCellPixels,
@@ -588,8 +589,6 @@ interface TermDOMSlots extends EventTargetSlots {
 	// Construction never touches the terminal. attach() does, and dispose()
 	// ends the instance for good.
 	lifecycle: Lifecycle;
-	mouseReportingEnabled: boolean;
-	hoverReportingEnabled: boolean;
 	transport: TerminalTransport;
 	// The colorDepth option, or undefined when the terminal is to be asked.
 	colorDepth: EmittedColorDepth | undefined;
@@ -660,9 +659,6 @@ export class TermDOM extends EventTarget {
 		slots.firstFrame = null;
 		slots.unprinted = false;
 		slots.lifecycle = "detached";
-
-		slots.mouseReportingEnabled = false;
-		slots.hoverReportingEnabled = false;
 
 		slots.attachReady = Promise.resolve();
 		slots.attachBegun = Promise.resolve();
@@ -1036,8 +1032,6 @@ export class TermDOM extends EventTarget {
 		// next line lands on ours.
 		restoreEngagedModes(slots.exchange);
 		dropFullscreen(this.document);
-		slots.hoverReportingEnabled = false;
-		slots.mouseReportingEnabled = false;
 		// A program that was fullscreen from its first frame leaves nothing
 		// behind, as vim does: the cursor returns to the command line.
 		if (closingFullscreen && slots.transport.interactive && slots.flowPainted) {
@@ -1458,10 +1452,6 @@ function syncMouseReporting(termDOM: TermDOM): void {
 		isAttached(termDOM) &&
 		termDOMSlots.transport.interactive &&
 		!termDOMSlots.input.mouseCaptureYielded;
-	if (wanted === termDOMSlots.mouseReportingEnabled) {
-		return;
-	}
-	termDOMSlots.mouseReportingEnabled = wanted;
 	setDisplayType(termDOMSlots.exchange, "mouseCapture", wanted);
 }
 
@@ -1472,13 +1462,9 @@ function syncMouseReporting(termDOM: TermDOM): void {
 function syncHoverReporting(termDOM: TermDOM): void {
 	const termDOMSlots = _(termDOM);
 	const wanted =
-		termDOMSlots.mouseReportingEnabled &&
+		hasDisplayType(termDOMSlots.exchange, "mouseCapture") &&
 		(hoverListenerCount(termDOM.document) > 0 ||
 			hoverRulesExist(termDOMSlots.cascade));
-	if (wanted === termDOMSlots.hoverReportingEnabled) {
-		return;
-	}
-	termDOMSlots.hoverReportingEnabled = wanted;
 	setDisplayType(termDOMSlots.exchange, "motionReporting", wanted);
 }
 

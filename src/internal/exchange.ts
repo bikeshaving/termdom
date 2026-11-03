@@ -1245,6 +1245,11 @@ export function deferResizeEvent(exchange: Exchange): void {
 	_(exchange).defersResize = true;
 }
 
+/** Whether the display type is engaged, including while suspended. */
+export function hasDisplayType(exchange: Exchange, name: ModeName): boolean {
+	return _(exchange).engagedModes.has(name);
+}
+
 /** Writes on change only. Teardown restores what was engaged. */
 export function setDisplayType(
 	exchange: Exchange,
