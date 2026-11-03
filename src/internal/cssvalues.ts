@@ -4319,115 +4319,6 @@ function serializeQualifiedName(
 	return `${serializeCSSIdentifier(decoded)}|${localText}`;
 }
 
-// selectors-4 §17: ids, then classes/attributes/pseudo-classes, then
-// types/pseudo-elements.
-type Specificity = [number, number, number];
-
-// Their weight is their most specific argument's. The name itself
-// counts nothing.
-const ARGUMENT_WEIGHTED_PSEUDO_CLASSES = new Set([
-	"has",
-	"is",
-	"matches",
-	"not",
-	"-moz-any",
-	"-webkit-any",
-]);
-
-// Weigh as a class AND add their most specific argument's weight.
-const COMPOUND_WEIGHTED_PSEUDO_CLASSES = new Set([
-	"host",
-	"host-context",
-	"nth-child",
-	"nth-last-child",
-]);
-
-function getListSpecificity(list: CSSTree.SelectorNode): Specificity {
-	let most: Specificity = [0, 0, 0];
-	for (const selector of getChildren(list)) {
-		const weight = getSelectorSpecificity(selector);
-		if (
-			weight[0] > most[0] ||
-			(weight[0] === most[0] &&
-				(weight[1] > most[1] || (weight[1] === most[1] && weight[2] > most[2])))
-		) {
-			most = weight;
-		}
-	}
-	return most;
-}
-
-function getSelectorSpecificity(selector: CSSTree.SelectorNode): Specificity {
-	const total: Specificity = [0, 0, 0];
-	const add = (weight: Specificity): void => {
-		total[0] += weight[0];
-		total[1] += weight[1];
-		total[2] += weight[2];
-	};
-	const argumentWeight = (node: CSSTree.SelectorNode): Specificity => {
-		for (const child of getChildren(node)) {
-			if (child.type === "SelectorList") {
-				return getListSpecificity(child);
-			}
-			if (child.type === "Selector") {
-				return getSelectorSpecificity(child);
-			}
-			if (child.type === "Nth" && child.selector) {
-				return getListSpecificity(child.selector);
-			}
-		}
-		return [0, 0, 0];
-	};
-	for (const part of getChildren(selector)) {
-		switch (part.type) {
-			case "IdSelector":
-				total[0]++;
-				break;
-			case "ClassSelector":
-			case "AttributeSelector":
-				total[1]++;
-				break;
-			// The universal selector weighs nothing, in any namespace.
-			case "TypeSelector": {
-				const name = String(part.name ?? "");
-				if (!name.endsWith("*")) {
-					total[2]++;
-				}
-				break;
-			}
-			// `::slotted(.a)` and `::part(name)`: the pseudo-element weighs as
-			// an element, and a compound argument adds to that.
-			case "PseudoElementSelector":
-				total[2]++;
-				add(argumentWeight(part));
-				break;
-			case "PseudoClassSelector": {
-				const name = pseudoName(String(part.name ?? ""));
-				// `:before` is the CSS 2 spelling of a pseudo-element, and
-				// weighs as one.
-				if (isLegacyPseudoElement(name)) {
-					total[2]++;
-					break;
-				}
-				// `:where()` contributes nothing at all, arguments included.
-				if (name === "where") {
-					break;
-				}
-				if (ARGUMENT_WEIGHTED_PSEUDO_CLASSES.has(name)) {
-					add(argumentWeight(part));
-					break;
-				}
-				total[1]++;
-				if (COMPOUND_WEIGHTED_PSEUDO_CLASSES.has(name)) {
-					add(argumentWeight(part));
-				}
-				break;
-			}
-		}
-	}
-	return total;
-}
-
 // A selector testing one of these on an ancestor affects the ancestor's
 // descendants when the attribute behind it changes, and no attribute
 // NAME in the selector reveals that.
@@ -4531,7 +4422,6 @@ interface CompoundKeys {
 
 // The subject is the last compound.
 export interface SelectorReading {
-	specificity: string;
 	subjectTag: string | undefined;
 	compounds: CompoundKeys[];
 	// Whether a match depends on the element's siblings or children: the
@@ -4728,10 +4618,8 @@ export function readSelector(selector: string): SelectorReading {
 	return reading;
 }
 
-// A selector this parser cannot read weighs nothing. The matcher reads
-// a wider grammar and may still accept it, and a rule whose weight
-// cannot be counted should lose a tie. It anchors to no type and names
-// no keys.
+// A selector this parser cannot read anchors to no type and names no
+// keys. The matcher reads a wider grammar and may still accept it.
 function readSelectorText(selector: string): SelectorReading {
 	const reachesSiblings = SIBLING_SELECTOR.test(selector);
 	let failed = false;
@@ -4748,7 +4636,6 @@ function readSelectorText(selector: string): SelectorReading {
 	}
 	if (failed || !list || list.type !== "SelectorList") {
 		return {
-			specificity: "000-000-000",
 			subjectTag: undefined,
 			compounds: [],
 			reachesSiblings,
@@ -4757,10 +4644,6 @@ function readSelectorText(selector: string): SelectorReading {
 			nests: false,
 		};
 	}
-	const weight = getListSpecificity(list);
-	const specificity = weight
-		.map((count) => String(count).padStart(3, "0"))
-		.join("-");
 	const complex = getChildren(list).find((child) => child.type === "Selector");
 	const compounds: CompoundKeys[] = [];
 	let parts: CSSTree.SelectorNode[] = [];
@@ -4797,7 +4680,6 @@ function readSelectorText(selector: string): SelectorReading {
 	}
 	closeCompound();
 	const reading: SelectorReading = {
-		specificity,
 		subjectTag: getSubjectTag(complex),
 		compounds,
 		reachesSiblings,

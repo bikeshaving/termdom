@@ -4652,7 +4652,7 @@ function getHintRule(element: Element): ParsedCSSRule | null {
 				Object.create(null),
 				Object.fromEntries(properties.map((name, i) => [name, i])),
 			),
-			specificity: "",
+			specificity: 0,
 			layerRank: -1,
 		} as unknown as ParsedCSSRule;
 		if (hintRules.size > 1024) {
@@ -6797,8 +6797,7 @@ interface ParsedCSSRule {
 	// Each declaration's position in the rule's block. See CSSValues.DeclarationBlock.
 	order: Record<string, number>;
 
-	// Zero-padded for lexicographic comparison.
-	specificity: string;
+	specificity: number;
 	pseudoElement?: string;
 
 	// The tree scope whose stylesheet declared this rule. Undefined for
@@ -10639,7 +10638,7 @@ function compareRules(a: ParsedCSSRule, b: ParsedCSSRule): number {
 		return a.layerRank - b.layerRank;
 	}
 	if (a.specificity !== b.specificity) {
-		return a.specificity < b.specificity ? -1 : 1;
+		return a.specificity - b.specificity;
 	}
 	if ((a.scope === undefined) !== (b.scope === undefined)) {
 		return a.scope === undefined ? -1 : 1;
@@ -11617,7 +11616,7 @@ function parseSelector(
 	) {
 		cascade.counterRulesExist = true;
 	}
-	const specificity = reading.specificity;
+	const specificity = complex.specificity;
 	const uaOrigin = Boolean(
 		uaOriginSheet || (scope != null && isUAShadowTree(scope)),
 	);
