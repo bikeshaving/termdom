@@ -11528,7 +11528,7 @@ function isSiblingCombinator(combinator: Combinator | undefined): boolean {
 	return combinator === "+" || combinator === "~";
 }
 
-// The compound and every compound in its arguments, at any depth. A class
+// The compound and the compounds in its arguments, at any depth. A class
 // inside :not() or :is() is tested on the element the compound matches,
 // or on one it leads to.
 function getNestedCompounds(compound: CompiledCompound): CompiledCompound[] {
@@ -11609,7 +11609,7 @@ interface RequiredKeys {
 	root: boolean;
 }
 
-// The keys the element a compound matches has all of, and whether it must
+// The keys the element a compound matches must have, and whether it must
 // be the root: the compound's own, and those of a lone compound in :is()
 // or :where(). With alternatives, or a combinator, nothing one of them
 // names is required of the element.
