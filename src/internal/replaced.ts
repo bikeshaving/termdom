@@ -337,11 +337,12 @@ function positionOffset(value: string, free: number, unit: number): number {
 			return free / 2;
 	}
 	const parsed = CSSValues.parseSignedUnitValue(value);
-	if (typeof parsed === "number") {
-		return parsed * unit;
+	if (parsed === null) {
+		return free / 2;
 	}
-	const percent = /^(-?[\d.]+)%$/.exec(value);
-	return percent ? (parseFloat(percent[1]) / 100) * free : free / 2;
+	return typeof parsed === "number"
+		? parsed * unit
+		: (parsed.percentage / 100) * free;
 }
 
 // Where object-fit and object-position put an image of `natural` cells
