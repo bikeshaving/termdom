@@ -1,9 +1,7 @@
-import bidiFactory from "bidi-js";
-
 import * as CSSTree from "./csstree.ts";
 import type * as DOM from "./dom.ts";
 import type {Element, Node} from "./dom.ts";
-import {splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
+import {bidi, splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
 import {
 	CDATA_SECTION_NODE,
 	DOCUMENT_NODE,
@@ -1994,8 +1992,6 @@ function rangeMatchesTag(range: string, tag: string): boolean {
 	}
 	return true;
 }
-
-const bidi = bidiFactory();
 
 // Elements whose text a `dir=auto` scan above them never reads.
 const OPAQUE_TO_AUTO = new Set(["bdi", "script", "style", "textarea"]);

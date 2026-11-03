@@ -558,6 +558,22 @@ function takeMouseBack(input: Input): void {
  * One hit-test at the last reported position, at the start of the frame.
  */
 export function resolvePendingHover(input: Input): void {
+	// The hovered element leaving the page moves hover to what is under the
+	// pointer now, as a browser's move synthesized after layout does.
+	if (
+		input.pendingHover === null &&
+		input.lastMouse !== null &&
+		input.hoverElement !== null &&
+		!isInPage(input.hoverElement)
+	) {
+		input.pendingHover = {
+			...input.lastMouse,
+			shiftKey: false,
+			altKey: false,
+			ctrlKey: false,
+			quiet: true,
+		};
+	}
 	const pending = input.pendingHover;
 	if (pending === null) {
 		return;
@@ -671,6 +687,21 @@ export function resolvePendingHover(input: Input): void {
 		dispatchMouseLike(input, "mouse", "mousemove", target, moveInit);
 		input.lastMouse = {x, y};
 	}
+}
+
+// Connected, in a document shown in the page: its own, or one an iframe
+// in the page draws.
+function isInPage(element: Element): boolean {
+	for (
+		let node: Element | null = element;
+		node !== null;
+		node = getFrameOwner(node.ownerDocument)
+	) {
+		if (!node.isConnected) {
+			return false;
+		}
+	}
+	return true;
 }
 
 // The viewport point of `x`, `y` in the document `level` describes: the

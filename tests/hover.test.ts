@@ -234,6 +234,28 @@ test("mouseenter does not bubble; mouseover does", async () => {
 	termdom.dispose();
 });
 
+test("removing the hovered element hovers what is under the pointer", async () => {
+	const {proc, termdom, document} =
+		makeApp({html: "<div>pppp<div id=a>aaaa</div></div>"});
+	await nextFrame(termdom);
+	const a = document.getElementById("a")!;
+	await send(proc, motion(2, 2));
+	await nextFrame(termdom);
+	expect(a.matches(":hover")).toBe(true);
+
+	const over: Array<[EventTarget | null, EventTarget | null]> = [];
+	document.addEventListener("mouseover", (event: any) => {
+		over.push([event.target, event.relatedTarget]);
+	});
+	let moves = 0;
+	document.addEventListener("mousemove", () => moves++);
+	a.remove();
+	await nextFrame(termdom);
+	expect(over).toEqual([[document.body, a]]);
+	expect(moves).toBe(0);
+	termdom.dispose();
+});
+
 test("motion reports coalesce into at most one hit-test per frame", async () => {
 	const {proc, termdom, document} = makeApp();
 	for (let i = 0; i < 5; i++) {
