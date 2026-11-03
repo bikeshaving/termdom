@@ -113,10 +113,6 @@ import {
 } from "./useragent.ts";
 import {getActiveRealm, runInRealm, windowMember} from "./webidl.ts";
 
-// A regular expression literal is a new object each time it runs, so the
-// ones that run for every match and mutation are made once.
-const PART_PSEUDO = /^::part\((.+)\)$/;
-
 // Per-element defaults that are STATE, not stylesheet: the fullscreen
 // element's viewport block, a select sized to its widest option label so
 // the text control never jumps, the size attribute driving an input's width.
@@ -4647,15 +4643,15 @@ function getHintRule(element: Element): ParsedCSSRule | null {
 	if (rule === undefined) {
 		const properties = Object.keys(hints);
 		rule = {
-			matcher: null,
-			relativeMatcher: null,
-			declarations: hints,
-			important: Object.create(null),
-			order: Object.assign(
-				Object.create(null),
-				Object.fromEntries(properties.map((name, i) => [name, i])),
-			),
-			specificity: 0,
+			block: {
+				declarations: hints,
+				important: Object.create(null),
+				order: Object.assign(
+					Object.create(null),
+					Object.fromEntries(properties.map((name, i) => [name, i])),
+				),
+			},
+			origin: "author",
 			layerRank: -1,
 		} as unknown as ParsedCSSRule;
 		if (hintRules.size > 1024) {
@@ -4670,7 +4666,7 @@ function getRuleId(rule: ParsedCSSRule): number {
 	let id = ruleIds.get(rule);
 	if (id === undefined) {
 		id = COUNTER_PROPERTIES.some((name) =>
-			(rule.declarations[name] ?? "").includes("counter"),
+			(rule.block.declarations[name] ?? "").includes("counter"),
 		)
 			? -1
 			: ++nextRuleId;
@@ -4762,7 +4758,10 @@ function getDeclaredInheritedNames(
 	slots: Slots<ComputedStyleDeclaration>,
 ): string[] {
 	const names = new Set<string>();
-	const blocks = [...slots.cssRules, getInlineDeclarations(getOwner(slots))];
+	const blocks = [
+		...slots.cssRules.map((rule) => rule.block),
+		getInlineDeclarations(getOwner(slots)),
+	];
 	for (const block of blocks) {
 		for (const name of Object.keys(block.declarations)) {
 			if (CSSValues.isInheritedProperty(name)) {
@@ -4786,7 +4785,7 @@ function inheritsReset(
 	rules: readonly ParsedCSSRule[],
 ): boolean {
 	for (let index = 0; index < rules.length; index++) {
-		if (blockInheritsReset(rules[index])) {
+		if (blockInheritsReset(rules[index].block)) {
 			return true;
 		}
 	}
@@ -5191,7 +5190,7 @@ function getDeclaredCustomNames(
 ): string[] {
 	const names: string[] = [];
 	for (const rule of slots.cssRules) {
-		for (const name of Object.keys(rule.declarations)) {
+		for (const name of Object.keys(rule.block.declarations)) {
 			if (name.startsWith("--") && !names.includes(name)) {
 				names.push(name);
 			}
@@ -6076,8 +6075,8 @@ function getRuleListIndex(rules: readonly ParsedCSSRule[]): RuleListIndex {
 		for (let at = 0; at < rules.length; at++) {
 			const rule = rules[at];
 			let important = false;
-			for (const name in rule.declarations) {
-				if (rule.important[name]) {
+			for (const name in rule.block.declarations) {
+				if (rule.block.important[name]) {
 					important = true;
 				} else {
 					index.lastNormal.set(name, at);
@@ -6163,14 +6162,14 @@ function resolvePropertyValueRaw(
 	}
 	if (winner !== -1) {
 		const rule = rules[winner];
-		ruleValue = rule.declarations[
-			CSSValues.getDeclaredName(rule, names, false, mapsHere)!
+		ruleValue = rule.block.declarations[
+			CSSValues.getDeclaredName(rule.block, names, false, mapsHere)!
 		];
 	}
 	for (const at of index.withImportant) {
 		const rule = rules[at];
 		const importantName = CSSValues.getDeclaredName(
-			rule,
+			rule.block,
 			names,
 			true,
 			mapsHere,
@@ -6178,11 +6177,11 @@ function resolvePropertyValueRaw(
 		if (
 			importantName !== null &&
 			(importantRuleValue === "" ||
-				(Boolean(rule.uaOrigin) === importantOrigin &&
+				((rule.origin === "ua") === importantOrigin &&
 					rule.layerRank === importantLayer))
 		) {
-			importantRuleValue = rule.declarations[importantName];
-			importantOrigin = Boolean(rule.uaOrigin);
+			importantRuleValue = rule.block.declarations[importantName];
+			importantOrigin = (rule.origin === "ua");
 			importantLayer = rule.layerRank;
 		}
 	}
@@ -6775,33 +6774,19 @@ function readPseudoDeclared(
 // CSSRule, makes one.
 interface ParsedCSSRule {
 
-	// Compiled against the namespaces the sheet declared, once, at parse. A
-	// rule is matched through this and never through its text. Null for a
-	// selector this engine cannot read, which styles nothing.
-	matcher: CompiledSelector | null;
+	// Compiled against the namespaces the sheet declared, once, at parse,
+	// and read relative to a scoping root, which is what
+	// `@scope { > .a { } }` writes. Outside an @scope a selector opening
+	// with a combinator selects nothing, and no rule is made for it. A rule
+	// is matched through this and never through its text.
+	selector: CompiledSelector;
 
-	// The same selector read relative to a scoping root, which is what
-	// `@scope { > .a { } }` writes. Only a rule inside an @scope has one.
-	relativeMatcher: CompiledSelector | null;
+	block: CSSValues.DeclarationBlock;
 
-	// Every rule is tried against every element, so this check keeps a
-	// document of divs from running the selector engine over a sheet's
-	// worth of rules about summaries and legends. Absent when any element
-	// could match.
-	subjectTag?: string;
-	// ":root" when the rightmost compound must be the root, or else the id
-	// or a class it requires, as "#id" or ".class", or with neither and no
-	// element name, an attribute, as "[name]", which files the rule where
-	// only elements with it look. Absent when it requires none of them.
-	subjectKey?: string;
-	declarations: Record<string, string>;
-	important: Record<string, boolean>;
-
-	// Each declaration's position in the rule's block. See CSSValues.DeclarationBlock.
-	order: Record<string, number>;
-
-	specificity: number;
-	pseudoElement?: string;
+	// Cascade ORIGIN, the tier above specificity. Every author rule beats
+	// every UA rule, which lets `input::placeholder { color }` beat the UA
+	// sheet's gray despite that selector's higher specificity.
+	origin: "ua" | "author";
 
 	// The tree scope whose stylesheet declared this rule. Undefined for
 	// document rules. A rule only ever matches elements of its own tree,
@@ -6811,26 +6796,6 @@ interface ParsedCSSRule {
 	// The document's sheet that holds this rule, itself or through an
 	// @import. Document rules that tie in the cascade rank by it.
 	documentSheet?: CSSStyleSheet;
-
-	// `:host` is the one thing that reaches outside the tree its
-	// stylesheet belongs to.
-	reachesHost?: boolean;
-
-	// A pseudo-element of a part, as `input::part(label)::before` is. It
-	// originates on the part element, inside the host's shadow tree.
-	ofPart?: boolean;
-
-	// The bits, in an element's ancestor filter, of the names, ids and
-	// classes the rule's compounds left of a descendant or child
-	// combinator require, so an element whose ancestors have none of one
-	// is ruled out without running the selector. Absent when the rule
-	// requires nothing of its ancestors, or reads them some other way.
-	ancestorBits?: Uint32Array;
-
-	// Cascade ORIGIN, the tier above specificity. Every author rule beats
-	// every UA rule, which lets `input::placeholder { color }` beat the UA
-	// sheet's gray despite that selector's higher specificity.
-	uaOrigin?: boolean;
 
 	// Dot-joined through every enclosing @layer. Null for a rule in no
 	// layer.
@@ -6843,6 +6808,68 @@ interface ParsedCSSRule {
 	// The @scope conditions the rule was declared inside, outermost first.
 	// Absent for a rule no @scope encloses, which is in scope everywhere.
 	scopes?: readonly CSSValues.ScopeCondition[];
+}
+
+function getComplex(rule: ParsedCSSRule): CompiledComplex {
+	return rule.selector.list[0];
+}
+
+// The pseudo-element the rule styles, as getComputedStyle() names it,
+// `::before` or `::part(label)`, any pseudo-element, not only the ones
+// this engine gives a box. A rule for `::highlight(x)` still has to be
+// visible through getComputedStyle.
+function getPseudoElement(rule: ParsedCSSRule): string | undefined {
+	const pseudo = getComplex(rule).pseudoElement;
+	if (pseudo === null) {
+		return undefined;
+	}
+	return pseudo.argument === null
+		? `::${pseudo.name}`
+		: `::${pseudo.name}(${pseudo.argument})`;
+}
+
+// A pseudo-element of a part, as `input::part(label)::before` is. It
+// originates on the part element, inside the host's shadow tree.
+function isOfPart(rule: ParsedCSSRule): boolean {
+	const complex = getComplex(rule);
+	const subject = complex.compounds[complex.compounds.length - 1];
+	return subject.pseudoElement?.name === "part";
+}
+
+// `:host` is the one thing that reaches outside the tree its stylesheet
+// belongs to.
+function reachesHost(rule: ParsedCSSRule): boolean {
+	return rule.scope !== undefined && getComplex(rule).host;
+}
+
+// Every rule is tried against every element, so this check keeps a
+// document of divs from running the selector engine over a sheet's worth
+// of rules about summaries and legends. Undefined when any element could
+// match, and for a subject that selects through a pseudo-element, whose
+// names describe another element.
+function getSubjectTag(rule: ParsedCSSRule): string | undefined {
+	const complex = getComplex(rule);
+	const subject = complex.compounds[complex.compounds.length - 1];
+	return subject.pseudoElement === null
+		? (getRequiredTag(subject) ?? undefined)
+		: undefined;
+}
+
+// `:where(svg)` requires its name as `svg` does.
+function getRequiredTag(compound: CompiledCompound): string | null {
+	if (compound.tag !== null) {
+		return compound.tag;
+	}
+	for (const {name, args} of compound.pseudoClasses) {
+		if (
+			(name === "is" || name === "where") &&
+			args.length === 1 &&
+			args[0].compounds.length === 1
+		) {
+			return getRequiredTag(args[0].compounds[0]);
+		}
+	}
+	return null;
 }
 
 function isScopeRootMatch(
@@ -8175,7 +8202,7 @@ function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	}
 	// The UA shadow trees' sheets have no pseudo-generating rules, so the
 	// attach sweep runs only for an author shadow root that does.
-	if (fresh.some((rule) => generatesPseudoElement(rule.pseudoElement))) {
+	if (fresh.some((rule) => generatesPseudoElement(getPseudoElement(rule)))) {
 		attachPseudoElements(cascade);
 	}
 }
@@ -8363,7 +8390,7 @@ function getCascadeRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	// Author level, zero specificity, ahead of every author rule and
 	// layer (HTML §15.1).
 	let at = 0;
-	while (at < rules.length && rules[at].uaOrigin) {
+	while (at < rules.length && rules[at].origin === "ua") {
 		at++;
 	}
 	return shareRuleList(cascade, [
@@ -8789,10 +8816,12 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 	const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 	let count = 0;
 	for (const rule of cascade.parsedRules) {
-		if (generatesPseudoElement(rule.pseudoElement) && mayGiveContent(rule)) {
-			const rules = pseudoRulesByType.get(rule.pseudoElement!) || [];
+		if (
+			generatesPseudoElement(getPseudoElement(rule)) && mayGiveContent(rule)
+		) {
+			const rules = pseudoRulesByType.get(getPseudoElement(rule)!) || [];
 			rules.push(rule);
-			pseudoRulesByType.set(rule.pseudoElement!, rules);
+			pseudoRulesByType.set(getPseudoElement(rule)!, rules);
 			count++;
 		}
 	}
@@ -8818,7 +8847,9 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 		cascade.document.querySelectorAll('[style*="list-item"], li, summary'),
 	);
 	for (const rule of cascade.parsedRules) {
-		if (rule.declarations["display"] === "list-item" && !rule.uaOrigin) {
+		if (
+			rule.block.declarations["display"] === "list-item" && rule.origin !== "ua"
+		) {
 			const scope = (rule.scope ?? cascade.document) as Node;
 			for (const element of selectForRule(scope, rule)) {
 				listItems.add(element);
@@ -8854,14 +8885,14 @@ function attachPseudoElementsFromRules(
 			for (const element of selectForRule(scope, rule)) {
 				matchingElements.add(element);
 			}
-			if (rule.ofPart) {
+			if (isOfPart(rule)) {
 				for (const root of cascade.shadowRoots) {
 					for (const element of selectForRule(root, rule)) {
 						matchingElements.add(element);
 					}
 				}
 			}
-			const host = rule.reachesHost
+			const host = reachesHost(rule)
 				? ((rule.scope as ShadowRoot).host as Element | null)
 				: null;
 			if (host && ruleSelectorMatches(host, rule)) {
@@ -10015,8 +10046,8 @@ function appendDocumentSheets(cascade: Cascade): boolean {
 // matching it as the pseudo-element, or by changing whether the element
 // is a list item with its marker inside.
 function mayChangePseudoElements(rule: ParsedCSSRule): boolean {
-	const declarations = rule.declarations;
-	return generatesPseudoElement(rule.pseudoElement) ||
+	const declarations = rule.block.declarations;
+	return generatesPseudoElement(getPseudoElement(rule)) ||
 		declarations.display !== undefined ||
 		declarations["list-style-position"] !== undefined ||
 		declarations.all !== undefined;
@@ -10691,14 +10722,14 @@ function parseAllStylesheets(cascade: Cascade): void {
 // sort keeps, where every document sheet comes before every shadow
 // tree's, even one appended after the trees' were read.
 function compareRules(a: ParsedCSSRule, b: ParsedCSSRule): number {
-	if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
-		return a.uaOrigin ? -1 : 1;
+	if ((a.origin === "ua") !== (b.origin === "ua")) {
+		return a.origin === "ua" ? -1 : 1;
 	}
 	if (a.layerRank !== b.layerRank) {
 		return a.layerRank - b.layerRank;
 	}
-	if (a.specificity !== b.specificity) {
-		return a.specificity - b.specificity;
+	if (getComplex(a).specificity !== getComplex(b).specificity) {
+		return getComplex(a).specificity - getComplex(b).specificity;
 	}
 	if ((a.scope === undefined) !== (b.scope === undefined)) {
 		return a.scope === undefined ? -1 : 1;
@@ -10758,14 +10789,15 @@ function rankRules(cascade: Cascade, start: number): boolean {
 function fileRulesByPseudoElement(cascade: Cascade): void {
 	cascade.pseudoRulesByType = new Map();
 	for (const rule of cascade.parsedRules) {
-		if (rule.pseudoElement === undefined) {
+		const pseudoElement = getPseudoElement(rule);
+		if (pseudoElement === undefined) {
 			continue;
 		}
-		const byType = cascade.pseudoRulesByType.get(rule.pseudoElement);
+		const byType = cascade.pseudoRulesByType.get(pseudoElement);
 		if (byType) {
 			byType.push(rule);
 		} else {
-			cascade.pseudoRulesByType.set(rule.pseudoElement, [rule]);
+			cascade.pseudoRulesByType.set(pseudoElement, [rule]);
 		}
 	}
 }
@@ -11774,7 +11806,7 @@ function parseSelector(
 	namespaces?: SelectorNamespaces,
 	context: CSSValues.RuleContext = UNCONDITIONAL,
 ): void {
-	const {declarations, important, order} = block;
+	const {declarations} = block;
 	// Only a duration or delay can make a transition run, so the property
 	// list alone does not open the sticky gate.
 	if (declarations["transition-duration"] || declarations["transition-delay"]) {
@@ -11794,6 +11826,11 @@ function parseSelector(
 		return;
 	}
 	const complex = compiled.list[0];
+	// Outside an @scope, a selector opening with a combinator has nothing to
+	// be relative to, and selects nothing.
+	if (context.scopes.length === 0 && opensWithCombinator(complex)) {
+		return;
+	}
 	// A :has() rule reads DOWN the tree, the one relational direction the
 	// per-target invalidation cannot see, so its anchors enable the
 	// ancestor sweep only for documents that need it.
@@ -11821,101 +11858,31 @@ function parseSelector(
 	) {
 		cascade.counterRulesExist = true;
 	}
-	const specificity = complex.specificity;
-	const uaOrigin = Boolean(
-		uaOriginSheet || (scope != null && isUAShadowTree(scope)),
-	);
+	const origin = uaOriginSheet || (scope != null && isUAShadowTree(scope))
+		? "ua"
+		: "author";
 	// The UA sheet's own `li { display: list-item }` is covered by the tag
 	// tests that read this flag. Set by the UA sheet too, the flag was
 	// always on, and every element paid for a ::marker it could not have.
-	if (!uaOrigin && declarations["display"] === "list-item") {
+	if (origin === "author" && declarations["display"] === "list-item") {
 		cascade.listItemRulesExist = true;
 	}
 	if (
-		!uaOrigin &&
+		origin === "author" &&
 		((declarations["list-style-position"] ?? "outside") !== "outside" ||
 			declarations.all !== undefined)
 	) {
 		cascade.insideMarkerRulesExist = true;
 	}
-
-	const required = getRequiredKeys(complex.compounds.at(-1)!);
-	// `:where(svg)` requires its name as `svg` does.
-	const subjectTag = required.tag ?? undefined;
-	const subjectKey = required.root
-		? ":root"
-		: required.ids.length > 0
-			? `#${required.ids[0]}`
-			: required.classes.length > 0
-				? `.${required.classes[0]}`
-				: required.tag === null && required.attributes.length > 0
-					? `[${toASCIILowercase(required.attributes[0])}]`
-					: undefined;
-	// A :host rule is tried against the host as well as the tree's
-	// elements.
-	const reachesHost =
-		scope !== undefined &&
-		pseudoClasses.some((name) => name.startsWith("host"));
-
-	// The relative reading is the one an @scope rule matches from its root.
-	// Anywhere else a selector opening with a combinator selects nothing.
-	const matcher = opensWithCombinator(complex) ? null : compiled;
-	const relativeMatcher = scopes ? compiled : null;
-	// Any pseudo-element, not just the ones this engine gives a box. A rule
-	// for `::highlight(x)` still has to be visible through
-	// getComputedStyle.
-	const pseudo = complex.pseudoElement;
-	if (pseudo !== null) {
-		const pseudoElement = pseudo.argument === null
-			? `::${pseudo.name}`
-			: `::${pseudo.name}(${pseudo.argument})`;
-		const ofPart = complex.compounds.at(-1)!.pseudoElement?.name === "part";
-		const rule: ParsedCSSRule = {
-			matcher,
-			relativeMatcher,
-			subjectTag: ofPart ? undefined : subjectTag,
-			subjectKey: ofPart ? undefined : subjectKey,
-			ofPart,
-			declarations,
-			important,
-			order,
-			specificity,
-			pseudoElement,
-			scope,
-			uaOrigin,
-			reachesHost,
-			layer,
-			layerRank: 0,
-			scopes,
-		};
-		cascade.parsedRules.push(rule);
-		const byType = cascade.pseudoRulesByType.get(pseudoElement);
-		if (byType) {
-			byType.push(rule);
-		} else {
-			cascade.pseudoRulesByType.set(pseudoElement, [rule]);
-		}
-	} else {
-		cascade.parsedRules.push({
-			matcher,
-			relativeMatcher,
-			ancestorBits: scopes || reachesHost
-				? undefined
-				: getAncestorBits(complex),
-			subjectTag,
-			subjectKey,
-			declarations,
-			important,
-			order,
-			specificity,
-			scope,
-			uaOrigin,
-			reachesHost,
-			layer,
-			layerRank: 0,
-			scopes,
-		});
-	}
+	cascade.parsedRules.push({
+		selector: compiled,
+		block,
+		origin,
+		scope,
+		layer,
+		layerRank: 0,
+		scopes,
+	});
 }
 
 // Farther from any element than any scoping root can be.
@@ -11941,9 +11908,42 @@ interface RuleIndex {
 	pseudoKeyed: Map<string, number[]>;
 	pseudoTagged: Map<string, number[]>;
 	pseudoUnkeyedPositions: number[];
+	// By position, the bits, in an element's ancestor filter, of the names,
+	// ids and classes the rule's compounds left of a descendant or child
+	// combinator require, so an element whose ancestors have none of one is
+	// ruled out without running the selector. Undefined when the rule
+	// requires nothing of its ancestors, or reads them some other way.
+	ancestorBits: Array<Uint32Array | undefined>;
 	// Candidates by the name, id and classes that chose them, since elements
 	// alike in those, like an editor's lines, try the same rules.
-	candidates: Map<string, ParsedCSSRule[]>;
+	candidates: Map<string, CandidateRules>;
+}
+
+// The rules an element could match, in cascade order, with the ancestor
+// bits of each.
+interface CandidateRules {
+	rules: ParsedCSSRule[];
+	ancestorBits: Array<Uint32Array | undefined>;
+}
+
+// ":root" when the rightmost compound must be the root, or else the id or
+// a class it requires, as "#id" or ".class", or with neither and no
+// element name, an attribute, as "[name]", which files the rule where only
+// elements with it look. Undefined when it requires none of them.
+function getSubjectKey(rule: ParsedCSSRule): string | undefined {
+	const complex = getComplex(rule);
+	const required = getRequiredKeys(
+		complex.compounds[complex.compounds.length - 1],
+	);
+	return required.root
+		? ":root"
+		: required.ids.length > 0
+		? `#${required.ids[0]}`
+		: required.classes.length > 0
+		? `.${required.classes[0]}`
+		: required.tag === null && required.attributes.length > 0
+		? `[${required.attributes[0]}]`
+		: undefined;
 }
 
 const MAX_CANDIDATE_LISTS = 4096;
@@ -11969,28 +11969,36 @@ function getRuleIndex(cascade: Cascade, quirks: boolean): RuleIndex {
 		pseudoKeyed: new Map(),
 		pseudoTagged: new Map(),
 		pseudoUnkeyedPositions: [],
+		ancestorBits: [],
 		candidates: new Map(),
 	};
 	for (const [position, rule] of rules.entries()) {
-		const pseudo = Boolean(rule.pseudoElement);
+		const pseudo = getComplex(rule).pseudoElement !== null;
+		const host = reachesHost(rule);
+		index.ancestorBits.push(
+			pseudo || host || rule.scopes
+				? undefined
+				: getAncestorBits(getComplex(rule)),
+		);
 		// A :host rule matches through the tree's host, so it is not filed
 		// under the element.
-		if (rule.reachesHost || rule.ofPart) {
+		if (host || isOfPart(rule)) {
 			(pseudo ? index.pseudoUnkeyedPositions : index.unkeyedPositions)
 				.push(position);
 			continue;
 		}
-		const key = rule.subjectKey === undefined
-			? rule.subjectTag
-			: quirks && rule.subjectKey[0] !== "[" && rule.subjectKey !== ":root"
-				? toASCIILowercase(rule.subjectKey)
-				: rule.subjectKey;
+		const subjectKey = getSubjectKey(rule);
+		const key = subjectKey === undefined
+			? getSubjectTag(rule)
+			: quirks && subjectKey[0] !== "[" && subjectKey !== ":root"
+				? toASCIILowercase(subjectKey)
+				: subjectKey;
 		if (key === undefined) {
 			(pseudo ? index.pseudoUnkeyedPositions : index.unkeyedPositions)
 				.push(position);
 			continue;
 		}
-		const buckets = rule.subjectKey === undefined
+		const buckets = subjectKey === undefined
 			? pseudo ? index.pseudoTagged : index.tagged
 			: pseudo ? index.pseudoKeyed : index.keyed;
 		const bucket = buckets.get(key);
@@ -12024,7 +12032,7 @@ function getCandidateRules(
 	cascade: Cascade,
 	element: Element | null,
 	host: Element | null = null,
-): ParsedCSSRule[] {
+): CandidateRules {
 	const subject = (element ?? host)!;
 	const quirks = subject.ownerDocument?.compatMode === "BackCompat";
 	const index = getRuleIndex(cascade, quirks);
@@ -12059,10 +12067,14 @@ function getCandidateRules(
 			index.pseudoKeyed,
 		);
 	}
-	candidates = Array.from(
-		Int32Array.from(positions).sort(),
-		(position) => index.rules[position],
-	);
+	const sorted = Int32Array.from(positions).sort();
+	candidates = {
+		rules: Array.from(sorted, (position) => index.rules[position]),
+		ancestorBits: Array.from(
+			sorted,
+			(position) => index.ancestorBits[position],
+		),
+	};
 	if (index.candidates.size < MAX_CANDIDATE_LISTS) {
 		index.candidates.set(key, candidates);
 	}
@@ -12292,11 +12304,16 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	const shadowHost = isShadowRoot(root) ? root.host : null;
 	let partNames: string[] | null = null;
 	const filter = getAncestorFilter(cascade, element);
-	const candidates = getCandidateRules(cascade, element, shadowHost);
+	const {rules: candidates, ancestorBits} = getCandidateRules(
+		cascade,
+		element,
+		shadowHost,
+	);
 	const matched: ParsedCSSRule[] = [];
 	for (let index = 0; index < candidates.length; index++) {
 		const rule = candidates[index];
-		if (rule.pseudoElement) {
+		const pseudo = getComplex(rule).pseudoElement;
+		if (pseudo !== null) {
 			if (shadowHost === null) {
 				continue;
 			}
@@ -12305,36 +12322,32 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 			// Parts crossing. A built-in control's parts are the UA's, as in
 			// every browser, and a page reaches them only through the
 			// pseudo-elements above.
-			const partArg = rule.pseudoElement.startsWith("::part(")
-				? rule.pseudoElement.match(PART_PSEUDO)
-				: null;
-			if (partArg) {
+			if (pseudo.name === "part") {
 				partNames ??= (getAttributeValue(element, "part") ?? "")
 					.split(CSSValues.WHITESPACE_RUN)
 					.filter(Boolean);
 				const names = partNames;
-				const after = (rule.matcher ?? rule.relativeMatcher)!.list[0]
-					.pseudoElement!.after;
 				if (
-					(rule.uaOrigin || !isUAShadowTree(root)) &&
-					splitOnASCIIWhitespace(partArg[1])
+					(rule.origin === "ua" || !isUAShadowTree(root)) &&
+					splitOnASCIIWhitespace(pseudo.argument!)
 						.every((name) => names.includes(name)) &&
 					isRuleMatch(shadowHost, rule) &&
-					(after === null || isSelectedBy(element, after, element))
+					(pseudo.after === null ||
+						isSelectedBy(element, pseudo.after, element))
 				) {
 					matched.push(rule);
 				}
 			} else if (
-				partPseudos.includes(rule.pseudoElement) &&
+				partPseudos.includes(getPseudoElement(rule)!) &&
 				isRuleMatch(shadowHost, rule)
 			) {
 				matched.push(rule);
 			}
 			continue;
 		}
+		const bits = ancestorBits[index];
 		if (
-			(rule.ancestorBits === undefined ||
-				hasAncestorBits(filter, rule.ancestorBits)) &&
+			(bits === undefined || hasAncestorBits(filter, bits)) &&
 			isRuleMatch(element, rule, rootNode)
 		) {
 			matched.push(rule);
@@ -12357,13 +12370,13 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 		),
 	);
 	return matched.sort((a, b) => {
-		if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
+		if ((a.origin === "ua") !== (b.origin === "ua")) {
 			return 0;
 		}
 		if (a.layerRank !== b.layerRank) {
 			return 0;
 		}
-		if (a.specificity !== b.specificity) {
+		if (getComplex(a).specificity !== getComplex(b).specificity) {
 			return 0;
 		}
 		return proximity.get(b)! - proximity.get(a)!;
@@ -12375,27 +12388,31 @@ function ruleSelectorMatches(
 	rule: ParsedCSSRule,
 	root?: Element,
 ): boolean {
-	// From a scoping root, use the relative reading. Anywhere else, the
-	// plain one.
-	const matcher = root === undefined ? rule.matcher : rule.relativeMatcher;
-	if (matcher === null) {
+	// A selector opening with a combinator is read from a scoping root, and
+	// selects nothing without one.
+	if (root === undefined && opensWithCombinator(getComplex(rule))) {
 		return false;
 	}
-	return isSelectedBy(element, matcher, root ?? element, ruleShadow(rule));
+	return isSelectedBy(
+		element,
+		rule.selector,
+		root ?? element,
+		ruleShadow(rule),
+	);
 }
 
 function selectForRule(root: Node, rule: ParsedCSSRule): Element[] {
-	if (rule.matcher === null) {
+	if (opensWithCombinator(getComplex(rule))) {
 		return [];
 	}
-	return selectAllCompiled(root as unknown as DOMNode, rule.matcher, {
+	return selectAllCompiled(root as unknown as DOMNode, rule.selector, {
 		scope: root as unknown as DOMNode,
 		shadow: ruleShadow(rule) as DOMNode | null,
 	}) as unknown as Element[];
 }
 
 function ruleShadow(rule: ParsedCSSRule): Node | null {
-	return (rule.reachesHost ? rule.scope : null) ?? null;
+	return (reachesHost(rule) ? rule.scope : null) ?? null;
 }
 
 function matchesRule(element: Element, rule: ParsedCSSRule): boolean {
@@ -12495,16 +12512,17 @@ function isRuleMatch(
 	const root = elementRoot ?? element.getRootNode();
 	if (rule.scope !== undefined && rule.scope !== root) {
 		// A :host rule's subject is outside the tree it was written in.
-		if (!rule.reachesHost || element !== (rule.scope as ShadowRoot).host) {
+		if (!reachesHost(rule) || element !== (rule.scope as ShadowRoot).host) {
 			return false;
 		}
-	} else if (rule.subjectTag !== undefined && !rule.reachesHost) {
+	} else if (getSubjectTag(rule) !== undefined && !reachesHost(rule)) {
 		const local = getLocalName(element);
 		// A foreign element's local name keeps its case (feGaussianBlur), so
 		// the rejection fires only when neither reading matches. The matcher
 		// decides the case sensitivity a selector really has.
 		if (
-			local !== rule.subjectTag && toASCIILowercase(local) !== rule.subjectTag
+			local !== getSubjectTag(rule) &&
+			toASCIILowercase(local) !== getSubjectTag(rule)
 		) {
 			return false;
 		}
@@ -12514,13 +12532,13 @@ function isRuleMatch(
 	}
 	// The selector itself checks the host the part belongs to. A built-in
 	// control's parts are the UA's alone.
-	if (rule.ofPart) {
-		return (rule.uaOrigin || !isUAShadowTree(root)) &&
+	if (isOfPart(rule)) {
+		return (rule.origin === "ua" || !isUAShadowTree(root)) &&
 			matchesRule(element, rule);
 	}
 	// UA document rules apply in EVERY tree scope, as a browser's own UA
 	// sheet styles shadow trees.
-	if (rule.uaOrigin) {
+	if (rule.origin === "ua") {
 		return matchesRule(element, rule);
 	}
 	// Author document rules match everything outside shadow trees,
@@ -12542,9 +12560,9 @@ function computePseudoElementStyle(
 		return NO_PSEUDO_DECLARATIONS;
 	}
 	const pseudoRoot = element.getRootNode() as unknown as Node;
-	const matchingRules = getCandidateRules(cascade, null, element).filter(
+	const matchingRules = getCandidateRules(cascade, null, element).rules.filter(
 		(rule) =>
-			rule.pseudoElement === pseudoElement &&
+			getPseudoElement(rule) === pseudoElement &&
 			isRuleMatch(element, rule, pseudoRoot),
 	);
 	if (matchingRules.length === 0) {
@@ -12558,10 +12576,10 @@ function computePseudoElementStyle(
 	const computedStyle: Record<string, string> = Object.create(null);
 	let direction: string | null = null;
 	for (const rule of matchingRules) {
-		const names = Object.keys(rule.declarations)
-			.sort((a, b) => (rule.order[a] ?? 0) - (rule.order[b] ?? 0));
+		const names = Object.keys(rule.block.declarations)
+			.sort((a, b) => (rule.block.order[a] ?? 0) - (rule.block.order[b] ?? 0));
 		for (const name of names) {
-			const value = rule.declarations[name];
+			const value = rule.block.declarations[name];
 			computedStyle[name] = value;
 			if (!CSSValues.hasSlotAliases(name)) {
 				continue;
@@ -12644,13 +12662,14 @@ function getPseudoSubjects(cascade: Cascade): Set<string> | null {
 	// live on nodes the UA shadow tree trees already hold.
 	for (const type of ["::before", "::after"]) {
 		for (const rule of cascade.pseudoRulesByType.get(type) ?? []) {
-			if (rule.ofPart || !mayGiveContent(rule)) {
+			if (isOfPart(rule) || !mayGiveContent(rule)) {
 				continue;
 			}
-			if (!rule.subjectTag) {
+			const tag = getSubjectTag(rule);
+			if (tag === undefined) {
 				return (cascade.pseudoSubjectTags = null);
 			}
-			tags.add(toASCIILowercase(rule.subjectTag));
+			tags.add(toASCIILowercase(tag));
 		}
 	}
 	return (cascade.pseudoSubjectTags = tags);
@@ -12683,15 +12702,15 @@ function pseudoRuleCouldMatch(
 	}
 	// Rules that repeat a selector share its matcher, and one that missed
 	// misses again.
-	const missed = new Set<CompiledSelector | null>();
+	const missed = new Set<CompiledSelector>();
 	const candidates = narrowCandidates(
-		getCandidateRules(cascade, null, element),
+		getCandidateRules(cascade, null, element).rules,
 		pseudoType,
-		(rule) => rule.pseudoElement === pseudoType && mayGiveContent(rule),
+		(rule) => getPseudoElement(rule) === pseudoType && mayGiveContent(rule),
 	);
 	for (const rule of candidates) {
 		if (
-			(!rule.reachesHost && missed.has(rule.matcher)) ||
+			(!reachesHost(rule) && missed.has(rule.selector)) ||
 			!subjectCouldMatch(element, rule)
 		) {
 			continue;
@@ -12699,8 +12718,8 @@ function pseudoRuleCouldMatch(
 		if (ruleSelectorMatches(element, rule)) {
 			return true;
 		}
-		if (!rule.reachesHost) {
-			missed.add(rule.matcher);
+		if (!reachesHost(rule)) {
+			missed.add(rule.selector);
 		}
 	}
 	return false;
@@ -12748,12 +12767,12 @@ function mayInheritInsideMarker(element: Element): boolean {
 }
 
 function isListItemRule(rule: ParsedCSSRule): boolean {
-	return rule.declarations.display === "list-item";
+	return rule.block.declarations.display === "list-item";
 }
 
 function setsMarkerPosition(rule: ParsedCSSRule): boolean {
-	return rule.declarations["list-style-position"] !== undefined ||
-		rule.declarations.all !== undefined;
+	return rule.block.declarations["list-style-position"] !== undefined ||
+		rule.block.declarations.all !== undefined;
 }
 
 // A candidate list keeps the same rules until they change, so the few that
@@ -12788,9 +12807,9 @@ function anyRuleMatches(
 	wanted: (rule: ParsedCSSRule) => boolean,
 ): boolean {
 	const candidates = narrowCandidates(
-		getCandidateRules(cascade, element),
+		getCandidateRules(cascade, element).rules,
 		name,
-		(rule) => rule.pseudoElement === undefined && wanted(rule),
+		(rule) => getPseudoElement(rule) === undefined && wanted(rule),
 	);
 	for (const rule of candidates) {
 		if (
@@ -12802,41 +12821,24 @@ function anyRuleMatches(
 	return false;
 }
 
-// The tag, id or class the rule's subject requires rules most elements
-// out without running the selector. A rule through ::part() reaches only
-// an element with a part attribute, and its compounds name the host. One
-// through :host names the host too, and in quirks mode a class matches
-// whatever its case.
+// The tag the rule's subject requires rules most elements out without
+// running the selector, as the id or class it requires did when the rule
+// was filed among the element's candidates. A rule through ::part()
+// reaches only an element with a part attribute, and its compounds name
+// the host. One through :host names the host too.
 function subjectCouldMatch(element: Element, rule: ParsedCSSRule): boolean {
-	if (rule.ofPart) {
+	if (isOfPart(rule)) {
 		return hasAttributeByName(element, "part");
 	}
-	if (rule.reachesHost) {
+	if (reachesHost(rule)) {
 		return true;
 	}
-	const tag = rule.subjectTag;
-	if (tag !== undefined) {
-		const local = getLocalName(element);
-		if (local !== tag && toASCIILowercase(local) !== tag) {
-			return false;
-		}
-	}
-	const key = rule.subjectKey;
-	if (key === undefined) {
+	const tag = getSubjectTag(rule);
+	if (tag === undefined) {
 		return true;
 	}
-	if (key[0] === "[") {
-		return getAttributeKeys(element).includes(key);
-	}
-	if (key === ":root") {
-		return isDocumentElement(element);
-	}
-	if (element.ownerDocument?.compatMode === "BackCompat") {
-		return true;
-	}
-	return key[0] === "#"
-		? getIdValue(element) === key.slice(1)
-		: getClassTokens(element).has(key.slice(1));
+	const local = getLocalName(element);
+	return local === tag || toASCIILowercase(local) === tag;
 }
 
 // A ::before or ::after exists only while its content is something, and
@@ -12844,8 +12846,8 @@ function subjectCouldMatch(element: Element, rule: ParsedCSSRule): boolean {
 // common reset `*, ::before, ::after { box-sizing: border-box }` matches
 // every element's and makes none.
 function mayGiveContent(rule: ParsedCSSRule): boolean {
-	return rule.declarations.content !== undefined ||
-		rule.declarations.all !== undefined;
+	return rule.block.declarations.content !== undefined ||
+		rule.block.declarations.all !== undefined;
 }
 
 function attachPseudoElementToElementForType(

@@ -447,6 +447,10 @@ export interface CompiledComplex {
 	// The pseudo-element a style rule styles, read when compiled with
 	// `pseudoElements`. The compounds select the element it belongs to.
 	pseudoElement: CompiledPseudoElement | null;
+
+	// Whether `:host` or `:host-context()` is written in it, at any depth,
+	// which only matches with the shadow root it was written in.
+	host: boolean;
 }
 
 /** A compiled selector list, ready to match against an element. */
@@ -775,17 +779,23 @@ function compileComplex(
 		throw new SelectorError("a combinator joins two compounds");
 	}
 	compounds.push(compileCompound(pending, compiling));
+	const pseudoElement = trailing === -1
+		? null
+		: compileTrailingPseudoElement(
+			written[trailing],
+			written.slice(trailing + 1),
+			compiling,
+		);
+	const after = pseudoElement?.after ?? null;
 	return {
 		compounds,
 		combinators,
 		specificity: getSpecificity(selector),
-		pseudoElement: trailing === -1
-			? null
-			: compileTrailingPseudoElement(
-				written[trailing],
-				written.slice(trailing + 1),
-				compiling,
-			),
+		pseudoElement,
+		host: (after === null ? compounds : [...compounds, after]).some(
+			(compound) => compound.pseudoClasses.some(({name, args}) =>
+				name.startsWith("host") || args.some((inner) => inner.host)),
+		),
 	};
 }
 
