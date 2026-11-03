@@ -10,7 +10,6 @@ import {
 	getTabSize,
 	getUsedOverflow,
 	getWhiteSpace,
-	mayGiveViewportOverflow,
 	resolveBorderSides,
 	resolveLength,
 	type StyleGroup,
@@ -150,8 +149,6 @@ interface PaintStyle {
 	gradient: Gradient | null;
 	border: BorderPaint | null;
 	outlineColor: number | undefined | null;
-	overflowX: string;
-	overflowY: string;
 	textTransform: string;
 	whiteSpace: string;
 	tabSize: number;
@@ -167,8 +164,6 @@ interface PaintStyle {
 	// after it, not its own cells.
 	counters: string;
 }
-
-type SharedPaintStyle = Omit<PaintStyle, "overflowX" | "overflowY">;
 
 interface BorderPaint {
 	top?: LineStyle;
@@ -195,6 +190,9 @@ const PAINTED_ELSEWHERE = [
 	"direction",
 	"text-align",
 	"text-indent",
+	"overflow-x",
+	"overflow-y",
+	"contain",
 ];
 
 /**
@@ -259,7 +257,7 @@ function readTextCell(element: Element, pseudo = ""): CellStyle {
 	};
 }
 
-function readPaintStyle(element: Element): SharedPaintStyle {
+function readPaintStyle(element: Element): PaintStyle {
 	const text = readTextCell(element);
 	const fg = text.fg as number | undefined;
 	const backgroundColor = getComputedValue(element, "background-color");
@@ -941,39 +939,20 @@ function paintBand(
 	}
 }
 
-// The paint style of every element that shares its values, and the
-// whole paint style, with the used overflow, which reads the element's
-// own display. Held once for each pair, so two alike are one object.
-const PAINT_STYLE: StyleGroup<SharedPaintStyle> = {
+// The paint style of every element that shares its values, held once
+// for each set of values, so two alike are one object.
+const PAINT_STYLE: StyleGroup<PaintStyle> = {
 	name: "paint",
 	read: readPaintStyle,
 };
-const overflowedPaintStyles = new WeakMap<
-	SharedPaintStyle,
-	Map<string, PaintStyle>
->();
 
 function getPaintStyle(painter: Painter, element: Element): PaintStyle {
 	const key = painter.cascade.getStyleKey(element);
-	const known = key === null || mayGiveViewportOverflow(element)
-		? undefined
-		: paintStyles.get(key);
+	const known = key === null ? undefined : paintStyles.get(key);
 	if (known !== undefined) {
 		return known;
 	}
-	const shared = getStyleGroup(element, PAINT_STYLE);
-	const overflowX = getUsedOverflow(element, "x");
-	const overflowY = getUsedOverflow(element, "y");
-	let styles = overflowedPaintStyles.get(shared);
-	if (styles === undefined) {
-		styles = new Map();
-		overflowedPaintStyles.set(shared, styles);
-	}
-	let style = styles.get(`${overflowX} ${overflowY}`);
-	if (style === undefined) {
-		style = Object.freeze({...shared, overflowX, overflowY});
-		styles.set(`${overflowX} ${overflowY}`, style);
-	}
+	const style = getStyleGroup(element, PAINT_STYLE);
 	if (key !== null) {
 		paintStyles.set(key, style);
 	}
@@ -1219,11 +1198,12 @@ function paintContent(
 	// Overflow clips descendants, never the element's own box.
 	const previousClip = ctx.clipRect;
 	const previousScrolled = painter.scrolledRows;
+	const overflowX = getUsedOverflow(element, "x");
 	ctx.clipRect = getOverflowClipRect(
 		element,
 		rect,
-		style.overflowX,
-		style.overflowY,
+		overflowX,
+		getUsedOverflow(element, "y"),
 		previousClip,
 	);
 	painter.scrolledRows = previousScrolled + scrolledRows;
@@ -1293,7 +1273,7 @@ function paintContent(
 				ctx,
 			);
 		}
-		if (style.overflowX !== "visible") {
+		if (overflowX !== "visible") {
 			paintOverflowMarkers(painter, element, style, ctx);
 		}
 	} finally {
