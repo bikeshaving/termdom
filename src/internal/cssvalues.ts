@@ -4541,22 +4541,28 @@ export interface SelectorReading {
 	// change among one element's children can change its descendants'
 	// matches too.
 	siblingsReachDescendants: boolean;
+	// Undefined when the selector holds no :has().
+	has: HasReading | undefined;
+	// Whether the selector holds `&`.
+	nests: boolean;
+}
+
+// What the :has()es in a selector ask of the cascade.
+export interface HasReading {
 	// For each :has(), what the compound it is written on asks of an
 	// element: its id, else a class, else its local name, else anything
 	// ("*"). What an argument or an attribute selector asks is left out, so
 	// the answer only ever asks for less.
-	hasAnchors: string[];
+	anchors: string[];
 	// For each :has(), the whole compound it is written in, as
 	// `.a:has(> .b):not(.c)`, which tested on an anchor says whether that
 	// part of the rule holds there. Null for a compound that only means
 	// something in its tree, as a :host's does.
-	hasCompounds: Array<string | null>;
+	compounds: Array<string | null>;
 	// The pseudo-classes inside the arguments of :has().
-	hasStates: string[];
+	states: string[];
 	// Whether a :has() takes a relative selector that starts with + or ~.
-	hasSiblings: boolean;
-	// Whether the selector holds `&`.
-	nests: boolean;
+	siblings: boolean;
 }
 
 const STRUCTURAL_PSEUDO = /^(?:nth-|first-|last-|only-|empty)/;
@@ -4747,10 +4753,7 @@ function readSelectorText(selector: string): SelectorReading {
 			compounds: [],
 			reachesSiblings,
 			siblingsReachDescendants: reachesSiblings,
-			hasAnchors: [],
-			hasCompounds: [],
-			hasStates: [],
-			hasSiblings: false,
+			has: undefined,
 			nests: false,
 		};
 	}
@@ -4801,11 +4804,14 @@ function readSelectorText(selector: string): SelectorReading {
 		siblingsReachDescendants: compounds
 			.slice(0, -1)
 			.some((keys) => keys.siblingTested),
-		hasAnchors: [],
-		hasCompounds: [],
-		hasStates: [],
-		hasSiblings: false,
+		has: undefined,
 		nests: false,
+	};
+	const has: HasReading = {
+		anchors: [],
+		compounds: [],
+		states: [],
+		siblings: false,
 	};
 	for (const node of walkSelector(list)) {
 		if (node.type === "NestingSelector") {
@@ -4814,7 +4820,7 @@ function readSelectorText(selector: string): SelectorReading {
 			let parts: CSSTree.SelectorNode[] = [];
 			for (const part of [...getChildren(node), null]) {
 				if (part === null || part.type === "Combinator") {
-					readHasCompound(parts, reading);
+					readHasCompound(parts, has);
 					parts = [];
 				} else {
 					parts.push(part);
@@ -4824,15 +4830,18 @@ function readSelectorText(selector: string): SelectorReading {
 			for (const relative of getChildren(getChildren(node)[0] ?? {type: ""})) {
 				const first = getChildren(relative)[0];
 				if (first?.type === "Combinator" && /^[+~]$/.test(String(first.name))) {
-					reading.hasSiblings = true;
+					has.siblings = true;
 				}
 				for (const inner of walkSelector(relative)) {
 					if (inner.type === "PseudoClassSelector") {
-						reading.hasStates.push(pseudoName(String(inner.name ?? "")));
+						has.states.push(pseudoName(String(inner.name ?? "")));
 					}
 				}
 			}
 		}
+	}
+	if (has.anchors.length > 0) {
+		reading.has = has;
 	}
 	return reading;
 }
@@ -4857,10 +4866,7 @@ function isHas(node: CSSTree.SelectorNode): boolean {
 // A compound holding a pseudo-element or :host, or a second :has(), only
 // means something in its tree. A prefix needs the sheet's namespaces,
 // which the compound is tested without.
-function readHasCompound(
-	parts: CSSTree.SelectorNode[],
-	reading: SelectorReading,
-): void {
+function readHasCompound(parts: CSSTree.SelectorNode[], has: HasReading): void {
 	const count = parts.filter(isHas).length;
 	if (count === 0) {
 		return;
@@ -4891,8 +4897,8 @@ function readHasCompound(
 				pseudoName(String(node.name ?? "")).startsWith("host")),
 		);
 	for (let i = 0; i < count; i++) {
-		reading.hasAnchors.push(anchor);
-		reading.hasCompounds.push(untestable ? null : text);
+		has.anchors.push(anchor);
+		has.compounds.push(untestable ? null : text);
 	}
 }
 

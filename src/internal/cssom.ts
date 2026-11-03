@@ -6819,9 +6819,9 @@ interface ParsedCSSRule {
 	// originates on the part element, inside the host's shadow tree.
 	ofPart?: boolean;
 
-	// For a rule with a :has(), its selector's reading, whose anchors,
-	// compounds and states the cascade's :has() tables gather.
-	has?: CSSValues.SelectorReading;
+	// For a rule with a :has(), what the cascade's :has() tables gather
+	// from it.
+	has?: CSSValues.HasReading;
 
 	// The bits, in an element's ancestor filter, of the names, ids and
 	// classes the rule's compounds left of a descendant or child
@@ -7980,12 +7980,9 @@ function registerConnectedShadowRoots(
 
 // In place rather than by a full parse, which renews every rule's id and
 // leaves no shared table reusable.
-function noteHasRule(
-	cascade: Cascade,
-	reading: CSSValues.SelectorReading,
-): void {
+function noteHasRule(cascade: Cascade, has: CSSValues.HasReading): void {
 	cascade.hasRulesExist = true;
-	for (const compound of reading.hasCompounds) {
+	for (const compound of has.compounds) {
 		if (compound === null) {
 			cascade.hasCompoundsUntestable = true;
 		} else if (!cascade.hasCompounds.has(compound)) {
@@ -7993,13 +7990,13 @@ function noteHasRule(
 			cascade.hasAnswers = new WeakMap();
 		}
 	}
-	if (reading.hasSiblings) {
+	if (has.siblings) {
 		cascade.hasSiblingRules = true;
 	}
-	for (const anchor of reading.hasAnchors) {
+	for (const anchor of has.anchors) {
 		cascade.hasAnchors.add(anchor);
 	}
-	for (const state of reading.hasStates) {
+	for (const state of has.states) {
 		cascade.hasStates.add(state);
 	}
 }
@@ -11602,7 +11599,7 @@ function parseSelector(
 	// A :has() rule reads DOWN the tree, the one relational direction the
 	// per-target invalidation cannot see, so the flag enables the ancestor
 	// sweep only for documents that need it.
-	const has = reading.hasAnchors.length > 0 ? reading : undefined;
+	const has = reading.has;
 	if (has) {
 		noteHasRule(cascade, has);
 	}
