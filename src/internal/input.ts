@@ -186,14 +186,12 @@ function getLegacyKeyCode(keyName: string): number {
 	if (named !== undefined) {
 		return named;
 	}
+	if (CHARACTER_CODES.has(keyName)) {
+		return keyName.toUpperCase().charCodeAt(0);
+	}
 	const code = getDOMCode(keyName);
-	if (/^Key[A-Z]$/.test(code)) {
-		return code.charCodeAt(3);
-	}
-	if (/^Digit\d$/.test(code)) {
-		return code.charCodeAt(5);
-	}
-	return PUNCTUATION_KEY_NUMBERS[code] ?? 0;
+	return PUNCTUATION_KEY_NUMBERS[code] ??
+		(code.startsWith("Digit") ? code.charCodeAt(5) : 0);
 }
 
 // What Tab traverses and what a mousedown focuses.
