@@ -777,18 +777,17 @@ export function resolveDocumentScrollBand(
 }
 
 export function paint(painter: Painter, ctx: CellContext): void {
+	clearMap(painter.paintedText);
+	clearMap(painter.inTransparent);
+	clearMap(painter.highlightStyles);
 	// A frame with no rows to paint, one asked for in case input changed
 	// something, lets go of the last frame's and does no more.
 	if (ctx.bands.length === 0) {
 		clearMap(painter.highlightedText);
-		clearMap(painter.paintedText);
-		clearMap(painter.inTransparent);
-		clearMap(painter.highlightStyles);
 		painter.selectedRange = null;
 		return;
 	}
 	painter.highlightedText = collectHighlightedText(painter.document);
-	painter.paintedText.clear();
 	painter.rectsTaken = 0;
 	painter.fragmentsTaken = 0;
 	if (painter.rects.length > KEPT_RECORDS) {
@@ -798,8 +797,6 @@ export function paint(painter: Painter, ctx: CellContext): void {
 		painter.fragments.length = KEPT_RECORDS;
 	}
 	painter.selectedRange = getSelectedRange(painter.window);
-	painter.inTransparent = new Map();
-	painter.highlightStyles = new Map();
 	const layers = collectStackingLayers(painter.layout, painter.topLayer);
 	// From the body, the root stacking context's content. A body that
 	// is inline, inline-block or display: contents puts its content in
