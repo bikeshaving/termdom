@@ -1,5 +1,6 @@
 import type {Cascade} from "./cssom.ts";
 import {
+	applyMutations,
 	constructInternal,
 	dispatchAsUserAgent,
 	Event,
@@ -910,6 +911,7 @@ interface PanicState {
 	shape: boolean;
 	color: boolean;
 	keys: string;
+	altScreen: boolean;
 }
 
 const kPanicState = Symbol("panicState");
@@ -926,6 +928,14 @@ function setPanicState(exchange: Exchange): void {
 		styled.keys ||= KEYBOARD_MODES.filter((name) =>
 			slots.engagedModes.has(name),
 		).map((name) => getModeEscape(slots, name, false)).join("");
+	}
+}
+
+function setPanicAltScreen(exchange: Exchange, on: boolean): void {
+	const styled =
+		(_(exchange).transport as Partial<ProcessTransport>)[kPanicState];
+	if (styled !== undefined) {
+		styled.altScreen = on;
 	}
 }
 
@@ -1341,6 +1351,9 @@ export function setDisplayType(
 	} else {
 		slots.engagedModes.delete(name);
 	}
+	if (name === "altScreen") {
+		setPanicAltScreen(exchange, on);
+	}
 	let output = getModeEscape(slots, name, on);
 	// tmux clears every mouse mode when any one of ?1000 to ?1003 is
 	// reset, so turning motion reporting off took the button mode with
@@ -1441,6 +1454,7 @@ export function releaseModes(exchange: Exchange): void {
 			void exchange.write(getModeEscape(slots, name, false));
 		}
 	}
+	setPanicAltScreen(exchange, false);
 	resetCursorStyle(exchange);
 	if (slots.priorBidiMode === 1) {
 		void exchange.write(BIDI_IMPLICIT);
@@ -1458,6 +1472,7 @@ export function reclaimModes(exchange: Exchange): void {
 			void exchange.write(getModeEscape(slots, name, true));
 		}
 	}
+	setPanicAltScreen(exchange, slots.engagedModes.has("altScreen"));
 	if (slots.cursorShape !== 0) {
 		void exchange.write(getCursorShapeEscape(slots.cursorShape));
 	}
@@ -1473,6 +1488,7 @@ export function restoreEngagedModes(exchange: Exchange): void {
 			void exchange.write(getModeEscape(slots, name, false));
 		}
 	}
+	setPanicAltScreen(exchange, false);
 	slots.keyFlags = null;
 	resetCursorStyle(exchange);
 	slots.cursorShape = 0;
@@ -2228,11 +2244,12 @@ function terminalResized(
 	const framebuffer = sessionSlots.framebuffer;
 	// A SIGWINCH with an unchanged size still redraws but fires no event.
 	const sizeChanged = width !== framebuffer.cols || height !== framebuffer.rows;
+	const window = sessionSlots.window;
+	applyMutations(window.document);
 	resize(framebuffer, height, width);
 	sessionSlots.layout.resize(width, height);
 	// A size change can flip any @media result and every vw/vh value.
 	sessionSlots.cascade.syncStylesheets();
-	const window = sessionSlots.window;
 	if (sizeChanged && !sessionSlots.defersResize) {
 		dispatchAsUserAgent(
 			window,
@@ -2240,6 +2257,7 @@ function terminalResized(
 		);
 	}
 	syncMediaQueries(window.document);
+	applyMutations(window.document);
 	session.dispatchEvent(
 		constructInternal(() => new TerminalResizeEvent(sizeChanged)),
 	);
@@ -2626,15 +2644,23 @@ function getPanicRestore(styles: Iterable<PanicState>): string {
 	let shape = false;
 	let color = false;
 	let keys = "";
+	let altScreen = false;
 	for (const styled of styles) {
 		shape ||= styled.shape;
 		color ||= styled.color;
 		keys ||= styled.keys;
+		altScreen ||= styled.altScreen;
 	}
+	const restore = altScreen
+		? PANIC_RESTORE.replace(
+			MODE_SPELLINGS.altScreen.panic,
+			MODE_SPELLINGS.altScreen.reset,
+		)
+		: PANIC_RESTORE;
 	// The keyboard resets go on both sides of leaving the alternate
 	// screen, which keeps flags of its own.
 	return keys +
-		PANIC_RESTORE +
+		restore +
 		keys +
 		(shape ? CURSOR_SHAPE_RESET : "") +
 		(color ? CURSOR_COLOR_RESET : "");
@@ -2840,7 +2866,12 @@ export function transportFromProcess(
 		}));
 	};
 
-	const styled: PanicState = {shape: false, color: false, keys: ""};
+	const styled: PanicState = {
+		shape: false,
+		color: false,
+		keys: "",
+		altScreen: false,
+	};
 	let engaged = false;
 	let stopWatching: (() => void) | undefined;
 	let dataListener:

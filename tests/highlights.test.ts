@@ -152,6 +152,43 @@ test("a styled highlight paints its cells, and an unstyled name paints none", as
 	dom.dispose();
 });
 
+test("a highlight after a preserved tab paints at the tab stop", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>::highlight(hit) { background-color: yellow } p { white-space: pre }</style>";
+	document.body.innerHTML = "<p>\tif (x)</p><p>ab\tif</p>";
+	const [first, second] = [...document.querySelectorAll("p")].map(
+		(p) => p.firstChild!,
+	);
+	window.CSS.highlights.set(
+		"hit",
+		new window.Highlight(
+			new window.StaticRange({
+				startContainer: first,
+				startOffset: 1,
+				endContainer: first,
+				endOffset: 3,
+			}),
+			new window.StaticRange({
+				startContainer: second,
+				startOffset: 3,
+				endContainer: second,
+				endOffset: 5,
+			}),
+		),
+	);
+	await nextFrame(dom);
+
+	expect(yellowCells(terminal, 0)).toEqual([8, 9]);
+	expect(cellAt(terminal, 0, 8).getChars()).toBe("i");
+	expect(cellAt(terminal, 0, 0).getChars()).toBe(" ");
+	expect(yellowCells(terminal, 1)).toEqual([8, 9]);
+	expect(cellAt(terminal, 1, 2).getChars()).toBe(" ");
+
+	dom.dispose();
+});
+
 test("a ::highlight rule generates no pseudo-element", async () => {
 	const {terminal, dom, window} = highlightDOM();
 	const {document} = dom;

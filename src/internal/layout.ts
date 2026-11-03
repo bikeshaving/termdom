@@ -9165,10 +9165,18 @@ function getSelectionSpans(
 	const whiteSpace = getWhiteSpace(textNode);
 	for (const fragment of layout.lineFragments(textNode)) {
 		// A collapsing run makes column and offset diverge.
-		const {text, offsets} = renderWhiteSpaceOffsets(
+		let {text, offsets} = renderWhiteSpaceOffsets(
 			textNode.data.slice(fragment.startOffset, fragment.endOffset),
 			whiteSpace,
 		);
+		if (text.includes("\t") && isSpacePreserving(whiteSpace)) {
+			({text, offsets} = expandTabRun(
+				text,
+				offsets,
+				getTextTabSize(textNode),
+				fragment.column,
+			));
+		}
 		// A cell holds a whole cluster, so a run that starts or ends inside
 		// one takes the cluster whole. Measured off a cluster boundary, a run
 		// landed inside the span of the glyph before it.
