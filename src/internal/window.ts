@@ -112,6 +112,8 @@ export function buildWindow(
 		// throw. A caller's `instanceof DOMException` has to match the class
 		// the engine builds its errors from.
 			DOMException,
+			// The runtime's File, which its FormData, Blob and fetch take.
+			File: globalThis.File,
 			setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) => {
 				const guarded = guard(handler, args);
 				const id = ++lastTimerId;

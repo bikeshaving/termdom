@@ -365,6 +365,9 @@ function decodeCodedKey(codepoint: number, mod: number): WireKey {
 	};
 }
 
+// The symbols a US layout types with Shift.
+const US_SHIFTED_SYMBOLS = '~!@#$%^&*()_+{}|:"<>?';
+
 function decodeKeyToken(token: string): WireKey {
 	const code = token.charCodeAt(0);
 
@@ -396,7 +399,8 @@ function decodeKeyToken(token: string): WireKey {
 	}
 
 	// A character outside the basic plane is one character across two
-	// units.
+	// units. An uppercase ASCII letter, or a character a US layout types
+	// with Shift, comes with Shift, as the US-layout code it is given says.
 	const astral = token.length === 2 && code >= 0xd800 && code <= 0xdbff;
 	const printable =
 		astral || (token.length === 1 && code >= 32 && code !== 127);
@@ -404,7 +408,9 @@ function decodeKeyToken(token: string): WireKey {
 		kind: "key",
 		key: KEY_BY_TOKEN[token] ?? token,
 		char: printable ? token : "",
-		shiftKey: false,
+		shiftKey:
+			(code >= 0x41 && code <= 0x5a) ||
+			(token.length === 1 && US_SHIFTED_SYMBOLS.includes(token)),
 		ctrlKey: false,
 		altKey: false,
 		metaKey: false,

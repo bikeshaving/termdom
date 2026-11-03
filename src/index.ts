@@ -529,7 +529,11 @@ const HELD_ERROR_LIMIT = 50;
 export interface TermDOMEventMap {
 	cellchange: CellChangeEvent;
 	fetch: FetchEvent;
+
+	/** @deprecated Listen for currententrychange at window.navigation. */
 	historychange: HistoryChangeEvent;
+
+	/** @deprecated window.navigation goes between the document's entries. */
 	historytraverse: HistoryTraverseEvent;
 }
 
@@ -932,11 +936,16 @@ export class TermDOM extends EventTarget {
 
 	/**
 	 * Go back or forward to an entry of the document's own history, one a
-	 * "historychange" event announced or the one it started on: the
-	 * document takes its URL and state, and the page hears popstate, then
-	 * hashchange when only the fragment differs. A URL the document could
-	 * not have pushed throws a SecurityError, and so does a call after
-	 * dispose() an InvalidStateError.
+	 * "historychange" event announced or the one it started on: the nearest
+	 * entry with the URL takes the state, the document goes to it, and the
+	 * page hears navigate, popstate, then hashchange when the fragment
+	 * differs. Where no other entry has the URL, the current one takes the
+	 * URL and state. A URL the document could not have pushed throws a
+	 * SecurityError, and so does a call after dispose() an
+	 * InvalidStateError.
+	 *
+	 * @deprecated The page's own history.back(), forward() and go(), and
+	 * window.navigation's traverseTo(), go between the document's entries.
 	 */
 	traverse(url: string, state: unknown = null): void {
 		if (_(this).lifecycle === "disposed") {

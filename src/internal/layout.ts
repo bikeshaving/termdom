@@ -35,6 +35,7 @@ import {
 	flowContent,
 	flowNext,
 	getAddedNodes,
+	getPseudoHost,
 	getScrollOffset,
 	getShadowRoot,
 	getUnlinkCount,
@@ -43,6 +44,7 @@ import {
 	isInFlatTree,
 	isModalDialog,
 	isShadowIncludingAncestor,
+	isUAShadowTree,
 	pseudoElementCount,
 	renderedTopLayer,
 	type Window,
@@ -8746,13 +8748,24 @@ function invalidateForRecord(
 	}
 }
 
+// The text under root in the flat tree, where a point can place the
+// caret. A form control's UA shadow tree holds the control's value, and
+// pseudo-elements hold generated text, so neither is walked.
 function getTextNodes(root: Node, found: Text[] = []): Text[] {
 	if (getNodeType(root) === root.TEXT_NODE) {
 		found.push(root as Text);
 		return found;
 	}
-	for (const child of Array.from(root.childNodes)) {
-		getTextNodes(child, found);
+	const shadow = getNodeType(root) === root.ELEMENT_NODE
+		? getShadowRoot(root as Element)
+		: null;
+	const children = shadow !== null && isUAShadowTree(shadow)
+		? Array.from(root.childNodes)
+		: flatChildren(root);
+	for (const child of children) {
+		if (getPseudoHost(child) === null) {
+			getTextNodes(child, found);
+		}
 	}
 	return found;
 }
