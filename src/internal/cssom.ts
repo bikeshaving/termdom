@@ -4620,14 +4620,23 @@ const treeTables = new WeakMap<
 	Map<object, Map<string, Map<string, string>>>
 >();
 
-// Counters count elements in document order, so a rule that sets or uses
-// them gives each element its own values.
-const COUNTER_PROPERTIES = [
-	"content",
-	"counter-reset",
-	"counter-increment",
-	"counter-set",
-];
+// Counters count elements in document order, so a block that sets them,
+// or calls counter() or counters() in its content, gives each element its
+// own values.
+function usesCounters(
+	block: {readonly declarations: Readonly<Record<string, string>>},
+): boolean {
+	const {declarations} = block;
+	return Boolean(
+		declarations["counter-reset"] ||
+		declarations["counter-increment"] ||
+		declarations["counter-set"] ||
+		CSSValues.getCSSValueChildren(declarations.content ?? "")
+			?.some(
+				(node) => node.type === "Function" && /^counters?$/i.test(node.name!),
+			),
+	);
+}
 
 // One rule per set of hints, so elements with the same attributes share
 // their computed values as they would with the same rules.
@@ -4665,11 +4674,7 @@ function getHintRule(element: Element): CascadedRule | null {
 function getRuleId(rule: CascadedRule): number {
 	let id = ruleIds.get(rule);
 	if (id === undefined) {
-		id = COUNTER_PROPERTIES.some((name) =>
-			(rule.block.declarations[name] ?? "").includes("counter"),
-		)
-			? -1
-			: ++nextRuleId;
+		id = usesCounters(rule.block) ? -1 : ++nextRuleId;
 		ruleIds.set(rule, id);
 	}
 	return id;
@@ -11856,12 +11861,7 @@ function parseSelector(
 		cascade.scopedRulesExist = true;
 	}
 	indexReachingKeys(cascade, complex, declarations, scope);
-	if (
-		declarations["counter-reset"] ||
-		declarations["counter-increment"] ||
-		declarations["counter-set"] ||
-		declarations["content"]?.includes("counter")
-	) {
+	if (usesCounters(block)) {
 		cascade.counterRulesExist = true;
 	}
 	const origin = uaOriginSheet || (scope != null && isUAShadowTree(scope))
