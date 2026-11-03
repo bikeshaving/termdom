@@ -6045,23 +6045,14 @@ function hasActivationBehavior(target: EventTarget): boolean {
 	);
 }
 
-// A hyperlink's activation behavior is to follow it. The one link a
-// terminal document can follow is to a fragment of itself. Any other is an
-// activation target that does nothing.
+// A hyperlink's activation behavior is to follow it.
 function runActivationBehavior(target: EventTarget, event: Event): void {
 	if (
 		(implementsInterface(target, HTMLAnchorElement) ||
 			implementsInterface(target, HTMLAreaElement)) &&
 		hasAttributeByName(target, "href")
 	) {
-		const url = (target as unknown as {href: string}).href;
-		const document = _(target).document;
-		if (
-			url.includes("#") &&
-			withoutFragment(url) === withoutFragment(_(document).extra.documentURL)
-		) {
-			navigateDocument(document, url);
-		}
+		followHyperlink(target, event);
 	} else if (implementsInterface(target, HTMLButtonElement)) {
 		activateButton(target, event);
 	} else if (implementsInterface(target, HTMLInputElement)) {
@@ -6071,6 +6062,51 @@ function runActivationBehavior(target: EventTarget, event: Event): void {
 	} else if (isDetailsSummary(target)) {
 		toggleTheDetails(target);
 	}
+}
+
+// HTML's follow the hyperlink, and download the hyperlink for one with a
+// download attribute, which fires its navigate event and goes no further.
+// A link to another navigable than its document's goes nowhere.
+function followHyperlink(link: Element, event: Event): void {
+	const document = _(link).document;
+	const window = _(document).extra.defaultView as Window | null;
+	if (window === null || !link.isConnected || !targetsSelf(link, window)) {
+		return;
+	}
+	const url = parseURL(
+		getAttributeValue(link, "href")!,
+		getDocumentBaseURL(document),
+	);
+	if (url === null) {
+		return;
+	}
+	const userInvolvement = event.isTrusted ? "activation" : "none";
+	const filename = getAttributeValue(link, "download");
+	if (filename === null) {
+		navigateDocument(document, url, {userInvolvement, sourceElement: link});
+		return;
+	}
+	const navigation = getNavigation(window);
+	const destination = createDestination(url, null, {value: undefined}, false);
+	if (
+		fireNavigateEvent(navigation, "push", destination, {
+			userInvolvement,
+			sourceElement: link,
+			downloadRequest: filename,
+		})
+	) {
+		_(navigation).ongoingEvent = null;
+	}
+}
+
+// Whether a link's or a form's target names the navigable of its own
+// document: none, _self, or _top and _parent in a document no frame shows.
+function targetsSelf(element: Element, window: Window): boolean {
+	const target = toASCIILowercase(getAttributeValue(element, "target") ?? "");
+	return target === "" ||
+		target === "_self" ||
+		((target === "_top" || target === "_parent") &&
+			_(window).parentWindow === null);
 }
 
 /** Input types that are buttons rather than text controls. */
@@ -17728,15 +17764,18 @@ class HTMLFontElement extends HTMLElement {
 	declare size: globalThis.HTMLFontElement["size"];
 }
 
-// Submission navigates, and this DOM does not navigate. `submit()` runs
-// the steps up to the navigation and stops. `requestSubmit()` fires the
-// submit event those steps fire first. `reset()` fires its event and
-// restores every control the form owns to its default.
+// Submission navigates. `submit()` runs the steps up to the navigation,
+// and `requestSubmit()` fires the submit event those steps fire first.
+// `reset()` fires its event and restores every control the form owns to
+// its default.
 interface HTMLFormElementExtra extends NodeExtra {
 	elements: HTMLFormControlsCollection | null;
 	firingReset: boolean;
 	constructingEntryList: boolean;
 	listed?: ListedElements;
+	// The submission whose navigation a task is to run, which a later
+	// submission replaces.
+	plannedNavigation?: object;
 }
 
 interface HTMLFormElementSlots extends HTMLElementSlots {
@@ -17932,8 +17971,7 @@ function isSubmitButton(element: Element): boolean {
 
 // Fires the submit event unless the caller was `submit()`, which the
 // spec defines as skipping it, and then builds the entry list the
-// submission would send. The navigation that would send it is the one
-// step this DOM does not have.
+// submission sends and plans its navigation.
 function submitForm(
 	form: HTMLFormElement,
 	submitter: Element | null,
@@ -17994,7 +18032,66 @@ function submitForm(
 		}
 		return;
 	}
-	constructEntryList(form, submitter);
+	const entries = constructEntryList(form, submitter);
+	if (entries !== null) {
+		planFormNavigation(form, submitter, method, entries);
+	}
+}
+
+// HTML's form submission from the action on. A GET form's entries become
+// the action URL's query and a POST form's are the entry list its
+// navigate event reports. The navigation runs in a task.
+function planFormNavigation(
+	form: HTMLFormElement,
+	submitter: Element | null,
+	method: string,
+	entries: FormDataEntry[],
+): void {
+	const document = _(form).document;
+	const window = _(document).extra.defaultView as Window | null;
+	const chooser =
+		submitter !== null &&
+		hasAttributeByName(submitter, "formtarget")
+			? submitter
+			: form;
+	if (window === null || !targetsSelf(chooser, window)) {
+		return;
+	}
+	const action =
+		submitter !== null &&
+		hasAttributeByName(submitter, "formaction")
+			? getAttributeValue(submitter, "formaction")!
+			: getAttributeValue(form, "action") ?? "";
+	const parsed = parseURL(
+		action === "" ? _(document).extra.documentURL : action,
+		getDocumentBaseURL(document),
+	);
+	if (parsed === null) {
+		return;
+	}
+	const url = new URL(parsed);
+	const post = method === "post" && /^https?:$/.test(url.protocol);
+	if (!post) {
+		url.search = new URLSearchParams(
+			entries.map(([name, value]) => [
+				name,
+				typeof value === "string" ? value : value.name,
+			]),
+		).toString();
+	}
+	const params: NavigateParams = {
+		historyHandling: "push",
+		formData: post ? entries : null,
+		userInvolvement: isUserActive(document) ? "activation" : "none",
+		sourceElement: submitter ?? form,
+	};
+	const planned = _(form).extra.plannedNavigation = {};
+	setTimeout(() => {
+		if (_(form).extra.plannedNavigation === planned) {
+			_(form).extra.plannedNavigation = undefined;
+			navigateDocument(document, url.href, params);
+		}
+	}, 0);
 }
 
 // The input types whose Enter would submit a form of one field. A form

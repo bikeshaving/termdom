@@ -6,7 +6,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {type HistoryTraverseEvent, TermDOM} from "../src/index.ts";
-import {MockProcess} from "./test-utils.js";
+import {inputDispatched, MockProcess, nextFrame} from "./test-utils.js";
 
 function created(html = ""): TermDOM {
 	return new TermDOM({
@@ -298,6 +298,68 @@ test("location navigates through an intercepting listener", async () => {
 	expect(types).toEqual(["push", "replace", "push", "reload"]);
 	expect(window.history.length).toBe(3);
 	await tick();
+	dom.dispose();
+});
+
+test("following a link fires navigate with the link as its source", async () => {
+	const proc = new MockProcess();
+	const dom = new TermDOM({
+		transport: proc.transport,
+		url: "https://example.com/a/b",
+		html: "<a href=/next>next</a><a href=#f download=f.txt>f</a>",
+	});
+	dom.attach();
+	await nextFrame(dom);
+	const {window, document} = dom;
+	const seen: Array<[string, boolean, unknown, string | null]> = [];
+	window.navigation.addEventListener("navigate", (event) => {
+		seen.push([
+			event.destination.url,
+			event.userInitiated,
+			event.sourceElement,
+			event.downloadRequest,
+		]);
+		if (event.downloadRequest === null) {
+			event.intercept();
+		}
+	});
+	(proc.stdin as any).emit("data", Buffer.from("\x1b[<0;1;1M\x1b[<0;1;1m"));
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	await inputDispatched();
+	const [next, download] = document.querySelectorAll("a");
+	download.click();
+	expect(seen).toEqual([
+		["https://example.com/next", true, next, null],
+		["https://example.com/next#f", false, download, "f.txt"],
+	]);
+	expect(window.location.href).toBe("https://example.com/next");
+	dom.dispose();
+});
+
+test("submitting a form fires navigate in a task, with a POST's data", async () => {
+	const dom = created(
+		"<form method=post action=/save><input name=q value=1></form>" +
+			"<form id=get action=/find><input name=s value='a b'></form>",
+	);
+	const {window, document} = dom;
+	const seen: Array<[string, string | null]> = [];
+	window.navigation.addEventListener("navigate", (event) => {
+		seen.push([
+			event.destination.url,
+			event.formData === null ? null : String(event.formData.get("q")),
+		]);
+		event.preventDefault();
+	});
+	const [post, get] = document.querySelectorAll("form");
+	post.requestSubmit();
+	post.submit();
+	get.submit();
+	expect(seen).toEqual([]);
+	await tick();
+	expect(seen).toEqual([
+		["https://example.com/save", "1"],
+		["https://example.com/find?s=a+b", null],
+	]);
 	dom.dispose();
 });
 
