@@ -2927,7 +2927,7 @@ test("keys that spell out their modifiers decode as those keys", async () => {
 	termdom.dispose();
 });
 
-test("an uppercase letter from a terminal reports Shift", async () => {
+test("an uppercase letter or a US-shifted symbol from a terminal reports Shift", async () => {
 	const {termdom, document, type} = await makeKeyApp("<p>p</p>");
 	const seen: string[] = [];
 	document.addEventListener("keydown", (event) => {
@@ -2939,12 +2939,16 @@ test("an uppercase letter from a terminal reports Shift", async () => {
 	await type("a");
 	await type("\x1bZ");
 	await type("?");
+	await type("/");
+	await type("@");
 	await type("\x1b[65u");
 	expect(seen).toEqual([
 		"Shift+A:KeyA",
 		"a:KeyA",
 		"Alt+Shift+Z:KeyZ",
-		"?:Slash",
+		"Shift+?:Slash",
+		"/:Slash",
+		"Shift+@:Digit2",
 		"A:KeyA",
 	]);
 	termdom.dispose();
