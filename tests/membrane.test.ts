@@ -31,11 +31,14 @@ for (const object of [
 	new DOMException("x"),
 	new AbortController().signal,
 	new AbortController(),
+	new File([], "x"),
 	Event,
 	EventTarget,
 	DOMException,
 	AbortController,
 	AbortSignal,
+	Blob,
+	File,
 ]) {
 	for (let o: object | null = object;
 		o !== null;
