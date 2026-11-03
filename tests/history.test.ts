@@ -166,7 +166,7 @@ test("traverse() takes an entry's URL and state and fires popstate", async () =>
 	expect(() => dom.traverse("https://example.com/a/b", null)).toThrow();
 });
 
-test("back, forward and go ask the embedder, after the call returns", async () => {
+test("back, forward and go past the entries ask the embedder, after the call", async () => {
 	const dom = created();
 	const {window} = dom;
 	const deltas: number[] = [];
