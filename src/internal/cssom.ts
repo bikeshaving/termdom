@@ -1075,21 +1075,6 @@ function getDeclarationBlock(
 		}
 	});
 
-	// The block parse is the one path both the attribute and setProperty
-	// forms of an inline transition come through.
-	if (
-		styleSlots.element &&
-		(declarations["transition"] !== undefined ||
-			declarations["transition-duration"] !== undefined ||
-			declarations["transition-delay"] !== undefined)
-	) {
-		const document = styleSlots.element.ownerDocument;
-		const cascade = document ? documentCascades.get(document) : undefined;
-		if (cascade) {
-			cascade.transitionsExist = true;
-		}
-	}
-
 	// A shorthand this engine does not decompose reaches the cascade as
 	// whatever longhands it can name, with its importance applied to each.
 	if (undecomposed) {
@@ -1104,15 +1089,31 @@ function getDeclarationBlock(
 				order[property] = index;
 			}
 		});
-		return (
-			styleSlots.block = {
-				declarations: CSSValues.expandShorthands(declarations),
-				important,
-				order,
-			}
-		);
+		styleSlots.block = {
+			declarations: CSSValues.expandShorthands(declarations),
+			important,
+			order,
+		};
+	} else {
+		styleSlots.block = {declarations, important, order};
 	}
-	return (styleSlots.block = {declarations, important, order});
+	// The block parse is the one path both the attribute and setProperty
+	// forms of an inline transition come through.
+	const document = styleSlots.element?.ownerDocument;
+	const cascade = document ? documentCascades.get(document) : undefined;
+	if (cascade && startsTransitions(styleSlots.block)) {
+		cascade.transitionsExist = true;
+	}
+	return styleSlots.block;
+}
+
+// Only a duration or delay can make a transition run, so the property
+// list alone does not open the sticky gate.
+function startsTransitions(block: CSSValues.DeclarationBlock): boolean {
+	return Boolean(
+		block.declarations["transition-duration"] ||
+		block.declarations["transition-delay"],
+	);
 }
 
 // Reconstructs shorthands and keeps priority.
@@ -6982,7 +6983,7 @@ function attachPseudoElementsToElement(
 		!tags.has(toASCIILowercase(getLocalName(element))) &&
 		!hasAttributeByName(element, "part") &&
 		pseudoElementCount(element) === 0 &&
-		!(getAttributeValue(element, "style") ?? "").includes("list-item")
+		!isListItemBlock(readInlineBlock(element))
 	) {
 		return;
 	}
@@ -9298,8 +9299,7 @@ function getElementCounterEffects(
 ): CounterEffects {
 	const slots = _(cascade.declarationFor(element));
 	const declares =
-		cascade.counterRulesExist ||
-		(getAttributeValue(element, "style") ?? "").includes("counter");
+		cascade.counterRulesExist || usesCounters(readInlineBlock(element));
 	const effects = readCounterEffects((property) =>
 		declares ? (slots._computedValue(property) ?? undefined) : undefined,
 	);
@@ -9602,9 +9602,8 @@ function processTransitionStyle(
 	const active = cascade.activeTransitions.get(element)?.get(pseudo);
 	if (!cascade.transitionsExist && !active) {
 		// An inline transition written right before this event may not have
-		// parsed yet. The attribute text is the one place it already shows.
-		const attribute = getAttributeValue(element, "style");
-		if (!attribute || !attribute.includes("transition")) {
+		// parsed yet.
+		if (!startsTransitions(readInlineBlock(element))) {
 			return;
 		}
 		cascade.transitionsExist = true;
@@ -11817,10 +11816,7 @@ function parseSelector(
 	namespaces?: SelectorNamespaces,
 	context: CSSValues.RuleContext = UNCONDITIONAL,
 ): void {
-	const {declarations} = block;
-	// Only a duration or delay can make a transition run, so the property
-	// list alone does not open the sticky gate.
-	if (declarations["transition-duration"] || declarations["transition-delay"]) {
+	if (startsTransitions(block)) {
 		cascade.transitionsExist = true;
 	}
 	const layer = context.layer;
@@ -11860,7 +11856,7 @@ function parseSelector(
 		scopes = context.scopes;
 		cascade.scopedRulesExist = true;
 	}
-	indexReachingKeys(cascade, complex, declarations, scope);
+	indexReachingKeys(cascade, complex, block.declarations, scope);
 	if (usesCounters(block)) {
 		cascade.counterRulesExist = true;
 	}
@@ -11870,14 +11866,10 @@ function parseSelector(
 	// The UA sheet's own `li { display: list-item }` is covered by the tag
 	// tests that read this flag. Set by the UA sheet too, the flag was
 	// always on, and every element paid for a ::marker it could not have.
-	if (origin === "author" && declarations["display"] === "list-item") {
+	if (origin === "author" && isListItemBlock(block)) {
 		cascade.listItemRulesExist = true;
 	}
-	if (
-		origin === "author" &&
-		((declarations["list-style-position"] ?? "outside") !== "outside" ||
-			declarations.all !== undefined)
-	) {
+	if (origin === "author" && mayPlaceMarkerInside(block)) {
 		cascade.insideMarkerRulesExist = true;
 	}
 	cascade.parsedRules.push({
@@ -12697,7 +12689,7 @@ function pseudoRuleCouldMatch(
 		return (
 			(name === "li" ||
 				name === "summary" ||
-				(getAttributeValue(element, "style") ?? "").includes("list-item") ||
+				isListItemBlock(readInlineBlock(element)) ||
 				(cascade.listItemRulesExist &&
 					anyRuleMatches(cascade, element, "list-item", isListItemRule))) &&
 			markerMayBeInside(cascade, element)
@@ -12738,7 +12730,7 @@ function pseudoRuleCouldMatch(
 function markerMayBeInside(cascade: Cascade, element: Element): boolean {
 	if (
 		getHTMLLocalName(element) === "summary" ||
-		(getAttributeValue(element, "style") ?? "").includes("inside") ||
+		mayPlaceMarkerInside(readInlineBlock(element)) ||
 		(cascade.insideMarkerRulesExist &&
 			anyRuleMatches(cascade, element, "marker-position", setsMarkerPosition))
 	) {
@@ -12764,7 +12756,7 @@ function mayInheritInsideMarker(element: Element): boolean {
 	) {
 		if (
 			getHTMLLocalName(at) === "summary" ||
-			(getAttributeValue(at, "style") ?? "").includes("inside")
+			mayPlaceMarkerInside(readInlineBlock(at))
 		) {
 			return true;
 		}
@@ -12772,13 +12764,24 @@ function mayInheritInsideMarker(element: Element): boolean {
 	return false;
 }
 
+function isListItemBlock(block: CSSValues.DeclarationBlock): boolean {
+	return block.declarations.display === "list-item";
+}
+
 function isListItemRule(rule: ParsedCSSRule): boolean {
-	return rule.block.declarations.display === "list-item";
+	return isListItemBlock(rule.block);
+}
+
+// Whether the block may put its markers inside: it declares a
+// list-style-position other than outside, or `all`.
+function mayPlaceMarkerInside(block: CSSValues.DeclarationBlock): boolean {
+	const position = block.declarations["list-style-position"];
+	return (position !== undefined && position !== "outside") ||
+		block.declarations.all !== undefined;
 }
 
 function setsMarkerPosition(rule: ParsedCSSRule): boolean {
-	return rule.block.declarations["list-style-position"] !== undefined ||
-		rule.block.declarations.all !== undefined;
+	return mayPlaceMarkerInside(rule.block);
 }
 
 // A candidate list keeps the same rules until they change, so the few that
