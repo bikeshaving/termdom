@@ -6076,8 +6076,8 @@ function followHyperlink(link: Element, event: Event): void {
 	const url = parseURL(
 		getAttributeValue(link, "href")!,
 		getDocumentBaseURL(document),
-	);
-	if (url === null) {
+	)?.href;
+	if (url === undefined) {
 		return;
 	}
 	const userInvolvement = event.isTrusted ? "activation" : "none";
@@ -15792,24 +15792,33 @@ Object.defineProperty(HTMLTemplateElement.prototype, Symbol.toStringTag, {
 
 builtinRegistry.define(HTML_NAMESPACE, "template", HTMLTemplateElement);
 
-function parseURL(value: string, base: string): string | null {
+function parseURL(value: string, base?: string): URL | null {
 	try {
-		return new URL(value, base).href;
+		return new URL(value, base);
 	} catch (_err) {
 		return null;
 	}
 }
 
-// A URL attribute as its reflecting property reads it: resolved against
-// the document's base URL, the trimmed text when that fails, and "" when
-// the attribute is absent.
+// A URL attribute resolved against the document's base URL, or null when
+// the attribute is absent or does not parse.
+function getAttributeURL(element: Element, attribute: string): URL | null {
+	const value = getAttributeValue(element, attribute);
+	return value === null
+		? null
+		: parseURL(
+			trimASCIIWhitespace(value),
+			getDocumentBaseURL(_(element).document),
+		);
+}
+
+// A URL attribute as its reflecting property reads it: the resolved URL,
+// the trimmed text when that fails, and "" when the attribute is absent.
 function getURLAttribute(element: Element, attribute: string): string {
 	const value = getAttributeValue(element, attribute);
-	if (value === null) {
-		return "";
-	}
-	const trimmed = trimASCIIWhitespace(value);
-	return parseURL(trimmed, getDocumentBaseURL(_(element).document)) ?? trimmed;
+	return value === null
+		? ""
+		: getAttributeURL(element, attribute)?.href ?? trimASCIIWhitespace(value);
 }
 
 // The href of the first base element that has one, resolved against the
@@ -15832,7 +15841,7 @@ function getDocumentBaseURL(document: Document): string {
 		if (href === null) {
 			continue;
 		}
-		return parseURL(href, fallback) ?? fallback;
+		return parseURL(href, fallback)?.href ?? fallback;
 	}
 	return fallback;
 }
@@ -16097,7 +16106,7 @@ function createHyperlinkPart(
 ): PropertyDescriptor {
 	return {
 		get(this: Element): string {
-			const url = getHyperlinkURL(this);
+			const url = getAttributeURL(this, "href");
 			return url === null ? absent : read(url);
 		},
 		set(this: Element, value: string): void {
@@ -16121,7 +16130,7 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 	},
 	origin: {
 		get(this: Element): string {
-			const url = getHyperlinkURL(this);
+			const url = getAttributeURL(this, "href");
 			return url === null ? "" : url.origin;
 		},
 		enumerable: true,
@@ -16200,21 +16209,8 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 	},
 };
 
-function getHyperlinkURL(element: Element): URL | null {
-	const value = getAttributeValue(element, "href");
-	if (value === null) {
-		return null;
-	}
-	const trimmed = trimASCIIWhitespace(value);
-	try {
-		return new URL(trimmed, getDocumentBaseURL(_(element).document));
-	} catch (_err) {
-		return null;
-	}
-}
-
 function writeHyperlink(element: Element, change: (url: URL) => void): void {
-	const url = getHyperlinkURL(element);
+	const url = getAttributeURL(element, "href");
 	if (url === null) {
 		return;
 	}
@@ -16263,7 +16259,7 @@ class HTMLBaseElement extends HTMLElement {
 		if (value === null) {
 			return fallback;
 		}
-		return parseURL(value, fallback) ?? fallback;
+		return parseURL(value, fallback)?.href ?? fallback;
 	}
 
 	set href(value: string) {
@@ -18064,14 +18060,13 @@ function planFormNavigation(
 		hasAttributeByName(submitter, "formaction")
 			? getAttributeValue(submitter, "formaction")!
 			: getAttributeValue(form, "action") ?? "";
-	const parsed = parseURL(
+	const url = parseURL(
 		action === "" ? _(document).extra.documentURL : action,
 		getDocumentBaseURL(document),
 	);
-	if (parsed === null) {
+	if (url === null) {
 		return;
 	}
-	const url = new URL(parsed);
 	const post = method === "post" && /^https?:$/.test(url.protocol);
 	if (!post) {
 		url.search = new URLSearchParams(
@@ -39082,8 +39077,8 @@ function navigateLocation(
 	historyHandling: globalThis.NavigationHistoryBehavior,
 ): void {
 	const document = _(location).locationWindow.document as unknown as Document;
-	const url = parseURL(value, getDocumentBaseURL(document));
-	if (url === null) {
+	const url = parseURL(value, getDocumentBaseURL(document))?.href;
+	if (url === undefined) {
 		throw domError("SyntaxError", `"${value}" is not a URL`);
 	}
 	if (!navigateDocument(document, url, {historyHandling})) {
@@ -39594,8 +39589,8 @@ export function traverseHistory(
 ): void {
 	const traversed = document as unknown as Document;
 	const oldURL = _(traversed).extra.documentURL;
-	const parsed = parseURL(url, oldURL);
-	if (parsed === null || !canRewriteURL(oldURL, parsed)) {
+	const parsed = parseURL(url, oldURL)?.href;
+	if (parsed === undefined || !canRewriteURL(oldURL, parsed)) {
 		throw domError(
 			"SecurityError",
 			`${url} is not an entry of the document at ${oldURL}`,
@@ -39716,8 +39711,8 @@ function updateHistory(
 	const documentURL = _(document).extra.documentURL;
 	let newURL = documentURL;
 	if (url != null && String(url) !== "") {
-		const parsed = parseURL(String(url), getDocumentBaseURL(document));
-		if (parsed === null || !canRewriteURL(documentURL, parsed)) {
+		const parsed = parseURL(String(url), getDocumentBaseURL(document))?.href;
+		if (parsed === undefined || !canRewriteURL(documentURL, parsed)) {
 			throw domError(
 				"SecurityError",
 				`Failed to execute '${method}' on 'History': A history state ` +
@@ -40320,8 +40315,8 @@ class Navigation extends EventTarget {
 			throw new TypeError(`"${historyHandling}" is not a history behavior`);
 		}
 		const document = getNavigationDocument(this);
-		const parsed = parseURL(String(url), getDocumentBaseURL(document));
-		if (parsed === null) {
+		const parsed = parseURL(String(url), getDocumentBaseURL(document))?.href;
+		if (parsed === undefined) {
 			return getEarlyErrorResult(
 				domError("SyntaxError", `"${String(url)}" is not a URL`),
 			);
