@@ -70,6 +70,7 @@ import {
 	negotiateColorDepth,
 	negotiateColorScheme,
 	negotiateGraphemeClusters,
+	negotiateKeyboard,
 	negotiateOverline,
 	queryCellPixels,
 	queryDeviceAttributes,
@@ -1187,6 +1188,7 @@ function startSession(term: TermDOM): void {
 	});
 	void negotiateBidi(slots.exchange);
 	void negotiateGraphemeClusters(slots.exchange);
+	void negotiateKeyboard(slots.exchange);
 	// Math draws its bars as overlines once the terminal has agreed
 	// to them, so what was measured before the answer measures again.
 	void negotiateOverline(slots.exchange).then((agreed) => {

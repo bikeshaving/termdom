@@ -212,13 +212,30 @@ const MODE_SPELLINGS = {
 	// XTWINOPS 22 and 23: push the title onto the terminal's stack and pop
 	// it back.
 	titleStack: {set: "\x1b[22;0t", reset: "\x1b[23;0t", panic: true},
+	// Negotiated, and before the alternate screen, which keeps flags of its
+	// own. The kitty keyboard protocol's flags 1 and 4: Escape and keys
+	// with modifiers as CSI u, with the key Shift makes. The flags are set
+	// rather than pushed, so a reset that says what they were is safe to
+	// write twice, as the panic path and the queued restore both do. These
+	// spellings are for a terminal whose flags were 0. getModeEscape keeps
+	// any it had.
+	kittyKeys: {set: "\x1b[=5;1u", reset: "\x1b[=0;1u", panic: false},
 	// The panic spelling is ?1047, without the cursor restore. A bare
 	// ?1049l restores a saved cursor even when the alternate screen is not
 	// active (tmux and xterm both), which would teleport the queued output.
 	altScreen: {set: "\x1b[?1049h", reset: "\x1b[?1049l", panic: "\x1b[?1047l"},
 	// Negotiated. A terminal that ignored the offer must not see the reset.
 	clusterWidths: {set: "\x1b[?2027h", reset: "\x1b[?2027l", panic: false},
+	// Negotiated. xterm's modifyOtherKeys at level 1, which tmux forwards
+	// when its extended-keys option is on. The reset is the terminal's
+	// initial level.
+	otherKeys: {set: "\x1b[>4;1m", reset: "\x1b[>4m", panic: false},
 } as const;
+
+// The kitty keyboard flags asked for.
+const KITTY_FLAGS = 5;
+
+const KEYBOARD_MODES = ["kittyKeys", "otherKeys"] as const;
 
 type ModeName = keyof typeof MODE_SPELLINGS;
 
@@ -290,7 +307,9 @@ type WireItem =
 	{kind: "capability-report"; known: boolean} |
 	{kind: "secondary-attributes"; params: string} |
 	{kind: "background"; red: number; green: number; blue: number} |
-	{kind: "device-attributes"};
+	{kind: "device-attributes"} |
+	{kind: "keyboard-flags"; flags: number} |
+	{kind: "terminal-version"; name: string};
 
 // Line feed is not here. It is the Ctrl+J chord. A lone ESC is the
 // Escape key, since the reader peels CSI and SS3 off whole.
@@ -325,6 +344,30 @@ const KEY_BY_CODE: Record<number, string> = {
 	127: "Backspace",
 };
 
+// The kitty protocol's keys in its private-use block: F13 to F35 from
+// 57376, and the keypad from 57399. The protocol's other private-use
+// codes are keys with no character, and decode as Unidentified.
+for (let i = 13; i <= 35; i++) {
+	KEY_BY_CODE[57363 + i] = `F${i}`;
+}
+[
+	..."0123456789./*-+",
+	"Enter",
+	"=",
+	",",
+	"ArrowLeft",
+	"ArrowRight",
+	"ArrowUp",
+	"ArrowDown",
+	"PageUp",
+	"PageDown",
+	"Home",
+	"End",
+	"Insert",
+	"Delete",
+	"Clear",
+].forEach((key, i) => (KEY_BY_CODE[57399 + i] = key));
+
 // mod - 1 is a bitmask: 1 Shift, 2 Alt, 4 Ctrl, 8 Super, and in CSI u 32
 // Meta. Super is the Meta key a browser reports. An empty mod is 0.
 function decodeModifiers(mod: number): Omit<WireKey, "kind" | "key" | "char"> {
@@ -343,12 +386,16 @@ function decodeNamedKey(key: string | undefined, mod: number): WireKey | null {
 		: {kind: "key", key, char: "", ...decodeModifiers(mod)};
 }
 
-function decodeCodedKey(codepoint: number, mod: number): WireKey {
+// `shifted` is the key Shift makes, which the kitty protocol's flag 4
+// reports as a subparameter. Without it, the key is upper-cased.
+function decodeCodedKey(codepoint: number, mod: number, shifted = 0): WireKey {
 	const modifiers = decodeModifiers(mod);
-	const named = KEY_BY_CODE[codepoint];
+	const named =
+		KEY_BY_CODE[codepoint] ??
+		(codepoint >= 0xe000 && codepoint <= 0xf8ff ? "Unidentified" : undefined);
 	let key = named ?? String.fromCodePoint(codepoint);
 	if (named === undefined && modifiers.shiftKey) {
-		key = key.toUpperCase();
+		key = shifted > 0 ? String.fromCodePoint(shifted) : key.toUpperCase();
 	}
 	const printable = named === undefined || key === " ";
 	return {
@@ -449,6 +496,8 @@ function decodeCSI(parser: Parser, final: string): WireItem | null {
 				: null;
 		case "?c":
 			return count === 0 ? null : {kind: "device-attributes"};
+		case "?u":
+			return count === 1 ? {kind: "keyboard-flags", flags: a} : null;
 		case ">c":
 			return count === 0
 				? null
@@ -465,7 +514,7 @@ function decodeCSI(parser: Parser, final: string): WireItem | null {
 				: null;
 		case "u":
 			return a > 0 && params.length <= 3 && (params[1]?.length ?? 0) <= 2
-				? decodeCodedKey(a, b)
+				? decodeCodedKey(a, b, params[0][1])
 				: null;
 		case "~":
 			if (count === 1 && a === 200) {
@@ -510,6 +559,12 @@ const BACKGROUND_REPLY =
 const BACKGROUND_QUERY = "\x1b]11;?\x1b\\";
 
 const DEVICE_ATTRIBUTES_QUERY = "\x1b[c";
+// The kitty keyboard protocol's flags, which a terminal that has the
+// protocol answers as CSI ? <flags> u.
+const KEYBOARD_FLAGS_QUERY = "\x1b[?u";
+// XTVERSION, answered as DCS > | <name and version> ST.
+const VERSION_QUERY = "\x1b[>0q";
+const VERSION_REPLY = /^>\|(.*)$/s;
 const SECONDARY_ATTRIBUTES_QUERY = "\x1b[>c";
 
 // XTGETTCAP names its capabilities in hex.
@@ -763,6 +818,10 @@ class WireReader implements ParserHandlers {
 		if (capability !== null) {
 			this.item = {kind: "capability-report", known: capability[1] === "1"};
 		}
+		const version = VERSION_REPLY.exec(text);
+		if (version !== null) {
+			this.item = {kind: "terminal-version", name: version[1]};
+		}
 	}
 }
 
@@ -845,24 +904,28 @@ const kReadsNoReplies = Symbol("readsNoReplies");
 // transport's terminal, so the panic paths reset those too, and only
 // those, since a reset takes back what the shell itself set. A flag stays
 // set once the page has styled, because the reset the page writes later
-// may still be queued when the panic path runs.
-interface CursorStyled {
+// may still be queued when the panic path runs. `keys` is the reset of
+// the keyboard modes the terminal agreed to, kept once set for that reason.
+interface PanicState {
 	shape: boolean;
 	color: boolean;
+	keys: string;
 }
 
-const kCursorStyled = Symbol("cursorStyled");
+const kPanicState = Symbol("panicState");
 
 type ProcessTransport =
-	TerminalTransport &
-	{[kReadsNoReplies]: boolean; [kCursorStyled]: CursorStyled};
+	TerminalTransport & {[kReadsNoReplies]: boolean; [kPanicState]: PanicState};
 
-function setCursorStyled(exchange: Exchange): void {
+function setPanicState(exchange: Exchange): void {
 	const slots = _(exchange);
-	const styled = (slots.transport as Partial<ProcessTransport>)[kCursorStyled];
+	const styled = (slots.transport as Partial<ProcessTransport>)[kPanicState];
 	if (styled !== undefined) {
 		styled.shape ||= slots.cursorShape !== 0;
 		styled.color ||= slots.cursorColor !== null;
+		styled.keys ||= KEYBOARD_MODES.filter((name) =>
+			slots.engagedModes.has(name),
+		).map((name) => getModeEscape(slots, name, false)).join("");
 	}
 }
 
@@ -900,6 +963,9 @@ export interface ExchangeSlots extends EventTargetSlots {
 	// waits on rather than asking again.
 	cellQuery: Promise<{width: number; height: number} | null> | null;
 	engagedModes: Set<ModeName>;
+	// The kitty keyboard flags the terminal had when asked, once it agreed
+	// to the protocol.
+	keyFlags: number | null;
 	// The cursor style and color the terminal last got: a DECSCUSR style,
 	// 0 for its own, and 0xRRGGBB, null for its own.
 	cursorShape: number;
@@ -1004,6 +1070,7 @@ export class Exchange extends EventTarget {
 		slots.asking = asking;
 		slots.cellQuery = null;
 		slots.engagedModes = new Set<ModeName>();
+		slots.keyFlags = null;
 		slots.cursorShape = 0;
 		slots.cursorColor = null;
 		// Anchor detection only makes sense when a shell's rows are above ours.
@@ -1274,7 +1341,7 @@ export function setDisplayType(
 	} else {
 		slots.engagedModes.delete(name);
 	}
-	let output = on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset;
+	let output = getModeEscape(slots, name, on);
 	// tmux clears every mouse mode when any one of ?1000 to ?1003 is
 	// reset, so turning motion reporting off took the button mode with
 	// it and clicks stopped arriving. The base capture is asserted again.
@@ -1283,7 +1350,35 @@ export function setDisplayType(
 	) {
 		output += MODE_SPELLINGS.mouseCapture.set;
 	}
+	// The screen switched back to keeps the kitty flags of its own.
+	if (name === "altScreen" && !on && slots.engagedModes.has("kittyKeys")) {
+		output += getModeEscape(slots, "kittyKeys", true);
+	}
 	void exchange.write(output);
+}
+
+/**
+ * A mode's spelling, keeping the kitty keyboard flags the terminal had.
+ * The alternate screen keeps kitty flags of its own, so entering it sets
+ * them there, and leaving it resets them there and on the screen
+ * switched back to.
+ */
+function getModeEscape(
+	slots: ExchangeSlots,
+	name: ModeName,
+	on: boolean,
+): string {
+	const flags = slots.keyFlags;
+	if (name === "kittyKeys") {
+		const before = flags ?? 0;
+		return `\x1b[=${on ? before | KITTY_FLAGS : before};1u`;
+	}
+	const spelling = on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset;
+	if (name !== "altScreen" || flags === null) {
+		return spelling;
+	}
+	const kitty = getModeEscape(slots, "kittyKeys", on);
+	return on ? spelling + kitty : kitty + spelling + kitty;
 }
 
 /**
@@ -1322,7 +1417,7 @@ export function setCursorStyle(
 		slots.cursorColor = color;
 		void exchange.write(getCursorColorEscape(color));
 	}
-	setCursorStyled(exchange);
+	setPanicState(exchange);
 }
 
 function resetCursorStyle(exchange: Exchange): void {
@@ -1343,7 +1438,7 @@ export function releaseModes(exchange: Exchange): void {
 	const slots = _(exchange);
 	for (const name of MODE_RESTORE_ORDER) {
 		if (slots.engagedModes.has(name)) {
-			void exchange.write(MODE_SPELLINGS[name].reset);
+			void exchange.write(getModeEscape(slots, name, false));
 		}
 	}
 	resetCursorStyle(exchange);
@@ -1360,7 +1455,7 @@ export function reclaimModes(exchange: Exchange): void {
 	}
 	for (const name of MODE_RESTORE_ORDER) {
 		if (slots.engagedModes.has(name)) {
-			void exchange.write(MODE_SPELLINGS[name].set);
+			void exchange.write(getModeEscape(slots, name, true));
 		}
 	}
 	if (slots.cursorShape !== 0) {
@@ -1372,14 +1467,16 @@ export function reclaimModes(exchange: Exchange): void {
 }
 
 export function restoreEngagedModes(exchange: Exchange): void {
+	const slots = _(exchange);
 	for (const name of MODE_RESTORE_ORDER) {
-		if (_(exchange).engagedModes.delete(name)) {
-			void exchange.write(MODE_SPELLINGS[name].reset);
+		if (slots.engagedModes.delete(name)) {
+			void exchange.write(getModeEscape(slots, name, false));
 		}
 	}
+	slots.keyFlags = null;
 	resetCursorStyle(exchange);
-	_(exchange).cursorShape = 0;
-	_(exchange).cursorColor = null;
+	slots.cursorShape = 0;
+	slots.cursorColor = null;
 }
 
 export function flushExchange(exchange: Exchange): Promise<void> {
@@ -1677,6 +1774,58 @@ export async function negotiateGraphemeClusters(
 	if (slots.graphemeClustersNegotiated) {
 		slots.engagedModes.add("clusterWidths");
 	}
+}
+
+/**
+ * Escape, and keys whose modifiers send the bytes of the key alone
+ * (Ctrl+Enter, Shift+Enter, Ctrl+Tab), each as a sequence of its own.
+ * Another terminal could read the request as something else, so it is
+ * made only of one that has said it understands: one that answers the
+ * kitty keyboard protocol's question gets the protocol, and one whose
+ * XTVERSION names tmux or xterm gets modifyOtherKeys. A DA1 asked behind
+ * them ends the wait on a terminal that answers neither.
+ */
+export async function negotiateKeyboard(exchange: Exchange): Promise<void> {
+	const slots = _(exchange);
+	if (!slots.interactive) {
+		return;
+	}
+	let answered!: () => void;
+	const until = new Promise<void>((resolve) => (answered = resolve));
+	const flags = nextReply<"keyboard-flags", number | null>(
+		exchange,
+		"keyboard-flags",
+		{
+			ask: KEYBOARD_FLAGS_QUERY,
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: null,
+			until,
+			read: (item) => item.flags,
+		},
+	);
+	const version = nextReply<"terminal-version", string | null>(
+		exchange,
+		"terminal-version",
+		{
+			ask: VERSION_QUERY,
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: null,
+			until,
+			read: (item) => item.name,
+		},
+	);
+	void queryDeviceAttributes(exchange).then(answered);
+	const [before, name] = await Promise.all([flags, version]);
+	if (slots.disposed) {
+		return;
+	}
+	if (before !== null) {
+		slots.keyFlags = before;
+		setDisplayType(exchange, "kittyKeys", true);
+	} else if (name !== null && /^(?:tmux|XTerm)\b/.test(name)) {
+		setDisplayType(exchange, "otherKeys", true);
+	}
+	setPanicState(exchange);
 }
 
 /**
@@ -2471,16 +2620,22 @@ export interface ProcessLike {
 // cursor and the modes set. One exit hook restores every engaged process
 // transport. Each process counts its engaged transports, and only the
 // last to let go hands its terminal back.
-const engagedProcesses = new Map<ProcessLike, Set<CursorStyled>>();
+const engagedProcesses = new Map<ProcessLike, Set<PanicState>>();
 
-function getPanicRestore(styles: Iterable<CursorStyled>): string {
+function getPanicRestore(styles: Iterable<PanicState>): string {
 	let shape = false;
 	let color = false;
+	let keys = "";
 	for (const styled of styles) {
 		shape ||= styled.shape;
 		color ||= styled.color;
+		keys ||= styled.keys;
 	}
-	return PANIC_RESTORE +
+	// The keyboard resets go on both sides of leaving the alternate
+	// screen, which keeps flags of its own.
+	return keys +
+		PANIC_RESTORE +
+		keys +
 		(shape ? CURSOR_SHAPE_RESET : "") +
 		(color ? CURSOR_COLOR_RESET : "");
 }
@@ -2685,7 +2840,7 @@ export function transportFromProcess(
 		}));
 	};
 
-	const styled: CursorStyled = {shape: false, color: false};
+	const styled: PanicState = {shape: false, color: false, keys: ""};
 	let engaged = false;
 	let stopWatching: (() => void) | undefined;
 	let dataListener:
@@ -2831,7 +2986,7 @@ export function transportFromProcess(
 		sharesScreen,
 		interactive: proc.stdout.isTTY === true,
 		[kReadsNoReplies]: proc.stdin?.isTTY !== true,
-		[kCursorStyled]: styled,
+		[kPanicState]: styled,
 		writeSync(text: string): void {
 			try {
 				proc.stdout.write(text);
