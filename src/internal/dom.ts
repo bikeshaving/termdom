@@ -28458,6 +28458,10 @@ export interface DocumentExtra extends NodeExtra {
 	pendingEditingReveal: globalThis.Element | null;
 	implementation: DOMImplementation | null;
 	documentURL: string;
+	// The fragment of documentURL that :target matches, as written and as
+	// percent-decoded, or null for a URL without one. pushState() and
+	// replaceState() move documentURL and leave this where it was.
+	targetFragment?: {raw: string; decoded: string} | null;
 	mode: "no-quirks" | "quirks" | "limited-quirks";
 	type: "xml" | "html";
 	contentType: string;
@@ -30591,7 +30595,7 @@ function copyDocumentState(from: Document, to: Document): void {
 	toSlots.extra.type = fromSlots.extra.type;
 	toSlots.extra.contentType = fromSlots.extra.contentType;
 	toSlots.extra.encoding = fromSlots.extra.encoding;
-	toSlots.extra.documentURL = fromSlots.extra.documentURL;
+	setDocumentURL(to, fromSlots.extra.documentURL);
 	toSlots.extra.mode = fromSlots.extra.mode;
 }
 
@@ -30841,7 +30845,7 @@ function createHTMLDocument(
 	const documentSlots = _(document);
 	documentSlots.registry = registry;
 	fillHTMLDocument(document, title);
-	documentSlots.extra.documentURL = url;
+	setDocumentURL(document, url);
 	return document;
 }
 
@@ -35678,10 +35682,6 @@ interface SessionHistory {
 	entries: SessionHistoryEntry[];
 	index: number;
 	state: unknown;
-	// pushState() and replaceState() leave the target where it was, so
-	// this is the URL whose fragment still names it, or null when the
-	// document's own URL does.
-	targetURL: string | null;
 }
 
 function getSessionHistory(document: Document): SessionHistory {
@@ -35696,7 +35696,6 @@ function getSessionHistory(document: Document): SessionHistory {
 		],
 		index: 0,
 		state: null,
-		targetURL: null,
 	};
 }
 
@@ -35730,25 +35729,13 @@ export function isTargetElement(element: Element): boolean {
 	if (getRoot(element as unknown as Node) !== (document as unknown as Node)) {
 		return false;
 	}
-	const url =
-		_(document).extra.sessionHistory?.targetURL ??
-		_(document).extra.documentURL;
-	const hash = url.indexOf("#");
-	if (hash === -1) {
+	const target = _(document).extra.targetFragment;
+	if (target == null) {
 		return false;
 	}
-	const fragment = url.slice(hash + 1);
-	if (fragment === "") {
-		return false;
-	}
-	let decoded = fragment;
-	try {
-		decoded = decodeURIComponent(fragment);
-	} catch (_err) {
-		// A fragment that is not valid percent-encoding is used as-is.
-	}
+	const {raw, decoded} = target;
 	const id = getAttributeValue(element, "id");
-	if (id === decoded || id === fragment) {
+	if (id === decoded || id === raw) {
 		return true;
 	}
 	// The `a` element's name attribute is the old way to write an anchor.
@@ -35784,15 +35771,29 @@ function getFragment(url: string): string | null {
 	return hash === -1 ? null : url.slice(hash + 1);
 }
 
+// Gives the document a URL and the fragment :target matches.
+function setDocumentURL(document: Document, url: string): void {
+	const extra = _(document).extra;
+	extra.documentURL = url;
+	const raw = getFragment(url);
+	if (!raw) {
+		extra.targetFragment = null;
+		return;
+	}
+	let decoded = raw;
+	try {
+		decoded = decodeURIComponent(raw);
+	} catch (_err) {
+		// A fragment that is not valid percent-encoding is used as-is.
+	}
+	extra.targetFragment = {raw, decoded};
+}
+
 // Gives the document its new URL and makes the element the fragment names
 // the target, restyling the one :target matched and the one it matches.
 function moveToURL(document: Document, url: string): Element | null {
 	const previous = getTargetElement(document);
-	_(document).extra.documentURL = url;
-	const session = _(document).extra.sessionHistory;
-	if (session !== undefined) {
-		session.targetURL = null;
-	}
+	setDocumentURL(document, url);
 	const next = getTargetElement(document);
 	for (const element of [previous, next]) {
 		if (element !== null) {
@@ -36573,7 +36574,7 @@ export function parseHTMLDocument(
 		markScriptedDocument(document as unknown as globalThis.Document);
 	}
 	_(document).registry = registry;
-	_(document).extra.documentURL = url;
+	setDocumentURL(document, url);
 	if (allowDeclarativeShadowRoots) {
 		attachDeclarativeShadowRoots(document);
 	}
@@ -39407,10 +39408,6 @@ function updateURLAndHistory(
 	);
 	if (classicState !== null) {
 		session.state = cloneStructured(entry.classicState, "restore the state");
-	}
-	const documentURL = _(document).extra.documentURL;
-	if (session.targetURL === null && url.href !== documentURL) {
-		session.targetURL = documentURL;
 	}
 	_(document).extra.documentURL = url.href;
 	const disposed = commitEntry(document, entry, historyHandling);
