@@ -582,9 +582,6 @@ interface TermDOMSlots extends EventTargetSlots {
 	// What the first frame waits for: the terminal's answers that decide
 	// how the page looks.
 	firstFrame: Promise<void> | null;
-	// A stdout that is not a terminal gets the document once, as it stands
-	// when the session ends. True while a frame has changed it since.
-	unprinted: boolean;
 	input: Input;
 	// Construction never touches the terminal. attach() does, and dispose()
 	// ends the instance for good.
@@ -657,7 +654,6 @@ export class TermDOM extends EventTarget {
 		slots.unwrittenErrors = null;
 		slots.renderCount = 0;
 		slots.firstFrame = null;
-		slots.unprinted = false;
 		slots.lifecycle = "detached";
 
 		slots.attachReady = Promise.resolve();
@@ -1334,7 +1330,8 @@ function failTermDOM(termDOM: TermDOM): void {
 const sessionsHoldingErrors = new Set<TermDOM>();
 
 // The sessions whose document a stdout that is not a terminal has not
-// been given. An exit before dispose() prints it.
+// been given. It gets the document once, as it stands when the session
+// ends. An exit before dispose() prints it.
 const sessionsUnprinted = new Set<TermDOM>();
 let exitHookInstalled = false;
 
@@ -1722,7 +1719,6 @@ function printStatic(termDOM: TermDOM): void {
 	const termDOMSlots = _(termDOM);
 	termDOMSlots.layout.performLayout();
 	framePainted(termDOMSlots.layout);
-	termDOMSlots.unprinted = true;
 	sessionsUnprinted.add(termDOM);
 	installExitHook();
 	afterRender(termDOM);
@@ -1730,15 +1726,13 @@ function printStatic(termDOM: TermDOM): void {
 
 // The document as plain lines, once, for a stdout that is not a terminal.
 function takeUnprinted(termDOM: TermDOM): string | null {
-	if (!_(termDOM).unprinted) {
+	if (!sessionsUnprinted.delete(termDOM)) {
 		return null;
 	}
-	markPrinted(termDOM);
 	return renderStatic(termDOM, "\n") || null;
 }
 
 function markPrinted(termDOM: TermDOM): void {
-	_(termDOM).unprinted = false;
 	sessionsUnprinted.delete(termDOM);
 }
 
