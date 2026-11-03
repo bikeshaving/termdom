@@ -687,7 +687,7 @@ const NO_CHILDREN: LayoutNode[] = Object.freeze([]) as unknown as LayoutNode[];
 export class LayoutNode {
 	measureFn: Measure | null;
 	// What the measure reads its box from, for a measure every node shares
-	// rather than one each.
+	// rather than one each. Null once the layout stops measuring the node.
 	measureSubject: object | null;
 	staticPositionFn: StaticPosition | null;
 	currentStyle: Style;

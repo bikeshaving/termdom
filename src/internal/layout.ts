@@ -2179,7 +2179,7 @@ function dropLayoutNode(layout: Layout, node: Node): void {
 	while (layoutNode.children.length > 0) {
 		layoutNode.removeChild(layoutNode.children[0]);
 	}
-	layout.measureNodes.delete(layoutNode);
+	layoutNode.measureSubject = null;
 	forgetReads(layoutNode);
 	untrackNode(layout, node);
 }
@@ -2189,17 +2189,13 @@ function dropLayoutNode(layout: Layout, node: Node): void {
 // and hidden vs not. Neither is fixable by re-measuring. A block image
 // that loads after showing its alt text goes from boxes of its own to
 // replaced.
-function isBoxKindMatch(
-	layout: Layout,
-	element: Element,
-	layoutNode: LayoutNode,
-): boolean {
+function isBoxKindMatch(element: Element, layoutNode: LayoutNode): boolean {
 	const hidden = getLayoutDisplay(element) === "none";
 	const measured =
 		!hidden && (
 			isReplacedBox(element) || isMathRoot(element) || isMeasuredAsRun(element)
 		);
-	if (measured !== layout.measureNodes.has(layoutNode)) {
+	if (measured !== (layoutNode.measureSubject !== null)) {
 		return false;
 	}
 	return hidden === (layoutNode.style.displayType === "none");
@@ -2213,7 +2209,7 @@ function dropAnonymousBox(layout: Layout, box: Box): void {
 		return;
 	}
 	layoutNode.parent?.removeChild(layoutNode);
-	layout.measureNodes.delete(layoutNode);
+	layoutNode.measureSubject = null;
 	forgetReads(layoutNode);
 	layout.anonymousBoxes.delete(layoutNode);
 	layoutNode.owner = null;
@@ -2381,7 +2377,6 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 					styleLayoutNode(styledFrom, layoutNode, layout.positionedElements);
 				}
 				setMeasure(layoutNode, {layout, kind: "run", box: entry});
-				layout.measureNodes.add(layoutNode);
 				layout.anonymousBoxes.set(layoutNode, entry);
 				layoutNode.owner = entry.head;
 			} else if (layoutNode.owner !== entry.head) {
@@ -2621,7 +2616,7 @@ function addNode(
 		const stale = layout.nodeMap.get(node);
 		if (stale && stale.parent === parentLayoutNode) {
 			parentLayoutNode.removeChild(stale);
-			layout.measureNodes.delete(stale);
+			stale.measureSubject = null;
 			forgetReads(stale);
 			untrackNode(layout, node);
 		}
@@ -2649,7 +2644,7 @@ function addNode(
 		// boxes, measures 0x0, and silently vanishes.
 		if (existingLayoutNode && getNodeType(node) === node.ELEMENT_NODE) {
 			const element = node as Element;
-			if (!isBoxKindMatch(layout, element, existingLayoutNode)) {
+			if (!isBoxKindMatch(element, existingLayoutNode)) {
 				dropLayoutNode(layout, node);
 				addElementNode(layout, element, parentLayoutNode);
 				return;
@@ -2734,14 +2729,12 @@ function addElementNode(
 	} else if (isReplacedBox(element)) {
 		layoutNode.measuresText = false;
 		setMeasure(layoutNode, {layout, kind: "replaced", element});
-		layout.measureNodes.add(layoutNode);
 		if (parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
 		return;
 	} else if (isMathRoot(element)) {
 		setMeasure(layoutNode, {layout, kind: "math", element});
-		layout.measureNodes.add(layoutNode);
 		if (parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
 		}
@@ -2752,7 +2745,6 @@ function addElementNode(
 			kind: "run",
 			box: getPrincipalBox(layout, element),
 		});
-		layout.measureNodes.add(layoutNode);
 
 		if (layoutNode && parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
@@ -2838,7 +2830,6 @@ function addTextNode(
 		kind: "run",
 		box: getPrincipalBox(layout, text),
 	});
-	layout.measureNodes.add(layoutNode);
 
 	insertChild(parentLayoutNode, layoutNode, parentLayoutNode.children.length);
 }
@@ -3385,7 +3376,7 @@ function invalidateNode(layout: Layout, node: Node): void {
 			}
 
 			if (!node.isConnected) {
-				layout.measureNodes.delete(layoutNode);
+				layoutNode.measureSubject = null;
 				forgetReads(layoutNode);
 				untrackNode(layout, node);
 			} else {
@@ -6189,9 +6180,6 @@ export class Layout {
 	// side's grouping is O(positioned), never O(document).
 	positionedElements: Set<Element>;
 
-	// Re-measured on resize. What they returned was for another width.
-	measureNodes: Set<LayoutNode>;
-
 	// The terminal reorders bidirectional text itself (negotiateBidi), so
 	// lines stay logical. One reordering is correct and two is backwards
 	// again.
@@ -6326,7 +6314,6 @@ export class Layout {
 		this.nodeMap = new Map<Node, LayoutNode>();
 		this.invalidatedNodes = new Set<Node>();
 		this.touched = new Set<Node>();
-		this.measureNodes = new Set<LayoutNode>();
 
 		// The initial containing block is a formatting context of its own, so
 		// the root element's margins stay inside it rather than escaping to
@@ -6361,10 +6348,7 @@ export class Layout {
 		root.style.height = toValue(height);
 		root.invalidate();
 
-		for (const layoutNode of this.measureNodes) {
-			layoutNode.invalidate();
-		}
-
+		invalidateMeasuredNodes(this);
 		this.invalidateFrame();
 		this.performLayout();
 	}
@@ -6513,7 +6497,6 @@ export class Layout {
 		}
 		this.nodeMap = new Map();
 		this.invalidatedNodes = new Set();
-		this.measureNodes = new Set();
 		this.anonymousBoxes = new Map();
 		this.dirtyRunContainers = new Set();
 	}
@@ -7317,8 +7300,15 @@ export function adoptTerminalReordering(layout: Layout): void {
 
 export function invalidateTextMeasurement(layout: Layout): void {
 	layout.invalidate();
-	for (const layoutNode of layout.measureNodes) {
-		layoutNode.invalidate();
+	invalidateMeasuredNodes(layout);
+}
+
+// What a measure returned was for another width or another text contract.
+function invalidateMeasuredNodes(layout: Layout): void {
+	for (const layoutNode of getLiveLayoutNodes(layout)) {
+		if (layoutNode.measureSubject !== null) {
+			layoutNode.invalidate();
+		}
 	}
 }
 
@@ -8340,7 +8330,7 @@ function pruneDisconnectedNodes(layout: Layout): void {
 			parent.removeChild(layoutNode);
 		}
 
-		layout.measureNodes.delete(layoutNode);
+		layoutNode.measureSubject = null;
 		forgetReads(layoutNode);
 		untrackNode(layout, node);
 		layout.invalidatedNodes.delete(node);
@@ -8429,7 +8419,6 @@ function measureRecordingReads(
 ): Size {
 	const node = this;
 	const subject = node.measureSubject as MeasureSubject;
-	const layout = subject.layout;
 	const contextLayoutsBefore = contextLayouts;
 	const reads: Array<Element | string> = [];
 	// Reads come in runs on one element, and a run reads few
@@ -8451,7 +8440,7 @@ function measureRecordingReads(
 		node.hasCachedLayout = false;
 	}
 	forgetReads(node);
-	if (layout.measureNodes.has(node)) {
+	if (node.measureSubject !== null) {
 		for (let i = 0; i < reads.length; i += 3) {
 			if (reads[i] !== reads[i - 3]) {
 				addMeasureReader(reads[i] as Element, node);
@@ -8566,7 +8555,7 @@ function applyRestyles(layout: Layout): void {
 				// inline-block, still changes the box the parent derives.
 				if (
 					sameDisplay &&
-					isBoxKindMatch(layout, element, layoutNode!) &&
+					isBoxKindMatch(element, layoutNode!) &&
 					!isDisplayContents(element) &&
 					probe.style.positionType === layoutNode!.style.positionType
 				) {
