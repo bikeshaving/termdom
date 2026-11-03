@@ -11684,15 +11684,14 @@ function parseSelector(
 			}
 		}
 		const ofPart = baseSelector.includes("::part(");
+		// A pseudo-element written with no compound of its own originates on
+		// every element, which is what `*` means: `a > ::before` is
+		// `a > *::before`.
+		const origin = /(?:^|[\s>+~])$/.test(baseSelector)
+			? `${baseSelector}*`
+			: baseSelector;
 		const rule: ParsedCSSRule = {
-			// A pseudo-element written with no originating selector originates
-			// on every element, which is what `*` means.
-			...compileRuleSelector(
-				baseSelector.trim() || "*",
-				namespaces,
-				scopes,
-				ofPart,
-			),
+			...compileRuleSelector(origin, namespaces, scopes, ofPart),
 			subjectTag: ofPart ? undefined : subjectTag,
 			subjectKey: ofPart ? undefined : subjectKey,
 			ofPart,

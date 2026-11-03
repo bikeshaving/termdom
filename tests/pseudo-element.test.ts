@@ -531,3 +531,26 @@ test("a quirks-mode page's ::before rules match classes whatever their case", as
 	expect(terminal.getScreenContents()).toContain(">x");
 	termdom.dispose();
 });
+
+test("a pseudo-element after a combinator originates on any element there", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document, window} = termdom;
+	document.head.innerHTML =
+		"<style>.list > ::before { content: '-'; }" +
+		" .tree ::after { content: '+'; }</style>";
+	document.body.innerHTML =
+		"<p class=\"list\"><span>a</span></p>" +
+		"<p class=\"tree\"><span>b</span></p>";
+	await nextFrame(termdom);
+	const [list, tree] = document.querySelectorAll("p");
+	const content = (element: Element, pseudo: string): string =>
+		window.getComputedStyle(element, pseudo).getPropertyValue("content");
+	expect(content(list, "::before")).toBe("normal");
+	expect(content(list.firstElementChild!, "::before")).toBe("\"-\"");
+	expect(content(tree, "::after")).toBe("normal");
+	expect(content(tree.firstElementChild!, "::after")).toBe("\"+\"");
+	expect(terminal.getScreenContents()).toContain("-a");
+	expect(terminal.getScreenContents()).toContain("b+");
+	termdom.dispose();
+});
