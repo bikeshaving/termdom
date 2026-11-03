@@ -1266,11 +1266,7 @@ function getWindowOperation(name: string): Member | null {
 		if (text === undefined || !text[1].startsWith("o")) {
 			member = null;
 		} else {
-			const classes = new Map<string, Constructor>();
-			for (const [type, interfaceName] of interfaceNames) {
-				classes.set(interfaceName, type);
-			}
-			member = parseMember(text[1], classes);
+			member = parseMember(text[1], installedClasses);
 		}
 		windowOperations.set(name, member);
 	}
