@@ -6076,8 +6076,8 @@ function followHyperlink(link: Element, event: Event): void {
 	const url = parseURL(
 		getAttributeValue(link, "href")!,
 		getDocumentBaseURL(document),
-	)?.href;
-	if (url === undefined) {
+	);
+	if (url === null) {
 		return;
 	}
 	const userInvolvement = event.isTrusted ? "activation" : "none";
@@ -18086,7 +18086,7 @@ function planFormNavigation(
 	setTimeout(() => {
 		if (_(form).extra.plannedNavigation === planned) {
 			_(form).extra.plannedNavigation = undefined;
-			navigateDocument(document, url.href, params);
+			navigateDocument(document, url, params);
 		}
 	}, 0);
 }
@@ -35661,7 +35661,7 @@ export function getPartNames(element: Element): string[] {
 // kept with it. history.state is a copy of the classic state, and an
 // entry's getState() a copy of the navigation state.
 interface SessionHistoryEntry {
-	url: string;
+	url: URL;
 	document: Document;
 	classicState: unknown;
 	navigationState: unknown;
@@ -35689,7 +35689,7 @@ function getSessionHistory(document: Document): SessionHistory {
 		entries: [
 			createHistoryEntry(
 				document,
-				_(document).extra.documentURL,
+				new URL(_(document).extra.documentURL),
 				null,
 				undefined,
 			),
@@ -35702,7 +35702,7 @@ function getSessionHistory(document: Document): SessionHistory {
 
 function createHistoryEntry(
 	document: Document,
-	url: string,
+	url: URL,
 	classicState: unknown,
 	navigationState: unknown,
 	scrollRestoration: globalThis.ScrollRestoration = "auto",
@@ -39022,12 +39022,11 @@ class Location {
 		if (url === null) {
 			return;
 		}
-		const next = new URL(url.href);
-		next.hash = String(value);
-		if (next.hash === url.hash) {
-			return;
+		const previous = url.hash;
+		url.hash = String(value);
+		if (url.hash !== previous) {
+			navigateLocation(this, url, "auto");
 		}
-		navigateLocation(this, next.href, "auto");
 	}
 
 	/** A terminal document is not in a frame, so it has no ancestors. */
@@ -39066,19 +39065,21 @@ Object.defineProperty(Location.prototype, Symbol.toStringTag, {
 // null when the URL Standard cannot parse it, and each member above falls
 // back to what a browser returns for an opaque location.
 function getLocationURL(location: Location): URL | null {
-	return URL.canParse(location.href) ? new URL(location.href) : null;
+	return parseURL(location.href);
 }
 
 // HTML's Location-object navigate. The URL resolves against the
 // document's base URL.
 function navigateLocation(
 	location: Location,
-	value: string,
+	value: string | URL,
 	historyHandling: globalThis.NavigationHistoryBehavior,
 ): void {
 	const document = _(location).locationWindow.document as unknown as Document;
-	const url = parseURL(value, getDocumentBaseURL(document))?.href;
-	if (url === undefined) {
+	const url = typeof value === "string"
+		? parseURL(value, getDocumentBaseURL(document))
+		: value;
+	if (url === null) {
 		throw domError("SyntaxError", `"${value}" is not a URL`);
 	}
 	if (!navigateDocument(document, url, {historyHandling})) {
@@ -39105,7 +39106,7 @@ function setLocationPart(
 	if (part === "protocol" && !/^https?:$/.test(url.protocol)) {
 		return;
 	}
-	navigateLocation(location, url.href, "auto");
+	navigateLocation(location, url, "auto");
 }
 
 function noNavigation(): DOMException {
@@ -39223,12 +39224,7 @@ const EXTERNAL: globalThis.External = Object.freeze({
 
 // HTML's "can have its URL rewritten": the same origin, and for a URL
 // that is neither http nor https, nothing but the fragment changed.
-function canRewriteURL(documentURL: string, targetURL: string): boolean {
-	if (!URL.canParse(documentURL)) {
-		return false;
-	}
-	const from = new URL(documentURL);
-	const to = new URL(targetURL);
+function canRewriteURL(from: URL, to: URL): boolean {
 	if (
 		from.protocol !== to.protocol ||
 		from.username !== to.username ||
@@ -39273,7 +39269,7 @@ interface NavigateParams {
  */
 function navigateDocument(
 	document: Document,
-	url: string,
+	url: URL,
 	{
 		historyHandling = "auto",
 		navigationState = null,
@@ -39285,11 +39281,11 @@ function navigateDocument(
 	const documentURL = _(document).extra.documentURL;
 	const handling = historyHandling !== "auto"
 		? historyHandling
-		: url === documentURL ? "replace" : "push";
+		: url.href === documentURL ? "replace" : "push";
 	if (
 		formData === null &&
-		url.includes("#") &&
-		withoutFragment(url) === withoutFragment(documentURL)
+		url.href.includes("#") &&
+		withoutFragment(url.href) === withoutFragment(documentURL)
 	) {
 		navigateToFragment(document, url, handling, {
 			userInvolvement,
@@ -39301,7 +39297,7 @@ function navigateDocument(
 	const navigation = getDocumentNavigation(document);
 	if (
 		navigation === null ||
-		!FETCH_SCHEMES.has(new URL(url).protocol) ||
+		!FETCH_SCHEMES.has(url.protocol) ||
 		userInvolvement === "browser UI"
 	) {
 		return false;
@@ -39336,7 +39332,7 @@ function failNavigation(document: Document): DOMException {
 // fragment changed.
 function navigateToFragment(
 	document: Document,
-	url: string,
+	url: URL,
 	historyHandling: "push" | "replace",
 	{userInvolvement, sourceElement, navigationState}: NavigateParams,
 ): void {
@@ -39356,7 +39352,7 @@ function navigateToFragment(
 	}
 	const oldURL = _(document).extra.documentURL;
 	getSessionHistory(document).state = null;
-	const target = moveToURL(document, url);
+	const target = moveToURL(document, url.href);
 	const entry = createHistoryEntry(
 		document,
 		url,
@@ -39367,8 +39363,8 @@ function navigateToFragment(
 	const disposed = commitEntry(document, entry, historyHandling);
 	updateNavigationEntries(document, historyHandling, active, disposed);
 	firePopState(document);
-	if (getFragment(oldURL) !== getFragment(url)) {
-		queueHashChange(document, oldURL, url);
+	if (getFragment(oldURL) !== getFragment(url.href)) {
+		queueHashChange(document, oldURL, url.href);
 	}
 	scrollToFragment(document, target);
 }
@@ -39396,7 +39392,7 @@ function scrollWindowTo(document: Document, y: number): void {
 // keeps the current one's.
 function updateURLAndHistory(
 	document: Document,
-	url: string,
+	url: URL,
 	classicState: {value: unknown} | null,
 	historyHandling: "push" | "replace",
 ): void {
@@ -39413,10 +39409,10 @@ function updateURLAndHistory(
 		session.state = cloneStructured(entry.classicState, "restore the state");
 	}
 	const documentURL = _(document).extra.documentURL;
-	if (session.targetURL === null && url !== documentURL) {
+	if (session.targetURL === null && url.href !== documentURL) {
 		session.targetURL = documentURL;
 	}
-	_(document).extra.documentURL = url;
+	_(document).extra.documentURL = url.href;
 	const disposed = commitEntry(document, entry, historyHandling);
 	updateNavigationEntries(document, historyHandling, active, disposed);
 }
@@ -39445,7 +39441,7 @@ function commitEntry(
 		session.index++;
 	}
 	_maybe(getAttachedDocument(document))?.extra.historyChanged(
-		entry.url,
+		entry.url.href,
 		session.state,
 		historyHandling === "replace",
 	);
@@ -39530,13 +39526,13 @@ function applyHistoryStep(
 	session.index = session.entries.indexOf(entry);
 	session.state = cloneStructured(entry.classicState, "restore the state");
 	const oldURL = _(document).extra.documentURL;
-	const target = moveToURL(document, entry.url);
+	const target = moveToURL(document, entry.url.href);
 	if (from !== entry) {
 		updateNavigationEntries(document, "traverse", from, []);
 	}
 	firePopState(document);
-	if (getFragment(oldURL) !== getFragment(entry.url)) {
-		queueHashChange(document, oldURL, entry.url);
+	if (getFragment(oldURL) !== getFragment(entry.url.href)) {
+		queueHashChange(document, oldURL, entry.url.href);
 	}
 	const navigation = getDocumentNavigation(document);
 	if (
@@ -39589,8 +39585,8 @@ export function traverseHistory(
 ): void {
 	const traversed = document as unknown as Document;
 	const oldURL = _(traversed).extra.documentURL;
-	const parsed = parseURL(url, oldURL)?.href;
-	if (parsed === undefined || !canRewriteURL(oldURL, parsed)) {
+	const parsed = parseURL(url, oldURL);
+	if (parsed === null || !canRewriteURL(new URL(oldURL), parsed)) {
 		throw domError(
 			"SecurityError",
 			`${url} is not an entry of the document at ${oldURL}`,
@@ -39601,7 +39597,7 @@ export function traverseHistory(
 	let entry = entries[index];
 	for (let distance = 1; distance < entries.length; distance++) {
 		const near = [entries[index - distance], entries[index + distance]]
-			.find((candidate) => candidate?.url === parsed);
+			.find((candidate) => candidate?.url.href === parsed.href);
 		if (near !== undefined) {
 			entry = near;
 			break;
@@ -39709,10 +39705,11 @@ function updateHistory(
 	const document = getHistoryDocument(history);
 	const state = cloneStructured(data, `execute '${method}' on 'History'`);
 	const documentURL = _(document).extra.documentURL;
-	let newURL = documentURL;
+	const current = new URL(documentURL);
+	let newURL = current;
 	if (url != null && String(url) !== "") {
-		const parsed = parseURL(String(url), getDocumentBaseURL(document))?.href;
-		if (parsed === undefined || !canRewriteURL(documentURL, parsed)) {
+		const parsed = parseURL(String(url), getDocumentBaseURL(document));
+		if (parsed === null || !canRewriteURL(current, parsed)) {
 			throw domError(
 				"SecurityError",
 				`Failed to execute '${method}' on 'History': A history state ` +
@@ -39993,7 +39990,7 @@ function fireNavigateEvent(
 			navigationType,
 			destination: destination as unknown as globalThis.NavigationDestination,
 			canIntercept:
-				canRewriteURL(documentURL, url) &&
+				canRewriteURL(new URL(documentURL), url) &&
 				(sameDocument || navigationType !== "traverse"),
 			cancelable:
 				navigationType !== "traverse" ||
@@ -40003,8 +40000,8 @@ function fireNavigateEvent(
 			userInitiated: userInvolvement !== "none",
 			hashChange:
 				sameDocument &&
-				withoutFragment(url) === withoutFragment(documentURL) &&
-				getFragment(url) !== getFragment(documentURL),
+				withoutFragment(url.href) === withoutFragment(documentURL) &&
+				getFragment(url.href) !== getFragment(documentURL),
 			signal: controller.signal,
 			formData: formData === null
 				? null
@@ -40315,13 +40312,13 @@ class Navigation extends EventTarget {
 			throw new TypeError(`"${historyHandling}" is not a history behavior`);
 		}
 		const document = getNavigationDocument(this);
-		const parsed = parseURL(String(url), getDocumentBaseURL(document))?.href;
-		if (parsed === undefined) {
+		const parsed = parseURL(String(url), getDocumentBaseURL(document));
+		if (parsed === null) {
 			return getEarlyErrorResult(
 				domError("SyntaxError", `"${String(url)}" is not a URL`),
 			);
 		}
-		if (historyHandling === "push" && parsed.startsWith("javascript:")) {
+		if (historyHandling === "push" && parsed.protocol === "javascript:") {
 			return getEarlyErrorResult(
 				domError("NotSupportedError", "A javascript: URL replaces"),
 			);
@@ -40521,7 +40518,9 @@ class NavigationHistoryEntry extends EventTarget {
 	}
 
 	get url(): string | null {
-		return isFullyActive(_(this).entryWindow) ? _(this).sessionEntry.url : "";
+		return isFullyActive(_(this).entryWindow)
+			? _(this).sessionEntry.url.href
+			: "";
 	}
 
 	get key(): string {
@@ -40561,7 +40560,7 @@ Object.defineProperty(NavigationHistoryEntry.prototype, Symbol.toStringTag, {
 });
 
 interface NavigationDestinationSlots {
-	url: string;
+	url: URL;
 	entry: NavigationHistoryEntry | null;
 	state: {value: unknown};
 	sameDocument: boolean;
@@ -40581,7 +40580,7 @@ class NavigationDestination {
 	}
 
 	get url(): string {
-		return _(this).url;
+		return _(this).url.href;
 	}
 
 	get key(): string {
@@ -40613,7 +40612,7 @@ Object.defineProperty(NavigationDestination.prototype, Symbol.toStringTag, {
 });
 
 function createDestination(
-	url: string,
+	url: URL,
 	entry: NavigationHistoryEntry | null,
 	state: {value: unknown},
 	sameDocument: boolean,
