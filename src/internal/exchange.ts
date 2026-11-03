@@ -38,10 +38,6 @@ import {
 } from "./timers.ts";
 import {Parser, type ParserHandlers} from "./vt.ts";
 
-// Made once: a regular expression literal is a new object each time it
-// runs, and this runs for every chunk the terminal writes.
-const CURSOR_STYLE = /\x1b\[(\d) q/g;
-
 export type ColorDepth = "ansi" | "rgb" | "256";
 
 export interface TerminalSize {
@@ -857,6 +853,31 @@ interface PendingReply {
 // terminal answers cannot be read, and nothing is asked of it.
 const kReadsNoReplies = Symbol("readsNoReplies");
 
+// Whether the page has styled the cursor shape or color of a process
+// transport's terminal, so the panic paths reset those too, and only
+// those, since a reset takes back what the shell itself set. A flag stays
+// set once the page has styled, because the reset the page writes later
+// may still be queued when the panic path runs.
+interface CursorStyled {
+	shape: boolean;
+	color: boolean;
+}
+
+const kCursorStyled = Symbol("cursorStyled");
+
+type ProcessTransport =
+	TerminalTransport &
+	{[kReadsNoReplies]: boolean; [kCursorStyled]: CursorStyled};
+
+function setCursorStyled(exchange: Exchange): void {
+	const slots = _(exchange);
+	const styled = (slots.transport as Partial<ProcessTransport>)[kCursorStyled];
+	if (styled !== undefined) {
+		styled.shape ||= slots.cursorShape !== 0;
+		styled.color ||= slots.cursorColor !== null;
+	}
+}
+
 // How long a question to the terminal waits for an answer before it is
 // taken as unanswered. A terminal that answers DA1 asked after it ends the
 // wait sooner.
@@ -1313,6 +1334,7 @@ export function setCursorStyle(
 		slots.cursorColor = color;
 		void exchange.write(getCursorColorEscape(color));
 	}
+	setCursorStyled(exchange);
 }
 
 function resetCursorStyle(exchange: Exchange): void {
@@ -2461,49 +2483,30 @@ export interface ProcessLike {
 // cursor and the modes set. One exit hook restores every engaged process
 // transport. Each process counts its engaged transports, and only the
 // last to let go hands its terminal back.
-const engagedProcesses = new Map<ProcessLike, number>();
+const engagedProcesses = new Map<ProcessLike, Set<CursorStyled>>();
 
-// Whether a process's terminal has the page's cursor style or color, as
-// its stream last set or reset them, so the panic paths reset those too,
-// and only those, since a reset takes back what the shell itself set.
-const styledCursors = new WeakMap<
-	ProcessLike,
-	{shape: boolean; color: boolean}
->();
-
-function noteCursorStyle(proc: ProcessLike, chunk: string): void {
-	if (!chunk.includes(" q") && !chunk.includes("\x1b]1")) {
-		return;
+function getPanicRestore(styles: Iterable<CursorStyled>): string {
+	let shape = false;
+	let color = false;
+	for (const styled of styles) {
+		shape ||= styled.shape;
+		color ||= styled.color;
 	}
-	const styled = styledCursors.get(proc) ?? {shape: false, color: false};
-	for (const match of chunk.matchAll(CURSOR_STYLE)) {
-		styled.shape = match[1] !== "0";
-	}
-	const colorSet = chunk.lastIndexOf("\x1b]12;");
-	const colorReset = chunk.lastIndexOf(CURSOR_COLOR_RESET);
-	if (colorSet !== colorReset) {
-		styled.color = colorSet > colorReset;
-	}
-	styledCursors.set(proc, styled);
-}
-
-function getPanicRestore(proc: ProcessLike): string {
-	const styled = styledCursors.get(proc);
 	return PANIC_RESTORE +
-		(styled?.shape === true ? CURSOR_SHAPE_RESET : "") +
-		(styled?.color === true ? CURSOR_COLOR_RESET : "");
+		(shape ? CURSOR_SHAPE_RESET : "") +
+		(color ? CURSOR_COLOR_RESET : "");
 }
 
 const ownSignalListeners = new WeakSet<object>();
 let exitHookInstalled = false;
 
 function restoreEngagedProcesses(): void {
-	for (const proc of engagedProcesses.keys()) {
+	for (const [proc, styles] of engagedProcesses) {
 		if (proc.stdout.isTTY !== true) {
 			continue;
 		}
 		try {
-			proc.stdout.write(getPanicRestore(proc));
+			proc.stdout.write(getPanicRestore(styles));
 		} catch (_err) {
 			// The stream may already be gone.
 		}
@@ -2694,6 +2697,7 @@ export function transportFromProcess(
 		}));
 	};
 
+	const styled: CursorStyled = {shape: false, color: false};
 	let engaged = false;
 	let stopWatching: (() => void) | undefined;
 	let dataListener:
@@ -2713,9 +2717,9 @@ export function transportFromProcess(
 			proc.removeListener?.(signal, listener);
 		}
 		signalListeners.length = 0;
-		const others = (engagedProcesses.get(proc) ?? 1) - 1;
-		if (others > 0) {
-			engagedProcesses.set(proc, others);
+		const others = engagedProcesses.get(proc);
+		others?.delete(styled);
+		if (others !== undefined && others.size > 0) {
 			return;
 		}
 		engagedProcesses.delete(proc);
@@ -2724,7 +2728,7 @@ export function transportFromProcess(
 		// terminal had modes to restore.
 		if (proc.stdout.isTTY === true) {
 			try {
-				proc.stdout.write(getPanicRestore(proc));
+				proc.stdout.write(getPanicRestore([styled]));
 			} catch (_err) {
 				// The terminal is gone, and its modes with it.
 			}
@@ -2767,7 +2771,8 @@ export function transportFromProcess(
 				};
 				stdin.on("data", dataListener);
 
-				engagedProcesses.set(proc, (engagedProcesses.get(proc) ?? 0) + 1);
+				const others = engagedProcesses.get(proc) ?? new Set();
+				engagedProcesses.set(proc, others.add(styled));
 				installCursorRestoreOnExit();
 
 				// A SIGINT here is an external kill, since raw mode delivers
@@ -2814,7 +2819,6 @@ export function transportFromProcess(
 		// terminal has the bytes.
 		write: (chunk) => {
 			writes++;
-			noteCursorStyle(proc, chunk);
 			const written = new Promise<void>((resolve, reject) => {
 				proc.stdout.write(chunk, "utf8", (error?: Error) => {
 					if (error) {
@@ -2829,7 +2833,7 @@ export function transportFromProcess(
 		},
 	});
 
-	const transport: TerminalTransport & {[kReadsNoReplies]: boolean} = {
+	const transport: ProcessTransport = {
 		get cols() {
 			return proc.stdout.columns || DEFAULT_COLS;
 		},
@@ -2839,6 +2843,7 @@ export function transportFromProcess(
 		sharesScreen,
 		interactive: proc.stdout.isTTY === true,
 		[kReadsNoReplies]: proc.stdin?.isTTY !== true,
+		[kCursorStyled]: styled,
 		writeSync(text: string): void {
 			try {
 				proc.stdout.write(text);
