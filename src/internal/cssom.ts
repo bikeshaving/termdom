@@ -4611,7 +4611,7 @@ const USED_VALUE_PROPERTIES = new Set([
 // The inline style, a text input's type and size, a list item's value,
 // and the direction and language the element states.
 const KEYED_ATTRIBUTES = ["style", "type", "size", "value", "dir", "lang"];
-const ruleIds = new WeakMap<ParsedCSSRule, number>();
+const ruleIds = new WeakMap<CascadedRule, number>();
 let nextRuleId = 0;
 const ruleIndexes = new WeakMap<Cascade, RuleIndex>();
 const childTables = new WeakMap<object, Map<string, Map<string, string>>>();
@@ -4631,9 +4631,9 @@ const COUNTER_PROPERTIES = [
 
 // One rule per set of hints, so elements with the same attributes share
 // their computed values as they would with the same rules.
-const hintRules = new Map<string, ParsedCSSRule>();
+const hintRules = new Map<string, CascadedRule>();
 
-function getHintRule(element: Element): ParsedCSSRule | null {
+function getHintRule(element: Element): CascadedRule | null {
 	const hints = getPresentationalHints(element);
 	if (hints === null) {
 		return null;
@@ -4653,7 +4653,7 @@ function getHintRule(element: Element): ParsedCSSRule | null {
 			},
 			origin: "author",
 			layerRank: -1,
-		} as unknown as ParsedCSSRule;
+		};
 		if (hintRules.size > 1024) {
 			hintRules.clear();
 		}
@@ -4662,7 +4662,7 @@ function getHintRule(element: Element): ParsedCSSRule | null {
 	return rule;
 }
 
-function getRuleId(rule: ParsedCSSRule): number {
+function getRuleId(rule: CascadedRule): number {
 	let id = ruleIds.get(rule);
 	if (id === undefined) {
 		id = COUNTER_PROPERTIES.some((name) =>
@@ -4782,7 +4782,7 @@ const resetInheritors = new WeakMap<object, boolean>();
 
 function inheritsReset(
 	element: Element,
-	rules: readonly ParsedCSSRule[],
+	rules: readonly CascadedRule[],
 ): boolean {
 	for (let index = 0; index < rules.length; index++) {
 		if (blockInheritsReset(rules[index].block)) {
@@ -4857,7 +4857,7 @@ function getResolvedValues(
 function getSharedResolved(
 	cascade: Cascade,
 	element: Element,
-	rules: readonly ParsedCSSRule[],
+	rules: readonly CascadedRule[],
 ): Map<string, string> {
 	if (!isShareable(element)) {
 		return new Map();
@@ -4933,7 +4933,7 @@ function getSharedResolved(
 // sheet replacements, because it re-resolves rather than being replaced.
 interface ComputedStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	element: Element;
-	cssRules: ParsedCSSRule[];
+	cssRules: CascadedRule[];
 	cascade: Cascade | null;
 	inlineBlock: CSSValues.DeclarationBlock | null;
 	// Computed strings, memoized once per property per resolution, ""
@@ -4969,7 +4969,7 @@ interface ComputedStyleDeclaration {
 class ComputedStyleDeclaration extends CSSStyleProperties {
 	constructor(
 		element: Element,
-		cssRules: ParsedCSSRule[] = [],
+		cssRules: CascadedRule[] = [],
 		cascade?: Cascade,
 	) {
 		super();
@@ -6066,9 +6066,9 @@ interface RuleListIndex {
 	withImportant: number[];
 }
 
-const ruleListIndexes = new WeakMap<readonly ParsedCSSRule[], RuleListIndex>();
+const ruleListIndexes = new WeakMap<readonly CascadedRule[], RuleListIndex>();
 
-function getRuleListIndex(rules: readonly ParsedCSSRule[]): RuleListIndex {
+function getRuleListIndex(rules: readonly CascadedRule[]): RuleListIndex {
 	let index = ruleListIndexes.get(rules);
 	if (index === undefined) {
 		index = {lastNormal: new Map(), withImportant: []};
@@ -6770,8 +6770,7 @@ function readPseudoDeclared(
 
 // One selector of a style rule, compiled with the rule's declarations
 // and where the cascade sorts it. A CSSStyleRule whose list holds n
-// selectors makes n of these, and a presentational hint, which has no
-// CSSRule, makes one.
+// selectors makes n of these.
 interface ParsedCSSRule {
 
 	// Compiled against the namespaces the sheet declared, once, at parse,
@@ -6809,6 +6808,13 @@ interface ParsedCSSRule {
 	// Absent for a rule no @scope encloses, which is in scope everywhere.
 	scopes?: readonly CSSValues.ScopeCondition[];
 }
+
+// What the cascade reads of a matched rule. A presentational hint has
+// these and no selector or layer.
+type CascadedRule = Pick<
+	ParsedCSSRule,
+	"block" | "origin" | "layerRank" | "scope"
+>;
 
 function getComplex(rule: ParsedCSSRule): CompiledComplex {
 	return rule.selector.list[0];
@@ -7030,7 +7036,7 @@ export class Cascade {
 
 	// The matched rule lists shareRuleList last shared, oldest replaced
 	// first.
-	recentRuleLists: ParsedCSSRule[][];
+	recentRuleLists: CascadedRule[][];
 	nextRecentRuleList: number;
 
 	// The slots of every declaration resolved against the current cascade.
@@ -8344,8 +8350,8 @@ const RECENT_RULE_LISTS = 16;
 // shared and held once. What is shared is frozen. A list holding a shadow
 // tree's rule keeps its own, since the cascade outlives the tree.
 function isSameRuleList(
-	recent: readonly ParsedCSSRule[],
-	rules: readonly ParsedCSSRule[],
+	recent: readonly CascadedRule[],
+	rules: readonly CascadedRule[],
 ): boolean {
 	if (recent.length !== rules.length) {
 		return false;
@@ -8360,8 +8366,8 @@ function isSameRuleList(
 
 function shareRuleList(
 	cascade: Cascade,
-	rules: ParsedCSSRule[],
-): ParsedCSSRule[] {
+	rules: CascadedRule[],
+): CascadedRule[] {
 	const recents = cascade.recentRuleLists;
 	for (let index = 0; index < recents.length; index++) {
 		if (isSameRuleList(recents[index], rules)) {
@@ -8373,14 +8379,14 @@ function shareRuleList(
 			return rules;
 		}
 	}
-	const shared = Object.freeze(rules.slice()) as ParsedCSSRule[];
+	const shared = Object.freeze(rules.slice()) as CascadedRule[];
 	cascade.recentRuleLists[cascade.nextRecentRuleList] = shared;
 	cascade.nextRecentRuleList =
 		(cascade.nextRecentRuleList + 1) % RECENT_RULE_LISTS;
 	return shared;
 }
 
-function getCascadeRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
+function getCascadeRules(cascade: Cascade, element: Element): CascadedRule[] {
 	parseStylesheetsIfStale(cascade);
 	const rules = getMatchingRules(cascade, element);
 	const hints = getHintRule(element);
