@@ -164,6 +164,27 @@ test("an image is sent once and its box painted with placeholders", async () => 
 	dom.dispose();
 });
 
+test("without CompressionStream the pixels are sent as they are", async () => {
+	const global = globalThis as {CompressionStream?: unknown};
+	const saved = global.CompressionStream;
+	delete global.CompressionStream;
+	try {
+		const {dom, terminal, output} =
+			await mount(`<p>a</p><img src="${BANDS}"><p>b</p>`);
+		await loaded(dom);
+		const [upload] = readUploads(output());
+		expect(upload.control.o).toBe(undefined);
+		const pixels =
+			Uint8Array.from(atob(upload.payload), (c) => c.charCodeAt(0));
+		expect(pixels.length).toBe(16 * 32 * 4);
+		expect(Array.from(pixels.subarray(0, 4))).toEqual(RED);
+		expect(cell(terminal, 0, 0).char).toBe("a");
+		dom.dispose();
+	} finally {
+		global.CompressionStream = saved;
+	}
+});
+
 test("a repaint of the rest of the page sends nothing again", async () => {
 	const {dom, output} = await mount(`<img src="${BANDS}"><p id="p">a</p>`);
 	await loaded(dom);
