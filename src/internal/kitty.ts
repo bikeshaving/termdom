@@ -273,9 +273,13 @@ async function encodeImage(
 	image: KittyImage,
 	pixels: Uint8ClampedArray,
 ): Promise<string> {
-	const payload = toBase64(await deflate(pixels));
+	// A runtime with no CompressionStream, such as isolated-vm, sends the
+	// pixels as they are.
+	const compressed = typeof CompressionStream === "function";
+	const payload = toBase64(compressed ? await deflate(pixels) : pixels);
 	const control =
-		`a=T,U=1,q=2,f=32,o=z,s=${image.width},v=${image.height},` +
+		`a=T,U=1,q=2,f=32,${compressed ? "o=z," : ""}` +
+		`s=${image.width},v=${image.height},` +
 		`i=${image.id},c=${image.cols},r=${image.rows}`;
 	let out = "";
 	for (let at = 0; at < payload.length || at === 0; at += CHUNK_SIZE) {
@@ -296,7 +300,7 @@ async function deflate(bytes: Uint8ClampedArray): Promise<Uint8Array> {
 	return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-function toBase64(bytes: Uint8Array): string {
+function toBase64(bytes: Uint8Array | Uint8ClampedArray): string {
 	let out = "";
 	// btoa takes a binary string, built a slice at a time so no call
 	// spreads more arguments than a stack holds. A slice a multiple of
