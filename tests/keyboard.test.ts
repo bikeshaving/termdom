@@ -1391,6 +1391,34 @@ test("Tab rests on nothing past the last focusable, and re-enters at the ends", 
 	dom.dispose();
 });
 
+test("Tab into a field selects its value, and typing replaces it", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+	document.body.innerHTML =
+		"<input id=\"a\" value=\"hi\"><textarea id=\"b\">hi</textarea>";
+	const a = document.getElementById("a") as HTMLInputElement;
+	const b = document.getElementById("b") as HTMLTextAreaElement;
+	const press = async (key: string) => {
+		(terminal.stdin as any).emit("data", Buffer.from(key));
+		await new Promise((r) => setTimeout(r, 10));
+		await inputDispatched();
+	};
+
+	await press("\t");
+	expect([a.selectionStart, a.selectionEnd]).toEqual([0, 2]);
+	await press("yo");
+	expect(a.value).toBe("yo");
+
+	// A textarea keeps its caret, as in browsers.
+	await press("\t");
+	expect(document.activeElement).toBe(b);
+	expect([b.selectionStart, b.selectionEnd]).toEqual([0, 0]);
+	dom.dispose();
+});
+
 test("focusing a field inside a fullscreen element leaves the camera alone", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});

@@ -52,6 +52,7 @@ import {
 	setSystemFocus,
 	setUASelection,
 	takeFocusStartingPoint,
+	takesTextCursor,
 	topmostModalDialog,
 	type Window,
 } from "./dom.ts";
@@ -2162,6 +2163,14 @@ function moveFocus(input: Input, reverse: boolean): void {
 
 	const next = entries[nextIndex].element as HTMLElement;
 	next.focus();
+	// Tab into a single-line field selects its value, so typing replaces it.
+	if (
+		getLocalName(next) === "input" &&
+		takesTextCursor(next) &&
+		getFocusedElement(input.document) === next
+	) {
+		setUASelection(next, 0, (next as HTMLInputElement).value.length);
+	}
 	next.scrollIntoView({block: "nearest"});
 	// No mutation record describes a focus move.
 	requestRender(input.document);
