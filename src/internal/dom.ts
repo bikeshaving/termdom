@@ -6802,9 +6802,9 @@ export interface NodeSlots extends EventTargetSlots {
 	// root of. Both boundaries always share one root, because the boundary
 	// setters collapse the other point on a root change, as the spec says.
 	// The ranges go with the root when it is unreachable. They are held
-	// strongly, which keeps garbage collection unobservable where a WeakRef
-	// would expose it.
-	liveRanges: Set<Range> | null;
+	// weakly: a range the page has dropped can never be read, so updating
+	// it is unobservable, and a browser lets it go.
+	liveRanges: Set<WeakRef<Range>> | null;
 	// The node iterators of the tree, held as the ranges are and re-homed
 	// by the same moves.
 	nodeIterators: Set<NodeIterator> | null;
@@ -7746,8 +7746,8 @@ function insertNode(
 				if (set === null) {
 					_(newRoot).liveRanges = carriedRanges;
 				} else {
-					for (const range of carriedRanges) {
-						set.add(range);
+					for (const ref of carriedRanges) {
+						set.add(ref);
 					}
 				}
 			}
@@ -31821,8 +31821,9 @@ function rehomeLiveRange(range: Range, oldRoot: Node): void {
 	if (newRoot === oldRoot) {
 		return;
 	}
-	_(oldRoot).liveRanges?.delete(range);
-	(_(newRoot).liveRanges ??= new Set()).add(range);
+	const ref = _(range).liveRef;
+	_(oldRoot).liveRanges?.delete(ref);
+	(_(newRoot).liveRanges ??= new Set()).add(ref);
 }
 
 function forEachLiveRange(context: Node, steps: (range: Range) => void): void {
@@ -31833,8 +31834,13 @@ function forEachLiveRange(context: Node, steps: (range: Range) => void): void {
 	if (set === null) {
 		return;
 	}
-	for (const range of set) {
-		steps(range);
+	for (const ref of set) {
+		const range = ref.deref();
+		if (range === undefined) {
+			set.delete(ref);
+		} else {
+			steps(range);
+		}
 	}
 }
 
@@ -32340,6 +32346,8 @@ function cloneCharacterDataSlice(
 }
 
 interface RangeSlots extends AbstractRangeSlots {
+	// What the root's set of live ranges holds for this range.
+	liveRef: WeakRef<Range>;
 	rangeSelection: Selection | null;
 	// A range the selection made for itself and no author has been handed:
 	// released when the selection moves on from it.
@@ -32367,6 +32375,8 @@ class Range extends AbstractRange implements globalThis.Range {
 		const document = getCurrentDocument();
 		super(document, 0, document, 0);
 		const slots = _(this);
+		// eslint-disable-next-line no-restricted-globals
+		slots.liveRef = new WeakRef(this);
 		slots.rangeSelection = null;
 		slots.selectionOwned = false;
 		registerLiveRange(this);
@@ -32749,15 +32759,29 @@ class Range extends AbstractRange implements globalThis.Range {
 	}
 }
 
+// A tree that is not mutated never walks its ranges, so the collected
+// ones are also swept out as new ones arrive.
+const LIVE_RANGE_SWEEP = 1024;
+let liveRangesUnswept = 0;
+
 function registerLiveRange(range: Range): void {
-	(_(getRoot(_(range).startNode)).liveRanges ??= new Set()).add(range);
+	const set = (_(getRoot(_(range).startNode)).liveRanges ??= new Set());
+	set.add(_(range).liveRef);
 	liveRangesEver++;
+	if (++liveRangesUnswept >= LIVE_RANGE_SWEEP) {
+		liveRangesUnswept = 0;
+		for (const ref of set) {
+			if (ref.deref() === undefined) {
+				set.delete(ref);
+			}
+		}
+	}
 }
 
 // For a range the engine made for itself and is done with. An author's
 // range stays live for as long as the author holds it.
 function releaseLiveRange(range: Range): void {
-	_(getRoot(_(range).startNode)).liveRanges?.delete(range);
+	_(getRoot(_(range).startNode)).liveRanges?.delete(_(range).liveRef);
 }
 
 function selectNodeWithin(range: Range, node: Node): void {
