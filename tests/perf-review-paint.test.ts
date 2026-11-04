@@ -1,8 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {partialFrameCheck} from "../src/internal/painter.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, takePartialFrame} from "./test-utils.js";
 
 interface Size {
 	cols?: number;
@@ -314,9 +313,9 @@ async function scrollBy(
 	for (const step of steps) {
 		at += step;
 		ul.scrollTop = at;
-		const checked = partialFrameCheck.checked;
+		takePartialFrame(dom);
 		await nextFrame(dom);
-		expect(partialFrameCheck.checked).toBeGreaterThan(checked);
+		expect(takePartialFrame(dom)).toBe(true);
 		await expectFresh(terminal, scrolledPage(box, at, before, after));
 	}
 	dom.dispose();
@@ -392,9 +391,9 @@ test("a focused field in a scrolled box keeps the terminal's cursor on it", asyn
 	const div = dom.document.querySelector("div")!;
 	for (const at of [1, 2, 3, 1]) {
 		div.scrollTop = at;
-		const checked = partialFrameCheck.checked;
+		takePartialFrame(dom);
 		await nextFrame(dom);
-		expect(partialFrameCheck.checked).toBeGreaterThan(checked);
+		expect(takePartialFrame(dom)).toBe(true);
 		expect(row()).toBe(4 - at);
 		expect(cursor(terminal).row).toBe(row());
 	}
@@ -795,19 +794,15 @@ async function scrollUnder(css: string, html: string): Promise<void> {
 		html;
 	const {terminal, dom} = await open(page, {fullscreen: true});
 	const pane = dom.document.getElementById("pane")!;
-	let partial = 0;
 	for (const at of [1, 2, 4, 3, 0, 5]) {
 		pane.scrollTop = at;
-		const checked = partialFrameCheck.checked;
 		await nextFrame(dom);
-		partial += partialFrameCheck.checked - checked;
 		const expected = await wholeScreen(page, (reference) => {
 			reference.document.getElementById("pane")!.scrollTop = at;
 		});
 		expect(screen(terminal)).toEqual(expected);
 	}
 	dom.dispose();
-	expect(partial).toBeGreaterThanOrEqual(0);
 }
 
 test("a pane scrolled with a plain header above it shows as a whole repaint", async () => {

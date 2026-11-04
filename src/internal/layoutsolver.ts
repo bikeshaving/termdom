@@ -91,6 +91,7 @@ export interface Size {
 // box was last placed, so text can break against the whole columns it is
 // drawn across. NaN before the box is first placed.
 export type Measure = (
+	this: LayoutNode,
 	width: number,
 	widthSpace: AvailableSpace,
 	placing: boolean,
@@ -686,7 +687,7 @@ const NO_CHILDREN: LayoutNode[] = Object.freeze([]) as unknown as LayoutNode[];
 export class LayoutNode {
 	measureFn: Measure | null;
 	// What the measure reads its box from, for a measure every node shares
-	// rather than one each.
+	// rather than one each. Null once the layout stops measuring the node.
 	measureSubject: object | null;
 	staticPositionFn: StaticPosition | null;
 	currentStyle: Style;
@@ -742,8 +743,8 @@ export class LayoutNode {
 
 	// The unrounded origin roundToGrid last gave the children, NaN once the
 	// node is laid out again. Their rounded results stand while it holds.
-	gridLeft: number;
-	gridTop: number;
+	snapOriginLeft: number;
+	snapOriginTop: number;
 	// Whether the last roundToGrid left the children as they were.
 	settled: boolean;
 	// Whether a roundToGrid since the last paint extents moved the box. A
@@ -756,7 +757,7 @@ export class LayoutNode {
 	// rounded. rawAbsoluteLeft sums result's left edges down from the root:
 	// the text in a box breaks against the columns it says the box is drawn
 	// across.
-	grid: {left: number; top: number; width: number; height: number};
+	snapped: {left: number; top: number; width: number; height: number};
 	rawAbsoluteLeft: number;
 	rawAbsoluteTop: number;
 	// Whether the last layout of a block laid out only its stale children
@@ -797,11 +798,11 @@ export class LayoutNode {
 		this.owner = null;
 		this.measuresText = true;
 		this.outOfFlowCount = 0;
-		this.gridLeft = NaN;
-		this.gridTop = NaN;
+		this.snapOriginLeft = NaN;
+		this.snapOriginTop = NaN;
 		this.settled = false;
 		this.movedSinceExtents = true;
-		this.grid = {left: 0, top: 0, width: 0, height: 0};
+		this.snapped = {left: 0, top: 0, width: 0, height: 0};
 		this.rawAbsoluteLeft = NaN;
 		this.rawAbsoluteTop = NaN;
 		this.keptChildren = false;
@@ -974,8 +975,8 @@ export function forgetLayout(node: LayoutNode): void {
 	releaseCache(node);
 	node.hasCachedLayout = false;
 	node.cachedSizeCount = 0;
-	node.gridLeft = NaN;
-	node.gridTop = NaN;
+	node.snapOriginLeft = NaN;
+	node.snapOriginTop = NaN;
 	node.settled = false;
 	node.movedSinceExtents = true;
 	node.rawAbsoluteLeft = NaN;
@@ -1034,11 +1035,11 @@ export function getComputedGridTracks(
 }
 
 export function getComputedWidth(layoutNode: LayoutNode): number {
-	return layoutNode.grid.width;
+	return layoutNode.snapped.width;
 }
 
 export function getComputedHeight(layoutNode: LayoutNode): number {
-	return layoutNode.grid.height;
+	return layoutNode.snapped.height;
 }
 
 // The values and edge records nodes share. Most boxes have one of a few
@@ -1890,6 +1891,62 @@ interface FlexLine {
 	mainDim: number;
 }
 
+// css-flexbox-1 §9.3: the items in order, broken into lines where a
+// wrapping container's main size runs out.
+function collectFlexLines(
+	node: LayoutNode,
+	inFlow: LayoutNode[],
+	itemOwnerWidth: number,
+	itemOwnerHeight: number,
+): FlexLine[] {
+	const mainAxis = node.style.flexDirection;
+	const mainIsRow = isRow(mainAxis);
+	const innerMain = mainIsRow ? itemOwnerWidth : itemOwnerHeight;
+	const wrap = node.style.flexWrap !== "nowrap";
+	const mainGap = getAxisGap(node, mainAxis);
+	const lines: FlexLine[] = [];
+	let index = 0;
+	while (index < inFlow.length) {
+		const line: FlexLine = {
+			items: [],
+			sizeConsumed: 0,
+			crossDim: 0,
+			mainDim: 0,
+		};
+
+		for (; index < inFlow.length; index++) {
+			const child = inFlow[index];
+			const childMarginMain = getAxisMargin(child, mainAxis, itemOwnerWidth);
+			const basis = boundAxisWithinMinMax(
+				child,
+				mainAxis,
+				child.result.computedFlexBasis,
+				innerMain,
+			);
+
+			const precedingGap = line.items.length > 0 ? mainGap : 0;
+
+			if (
+				wrap &&
+				!Number.isNaN(innerMain) &&
+				line.items.length > 0 &&
+				line.sizeConsumed + precedingGap + basis + childMarginMain > innerMain
+			) {
+				break;
+			}
+
+			line.sizeConsumed += precedingGap + basis + childMarginMain;
+			line.items.push(child);
+		}
+
+		lines.push(line);
+		if (line.items.length === 0) {
+			break;
+		}
+	}
+	return lines;
+}
+
 // css-flexbox-1 §9.2-9.7.
 function layoutFlexbox(
 	node: LayoutNode,
@@ -1990,46 +2047,7 @@ function layoutFlexbox(
 		inFlow.sort((a, b) => a.style.order - b.style.order);
 	}
 
-	const lines: FlexLine[] = [];
-	let index = 0;
-	while (index < inFlow.length) {
-		const line: FlexLine = {
-			items: [],
-			sizeConsumed: 0,
-			crossDim: 0,
-			mainDim: 0,
-		};
-
-		for (; index < inFlow.length; index++) {
-			const child = inFlow[index];
-			const childMarginMain = getAxisMargin(child, mainAxis, itemOwnerWidth);
-			const basis = boundAxisWithinMinMax(
-				child,
-				mainAxis,
-				child.result.computedFlexBasis,
-				mainIsRow ? itemOwnerWidth : itemOwnerHeight,
-			);
-
-			const precedingGap = line.items.length > 0 ? mainGap : 0;
-
-			if (
-				wrap &&
-				!Number.isNaN(innerMain) &&
-				line.items.length > 0 &&
-				line.sizeConsumed + precedingGap + basis + childMarginMain > innerMain
-			) {
-				break;
-			}
-
-			line.sizeConsumed += precedingGap + basis + childMarginMain;
-			line.items.push(child);
-		}
-
-		lines.push(line);
-		if (line.items.length === 0) {
-			break;
-		}
-	}
+	const lines = collectFlexLines(node, inFlow, itemOwnerWidth, itemOwnerHeight);
 
 	let totalCrossDim = 0;
 	let maxMainDim = 0;
@@ -4049,7 +4067,7 @@ function layoutTable(
 	});
 	for (const group of groups) {
 		const first = firstRows.get(group);
-		group.gridLeft = NaN;
+		group.snapOriginLeft = NaN;
 		group.result.left = leftPaddingBorder;
 		group.result.width = contentWidth;
 		group.result.top = gridTop + (first === undefined ? 0 : rowStart(first));
@@ -4068,7 +4086,7 @@ function layoutTable(
 		if (row.node === null) {
 			return;
 		}
-		row.node.gridLeft = NaN;
+		row.node.snapOriginLeft = NaN;
 		row.node.result.left = rowLeft(row);
 		row.node.result.top = rowTop(row, index);
 		row.node.result.width = contentWidth;
@@ -5595,10 +5613,89 @@ function snapTrackSizes(tracks: GridTrack[], gap: number): number[] {
 	let edge = 0;
 	tracks.forEach((track, index) => {
 		const next = edge + track.base;
-		sizes[index] = Math.round(next) - Math.round(edge);
+		sizes[index] = roundValue(next, false) - roundValue(edge, false);
 		edge = track.collapsed ? next : next + gap;
 	});
 	return sizes;
+}
+
+function buildTracks(
+	count: number,
+	base: number,
+	template: ExpandedTracks,
+	autoSizes: CSSValues.TrackSize[],
+	ownerSize: number,
+): GridTrack[] {
+	const tracks: GridTrack[] = [];
+	let implicit = 0;
+	for (let i = 0; i < count; i++) {
+		const line = base + i;
+		const explicit = line >= 0 && line < template.sizes.length;
+		const size = explicit
+			? template.sizes[line]
+			: autoSizes[implicit++ % autoSizes.length];
+		tracks.push(createTrack(size, ownerSize));
+	}
+	return tracks;
+}
+
+// css-grid-2 §7.2.3.2.
+function collapseAutoFit(
+	tracks: GridTrack[],
+	template: ExpandedTracks,
+	base: number,
+	occupiedTracks: Set<number>,
+): void {
+	if (!template.autoFit) {
+		return;
+	}
+	for (let i = 0; i < template.autoFit.count; i++) {
+		const index = template.autoFit.start + i - base;
+		if (index < 0 || index >= tracks.length) {
+			continue;
+		}
+		if (occupiedTracks.has(index)) {
+			continue;
+		}
+		tracks[index].collapsed = true;
+		tracks[index].base = 0;
+		tracks[index].growthLimit = 0;
+	}
+}
+
+function getTrackTotal(tracks: GridTrack[], gap: number): number {
+	let total = 0;
+	let live = 0;
+	for (const track of tracks) {
+		if (track.collapsed) {
+			continue;
+		}
+		total += track.base;
+		live++;
+	}
+	return total + gap * Math.max(0, live - 1);
+}
+
+// A line has two positions once tracks are spread by justify-content or
+// a gap. An area takes the inner pair, so the space between tracks
+// stays between them.
+function getLineStart(tracks: GridTrack[], line: number): number {
+	if (tracks.length === 0) {
+		return 0;
+	}
+	if (line >= tracks.length) {
+		const last = tracks[tracks.length - 1];
+		return last.position + last.base;
+	}
+	return tracks[Math.max(0, line)].position;
+}
+
+function getLineEnd(tracks: GridTrack[], line: number): number {
+	if (tracks.length === 0) {
+		return 0;
+	}
+	const track = tracks[Math.min(Math.max(0, line - 1), tracks.length - 1)];
+	return track.position + track.base;
 }
 
 // css-grid-2 §12.1. Columns before rows, because a row contribution is
@@ -5746,50 +5843,6 @@ function layoutGrid(
 		item.rowEnd = item.rowStart + item.row.span;
 	}
 
-	const buildTracks = (
-		count: number,
-		base: number,
-		template: ExpandedTracks,
-		autoSizes: CSSValues.TrackSize[],
-		ownerSize: number,
-	): GridTrack[] => {
-		const tracks: GridTrack[] = [];
-		let implicit = 0;
-		for (let i = 0; i < count; i++) {
-			const line = base + i;
-			const explicit = line >= 0 && line < template.sizes.length;
-			const size = explicit
-				? template.sizes[line]
-				: autoSizes[implicit++ % autoSizes.length];
-			tracks.push(createTrack(size, ownerSize));
-		}
-		return tracks;
-	};
-
-	// css-grid-2 §7.2.3.2.
-	const collapseAutoFit = (
-		tracks: GridTrack[],
-		template: ExpandedTracks,
-		base: number,
-		occupiedTracks: Set<number>,
-	) => {
-		if (!template.autoFit) {
-			return;
-		}
-		for (let i = 0; i < template.autoFit.count; i++) {
-			const index = template.autoFit.start + i - base;
-			if (index < 0 || index >= tracks.length) {
-				continue;
-			}
-			if (occupiedTracks.has(index)) {
-				continue;
-			}
-			tracks[index].collapsed = true;
-			tracks[index].base = 0;
-			tracks[index].growthLimit = 0;
-		}
-	};
-
 	const occupiedColumns = new Set<number>();
 	const occupiedRows = new Set<number>();
 	for (const item of items) {
@@ -5832,20 +5885,7 @@ function layoutGrid(
 	};
 
 	let columnTracks = sizeColumns(definiteWidth ? innerWidth : NaN);
-	const getTotal = (tracks: GridTrack[], gap: number) => {
-		let total = 0;
-		let live = 0;
-		for (const track of tracks) {
-			if (track.collapsed) {
-				continue;
-			}
-			total += track.base;
-			live++;
-		}
-		return total + gap * Math.max(0, live - 1);
-	};
-
-	let columnsTotal = getTotal(columnTracks, columnGap);
+	let columnsTotal = getTrackTotal(columnTracks, columnGap);
 	// A shrink-to-fit grid that overflows its bound is re-sized against it.
 	if (
 		widthSpace === "shrink-to-fit" &&
@@ -5853,7 +5893,7 @@ function layoutGrid(
 		columnsTotal > innerWidth + EPSILON
 	) {
 		columnTracks = sizeColumns(innerWidth);
-		columnsTotal = getTotal(columnTracks, columnGap);
+		columnsTotal = getTrackTotal(columnTracks, columnGap);
 	}
 
 	const columnSizes = columnTracks.map((track) => track.base);
@@ -5894,14 +5934,14 @@ function layoutGrid(
 	};
 
 	let rowTracks = sizeRows(definiteHeight ? innerHeight : NaN);
-	let rowsTotal = getTotal(rowTracks, rowGap);
+	let rowsTotal = getTrackTotal(rowTracks, rowGap);
 	if (
 		heightSpace === "shrink-to-fit" &&
 		!Number.isNaN(innerHeight) &&
 		rowsTotal > innerHeight + EPSILON
 	) {
 		rowTracks = sizeRows(innerHeight);
-		rowsTotal = getTotal(rowTracks, rowGap);
+		rowsTotal = getTrackTotal(rowTracks, rowGap);
 	}
 
 	const width = widthSpace === "definite"
@@ -5947,32 +5987,11 @@ function layoutGrid(
 	node.result.gridColumnOffset = -columnBase || 0;
 	node.result.gridRowOffset = -rowBase || 0;
 
-	// A line has two positions once tracks are spread by justify-content or
-	// a gap. An area takes the inner pair, so the space between tracks
-	// stays between them.
-	const lineStart = (tracks: GridTrack[], line: number): number => {
-		if (tracks.length === 0) {
-			return 0;
-		}
-		if (line >= tracks.length) {
-			const last = tracks[tracks.length - 1];
-			return last.position + last.base;
-		}
-		return tracks[Math.max(0, line)].position;
-	};
-	const lineEnd = (tracks: GridTrack[], line: number): number => {
-		if (tracks.length === 0) {
-			return 0;
-		}
-		const track = tracks[Math.min(Math.max(0, line - 1), tracks.length - 1)];
-		return track.position + track.base;
-	};
-
 	for (const item of items) {
-		const areaLeft = lineStart(columnTracks, item.columnStart);
-		const areaRight = lineEnd(columnTracks, item.columnEnd);
-		const areaTop = lineStart(rowTracks, item.rowStart);
-		const areaBottom = lineEnd(rowTracks, item.rowEnd);
+		const areaLeft = getLineStart(columnTracks, item.columnStart);
+		const areaRight = getLineEnd(columnTracks, item.columnEnd);
+		const areaTop = getLineStart(rowTracks, item.rowStart);
+		const areaBottom = getLineEnd(rowTracks, item.rowEnd);
 
 		layoutGridItem(
 			node,
@@ -6015,8 +6034,6 @@ function layoutGrid(
 				rowBase,
 				contentLeft,
 				contentTop,
-				lineStart,
-				lineEnd,
 			),
 		);
 	}
@@ -6038,8 +6055,6 @@ function getAbsoluteGridArea(
 	rowBase: number,
 	contentLeft: number,
 	contentTop: number,
-	lineStart: (tracks: GridTrack[], line: number) => number,
-	lineEnd: (tracks: GridTrack[], line: number) => number,
 ): {left: number; top: number; width: number; height: number} | null {
 	const style = child.style;
 	const placed =
@@ -6076,7 +6091,7 @@ function getAbsoluteGridArea(
 		if (line.kind !== "line") {
 			return fallback;
 		}
-		const at = which === "start" ? lineStart : lineEnd;
+		const at = which === "start" ? getLineStart : getLineEnd;
 		return leading + at(tracks, line.index - base);
 	};
 
@@ -6548,6 +6563,66 @@ function hasWidthDependentChild(node: LayoutNode): boolean {
 	return false;
 }
 
+// A sizing result goes among the entries of its slot, in place of one
+// under the same constraints, or else after them. A full slot drops its
+// oldest entry.
+function storeSizeEntry(
+	node: LayoutNode,
+	entry: CacheEntry,
+	slot: number,
+): void {
+	reserveCache(
+		node,
+		Math.max((hasCache(node) ? node.cachedSizeCount : 0) + 2, 3),
+	);
+	const cache = node.pool.data;
+	const base = node.cacheAt * ENTRY;
+	const count = node.cachedSizeCount;
+	let start = 1;
+	while (start <= count && cache[base + start * ENTRY + SLOT] < slot) {
+		start++;
+	}
+	let end = start;
+	while (end <= count && cache[base + end * ENTRY + SLOT] === slot) {
+		end++;
+	}
+	let index = start;
+	while (
+		index < end &&
+		!isMatchingConstraints(
+			cache,
+			base + index * ENTRY,
+			entry.availableWidth,
+			entry.availableHeight,
+			entry.widthCode,
+			entry.heightCode,
+			entry.ownerWidth,
+			entry.ownerHeight,
+			false,
+		)
+	) {
+		index++;
+	}
+	if (index < end) {
+		writeCacheEntry(cache, base + index * ENTRY, slot, entry);
+	} else if (end - start < CACHE_SLOT_DEPTH) {
+		cache.copyWithin(
+			base + (end + 1) * ENTRY,
+			base + end * ENTRY,
+			base + (count + 1) * ENTRY,
+		);
+		writeCacheEntry(cache, base + end * ENTRY, slot, entry);
+		node.cachedSizeCount = count + 1;
+	} else {
+		cache.copyWithin(
+			base + start * ENTRY,
+			base + (start + 1) * ENTRY,
+			base + end * ENTRY,
+		);
+		writeCacheEntry(cache, base + (end - 1) * ENTRY, slot, entry);
+	}
+}
+
 // The entry point for every mode and every probe.
 function layoutNode(
 	node: LayoutNode,
@@ -6563,10 +6638,10 @@ function layoutNode(
 	// between, as a table does its cells, so every box above it rounds again.
 	for (
 		let above = node.parent;
-		above !== null && !Number.isNaN(above.gridLeft);
+		above !== null && !Number.isNaN(above.snapOriginLeft);
 		above = above.parent
 	) {
-		above.gridLeft = NaN;
+		above.snapOriginLeft = NaN;
 	}
 	// css-sizing-4 §5: the open axis follows a settled (`definite`) one
 	// through the ratio. With both settled the ratio yields. Margins come
@@ -6779,62 +6854,11 @@ function layoutNode(
 		if (node.measure === null || !node.ownerFree) {
 			node.hasCachedLayout = false;
 		}
-		reserveCache(
+		storeSizeEntry(
 			node,
-			Math.max((hasCache(node) ? node.cachedSizeCount : 0) + 2, 3),
+			entry,
+			getCacheSlot(availableWidth, availableHeight, widthSpace, heightSpace),
 		);
-		const cache = node.pool.data;
-		const base = node.cacheAt * ENTRY;
-		const count = node.cachedSizeCount;
-		const slot = getCacheSlot(
-			availableWidth,
-			availableHeight,
-			widthSpace,
-			heightSpace,
-		);
-		let start = 1;
-		while (start <= count && cache[base + start * ENTRY + SLOT] < slot) {
-			start++;
-		}
-		let end = start;
-		while (end <= count && cache[base + end * ENTRY + SLOT] === slot) {
-			end++;
-		}
-		let index = start;
-		while (
-			index < end &&
-			!isMatchingConstraints(
-				cache,
-				base + index * ENTRY,
-				availableWidth,
-				availableHeight,
-				widthCode,
-				heightCode,
-				ownerWidth,
-				ownerHeight,
-				false,
-			)
-		) {
-			index++;
-		}
-		if (index < end) {
-			writeCacheEntry(cache, base + index * ENTRY, slot, entry);
-		} else if (end - start < CACHE_SLOT_DEPTH) {
-			cache.copyWithin(
-				base + (end + 1) * ENTRY,
-				base + end * ENTRY,
-				base + (count + 1) * ENTRY,
-			);
-			writeCacheEntry(cache, base + end * ENTRY, slot, entry);
-			node.cachedSizeCount = count + 1;
-		} else {
-			cache.copyWithin(
-				base + start * ENTRY,
-				base + (start + 1) * ENTRY,
-				base + end * ENTRY,
-			);
-			writeCacheEntry(cache, base + (end - 1) * ENTRY, slot, entry);
-		}
 	}
 	node.stale = false;
 	node.selfStale = false;
@@ -6960,7 +6984,7 @@ function layoutNodeImpl(
 	ownerHeight: number,
 	placing: boolean,
 ): void {
-	node.gridLeft = NaN;
+	node.snapOriginLeft = NaN;
 	node.result.paddingLeft = getPadding(node, "left", ownerWidth);
 	node.result.paddingTop = getPadding(node, "top", ownerWidth);
 	node.result.paddingRight = getPadding(node, "right", ownerWidth);
@@ -7139,35 +7163,34 @@ function roundToGrid(
 	const isText = node.measure !== null && node.measuresText;
 
 	// Whole cells, held as small integers so V8 keeps them unboxed in every
-	// node's grid and in the extents made from it.
-	node.grid.left = toCells(
-		roundValue(absLeft, false, false) - roundValue(parentLeft, false, false),
+	// node's snapped box and in the extents made from it.
+	node.snapped.left = toCells(
+		roundValue(absLeft, false) - roundValue(parentLeft, false),
 	);
-	node.grid.top = toCells(
-		roundValue(absTop, false, false) - roundValue(parentTop, false, false),
+	node.snapped.top = toCells(
+		roundValue(absTop, false) - roundValue(parentTop, false),
 	);
-	node.grid.width = toCells(
-		roundValue(absLeft + width, isText, false) -
-			roundValue(absLeft, isText, false),
+	node.snapped.width = toCells(
+		roundValue(absLeft + width, isText) - roundValue(absLeft, isText),
 	);
-	node.grid.height = toCells(
-		roundValue(absTop + height, isText, false) -
-			roundValue(absTop, isText, false),
+	node.snapped.height = toCells(
+		roundValue(absTop + height, isText) - roundValue(absTop, isText),
 	);
 
-	node.settled = absLeft === node.gridLeft && absTop === node.gridTop;
+	node.settled =
+		absLeft === node.snapOriginLeft && absTop === node.snapOriginTop;
 	if (!node.settled) {
 		node.movedSinceExtents = true;
 	}
 	if (node.settled) {
 		return;
 	}
-	node.gridLeft = absLeft;
-	node.gridTop = absTop;
+	node.snapOriginLeft = absLeft;
+	node.snapOriginTop = absTop;
 	// Only a child laid out again had its origin forgotten. The others are
 	// where they were and would round as they did, settled.
 	for (const child of node.children) {
-		if (!kept || Number.isNaN(child.gridLeft)) {
+		if (!kept || Number.isNaN(child.snapOriginLeft)) {
 			roundToGrid(child, absLeft, absTop, misplaced);
 		} else {
 			child.settled = true;
@@ -7201,17 +7224,12 @@ function breaksElsewhere(node: LayoutNode): boolean {
  */
 export function getDrawnColumns(left: number, width: number): number {
 	if (Number.isNaN(left)) {
-		return roundValue(width, false, false);
+		return roundValue(width, false);
 	}
-	return roundValue(left + width, false, false) -
-		roundValue(left, false, false);
+	return roundValue(left + width, false) - roundValue(left, false);
 }
 
-function roundValue(
-	value: number,
-	forceCeil: boolean,
-	forceFloor: boolean,
-): number {
+function roundValue(value: number, forceCeil: boolean): number {
 	if (Number.isNaN(value)) {
 		return value;
 	}
@@ -7226,9 +7244,6 @@ function roundValue(
 	}
 	if (forceCeil) {
 		return value - fraction + 1;
-	}
-	if (forceFloor) {
-		return value - fraction;
 	}
 	// Round half up.
 	return value - fraction + (fraction >= 0.5 ? 1 : 0);

@@ -234,6 +234,51 @@ test("mouseenter does not bubble; mouseover does", async () => {
 	termdom.dispose();
 });
 
+test("removing the hovered element hovers what is under the pointer", async () => {
+	const {proc, termdom, document} =
+		makeApp({html: "<div>pppp<div id=a>aaaa</div></div>"});
+	await nextFrame(termdom);
+	const a = document.getElementById("a")!;
+	await send(proc, motion(2, 2));
+	await nextFrame(termdom);
+	expect(a.matches(":hover")).toBe(true);
+
+	const over: Array<[EventTarget | null, EventTarget | null]> = [];
+	document.addEventListener("mouseover", (event: any) => {
+		over.push([event.target, event.relatedTarget]);
+	});
+	let moves = 0;
+	document.addEventListener("mousemove", () => moves++);
+	a.remove();
+	await nextFrame(termdom);
+	expect(over).toEqual([[document.body, a]]);
+	expect(moves).toBe(0);
+	termdom.dispose();
+});
+
+test("removing the iframe the pointer is in hovers what is under it", async () => {
+	const {proc, termdom, document} = makeApp({
+		html:
+			"<iframe srcdoc=\"<p style='margin: 0'>inside</p>\" " +
+			"style=\"display: block; border: 0; width: 20ch; height: 2px\">" +
+			"</iframe>",
+	});
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	await nextFrame(termdom);
+	const frame = document.querySelector("iframe")!;
+	const inside = frame.contentDocument!.querySelector("p")!;
+	await send(proc, motion(2, 1));
+	await nextFrame(termdom);
+	expect(inside.matches(":hover")).toBe(true);
+
+	const over: EventTarget[] = [];
+	document.addEventListener("mouseover", (event) => over.push(event.target!));
+	frame.remove();
+	await nextFrame(termdom);
+	expect(over).toEqual([document.body]);
+	termdom.dispose();
+});
+
 test("motion reports coalesce into at most one hit-test per frame", async () => {
 	const {proc, termdom, document} = makeApp();
 	for (let i = 0; i < 5; i++) {
@@ -290,3 +335,96 @@ test("dispose turns motion reporting off", async () => {
 	await flushed(written, MOTION_OFF);
 	expect(written()).toContain(MOTION_OFF);
 });
+
+// A message list as a webmail lays it out: in a grid column, rows of
+// flex lines whose sender and subject columns shrink. Each hover rule
+// changes what the hovered row, the row under it or the row over it
+// measures, and every box must land where a fresh render with the
+// hovered row's styles puts it.
+const MESSAGE_LIST = `
+html, body { margin: 0; height: 100% }
+.shell { display: grid; height: 100%; grid-template-columns: 70px 1.2fr 1fr }
+.messages { display: flex; flex-direction: column; overflow: hidden;
+	min-width: 0; min-height: 0 }
+.scroller { flex: 1; min-height: 0; overflow-y: auto }
+.msg { overflow: hidden }
+.row { display: flex; align-items: center; gap: 12px; padding: 0 12px }
+.from { width: 30%; min-width: 140px; max-width: 280px; flex-shrink: 0;
+	display: flex }
+.subject { flex: 1; min-width: 0; display: flex; gap: 4px; overflow: hidden }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.meta { display: flex; gap: 6px; flex-shrink: 0 }
+.act { display: none }
+`;
+
+const MESSAGE_LIST_HOVERS: Record<string, string> = {
+	background: ".msg:is(:hover, .hovered) { background: rgb(0, 0, 80) }",
+	reveal: ".msg:is(:hover, .hovered) .act { display: inline }",
+	below: ".msg:is(:hover, .hovered) + .msg .from { min-width: 200px }",
+	above:
+		".msg:has(+ :is(.msg:hover, .msg.hovered)) .from " +
+		"{ width: 10%; min-width: 0 }" +
+		".msg:has(+ :is(.msg:hover, .msg.hovered)) .act { display: inline }",
+};
+
+function messageList(hover: string): string {
+	let rows = "";
+	for (let i = 0; i < 40; i++) {
+		rows +=
+			`<article class=msg id=m${i}><div class=row>` +
+			"<button>[ ]</button>" +
+			`<div class=from><span class=truncate>Sender ${i} Name</span></div>` +
+			"<div class=subject>" +
+			`<span class=truncate>Subject of message ${i}</span>` +
+			`<span class=truncate>preview text ${i}</span></div>` +
+			"<div class=meta><button class=act>archive</button>" +
+			`<span>Nov ${i}</span></div></div></article>`;
+	}
+	return (
+		`<style>${MESSAGE_LIST}${hover}</style><div class=shell>` +
+		"<nav>Inbox</nav><section class=messages><div class=scroller>" +
+		`${rows}</div></section><div>reader</div></div>`
+	);
+}
+
+function mountWide(): {proc: MockProcess; termdom: TermDOM} {
+	const proc = new MockProcess({cols: 120, rows: 30});
+	const termdom = new TermDOM({
+		transport: proc.transport,
+		cellSize: {width: 7, height: 15},
+	});
+	return {proc, termdom};
+}
+
+function boxes(document: Document): string[] {
+	return Array.from(document.querySelectorAll("*"), (element, index) => {
+		const r = element.getBoundingClientRect();
+		return `${index} ${element.localName} ${r.x},${r.y} ${r.width}x${r.height}`;
+	});
+}
+
+for (const [name, hover] of Object.entries(MESSAGE_LIST_HOVERS)) {
+	test(`a message list lays out as fresh while the pointer crosses its rows: ${name}`, async () => {
+		const html = messageList(hover);
+		const {proc, termdom} = mountWide();
+		const {document} = termdom;
+		document.body.innerHTML = html;
+		await nextFrame(termdom);
+		for (const index of [0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0, 3, 1, 5, 2]) {
+			const box = document.getElementById(`m${index}`)!
+				.getBoundingClientRect();
+			await send(proc, motion(box.x / 7 + 3, box.y / 15 + 1));
+			await nextFrame(termdom);
+			expect(document.querySelector(".msg:hover")?.id).toBe(`m${index}`);
+
+			const fresh = mountWide();
+			fresh.termdom.document.body.innerHTML = html;
+			fresh.termdom.document.getElementById(`m${index}`)!
+				.classList.add("hovered");
+			await nextFrame(fresh.termdom);
+			expect(boxes(document)).toEqual(boxes(fresh.termdom.document));
+			fresh.termdom.dispose();
+		}
+		termdom.dispose();
+	});
+}

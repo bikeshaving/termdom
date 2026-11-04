@@ -14,8 +14,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {partialFrameCheck} from "../src/internal/painter.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, takePartialFrame} from "./test-utils.js";
 
 interface Cell {
 	char: string;
@@ -487,20 +486,22 @@ async function walkList(
 	await dom.attach();
 	await nextFrame(dom);
 	const items = [...dom.document.querySelectorAll("li")];
-	const checked = partialFrameCheck.checked;
+	let partial = 0;
+	takePartialFrame(dom);
 	try {
 		for (let at = 1; at <= 12; at++) {
 			items[at - 1].classList.remove("on");
 			items[at].classList.add("on");
 			items[at].scrollIntoView({block: "nearest"});
 			await nextFrame(dom);
+			partial += Number(takePartialFrame(dom));
 		}
 		return {
 			rows: terminal.getVisibleText().split("\n").map((row) => row.trimEnd()),
 			footerRow: Math.round(
 				dom.document.querySelector("footer")!.getBoundingClientRect().top,
 			),
-			partial: partialFrameCheck.checked - checked,
+			partial,
 		};
 	} finally {
 		dom.dispose();

@@ -451,3 +451,13 @@ withRealms(
 		dom.dispose();
 	},
 );
+
+withRealms("a frame's stylesheet errors are its own realm's", () => {
+	const {dom, frame} = setup();
+	const other = new TermDOM({transport: new MockProcess().transport});
+	expect(() => {
+		frame.document.adoptedStyleSheets = [{}];
+	}).toThrow(frame.TypeError);
+	other.dispose();
+	dom.dispose();
+});

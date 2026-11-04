@@ -194,8 +194,7 @@ export function setStyleHooks(given: StyleHooks): void {
 // when this returns. A control that was removed and re-inserted keeps its
 // tree and only updates the state it missed.
 function ensureUAShadowTree(element: globalThis.Element): void {
-	(_(element) as unknown as Record<string, (() => void) | undefined>)
-		._ensureUAShadowTree?.();
+	_(element as Element)._ensureUAShadowTree?.();
 }
 
 // Built-in tags that get a UA shadow tree when they connect.
@@ -238,10 +237,7 @@ function ensureUAShadowTrees(root: globalThis.Node): void {
 export function getSelectionRecord(
 	control: globalThis.Element,
 ): {start: number; end: number; direction: string} | null {
-	const slots = _(control) as unknown as {
-		_uaSelection?: () => ReturnType<typeof getSelectionRecord>;
-	};
-	return slots._uaSelection?.() ?? null;
+	return _(control as Element)._uaSelection?.() ?? null;
 }
 
 /** Set a text control's selection, without the type check authors get. */
@@ -251,15 +247,7 @@ export function setUASelection(
 	end: number,
 	direction?: string,
 ): void {
-	(
-		_(control) as unknown as {
-			_setUASelection(
-				start: number,
-				end: number,
-				direction?: string,
-			): void;
-		}
-	)._setUASelection!(start, end, direction);
+	_(control as Element)._setUASelection!(start, end, direction);
 }
 
 // The pseudo-classes that read a control's state rather than its
@@ -305,19 +293,13 @@ function getControlStateBits(element: Element): number {
 	return bits;
 }
 
-// What each element matched when it was last reported. Restyling for a
-// state is a subtree and its later siblings, so only a state that really
-// changed is reported. Most elements match none of these, and an
-// attribute change on them reports nothing.
-const reportedControlStates = new WeakMap<Element, number>();
-
 function reportControlStates(element: Element): void {
-	const before = reportedControlStates.get(element) ?? 0;
+	const before = _(element).reportedControlStates;
 	const after = getControlStateBits(element);
 	if (after === before) {
 		return;
 	}
-	reportedControlStates.set(element, after);
+	_(element).reportedControlStates = after;
 	stateChanged(
 		element,
 		CONTROL_STATE_BITS.filter(([, bit]) => ((before ^ after) & bit) !== 0)
@@ -329,8 +311,7 @@ function reportControlStates(element: Element): void {
 // selected. Its shadow tree redraws, and the rules that read that state
 // are told, since no mutation record says so.
 function syncUAShadowTree(element: Element): void {
-	(_(element) as unknown as Record<string, (() => void) | undefined>)
-		._syncUAShadowTree?.();
+	_(element)._syncUAShadowTree?.();
 	reportControlStates(element);
 	// A form and every fieldset around the control are :valid or :invalid
 	// by what they hold, so they are told as well.
@@ -381,10 +362,7 @@ export function takesTextCursor(
 export function getTextControlValueText(
 	textControl: globalThis.Element,
 ): globalThis.Text | null {
-	return (
-		(_(textControl) as unknown as {_uaValueText?: globalThis.Text | null})
-			._uaValueText ?? null
-	);
+	return _(textControl as Element)._uaValueText ?? null;
 }
 
 /**
@@ -551,9 +529,6 @@ export function revealTextControlCaret(document: globalThis.Document): void {
 	}
 }
 
-/** The range each document reuses for control-selection queries. */
-const selectionRanges = new WeakMap<globalThis.Document, globalThis.Range>();
-
 // Per spec a form control's selection is invisible to getSelection(), so
 // this is the only way to measure it. The range belongs to the document
 // and is valid until the next selection read. Null when the selection is
@@ -575,11 +550,8 @@ function getTextSelectionRange(
 		return null;
 	}
 	const document = getUADocument(control);
-	let range = selectionRanges.get(document);
-	if (range === undefined) {
-		range = document.createRange();
-		selectionRanges.set(document, range);
-	}
+	const range =
+		_(document as Document).extra.selectionRange ??= document.createRange();
 	range.setStart(valueText, from);
 	range.setEnd(valueText, to);
 	return range;
@@ -619,10 +591,34 @@ function moveTextControlSelection(
 	return {value, start: clamped, end: clamped, direction: "none"};
 }
 
-// Handles Backspace, Delete, the horizontal arrows and the readline chords,
-// grapheme-aware. Returns null for any other key. Enter, vertical motion
-// and Home/End are left to the control, which knows where its lines end,
-// and printable insertion is a keypress action.
+// The bounds of the line holding the caret. An input's value is one line.
+// A textarea's lines are its visual lines, soft wraps included, so this
+// lays out the document.
+function getTextControlLineBounds(
+	textControl: HTMLInputElement | HTMLTextAreaElement,
+	caret: number,
+): {lineStart: number; lineEnd: number} {
+	const value = _(textControl)._uaValue;
+	if (!isHTMLElementNamed(textControl, "textarea")) {
+		return {lineStart: 0, lineEnd: value.length};
+	}
+	const layout = _(getAttachedDocument(textControl)!).extra.layout;
+	layout.performLayout();
+	const visual = getTextareaVisualLines(
+		textControl as HTMLTextAreaElement,
+		layout,
+	);
+	const line = visual?.lines[getTextareaLine(visual.lines, caret)];
+	return {
+		lineStart: line?.startOffset ?? 0,
+		lineEnd: line?.endOffset ?? value.length,
+	};
+}
+
+// Handles Backspace, Delete, the horizontal arrows, Home/End and the
+// readline chords, grapheme-aware. Returns null for any other key. Enter
+// and vertical motion are left to the control, and printable insertion is
+// a keypress action.
 function applySharedTextControlEdit(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
 	key: string,
@@ -670,8 +666,34 @@ function applySharedTextControlEdit(
 	}
 
 	// The readline chords a terminal user expects: caret motion or deletion,
-	// never a browser shortcut. Ctrl+A, Ctrl+E, Ctrl+K and Ctrl+U depend on
-	// line bounds, so the control handles those. These are the rest.
+	// never a browser shortcut. Home, End, Ctrl+A, Ctrl+E, Ctrl+K and Ctrl+U
+	// work within the caret's line.
+	if (
+		key === "Home" ||
+		key === "End" ||
+		(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
+	) {
+		const {lineStart, lineEnd} = getTextControlLineBounds(textControl, caret);
+		if (ctrlKey && key === "k") {
+			return createCollapsedEdit(
+				value.slice(0, caret) + value.slice(lineEnd),
+				caret,
+			);
+		}
+		if (ctrlKey && key === "u") {
+			return createCollapsedEdit(
+				value.slice(0, lineStart) + value.slice(caret),
+				lineStart,
+			);
+		}
+		const toStart = key === "Home" || key === "a";
+		return moveTextControlSelection(
+			value,
+			anchor,
+			toStart ? lineStart : lineEnd,
+			shiftKey,
+		);
+	}
 	if (ctrlKey && key === "b") {
 		return moveTextControlSelection(
 			value,
@@ -858,30 +880,12 @@ function createCollapsedEdit(
 	return {value, start: clamped, end: clamped, direction: "none"};
 }
 
-// Fires input when the value actually changed and select when the user
-// moved the selection. Writes to the control's value directly, never
-// through the value IDL setter. In a browser a user edit changes the value
-// without running the setter, and frameworks rely on that to tell user
-// input from the page's own writes.
-// Text controls the user has edited since the last change event. Leaving
-// one fires change, before blur, as a browser does. A value set by script
-// is not the user's edit, and clears the mark.
-const editedSinceChange = new WeakSet<Element>();
-
-// HTML's user validity: set once the user has committed a change to the
-// control or tried to submit its form, cleared when the form resets. It
-// is what :user-valid and :user-invalid wait for.
-const userValidity = new WeakSet<Element>();
-
 function setUserValidity(element: Element, value: boolean): void {
-	if (userValidity.has(element) === value) {
+	const slots = _(element);
+	if (slots.userValidity === value) {
 		return;
 	}
-	if (value) {
-		userValidity.add(element);
-	} else {
-		userValidity.delete(element);
-	}
+	slots.userValidity = value;
 	stateChanged(element, ["user-valid", "user-invalid"]);
 }
 
@@ -896,10 +900,10 @@ function dispatchUserChange(control: Element): void {
 
 // Focus leaving a text control the user edited commits the edit.
 function commitTextControl(element: Element | null): void {
-	if (element === null || !editedSinceChange.has(element)) {
+	if (element === null || !_(element).editedSinceChange) {
 		return;
 	}
-	editedSinceChange.delete(element);
+	_(element).editedSinceChange = false;
 	dispatchUserChange(element);
 }
 
@@ -912,6 +916,11 @@ interface TextControlEditKind {
 	asked?: boolean;
 }
 
+// Fires input when the value actually changed and select when the user
+// moved the selection. Writes to the control's value directly, never
+// through the value IDL setter. In a browser a user edit changes the value
+// without running the setter, and frameworks rely on that to tell user
+// input from the page's own writes.
 function applyTextControlEdit(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
 	result: TextControlEditResult,
@@ -938,7 +947,7 @@ function applyTextControlEdit(
 		) {
 			return;
 		}
-		editedSinceChange.add(textControl);
+		textControlSlots.editedSinceChange = true;
 		textControlSlots._setUAValue!(result.value);
 		textControlSlots._setUASelection!(
 			result.start,
@@ -993,18 +1002,15 @@ export interface FocusStartingPoint {
 	next: Node | null;
 }
 
-const focusStartingPoints = new WeakMap<Document, FocusStartingPoint>();
-
 /** The starting point a removal left, consumed by the Tab that uses it. */
 export function takeFocusStartingPoint(
 	document: globalThis.Document,
 ): FocusStartingPoint | null {
-	const point = focusStartingPoints.get(document as Document) ?? null;
-	focusStartingPoints.delete(document as Document);
+	const extra = _(document as Document).extra;
+	const point = extra.focusStartingPoint ?? null;
+	extra.focusStartingPoint = undefined;
 	return point;
 }
-
-const engineObservers = new WeakMap<Document, MutationObserver>();
 
 // Per spec a document-rooted observer never sees inside a shadow root, so
 // each root is observed on its own.
@@ -1012,29 +1018,25 @@ function observeShadowRoot(
 	document: Document,
 	root: globalThis.ShadowRoot,
 ): void {
-	engineObservers
-		.get(document)
-		?.observe(root as unknown as Node, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeOldValue: true,
-			characterData: true,
-		});
+	_(document).extra.engineObserver?.observe(root as unknown as Node, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeOldValue: true,
+		characterData: true,
+	});
 }
 
 // The displayed label and picker rows track the option list, so a
 // framework mutating the options must trigger a sync. Selection changes
 // reach the tree through the control's own setters.
 function observeOptionList(select: Element): void {
-	engineObservers
-		.get(_(select).document)
-		?.observe(select, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			characterData: true,
-		});
+	_(_(select).document).extra.engineObserver?.observe(select, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		characterData: true,
+	});
 }
 
 // The root is registered with the cascade BEFORE it is populated, so
@@ -1176,10 +1178,11 @@ const NAME_REST = `${NAME_START}\\-.0-9\u00B7\u0300-\u036F\u203F-\u2040`;
 
 /* eslint-disable no-misleading-character-class -- the XML Name production
    matches lone combining marks by definition */
-const XML_NAME = new RegExp(
-	`^(?:[${NAME_START}]|[\uD800-\uDBFF][\uDC00-\uDFFF])` +
-	`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*$`,
-);
+const XML_NAME_SOURCE =
+	`(?:[${NAME_START}]|[\uD800-\uDBFF][\uDC00-\uDFFF])` +
+	`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*`;
+const XML_NAME = new RegExp(`^${XML_NAME_SOURCE}$`);
+const XML_NAME_TOKEN = new RegExp(XML_NAME_SOURCE, "y");
 /* eslint-enable no-misleading-character-class */
 
 function isValidLocalName(name: string, forAttribute: boolean): boolean {
@@ -2050,11 +2053,16 @@ export interface HistoryChangeEvent {
 
 /**
  * The page moved to another entry of its own document's history,
- * dispatched at the TermDOM: by pushState() or replaceState(), or by
- * following a link to a fragment or setting location.hash. A replace
- * changes the current entry; otherwise the page added one after it, and
- * the entries that were ahead of the current one are gone. The state is
- * what history.state now holds, which traverse() takes back.
+ * dispatched at the TermDOM: by pushState() or replaceState(), by
+ * following a link to a fragment or setting location.hash, or by a
+ * navigation a navigate listener intercepted. A replace changes the
+ * current entry; otherwise the page added one after it, and the entries
+ * that were ahead of the current one are gone. The state is what
+ * history.state now holds, which traverse() takes back. Going back and
+ * forward between entries fires none.
+ *
+ * @deprecated Listen for currententrychange at window.navigation, whose
+ * entries() are the document's history.
  */
 export class HistoryChangeEvent extends Event {
 	constructor(type: string, init: HistoryChangeEventInit) {
@@ -2091,11 +2099,15 @@ export interface HistoryTraverseEvent {
 }
 
 /**
- * The page called history.back(), forward() or go(), dispatched at the
- * TermDOM in a task after the call. The delta counts entries from the
- * current one, and 0 asks for a reload. The TermDOM keeps no list of
- * entries, so going anywhere is the embedder's to do: traverse() for an
- * entry of this document, a new page for any other.
+ * The page called history.back(), forward() or go() for an entry the
+ * document does not have, dispatched at the TermDOM in a task after the
+ * call. The delta counts entries from the current one, and 0 asks for a
+ * reload no navigate listener intercepted or canceled. The TermDOM goes
+ * between the document's own entries itself, so this is an entry before
+ * or after them that only the embedder knows, such as another page's.
+ *
+ * @deprecated window.navigation keeps the document's entries, and its
+ * navigate event announces each reload and traversal.
  */
 export class HistoryTraverseEvent extends Event {
 	constructor(type: string, init: HistoryTraverseEventInit) {
@@ -2588,6 +2600,245 @@ Object.defineProperty(PopStateEvent.prototype, Symbol.toStringTag, {
 	value: "PopStateEvent",
 	configurable: true,
 });
+
+const NAVIGATION_TYPES = new Set(["push", "replace", "reload", "traverse"]);
+
+function toNavigationType(value: unknown): globalThis.NavigationType {
+	const type = String(value);
+	if (!NAVIGATION_TYPES.has(type)) {
+		throw new TypeError(`"${type}" is not a navigation type`);
+	}
+	return type as globalThis.NavigationType;
+}
+
+interface NavigateEventSlots extends EventSlots {
+	navigationType: globalThis.NavigationType;
+	destination: NavigationDestination;
+	canIntercept: boolean;
+	userInitiated: boolean;
+	hashChange: boolean;
+	navigateSignal: globalThis.AbortSignal;
+	formData: FormData | null;
+	downloadRequest: string | null;
+	navigateInfo: unknown;
+	hasUAVisualTransition: boolean;
+	sourceElement: Element | null;
+	// What intercept() asked for. Only an event the engine fires has a
+	// navigation to intercept, and the controller its signal is from.
+	navigateNavigation: Navigation | null;
+	navigateController: globalThis.AbortController | null;
+	interception: "none" | "intercepted" | "committed" | "scrolled" | "finished";
+	handlers: Array<() => unknown>;
+	focusReset: globalThis.NavigationFocusReset | null;
+	scrollBehavior: globalThis.NavigationScrollBehavior | null;
+}
+
+interface NavigateEvent {
+	readonly [internals]: NavigateEventSlots;
+}
+
+/** Fired at window.navigation before the page navigates. */
+class NavigateEvent extends Event {
+	constructor(type: string, eventInitDict: globalThis.NavigateEventInit) {
+		super(type, eventInitDict);
+		const init = toDictionary<globalThis.NavigateEventInit>(
+			eventInitDict,
+			"A navigate event init",
+		);
+		if (!implementsInterface(init.destination, NavigationDestination)) {
+			throw new TypeError("A navigate event needs its destination");
+		}
+		if (!(init.signal instanceof globalThis.AbortSignal)) {
+			throw new TypeError("A navigate event needs its signal");
+		}
+		const slots = _(this);
+		slots.navigationType = toNavigationType(init.navigationType ?? "push");
+		slots.destination = init.destination as unknown as NavigationDestination;
+		slots.canIntercept = Boolean(init.canIntercept);
+		slots.userInitiated = Boolean(init.userInitiated);
+		slots.hashChange = Boolean(init.hashChange);
+		slots.navigateSignal = init.signal;
+		slots.formData = (init.formData ?? null) as FormData | null;
+		slots.downloadRequest = init.downloadRequest == null
+			? null
+			: String(init.downloadRequest);
+		slots.navigateInfo = init.info;
+		slots.hasUAVisualTransition = Boolean(init.hasUAVisualTransition);
+		slots.sourceElement = (init.sourceElement ?? null) as Element | null;
+		slots.navigateNavigation = null;
+		slots.navigateController = null;
+		slots.interception = "none";
+		slots.handlers = [];
+		slots.focusReset = null;
+		slots.scrollBehavior = null;
+	}
+
+	get navigationType(): globalThis.NavigationType {
+		return _(this).navigationType;
+	}
+
+	get destination(): NavigationDestination {
+		return _(this).destination;
+	}
+
+	get canIntercept(): boolean {
+		return _(this).canIntercept;
+	}
+
+	get userInitiated(): boolean {
+		return _(this).userInitiated;
+	}
+
+	get hashChange(): boolean {
+		return _(this).hashChange;
+	}
+
+	get signal(): globalThis.AbortSignal {
+		return _(this).navigateSignal;
+	}
+
+	get formData(): FormData | null {
+		return _(this).formData;
+	}
+
+	get downloadRequest(): string | null {
+		return _(this).downloadRequest;
+	}
+
+	get info(): any {
+		return _(this).navigateInfo;
+	}
+
+	get hasUAVisualTransition(): boolean {
+		return _(this).hasUAVisualTransition;
+	}
+
+	get sourceElement(): Element | null {
+		return _(this).sourceElement;
+	}
+
+	// The navigation goes on as a same-document one, which commits once the
+	// listeners return and finishes once the handler's promise settles.
+	intercept(options: globalThis.NavigationInterceptOptions = {}): void {
+		const init = toDictionary<globalThis.NavigationInterceptOptions>(
+			options,
+			"The options",
+		);
+		const slots = _(this);
+		checkNavigateEvent(this);
+		if (!slots.canIntercept) {
+			throw domError("SecurityError", "This navigation cannot be intercepted");
+		}
+		if (!slots.state.dispatch) {
+			throw domError(
+				"InvalidStateError",
+				"A navigation is intercepted while its event is dispatched",
+			);
+		}
+		slots.interception = "intercepted";
+		if (init.handler !== undefined) {
+			if (typeof init.handler !== "function") {
+				throw new TypeError("The handler must be a function");
+			}
+			slots.handlers.push(init.handler);
+		}
+		if (init.focusReset !== undefined) {
+			slots.focusReset = toInterceptBehavior(init.focusReset);
+		}
+		if (init.scroll !== undefined) {
+			slots.scrollBehavior = toInterceptBehavior(init.scroll);
+		}
+	}
+
+	// Scrolls as the navigation would once it finished, while its handler
+	// still runs.
+	scroll(): void {
+		checkNavigateEvent(this);
+		if (_(this).interception !== "committed") {
+			throw domError(
+				"InvalidStateError",
+				"Only a committed intercepted navigation scrolls",
+			);
+		}
+		processScrollBehavior(this);
+	}
+}
+
+Object.defineProperty(NavigateEvent.prototype, Symbol.toStringTag, {
+	value: "NavigateEvent",
+	configurable: true,
+});
+
+// HTML's perform shared checks for intercept() and scroll().
+function checkNavigateEvent(event: NavigateEvent): void {
+	const slots = _(event);
+	const navigation = slots.navigateNavigation;
+	if (navigation !== null && !isFullyActive(_(navigation).navigationWindow)) {
+		throw domError("InvalidStateError", "The document is not shown");
+	}
+	if (!slots.state.trusted) {
+		throw domError("SecurityError", "The event was not fired by the browser");
+	}
+	if (slots.state.canceled) {
+		throw domError("InvalidStateError", "The navigation was canceled");
+	}
+}
+
+function toInterceptBehavior(value: unknown): "after-transition" | "manual" {
+	const behavior = String(value);
+	if (behavior !== "after-transition" && behavior !== "manual") {
+		throw new TypeError(`"${behavior}" is not "after-transition" or "manual"`);
+	}
+	return behavior;
+}
+
+interface NavigationCurrentEntryChangeEventSlots extends EventSlots {
+	navigationType: globalThis.NavigationType | null;
+	from: NavigationHistoryEntry;
+}
+
+interface NavigationCurrentEntryChangeEvent {
+	readonly [internals]: NavigationCurrentEntryChangeEventSlots;
+}
+
+/**
+ * Fired at window.navigation when its current entry changes, with the
+ * entry it was. updateCurrentEntry() changes it with no navigation type.
+ */
+class NavigationCurrentEntryChangeEvent extends Event {
+	constructor(
+		type: string,
+		eventInitDict: globalThis.NavigationCurrentEntryChangeEventInit,
+	) {
+		super(type, eventInitDict);
+		const init = toDictionary<globalThis.NavigationCurrentEntryChangeEventInit>(
+			eventInitDict,
+			"An event init",
+		);
+		if (!implementsInterface(init.from, NavigationHistoryEntry)) {
+			throw new TypeError("The event needs the entry it changed from");
+		}
+		const slots = _(this);
+		slots.navigationType = init.navigationType == null
+			? null
+			: toNavigationType(init.navigationType);
+		slots.from = init.from as unknown as NavigationHistoryEntry;
+	}
+
+	get navigationType(): globalThis.NavigationType | null {
+		return _(this).navigationType;
+	}
+
+	get from(): NavigationHistoryEntry {
+		return _(this).from;
+	}
+}
+
+Object.defineProperty(
+	NavigationCurrentEntryChangeEvent.prototype,
+	Symbol.toStringTag,
+	{value: "NavigationCurrentEntryChangeEvent", configurable: true},
+);
 
 interface CloseEventInit extends EventInit {
 	wasClean?: boolean;
@@ -3565,10 +3816,10 @@ Object.defineProperty(
 	{value: "SecurityPolicyViolationEvent", configurable: true},
 );
 
-// A transfer here carries text under format names and nothing else. There
-// is no drag and drop in a terminal and no files to hand over, so
-// `dropEffect`, `effectAllowed`, `setDragImage()` and `files` exist,
-// return what the interface specifies, and do nothing.
+// A transfer here carries text under format names, and files a script
+// adds. There is no drag and drop in a terminal, so `dropEffect`,
+// `effectAllowed` and `setDragImage()` exist, return what the interface
+// specifies, and do nothing.
 
 // The platform's two shorthands map to the media types they stand for,
 // so `"TEXT/Plain "` and `"text"` name the same entry.
@@ -3586,22 +3837,57 @@ function normalizeTransferFormat(format: unknown): string {
 /** The brand used to construct an interface that declares no constructor. */
 const kInternalConstruction = Symbol("internal construction");
 
+/** Give `target` the indexed properties `values`, in place of `count`. */
+function setIndexedValues(
+	target: object,
+	count: number,
+	values: readonly unknown[],
+): void {
+	for (let i = 0; i < count; i++) {
+		delete (target as Record<number, unknown>)[i];
+	}
+	values.forEach((value, i) => {
+		Object.defineProperty(target, i, {
+			value,
+			configurable: true,
+			enumerable: true,
+		});
+	});
+}
+
+interface FileListSlots {
+	listFiles: globalThis.File[];
+}
+
+interface FileList {
+	readonly [internals]: FileListSlots;
+}
+
+/** A list of files: a file input's selected files, or a transfer's. */
 class FileList {
 	readonly [index: number]: globalThis.File;
 
 	constructor() {
 		seal(this, new.target, FileList);
+		_(this).listFiles = [];
 	}
 
 	get length(): number {
-		return 0;
+		return _(this).listFiles.length;
 	}
 
-	item(_index: number): globalThis.File | null {
-		return null;
+	item(index: number): globalThis.File | null {
+		return _(this).listFiles[toUnsignedLong(index)] ?? null;
 	}
 
-	*[Symbol.iterator](): Generator<never, void, unknown> {}
+	*[Symbol.iterator](): Generator<globalThis.File, void, unknown> {
+		yield *_(this).listFiles;
+	}
+}
+
+function setListedFiles(list: FileList, files: globalThis.File[]): void {
+	setIndexedValues(list, _(list).listFiles.length, files);
+	_(list).listFiles = files;
 }
 
 declareSealedRoot(FileList);
@@ -3611,29 +3897,35 @@ Object.defineProperty(FileList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+/** An entry of a transfer: a string or a file, under its type. */
+interface TransferEntry {
+	type: string;
+	data: string | globalThis.File;
+}
+
 interface DataTransferItemSlots {
 	itemType: string;
-	itemData: string;
+	itemData: string | globalThis.File;
 }
 
 interface DataTransferItem {
 	readonly [internals]: DataTransferItemSlots;
 }
 
-/** One entry of a transfer: a string under a format name. */
+/** One entry of a transfer: a string under a format name, or a file. */
 class DataTransferItem {
-	constructor(brand?: unknown, type?: string, data?: string) {
+	constructor(brand?: unknown, entry?: TransferEntry) {
 		seal(this, new.target, DataTransferItem);
 		if (brand !== kInternalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
 		const slots = _(this);
-		slots.itemType = String(type);
-		slots.itemData = String(data);
+		slots.itemType = entry!.type;
+		slots.itemData = entry!.data;
 	}
 
 	get kind(): string {
-		return "string";
+		return typeof _(this).itemData === "string" ? "string" : "file";
 	}
 
 	get type(): string {
@@ -3648,13 +3940,17 @@ class DataTransferItem {
 			throw new TypeError("getAsString needs a function");
 		}
 		const data = _(this).itemData;
+		if (typeof data !== "string") {
+			return;
+		}
 		queueMicrotask(() => {
 			(callback as (data: string) => void)(data);
 		});
 	}
 
 	getAsFile(): globalThis.File | null {
-		return null;
+		const data = _(this).itemData;
+		return typeof data === "string" ? null : data;
 	}
 
 	webkitGetAsEntry(): globalThis.FileSystemEntry | null {
@@ -3692,7 +3988,7 @@ class DataTransferItemList {
 	}
 
 	get length(): number {
-		return _(_(this).listOwner).transferEntries.size;
+		return _(_(this).listOwner).transferEntries.length;
 	}
 
 	add(data: string, type: string): DataTransferItem | null;
@@ -3703,20 +3999,24 @@ class DataTransferItemList {
 		if (ownerSlots.transferMode !== "readwrite") {
 			return null;
 		}
-		if (type === undefined) {
+		const entries = ownerSlots.transferEntries;
+		if (type !== undefined) {
+			const format = normalizeTransferFormat(type);
+			if (findTextEntry(entries, format) >= 0) {
+				throw domError(
+					"NotSupportedError",
+					`The transfer already carries a ${format} entry`,
+				);
+			}
+			entries.push({type: format, data: String(data)});
+		} else if (data instanceof File) {
+			entries.push({type: data.type.toLowerCase(), data});
+		} else {
 			throw new TypeError("Adding a string entry needs a format");
 		}
-		const format = normalizeTransferFormat(type);
-		if (ownerSlots.transferEntries.has(format)) {
-			throw domError(
-				"NotSupportedError",
-				`The transfer already carries a ${format} entry`,
-			);
-		}
-		ownerSlots.transferEntries.set(format, String(data));
 		syncTransferItems(owner);
 		return (this as unknown as Record<number, DataTransferItem>)[
-			ownerSlots.transferEntries.size - 1
+			entries.length - 1
 		];
 	}
 
@@ -3726,12 +4026,11 @@ class DataTransferItemList {
 		if (ownerSlots.transferMode !== "readwrite") {
 			throw domError("InvalidStateError", "That transfer cannot be modified");
 		}
-		const formats = Array.from(ownerSlots.transferEntries.keys());
 		const at = toLong(index);
-		if (at < 0 || at >= formats.length) {
+		if (at < 0 || at >= ownerSlots.transferEntries.length) {
 			return;
 		}
-		ownerSlots.transferEntries.delete(formats[at]);
+		ownerSlots.transferEntries.splice(at, 1);
 		syncTransferItems(owner);
 	}
 
@@ -3741,7 +4040,7 @@ class DataTransferItemList {
 		if (ownerSlots.transferMode !== "readwrite") {
 			return;
 		}
-		ownerSlots.transferEntries.clear();
+		ownerSlots.transferEntries.length = 0;
 		syncTransferItems(owner);
 	}
 }
@@ -3753,29 +4052,33 @@ Object.defineProperty(DataTransferItemList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** Update a list's indexed properties to match the entries behind it. */
+/** The index of the string entry under `format`, or -1. */
+function findTextEntry(entries: TransferEntry[], format: string): number {
+	return entries.findIndex(
+		(entry) => typeof entry.data === "string" && entry.type === format,
+	);
+}
+
+/**
+ * Update the item list's indexed properties and the file list to match
+ * the entries behind them.
+ */
 function syncTransferItems(transfer: DataTransfer): void {
 	const transferSlots = _(transfer);
-	const list = transferSlots.transferItems as unknown as Record<
-		number,
-		unknown
-	>;
-	const formats = Array.from(transferSlots.transferEntries.keys());
-	for (let i = 0; i < _(transferSlots.transferItems).listIndices; i++) {
-		delete list[i];
-	}
-	for (let i = 0; i < formats.length; i++) {
-		Object.defineProperty(list, i, {
-			value: new DataTransferItem(
-				kInternalConstruction,
-				formats[i],
-				transferSlots.transferEntries.get(formats[i]),
-			),
-			configurable: true,
-			enumerable: true,
-		});
-	}
-	_(transferSlots.transferItems).listIndices = formats.length;
+	const entries = transferSlots.transferEntries;
+	const items = _(transferSlots.transferItems);
+	setIndexedValues(
+		transferSlots.transferItems,
+		items.listIndices,
+		entries.map((entry) => new DataTransferItem(kInternalConstruction, entry)),
+	);
+	items.listIndices = entries.length;
+	setListedFiles(
+		transferSlots.transferFiles,
+		entries.flatMap((entry) =>
+			typeof entry.data === "string" ? [] : [entry.data],
+		),
+	);
 }
 
 const EFFECTS_ALLOWED = new Set([
@@ -3791,7 +4094,7 @@ const EFFECTS_ALLOWED = new Set([
 ]);
 
 interface DataTransferSlots {
-	transferEntries: Map<string, string>;
+	transferEntries: TransferEntry[];
 	transferItems: DataTransferItemList;
 	transferFiles: FileList;
 	transferMode: "readwrite" | "readonly" | "protected";
@@ -3811,12 +4114,12 @@ interface DataTransfer {
 	readonly [internals]: DataTransferSlots;
 }
 
-/** The payload a clipboard event carries: text under format names. */
+/** A transfer's payload: text under format names, and files. */
 class DataTransfer {
 	constructor() {
 		seal(this, new.target, DataTransfer);
 		const slots = _(this);
-		slots.transferEntries = new Map();
+		slots.transferEntries = [];
 		slots.transferItems = new DataTransferItemList(kInternalConstruction, this);
 		slots.transferFiles = new FileList();
 		slots.transferMode = "readwrite";
@@ -3875,7 +4178,14 @@ class DataTransfer {
 		if (slots.transferMode === "protected") {
 			return Object.freeze([]);
 		}
-		return Object.freeze(Array.from(slots.transferEntries.keys()));
+		const entries = slots.transferEntries;
+		const types = entries.flatMap((entry) =>
+			typeof entry.data === "string" ? [entry.type] : [],
+		);
+		if (types.length < entries.length) {
+			types.push("Files");
+		}
+		return Object.freeze(types);
 	}
 
 	get files(): FileList {
@@ -3889,7 +4199,9 @@ class DataTransfer {
 		if (slots.transferMode === "protected") {
 			return "";
 		}
-		return slots.transferEntries.get(normalizeTransferFormat(format)) ?? "";
+		const entries = slots.transferEntries;
+		const found = findTextEntry(entries, normalizeTransferFormat(format));
+		return found < 0 ? "" : entries[found].data as string;
 	}
 
 	setData(format: string, data: string): void {
@@ -3897,7 +4209,13 @@ class DataTransfer {
 		if (slots.transferMode !== "readwrite") {
 			return;
 		}
-		slots.transferEntries.set(normalizeTransferFormat(format), String(data));
+		const entries = slots.transferEntries;
+		const type = normalizeTransferFormat(format);
+		const found = findTextEntry(entries, type);
+		if (found >= 0) {
+			entries.splice(found, 1);
+		}
+		entries.push({type, data: String(data)});
 		syncTransferItems(this);
 	}
 
@@ -3906,11 +4224,12 @@ class DataTransfer {
 		if (slots.transferMode !== "readwrite") {
 			return;
 		}
-		if (format === undefined) {
-			slots.transferEntries.clear();
-		} else {
-			slots.transferEntries.delete(normalizeTransferFormat(format));
-		}
+		const type = format === undefined ? null : normalizeTransferFormat(format);
+		slots.transferEntries = slots.transferEntries.filter(
+			(entry) =>
+				typeof entry.data !== "string" ||
+				(type !== null && entry.type !== type),
+		);
 		syncTransferItems(this);
 	}
 }
@@ -4429,15 +4748,8 @@ interface HoverListenerCount {
 	onChange: (() => void) | null;
 }
 
-const hoverListenerCounters = new WeakMap<Document, HoverListenerCount>();
-
 function getHoverCount(document: Document): HoverListenerCount {
-	let hoverCount = hoverListenerCounters.get(document);
-	if (hoverCount === undefined) {
-		hoverCount = {count: 0, onChange: null};
-		hoverListenerCounters.set(document, hoverCount);
-	}
-	return hoverCount;
+	return _(document).extra.hoverCount ??= {count: 0, onChange: null};
 }
 
 // Returns null when the type is not a hover type or the target belongs to
@@ -5496,15 +5808,6 @@ function isActivationTriggering(
 	}
 }
 
-/** How many activation-triggering dispatches are running, per document. */
-const activationDepths = new WeakMap<Document, number>();
-
-/** Documents the user has ever acted on. */
-const everActivatedDocuments = new WeakSet<Document>();
-
-/** When the user last acted on each document, in performance.now() time. */
-const lastActivations = new WeakMap<Document, number>();
-
 // HTML leaves the transient activation duration to the user agent, "at
 // most a few seconds". Browsers use about five.
 const TRANSIENT_ACTIVATION_MS = 5000;
@@ -5528,7 +5831,7 @@ function getActivationDocument(target: EventTarget): Document | null {
  * user's own clipboard happens inside the gesture or not at all.
  */
 function isUserActive(document: Document): boolean {
-	return (activationDepths.get(document) ?? 0) > 0;
+	return (_(document).extra.activationDepth ?? 0) > 0;
 }
 
 /**
@@ -5539,7 +5842,7 @@ function hasTransientActivation(document: Document): boolean {
 	if (isUserActive(document)) {
 		return true;
 	}
-	const last = lastActivations.get(document);
+	const last = _(document).extra.lastActivation;
 	return last !== undefined &&
 		performance.now() - last <= TRANSIENT_ACTIVATION_MS;
 }
@@ -5561,13 +5864,13 @@ export function dispatchAsUserAgent(
 	if (document === null || !isActivationTriggering(event)) {
 		return dispatchFromOutside(target as EventTarget, event as Event, true);
 	}
-	activationDepths.set(document, (activationDepths.get(document) ?? 0) + 1);
-	everActivatedDocuments.add(document);
-	lastActivations.set(document, performance.now());
+	const extra = _(document).extra;
+	extra.activationDepth = (extra.activationDepth ?? 0) + 1;
+	extra.lastActivation = performance.now();
 	try {
 		return dispatchFromOutside(target as EventTarget, event as Event, true);
 	} finally {
-		activationDepths.set(document, activationDepths.get(document)! - 1);
+		extra.activationDepth--;
 	}
 }
 
@@ -5742,19 +6045,14 @@ function hasActivationBehavior(target: EventTarget): boolean {
 	);
 }
 
-// A hyperlink's activation behavior is to follow it. The one link a
-// terminal document can follow is to a fragment of itself. Any other is an
-// activation target that does nothing.
+// A hyperlink's activation behavior is to follow it.
 function runActivationBehavior(target: EventTarget, event: Event): void {
 	if (
 		(implementsInterface(target, HTMLAnchorElement) ||
 			implementsInterface(target, HTMLAreaElement)) &&
 		hasAttributeByName(target, "href")
 	) {
-		const url = (target as unknown as {href: string}).href;
-		if (isFragmentNavigation(_(target).document, url)) {
-			navigateToFragment(_(target).document, url);
-		}
+		followHyperlink(target, event);
 	} else if (implementsInterface(target, HTMLButtonElement)) {
 		activateButton(target, event);
 	} else if (implementsInterface(target, HTMLInputElement)) {
@@ -5764,6 +6062,51 @@ function runActivationBehavior(target: EventTarget, event: Event): void {
 	} else if (isDetailsSummary(target)) {
 		toggleTheDetails(target);
 	}
+}
+
+// HTML's follow the hyperlink, and download the hyperlink for one with a
+// download attribute, which fires its navigate event and goes no further.
+// A link to another navigable than its document's goes nowhere.
+function followHyperlink(link: Element, event: Event): void {
+	const document = _(link).document;
+	const window = _(document).extra.defaultView as Window | null;
+	if (window === null || !link.isConnected || !targetsSelf(link, window)) {
+		return;
+	}
+	const url = parseURL(
+		getAttributeValue(link, "href")!,
+		getDocumentBaseURL(document),
+	);
+	if (url === null) {
+		return;
+	}
+	const userInvolvement = event.isTrusted ? "activation" : "none";
+	const filename = getAttributeValue(link, "download");
+	if (filename === null) {
+		navigateDocument(document, url, {userInvolvement, sourceElement: link});
+		return;
+	}
+	const navigation = getNavigation(window);
+	const destination = createDestination(url, null, {value: undefined}, false);
+	if (
+		fireNavigateEvent(navigation, "push", destination, {
+			userInvolvement,
+			sourceElement: link,
+			downloadRequest: filename,
+		})
+	) {
+		_(navigation).ongoingEvent = null;
+	}
+}
+
+// Whether a link's or a form's target names the navigable of its own
+// document: none, _self, or _top and _parent in a document no frame shows.
+function targetsSelf(element: Element, window: Window): boolean {
+	const target = toASCIILowercase(getAttributeValue(element, "target") ?? "");
+	return target === "" ||
+		target === "_self" ||
+		((target === "_top" || target === "_parent") &&
+			_(window).parentWindow === null);
 }
 
 /** Input types that are buttons rather than text controls. */
@@ -6219,17 +6562,14 @@ function callInRealm<Args extends unknown[]>(
 // unhandled one goes to the engine rendering the document, which owns
 // the terminal the runtime would otherwise print over. With no engine,
 // the runtime reports it.
-// The windows firing an error event now. An exception raised while one
-// is, by an error listener itself, skips the event, as HTML's "in error
-// reporting mode" has it, rather than firing another without end.
-const reportingWindows = new WeakSet<object>();
-
 export function reportError(
 	error: unknown,
 	document: Document | null = null,
 ): void {
-	const view = document === null ? null : _(document).extra.defaultView;
-	if (view !== null && !reportingWindows.has(view)) {
+	const view = document === null
+		? null
+		: _(document).extra.defaultView as Window | null;
+	if (view !== null && _(view).reportingError !== true) {
 		const event = constructInternal(() =>
 			new ErrorEvent("error", {
 				cancelable: true,
@@ -6237,11 +6577,11 @@ export function reportError(
 				error,
 			}),
 		);
-		reportingWindows.add(view);
+		_(view).reportingError = true;
 		try {
-			dispatch(view as unknown as EventTarget, event);
+			dispatch(view, event);
 		} finally {
-			reportingWindows.delete(view);
+			_(view).reportingError = false;
 		}
 		if (event.defaultPrevented) {
 			return;
@@ -6297,14 +6637,9 @@ interface LiveCollection {
 // (a form's controls, for example) registers in the document's
 // documentWideLists.
 
-// A collection stays registered for its owner's lifetime, so this only
-// grows. A change in a document that never registered a collection skips
-// the ancestor climb.
-const heldListDocuments = new WeakSet<Document>();
-
 function registerLiveCollection(collection: LiveCollection, owner: Node): void {
 	const ownerSlots = _(owner);
-	heldListDocuments.add(ownerSlots.document);
+	_(ownerSlots.document).extra.heldLists = true;
 	const held = ownerSlots.liveLists;
 	if (held === null) {
 		ownerSlots.liveLists = new Set([collection]);
@@ -6344,7 +6679,7 @@ function runChildrenChangedSteps(
 	added: boolean,
 ): void {
 	const pointSlots = _(point);
-	if (heldListDocuments.has(pointSlots.document)) {
+	if (_(pointSlots.document).extra.heldLists === true) {
 		for (let nodeSlots: Slots<Node> | null = getSlots(point);
 			nodeSlots !== null;
 			nodeSlots = nodeSlots.parent) {
@@ -6385,7 +6720,7 @@ function syncAttributeCollections(element: Element, localName: string): void {
 			_(list)._sync();
 		}
 	}
-	if (heldListDocuments.has(elementSlots.document)) {
+	if (_(elementSlots.document).extra.heldLists === true) {
 		for (let nodeSlots: Slots<Node> | null = getSlots(element);
 			nodeSlots !== null;
 			nodeSlots = nodeSlots.parent) {
@@ -6463,6 +6798,16 @@ export interface NodeSlots extends EventTargetSlots {
 	children: HTMLCollection | null;
 	// Set on the first collection a node is asked for by kind and name.
 	collectionCaches?: Map<string, HTMLCollection>;
+	// The live ranges whose boundaries are in the tree this node is the
+	// root of. Both boundaries always share one root, because the boundary
+	// setters collapse the other point on a root change, as the spec says.
+	// The ranges go with the root when it is unreachable. They are held
+	// strongly, which keeps garbage collection unobservable where a WeakRef
+	// would expose it.
+	liveRanges: Set<Range> | null;
+	// The node iterators of the tree, held as the ranges are and re-homed
+	// by the same moves.
+	nodeIterators: Set<NodeIterator> | null;
 }
 
 export interface Node {
@@ -7221,9 +7566,6 @@ function preInsert(node: Node, parent: Node, child: Node | null): Node {
 	return node;
 }
 
-// Held the same way as the ranges below and re-homed by the same moves.
-const nodeIteratorsByRoot = new WeakMap<Node, Set<NodeIterator>>();
-
 // Leaves the tree as remove-then-insert would, but as one primitive: no
 // removing or insertion steps run, no disconnected or connected callbacks
 // fire, and everything the node carries (shadow trees, selection, focus,
@@ -7262,8 +7604,8 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	const nodeSlots = _(node);
 	const oldParent = getObject(nodeSlots.parent) as Node;
 	liveRangePreRemoveSteps(node);
-	const iterators = nodeIteratorsByRoot.get(getRoot(node));
-	if (iterators !== undefined) {
+	const iterators = _(getRoot(node)).nodeIterators;
+	if (iterators !== null) {
 		for (const iterator of iterators) {
 			preRemoveFromIterator(iterator, node);
 		}
@@ -7308,7 +7650,7 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 		) {
 			_(moved).treeRoot = newRoot;
 		}
-		if (iterators !== undefined) {
+		if (iterators !== null) {
 			for (const iterator of iterators) {
 				if (isInclusiveAncestor(node, _(iterator).root)) {
 					iterators.delete(iterator);
@@ -7363,13 +7705,6 @@ function moveNode(node: Node, newParent: Node, child: Node | null): void {
 	queueTreeMutationRecord(newParent, [node], [], newPreviousSibling, child);
 }
 
-// Both boundaries always share one root, because the boundary setters
-// collapse the other point on a root change, as the spec says. The root
-// is held weakly, so an unreachable tree takes its ranges with it. The
-// ranges are held strongly, which keeps garbage collection unobservable
-// where a WeakRef would expose it.
-const liveRangesByRoot = new WeakMap<Node, Set<Range>>();
-
 function insertNode(
 	node: Node,
 	parent: Node,
@@ -7400,23 +7735,24 @@ function insertNode(
 	for (const inserted of nodes) {
 		// The inserted node was its own tree's root. Everything registered
 		// under it now belongs to the tree it is joining.
-		const carriedRanges = liveRangesByRoot.get(inserted);
-		const carriedIterators = nodeIteratorsByRoot.get(inserted);
-		if (carriedRanges !== undefined || carriedIterators !== undefined) {
+		const insertedSlots = getSlots(inserted);
+		const carriedRanges = insertedSlots.liveRanges;
+		const carriedIterators = insertedSlots.nodeIterators;
+		if (carriedRanges !== null || carriedIterators !== null) {
 			const newRoot = getRoot(parent);
-			if (carriedRanges !== undefined && inserted !== newRoot) {
-				liveRangesByRoot.delete(inserted);
-				const set = liveRangesByRoot.get(newRoot);
-				if (set === undefined) {
-					liveRangesByRoot.set(newRoot, carriedRanges);
+			if (carriedRanges !== null && inserted !== newRoot) {
+				insertedSlots.liveRanges = null;
+				const set = _(newRoot).liveRanges;
+				if (set === null) {
+					_(newRoot).liveRanges = carriedRanges;
 				} else {
 					for (const range of carriedRanges) {
 						set.add(range);
 					}
 				}
 			}
-			if (carriedIterators !== undefined && inserted !== newRoot) {
-				nodeIteratorsByRoot.delete(inserted);
+			if (carriedIterators !== null && inserted !== newRoot) {
+				insertedSlots.nodeIterators = null;
 				for (const iterator of carriedIterators) {
 					registerNodeIterator(newRoot, iterator);
 				}
@@ -7427,7 +7763,6 @@ function insertNode(
 		// The inserted tree's root is now the parent's. The walk follows the
 		// light tree only. A shadow tree under it keeps its own root.
 		const treeRoot = parentSlots.treeRoot;
-		const insertedSlots = getSlots(inserted);
 		for (
 			let joined: Slots<Node> | null = insertedSlots;
 			joined !== null;
@@ -7696,8 +8031,8 @@ function removeNode(node: Node, suppressObservers = false): void {
 		return;
 	}
 	liveRangePreRemoveSteps(node);
-	const iterators = nodeIteratorsByRoot.get(getRoot(node));
-	if (iterators !== undefined) {
+	const iterators = _(getRoot(node)).nodeIterators;
+	if (iterators !== null) {
 		for (const iterator of iterators) {
 			preRemoveFromIterator(iterator, node);
 			// The removal makes `node` a root. An iterator rooted inside the
@@ -7752,11 +8087,11 @@ function removeNode(node: Node, suppressObservers = false): void {
 			if (descendant === active) {
 				documentSlots.extra.activeElement = null;
 				// Tab carries on from where the focused element was.
-				focusStartingPoints.set(document, {
+				documentSlots.extra.focusStartingPoint = {
 					tabIndex: (active as HTMLElement).tabIndex ?? 0,
 					parent,
 					next: oldNextSibling,
-				});
+				};
 				// The ancestors it left were :focus-within, and no longer are.
 				const left = implementsInterface(parent, ShadowRoot)
 					? (_(parent).extra.host as Element)
@@ -8308,7 +8643,7 @@ function normalizeObserverOptions(
  * document. It lives as long as the document does.
  */
 export function releaseRemovedNodes(document: globalThis.Document): void {
-	const observer = engineObservers.get(document as unknown as Document);
+	const observer = _(document as unknown as Document).extra.engineObserver;
 	if (observer === undefined) {
 		return;
 	}
@@ -8335,7 +8670,7 @@ export function reobserveShadowRoot(root: globalThis.ShadowRoot): void {
 }
 
 function isWatchedByDocument(node: Node, document: Document): boolean {
-	const observer = engineObservers.get(document);
+	const observer = _(document).extra.engineObserver;
 	return (_(node).registeredObservers ?? []).some((registered) =>
 		registered.observer === observer && registered.source === null,
 	);
@@ -9108,7 +9443,9 @@ function createStaticNodeList(nodes: Node[]): NodeList {
 	return list;
 }
 
-// Keyed by kind and name, so identity is stable across calls.
+// Keyed by kind and name, so identity is stable across calls. Document
+// collections use their bare kind, which has no colon; the other keys
+// start with a prefix and a colon.
 function getCollectionCache(node: Node): Map<string, HTMLCollection> {
 	const slots = _(node);
 	let cache = slots.collectionCaches;
@@ -10684,21 +11021,54 @@ export interface ElementSlots extends NodeSlots {
 	pseudoName: string | null;
 	_qualifiedName: Step<Element["_qualifiedName"]>;
 	_attributeChangeSteps: Step<Element["_attributeChangeSteps"]>;
+	// The steps of UA controls and replaced elements. The family record
+	// installs a dispatcher for each on every element, so a method step is
+	// always a function: called on a class that does not define it, it
+	// returns undefined. The getter step _uaValueText reads undefined there.
+	_ensureUAShadowTree?: () => void;
+	_syncUAShadowTree?: () => void;
+	_uaSelection?: () => {start: number; end: number; direction: string};
+	_setUASelection?: (start: number, end: number, direction?: string) => void;
+	_uaSelectionRange?: () => globalThis.Range | null;
+	_resetControl?: () => void;
+	readonly _uaValueText?: globalThis.Text | null;
 	// Set on the first selectionchange a text control schedules.
 	textSelectionChangeScheduled?: boolean;
+	// What the element matched when it was last reported. Restyling for a
+	// state is a subtree and its later siblings, so only a state that really
+	// changed is reported. Most elements match none of these, and an
+	// attribute change on them reports nothing.
+	reportedControlStates: number;
+	// Whether the user has edited the text control since the last change
+	// event. Leaving one fires change, before blur, as a browser does. A
+	// value set by script is not the user's edit, and clears the mark.
+	editedSinceChange: boolean;
+	// HTML's user validity: set once the user has committed a change to the
+	// control or tried to submit its form, cleared when the form resets. It
+	// is what :user-valid and :user-invalid wait for.
+	userValidity: boolean;
+	customValidityMessage: string;
+	validityState: ValidityState | null;
+	// HTML gives these slots to every HTML element. An element that was
+	// never a popover has no state to store, and the state it would have is
+	// the initial one.
+	popoverState: PopoverState | null;
+	// A popovertarget or commandfor set to an ELEMENT rather than named by
+	// id. The attribute cannot hold an element, so the reference is stored
+	// separately. The getter returns it only while the element is in a tree
+	// the invoker composes into.
+	attributeElements: Map<string, Element> | null;
+	// The offsets of a box that has been scrolled.
+	scrollOffsets: {left: number; top: number} | null;
 }
 
 export interface Element {
 	readonly [internals]: ElementSlots;
-
-	// The ChildNode mixin's remove, installed from the tables. A select
-	// overloads it, which a declared property cannot allow.
-	// eslint-disable-next-line @b9g/merged-slots-only
-	remove(): void;
 	get ownerDocument(): Document;
 }
 
 export class Element extends Node implements globalThis.Element {
+	declare remove: globalThis.Element["remove"];
 	declare after: globalThis.Element["after"];
 	declare before: globalThis.Element["before"];
 	declare replaceWith: globalThis.Element["replaceWith"];
@@ -11623,6 +11993,16 @@ const RARE_FIELDS: ReadonlyArray<readonly [string, unknown]> = [
 	["reactionQueue", null],
 	["pseudoElements", null],
 	["pseudoName", null],
+	["reportedControlStates", 0],
+	["editedSinceChange", false],
+	["userValidity", false],
+	["customValidityMessage", ""],
+	["validityState", null],
+	["popoverState", null],
+	["attributeElements", null],
+	["scrollOffsets", null],
+	["liveRanges", null],
+	["nodeIterators", null],
 ];
 
 function createRareData(): Record<string, unknown> {
@@ -11654,12 +12034,6 @@ for (const [key, fallback] of RARE_FIELDS) {
 	});
 }
 
-/** The scroll offsets of every box that has been scrolled. */
-const scrollOffsets = new WeakMap<
-	globalThis.Element,
-	{left: number; top: number}
->();
-
 /**
  * How far a box is scrolled, in cells: what layout and paint offset its
  * content by. scrollTop and scrollLeft report it in CSS pixels.
@@ -11668,7 +12042,7 @@ export function getScrollOffset(
 	element: globalThis.Element,
 	axis: "left" | "top",
 ): number {
-	return scrollOffsets.get(element as unknown as Element)?.[axis] ?? 0;
+	return _(element as unknown as Element).scrollOffsets?.[axis] ?? 0;
 }
 
 Object.defineProperty(Element.prototype, Symbol.toStringTag, {
@@ -11725,7 +12099,7 @@ Object.defineProperties(Element.prototype, {
 			if (isDocumentScroller(this)) {
 				return 0;
 			}
-			const left = scrollOffsets.get(this)?.left ?? 0;
+			const left = _(this).scrollOffsets?.left ?? 0;
 			return getAttachedDocument(this) === undefined
 				? left
 				: pxFromCells(left, false, this);
@@ -11744,7 +12118,7 @@ Object.defineProperties(Element.prototype, {
 			if (attached) {
 				return pxFromCells(_(attached).extra.framebuffer.scrollTop, true, this);
 			}
-			const top = scrollOffsets.get(this)?.top ?? 0;
+			const top = _(this).scrollOffsets?.top ?? 0;
 			return getAttachedDocument(this) === undefined
 				? top
 				: pxFromCells(top, true, this);
@@ -12770,9 +13144,14 @@ function runFocusingSteps(element: HTMLElement): void {
 	// shadow root is focusable when its host chain reaches the document.
 	if (isFocusableArea(element) && element.isConnected) {
 		_(document).extra.activeElement = element;
+		const window = _(document).extra.defaultView as Window | null;
+		const navigation = window === null ? undefined : _(window).navigation;
+		if (navigation !== undefined && _(navigation).ongoingEvent !== null) {
+			_(navigation).focusChanged = true;
+		}
 		// Focusing the body moves nothing a Tab would start from.
 		if (element !== document.body) {
-			focusStartingPoints.delete(document);
+			_(document).extra.focusStartingPoint = undefined;
 		}
 		// Focus in a frame's document is focus in the frame, in the document
 		// the frame is in, as HTML's focus chain runs up through the frames.
@@ -15413,24 +15792,33 @@ Object.defineProperty(HTMLTemplateElement.prototype, Symbol.toStringTag, {
 
 builtinRegistry.define(HTML_NAMESPACE, "template", HTMLTemplateElement);
 
-function parseURL(value: string, base: string): string | null {
+function parseURL(value: string, base?: string): URL | null {
 	try {
-		return new URL(value, base).href;
+		return new URL(value, base);
 	} catch (_err) {
 		return null;
 	}
 }
 
-// A URL attribute as its reflecting property reads it: resolved against
-// the document's base URL, the trimmed text when that fails, and "" when
-// the attribute is absent.
+// A URL attribute resolved against the document's base URL, or null when
+// the attribute is absent or does not parse.
+function getAttributeURL(element: Element, attribute: string): URL | null {
+	const value = getAttributeValue(element, attribute);
+	return value === null
+		? null
+		: parseURL(
+			trimASCIIWhitespace(value),
+			getDocumentBaseURL(_(element).document),
+		);
+}
+
+// A URL attribute as its reflecting property reads it: the resolved URL,
+// the trimmed text when that fails, and "" when the attribute is absent.
 function getURLAttribute(element: Element, attribute: string): string {
 	const value = getAttributeValue(element, attribute);
-	if (value === null) {
-		return "";
-	}
-	const trimmed = trimASCIIWhitespace(value);
-	return parseURL(trimmed, getDocumentBaseURL(_(element).document)) ?? trimmed;
+	return value === null
+		? ""
+		: getAttributeURL(element, attribute)?.href ?? trimASCIIWhitespace(value);
 }
 
 // The href of the first base element that has one, resolved against the
@@ -15453,7 +15841,7 @@ function getDocumentBaseURL(document: Document): string {
 		if (href === null) {
 			continue;
 		}
-		return parseURL(href, fallback) ?? fallback;
+		return parseURL(href, fallback)?.href ?? fallback;
 	}
 	return fallback;
 }
@@ -15718,7 +16106,7 @@ function createHyperlinkPart(
 ): PropertyDescriptor {
 	return {
 		get(this: Element): string {
-			const url = getHyperlinkURL(this);
+			const url = getAttributeURL(this, "href");
 			return url === null ? absent : read(url);
 		},
 		set(this: Element, value: string): void {
@@ -15742,7 +16130,7 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 	},
 	origin: {
 		get(this: Element): string {
-			const url = getHyperlinkURL(this);
+			const url = getAttributeURL(this, "href");
 			return url === null ? "" : url.origin;
 		},
 		enumerable: true,
@@ -15821,21 +16209,8 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 	},
 };
 
-function getHyperlinkURL(element: Element): URL | null {
-	const value = getAttributeValue(element, "href");
-	if (value === null) {
-		return null;
-	}
-	const trimmed = trimASCIIWhitespace(value);
-	try {
-		return new URL(trimmed, getDocumentBaseURL(_(element).document));
-	} catch (_err) {
-		return null;
-	}
-}
-
 function writeHyperlink(element: Element, change: (url: URL) => void): void {
-	const url = getHyperlinkURL(element);
+	const url = getAttributeURL(element, "href");
 	if (url === null) {
 		return;
 	}
@@ -15884,7 +16259,7 @@ class HTMLBaseElement extends HTMLElement {
 		if (value === null) {
 			return fallback;
 		}
-		return parseURL(value, fallback) ?? fallback;
+		return parseURL(value, fallback)?.href ?? fallback;
 	}
 
 	set href(value: string) {
@@ -16885,7 +17260,7 @@ function focusDialog(dialog: HTMLDialogElement): void {
 	}
 	if (isModalDialog(dialog)) {
 		_(dialogSlots.document).extra.activeElement = dialog;
-		focusStartingPoints.delete(dialogSlots.document);
+		_(dialogSlots.document).extra.focusStartingPoint = undefined;
 	}
 }
 
@@ -17387,14 +17762,18 @@ class HTMLFontElement extends HTMLElement {
 	declare size: globalThis.HTMLFontElement["size"];
 }
 
-// Submission navigates, and this DOM does not navigate. `submit()` runs
-// the steps up to the navigation and stops. `requestSubmit()` fires the
-// submit event those steps fire first. `reset()` fires its event and
-// restores every control the form owns to its default.
+// Submission navigates. `submit()` runs the steps up to the navigation,
+// and `requestSubmit()` fires the submit event those steps fire first.
+// `reset()` fires its event and restores every control the form owns to
+// its default.
 interface HTMLFormElementExtra extends NodeExtra {
 	elements: HTMLFormControlsCollection | null;
 	firingReset: boolean;
 	constructingEntryList: boolean;
+	listed?: ListedElements;
+	// The submission whose navigation a task is to run, which a later
+	// submission replaces.
+	plannedNavigation?: object;
 }
 
 interface HTMLFormElementSlots extends HTMLElementSlots {
@@ -17532,7 +17911,6 @@ interface ListedElements {
 	version: number;
 	controls: Element[];
 }
-const listedElements = new WeakMap<HTMLFormElement, ListedElements>();
 
 function countListedChange(): void {
 	listedVersion++;
@@ -17545,12 +17923,12 @@ function noteListedChange(element: Element): void {
 }
 
 function getListedElements(form: HTMLFormElement): Element[] {
-	const known = listedElements.get(form);
+	const known = _(form).extra.listed;
 	if (known !== undefined && known.version === listedVersion) {
 		return [...known.controls];
 	}
 	const controls = findListedElements(form);
-	listedElements.set(form, {version: listedVersion, controls});
+	_(form).extra.listed = {version: listedVersion, controls};
 	return [...controls];
 }
 
@@ -17591,8 +17969,7 @@ function isSubmitButton(element: Element): boolean {
 
 // Fires the submit event unless the caller was `submit()`, which the
 // spec defines as skipping it, and then builds the entry list the
-// submission would send. The navigation that would send it is the one
-// step this DOM does not have.
+// submission sends and plans its navigation.
 function submitForm(
 	form: HTMLFormElement,
 	submitter: Element | null,
@@ -17653,7 +18030,65 @@ function submitForm(
 		}
 		return;
 	}
-	constructEntryList(form, submitter);
+	const entries = constructEntryList(form, submitter);
+	if (entries !== null) {
+		planFormNavigation(form, submitter, method, entries);
+	}
+}
+
+// HTML's form submission from the action on. A GET form's entries become
+// the action URL's query and a POST form's are the entry list its
+// navigate event reports. The navigation runs in a task.
+function planFormNavigation(
+	form: HTMLFormElement,
+	submitter: Element | null,
+	method: string,
+	entries: FormDataEntry[],
+): void {
+	const document = _(form).document;
+	const window = _(document).extra.defaultView as Window | null;
+	const chooser =
+		submitter !== null &&
+		hasAttributeByName(submitter, "formtarget")
+			? submitter
+			: form;
+	if (window === null || !targetsSelf(chooser, window)) {
+		return;
+	}
+	const action =
+		submitter !== null &&
+		hasAttributeByName(submitter, "formaction")
+			? getAttributeValue(submitter, "formaction")!
+			: getAttributeValue(form, "action") ?? "";
+	const url = parseURL(
+		action === "" ? _(document).extra.documentURL : action,
+		getDocumentBaseURL(document),
+	);
+	if (url === null) {
+		return;
+	}
+	const post = method === "post" && /^https?:$/.test(url.protocol);
+	if (!post) {
+		url.search = new URLSearchParams(
+			entries.map(([name, value]) => [
+				name,
+				typeof value === "string" ? value : value.name,
+			]),
+		).toString();
+	}
+	const params: NavigateParams = {
+		historyHandling: "push",
+		formData: post ? entries : null,
+		userInvolvement: isUserActive(document) ? "activation" : "none",
+		sourceElement: submitter ?? form,
+	};
+	const planned = _(form).extra.plannedNavigation = {};
+	setTimeout(() => {
+		if (_(form).extra.plannedNavigation === planned) {
+			_(form).extra.plannedNavigation = undefined;
+			navigateDocument(document, url, params);
+		}
+	}, 0);
 }
 
 // The input types whose Enter would submit a form of one field. A form
@@ -17700,13 +18135,12 @@ function implicitlySubmit(input: HTMLInputElement): void {
 }
 
 function resetControl(control: Element): void {
-	editedSinceChange.delete(control);
+	_(control).editedSinceChange = false;
 	setUserValidity(control, false);
-	const slots = _(control) as unknown as {_resetControl?: () => void};
-	if (typeof slots._resetControl === "function") {
-		slots._resetControl();
-	} else if (isFormAssociatedCustom(control)) {
+	if (isFormAssociatedCustom(control)) {
 		enqueueCallbackReaction(control, "formResetCallback", []);
+	} else {
+		_(control)._resetControl?.();
 	}
 }
 
@@ -18823,6 +19257,7 @@ function discardFrame(frame: HTMLIFrameElement): void {
 	}
 	if (implementsInterface(window, Window)) {
 		clearWindowTimers(window);
+		_(window).discarded = true;
 		_(window).parentWindow = null;
 		_(window).frameOwner = null;
 		forgetClasses();
@@ -19601,14 +20036,16 @@ export interface HTMLInputElementExtra extends NodeExtra {
 	placeholderText: globalThis.Text | null;
 	glyphText: globalThis.Text | null;
 	sliderFill: globalThis.HTMLElement | null;
+	// A slider's value when a press on it began, until the release.
+	rangeDragStart?: string;
 	// A typed character arrives as insertText. A paste arrives as
 	// insertFromPaste, and a single-line input strips its line breaks (HTML
 	// value sanitization). A toggle accepts neither, since it holds no text.
-	onBeforeInput: (event: InputEvent) => void;
+	onBeforeInput: (input: HTMLInputElement, event: InputEvent) => void;
 	// A checkbox or radio activates on Space or Enter and never accepts typed
-	// text. Home and End move to the ends of the whole value, since an input
-	// has no visual lines. Everything else is the shared text control logic.
-	onKeydown: (event: KeyboardEvent) => void;
+	// text. Every other key is the shared text control logic, where an
+	// input's line for Home and End is its whole value.
+	onKeydown: (input: HTMLInputElement, event: KeyboardEvent) => void;
 }
 
 export interface HTMLInputElementSlots extends HTMLElementSlots {
@@ -19684,147 +20121,8 @@ export class HTMLInputElement extends HTMLElement {
 		slots.extra.placeholderText = null;
 		slots.extra.glyphText = null;
 		slots.extra.sliderFill = null;
-		slots.extra.onBeforeInput = (event: InputEvent): void => {
-			if (event.defaultPrevented || event.data == null) {
-				return;
-			}
-			if (getInputKind(this) !== "textControl") {
-				return;
-			}
-			if (event.inputType === "insertText") {
-				event.preventDefault();
-				insertTextControlText(this, event.data, "insertText");
-				return;
-			}
-			if (event.inputType !== "insertFromPaste") {
-				return;
-			}
-			event.preventDefault();
-			insertTextControlText(
-				this,
-				event.data.replace(/[\r\n]+/g, ""),
-				"insertFromPaste",
-			);
-		};
-		slots.extra.onKeydown = (event: KeyboardEvent): void => {
-			if (event.defaultPrevented) {
-				return;
-			}
-			const {key, shiftKey, ctrlKey, altKey} = event;
-
-			if (this.type === "checkbox" || this.type === "radio") {
-			// Either key activates the control, and activation is what toggles
-			// it: the pre-activation behavior flips checkedness, the activation
-			// behavior fires input then change, and a canceled click restores
-			// checkedness.
-			//
-			// Enter toggles here. In a browser Enter on a checkbox submits the
-			// form the control belongs to, and does nothing outside a form, so
-			// the key would be inert on most focused checkboxes. It toggles for
-			// the same reason the readline chords edit.
-				if (key === " " || key === "Enter") {
-					this.click();
-					return;
-				}
-				// The arrows move to the previous or next radio of the group, as
-				// a browser's do, checking it and wrapping at the ends.
-				const step = key === "ArrowUp" || key === "ArrowLeft"
-					? -1
-					: key === "ArrowDown" || key === "ArrowRight" ? 1 : 0;
-				if (this.type === "radio" && step !== 0) {
-					event.preventDefault();
-					const group = getRadioGroup(this).filter(
-						(radio) => radio === this || !isActuallyDisabled(radio),
-					);
-					const next = group[(group.indexOf(this) + step + group.length) %
-						group.length];
-					if (next !== this) {
-						next.focus();
-						next.click();
-					}
-				}
-				return;
-			}
-
-			// The arrows move a slider's thumb a step, PageUp and PageDown a
-			// tenth of its range, and Home and End to its ends, as a browser's
-			// do. Each move is a user edit, so it fires input then change.
-			if (this.type === "range") {
-				const next = getRangeKeyValue(this, key);
-				if (next !== null) {
-					event.preventDefault();
-					if (next !== this.value) {
-						this.value = next;
-						dispatch(
-							this,
-							constructInternal(() =>
-								new Event("input", {bubbles: true, composed: true}),
-							),
-						);
-						dispatchUserChange(this);
-					}
-				}
-				return;
-			}
-
-			// ArrowUp and ArrowDown step a number input, replacing the up/down
-			// buttons a browser draws. A terminal has none, and every hand is
-			// already on the keyboard. Stepping is a user edit, so it fires
-			// input then change, as pressing those buttons does.
-			if (
-				this.type === "number" && (key === "ArrowUp" || key === "ArrowDown")
-			) {
-				const stepped = getSteppedValue(this, key === "ArrowUp" ? 1 : -1);
-				if (stepped !== null) {
-					applyTextControlEdit(
-						this,
-						createCollapsedEdit(stepped, stepped.length),
-					);
-					editedSinceChange.delete(this);
-					dispatchUserChange(this);
-				}
-				return;
-			}
-
-			if (key === "Enter" && getInputKind(this) === "textControl") {
-				implicitlySubmit(this);
-				return;
-			}
-
-			const value = slots._uaValue;
-			const {start, end, direction} = getSelectionRecord(this)!;
-			const anchor = direction === "backward" ? end : start;
-			const caret = direction === "backward" ? start : end;
-
-			let result: TextControlEditResult | null;
-			if (key === "Home" || (ctrlKey && key === "a")) {
-				result = moveTextControlSelection(value, anchor, 0, shiftKey);
-			} else if (key === "End" || (ctrlKey && key === "e")) {
-				result = moveTextControlSelection(
-					value,
-					anchor,
-					value.length,
-					shiftKey,
-				);
-			} else if (ctrlKey && key === "k") {
-				result = createCollapsedEdit(value.slice(0, caret), caret);
-			} else if (ctrlKey && key === "u") {
-				result = createCollapsedEdit(value.slice(caret), 0);
-			} else {
-				result = applySharedTextControlEdit(
-					this,
-					key,
-					shiftKey,
-					ctrlKey,
-					altKey,
-				);
-			}
-			if (result) {
-				applyTextControlEdit(this, result, {
-					inputType: getKeyInputType(key, ctrlKey, altKey),
-				});
-			}
-		};
+		slots.extra.onBeforeInput = handleInputBeforeInput;
+		slots.extra.onKeydown = handleInputKeydown;
 	}
 
 	get form(): HTMLFormElement | null {
@@ -19875,14 +20173,16 @@ export class HTMLInputElement extends HTMLElement {
 				return getAttributeValue(this, "value") ?? "";
 			case "on":
 				return getAttributeValue(this, "value") ?? "on";
-			default:
-				return "";
+			default: {
+				const file = slots.extra.files?.item(0);
+				return file == null ? "" : `C:\\fakepath\\${file.name}`;
+			}
 		}
 	}
 
 	set value(value: string) {
 		const string = value === null ? "" : String(value);
-		editedSinceChange.delete(this);
+		_(this).editedSinceChange = false;
 		const slots = _(this);
 		switch (getInputValueMode(this.type)) {
 			case "value": {
@@ -19903,6 +20203,7 @@ export class HTMLInputElement extends HTMLElement {
 						"A file input's value can only be emptied",
 					);
 				}
+				slots.extra.files = null;
 				break;
 			default:
 				setAttributeByName(this, "value", string);
@@ -20332,6 +20633,7 @@ export class HTMLInputElement extends HTMLElement {
 		slots.extra.checked = hasAttributeByName(getOwner(this), "checked");
 		slots.extra.dirtyChecked = false;
 		slots.extra.indeterminate = false;
+		slots.extra.files = null;
 		syncUAShadowTree(getOwner(this));
 	}
 
@@ -20440,6 +20742,129 @@ export class HTMLInputElement extends HTMLElement {
 }
 
 declareExtraSlots(HTMLInputElement);
+
+function handleInputBeforeInput(
+	input: HTMLInputElement,
+	event: InputEvent,
+): void {
+	if (event.defaultPrevented || event.data == null) {
+		return;
+	}
+	if (getInputKind(input) !== "textControl") {
+		return;
+	}
+	if (event.inputType === "insertText") {
+		event.preventDefault();
+		insertTextControlText(input, event.data, "insertText");
+		return;
+	}
+	if (event.inputType !== "insertFromPaste") {
+		return;
+	}
+	event.preventDefault();
+	insertTextControlText(
+		input,
+		event.data.replace(/[\r\n]+/g, ""),
+		"insertFromPaste",
+	);
+}
+
+function handleInputKeydown(
+	input: HTMLInputElement,
+	event: KeyboardEvent,
+): void {
+	if (event.defaultPrevented) {
+		return;
+	}
+	const {key, shiftKey, ctrlKey, altKey} = event;
+
+	if (input.type === "checkbox" || input.type === "radio") {
+		// Either key activates the control, and activation is what toggles
+		// it: the pre-activation behavior flips checkedness, the activation
+		// behavior fires input then change, and a canceled click restores
+		// checkedness.
+		//
+		// Enter toggles here. In a browser Enter on a checkbox submits the
+		// form the control belongs to, and does nothing outside a form, so
+		// the key would be inert on most focused checkboxes. It toggles for
+		// the same reason the readline chords edit.
+		if (key === " " || key === "Enter") {
+			input.click();
+			return;
+		}
+		// The arrows move to the previous or next radio of the group, as
+		// a browser's do, checking it and wrapping at the ends.
+		const step = key === "ArrowUp" || key === "ArrowLeft"
+			? -1
+			: key === "ArrowDown" || key === "ArrowRight" ? 1 : 0;
+		if (input.type === "radio" && step !== 0) {
+			event.preventDefault();
+			const group = getRadioGroup(input).filter(
+				(radio) => radio === input || !isActuallyDisabled(radio),
+			);
+			const next = group[(group.indexOf(input) + step + group.length) %
+				group.length];
+			if (next !== input) {
+				next.focus();
+				next.click();
+			}
+		}
+		return;
+	}
+
+	// The arrows move a slider's thumb a step, PageUp and PageDown a
+	// tenth of its range, and Home and End to its ends, as a browser's
+	// do. Each move is a user edit, so it fires input then change.
+	if (input.type === "range") {
+		const next = getRangeKeyValue(input, key);
+		if (next !== null) {
+			event.preventDefault();
+			if (next !== input.value) {
+				input.value = next;
+				dispatch(
+					input,
+					constructInternal(() =>
+						new Event("input", {bubbles: true, composed: true}),
+					),
+				);
+				dispatchUserChange(input);
+			}
+		}
+		return;
+	}
+
+	// ArrowUp and ArrowDown step a number input, replacing the up/down
+	// buttons a browser draws. A terminal has none, and every hand is
+	// already on the keyboard. Stepping is a user edit, so it fires
+	// input then change, as pressing those buttons does.
+	if (input.type === "number" && (key === "ArrowUp" || key === "ArrowDown")) {
+		const stepped = getSteppedValue(input, key === "ArrowUp" ? 1 : -1);
+		if (stepped !== null) {
+			applyTextControlEdit(input, createCollapsedEdit(stepped, stepped.length));
+			_(input).editedSinceChange = false;
+			dispatchUserChange(input);
+		}
+		return;
+	}
+
+	if (key === "Enter" && getInputKind(input) === "textControl") {
+		implicitlySubmit(input);
+		return;
+	}
+
+	const result = applySharedTextControlEdit(
+		input,
+		key,
+		shiftKey,
+		ctrlKey,
+		altKey,
+	);
+	if (result) {
+		applyTextControlEdit(input, result, {
+			inputType: getKeyInputType(key, ctrlKey, altKey),
+		});
+	}
+}
 
 // A number input's text can be any prefix of a valid floating-point
 // number and nothing else. An insertion that would break the grammar is
@@ -20890,8 +21315,6 @@ function buildSlider(
 	return track.firstChild as globalThis.HTMLElement;
 }
 
-const rangeDragStarts = new WeakMap<Element, string>();
-
 /**
  * A press at column `x` on a slider, or a drag that press began, moves
  * its thumb there, to the nearest value its step allows, and fires input
@@ -20918,7 +21341,7 @@ export function moveRangeThumb(
 		return false;
 	}
 	if (press) {
-		rangeDragStarts.set(element, element.value);
+		_(element).extra.rangeDragStart = element.value;
 	}
 	// The thumb takes a cell of the track, so it has the track's width less
 	// one places to be.
@@ -20945,8 +21368,8 @@ export function commitRangeThumb(element: globalThis.Element): void {
 	if (!(implementsInterface(element, HTMLInputElement))) {
 		return;
 	}
-	const before = rangeDragStarts.get(element);
-	rangeDragStarts.delete(element);
+	const before = _(element).extra.rangeDragStart;
+	_(element).extra.rangeDragStart = undefined;
 	if (before !== undefined && element.value !== before) {
 		dispatchUserChange(element);
 	}
@@ -21146,35 +21569,29 @@ function createEmptyTimeRanges(): globalThis.TimeRanges {
 		unknown as globalThis.TimeRanges;
 }
 
-// A media element's text track list and remote playback, made on first
-// read and kept, so a listener added to one stays on it.
-const mediaTextTracks = new WeakMap<object, globalThis.TextTrackList>();
-const mediaRemotes = new WeakMap<object, globalThis.RemotePlayback>();
-
-function getEmptyTextTrackList(media: object): globalThis.TextTrackList {
-	let list = mediaTextTracks.get(media);
-	if (list === undefined) {
-		list = Object.assign(new EventTarget(), {
-			length: 0,
-			onaddtrack: null,
-			onchange: null,
-			onremovetrack: null,
-			getTrackById: () => null,
-			[Symbol.iterator]: () => [][Symbol.iterator](),
-		}) as unknown as globalThis.TextTrackList;
-		mediaTextTracks.set(media, list);
-	}
-	return list;
+function getEmptyTextTrackList(
+	media: HTMLMediaElement,
+): globalThis.TextTrackList {
+	return _(media).extra.textTracks ??= Object.assign(new EventTarget(), {
+		length: 0,
+		onaddtrack: null,
+		onchange: null,
+		onremovetrack: null,
+		getTrackById: () => null,
+		[Symbol.iterator]: () => [][Symbol.iterator](),
+	}) as unknown as globalThis.TextTrackList;
 }
 
-function getDisconnectedRemote(media: object): globalThis.RemotePlayback {
-	let remote = mediaRemotes.get(media);
-	if (remote === undefined) {
+function getDisconnectedRemote(
+	media: HTMLMediaElement,
+): globalThis.RemotePlayback {
+	const extra = _(media).extra;
+	if (extra.remote === undefined) {
 		const unsupported = () =>
 			Promise.reject(
 				domError("NotSupportedError", "A terminal has no remote playback"),
 			);
-		remote = Object.assign(new EventTarget(), {
+		extra.remote = Object.assign(new EventTarget(), {
 			state: "disconnected",
 			onconnect: null,
 			onconnecting: null,
@@ -21183,9 +21600,8 @@ function getDisconnectedRemote(media: object): globalThis.RemotePlayback {
 			cancelWatchAvailability: () => Promise.resolve(),
 			prompt: unsupported,
 		}) as unknown as globalThis.RemotePlayback;
-		mediaRemotes.set(media, remote);
 	}
-	return remote;
+	return extra.remote;
 }
 
 function noMediaPipeline(what: string): never {
@@ -21204,6 +21620,10 @@ interface HTMLMediaElementExtra extends NodeExtra {
 	defaultPlaybackRate: number;
 	preservesPitch: boolean;
 	currentTime: number;
+	// The text track list and remote playback, made on first read and
+	// kept, so a listener added to one stays on it.
+	textTracks?: globalThis.TextTrackList;
+	remote?: globalThis.RemotePlayback;
 }
 
 interface HTMLMediaElementSlots extends HTMLElementSlots {
@@ -22484,12 +22904,12 @@ export interface HTMLSelectElementExtra extends NodeExtra {
 	// commit, Escape dismisses. CLOSED: Enter/Space open the picker, and
 	// arrows change the selection in place. This is the browser's
 	// closed-select keyboard model.
-	onKeydown: (event: KeyboardEvent) => void;
+	onKeydown: (select: HTMLSelectElement, event: KeyboardEvent) => void;
 	// A press opens a closed picker. With the picker open, a press on an
 	// option row commits it (a disabled row does nothing), and a press on the
 	// closed face dismisses. The row under the point is found from the rows'
 	// document rects, not a renderer hit test.
-	onMousedown: (event: MouseEvent) => void;
+	onMousedown: (select: HTMLSelectElement, event: MouseEvent) => void;
 	onBlur: () => void;
 }
 
@@ -22513,6 +22933,7 @@ export class HTMLSelectElement extends HTMLElement {
 	declare multiple: globalThis.HTMLSelectElement["multiple"];
 	declare required: globalThis.HTMLSelectElement["required"];
 	declare size: globalThis.HTMLSelectElement["size"];
+	declare remove: globalThis.HTMLSelectElement["remove"];
 	declare autocomplete: globalThis.HTMLSelectElement["autocomplete"];
 	constructor(...args: ConstructorParameters<typeof HTMLElement>) {
 		super(...args);
@@ -22523,120 +22944,8 @@ export class HTMLSelectElement extends HTMLElement {
 		slots.extra.valueText = null;
 		slots.extra.picker = null;
 		slots.extra.pickerHighlight = null;
-		slots.extra.onKeydown = (event: KeyboardEvent): void => {
-			if (event.defaultPrevented) {
-				return;
-			}
-			const key = event.key;
-			const options = getOptionList(this);
-			if (options.length === 0) {
-				return;
-			}
-			const current = this.selectedIndex;
-
-			if (slots.extra.pickerHighlight !== null) {
-				const highlight = slots.extra.pickerHighlight;
-				if (key === "ArrowDown") {
-					slots.extra.pickerHighlight = stepSelectHighlight(this, highlight, 1);
-				} else if (key === "ArrowUp") {
-					slots.extra.pickerHighlight = stepSelectHighlight(
-						this,
-						highlight,
-						-1,
-					);
-				} else if (key === "Home") {
-					slots.extra.pickerHighlight = stepSelectHighlight(this, -1, 1);
-				} else if (key === "End") {
-					slots.extra.pickerHighlight = stepSelectHighlight(
-						this,
-						options.length,
-						-1,
-					);
-				} else if (key === "Enter" || key === " ") {
-					slots.extra.pickerHighlight = null;
-					if (highlight !== current && !optionIsDisabled(options[highlight])) {
-						commitSelectOption(this, highlight);
-						return;
-					}
-					syncUAShadowTree(this); // No change: just close.
-					return;
-				} else if (key === "Escape") {
-					slots.extra.pickerHighlight = null;
-				} else {
-					return;
-				}
-				syncUAShadowTree(this);
-				return;
-			}
-
-			// CLOSED: Space or Enter opens. Arrows change the value in place.
-			if (key === "Enter" || key === " ") {
-				openPicker(this);
-				return;
-			}
-			let target: number;
-			if (key === "ArrowDown" || key === "ArrowRight") {
-				target = stepSelectHighlight(this, current, 1);
-			} else if (key === "ArrowUp" || key === "ArrowLeft") {
-				target = stepSelectHighlight(this, current, -1);
-			} else if (key === "Home") {
-				target = stepSelectHighlight(this, -1, 1);
-			} else if (key === "End") {
-				target = stepSelectHighlight(this, options.length, -1);
-			} else {
-				return;
-			}
-			if (target !== current && target >= 0) {
-				commitSelectOption(this, target);
-			}
-		};
-		slots.extra.onMousedown = (event: MouseEvent): void => {
-			if (event.defaultPrevented || event.button !== 0) {
-				return;
-			}
-			const attached = getAttachedDocument(this)!;
-			this.focus(); // A press focuses the control, as in a browser.
-			if (slots.extra.pickerHighlight === null) {
-				openPicker(this);
-				return;
-			}
-			// The event's point is CSS pixels, and the rows' rects are cells.
-			const cell = getCellSize(this);
-			const x = event.clientX / cell.width;
-			const attachedSlots = _(attached);
-			const y =
-				event.clientY / cell.height + attachedSlots.extra.framebuffer.scrollTop;
-			const picker = slots.extra.picker!;
-			const row =
-				(Array.from(picker.childNodes) as globalThis.HTMLElement[]).find(
-					(node) => {
-						const rect = attachedSlots.extra.layout.getRect(node);
-						return rect ? rectContains(rect, x, y) : false;
-					},
-				);
-			if (row) {
-				const index = getOptionIndex(picker, row);
-				// A disabled row does nothing. The picker stays open and
-				// nothing commits.
-				const option = getOptionList(this)[index];
-				if (option && !optionIsDisabled(option)) {
-					slots.extra.pickerHighlight = null;
-					if (index !== this.selectedIndex) {
-						commitSelectOption(this, index);
-					} else {
-						syncUAShadowTree(this); // Re-press the selection: just close.
-					}
-				}
-				return;
-			}
-			// Not on any row. A press inside the picker's own padding does
-			// nothing. A press outside it (on the closed face) dismisses.
-			const pickerRect = attachedSlots.extra.layout.getRect(picker);
-			if (!(pickerRect && rectContains(pickerRect, x, y))) {
-				slots.extra.pickerHighlight = null;
-				syncUAShadowTree(this);
-			}
-		};
+		slots.extra.onKeydown = handleSelectKeydown;
+		slots.extra.onMousedown = handleSelectMousedown;
 		slots.extra.onBlur = (): void => {
 			if (slots.extra.pickerHighlight !== null) {
 				slots.extra.pickerHighlight = null;
@@ -22800,18 +23109,6 @@ export class HTMLSelectElement extends HTMLElement {
 		this.options.add(element, before);
 	}
 
-	override remove(): void;
-	override remove(index: number): void;
-	override remove(index?: number): void {
-		if (arguments.length === 0) {
-			if (_(this).parent !== null) {
-				removeNode(this);
-			}
-			return;
-		}
-		this.options.remove(toLong(index));
-	}
-
 	// A select's selection record is always collapsed at the label's start, so
 	// the caret placement path can treat a select like a text control. The
 	// caret is the focus of the selection.
@@ -22935,6 +23232,142 @@ export class HTMLSelectElement extends HTMLElement {
 }
 
 declareExtraSlots(HTMLSelectElement);
+
+function handleSelectKeydown(
+	select: HTMLSelectElement,
+	event: KeyboardEvent,
+): void {
+	const slots = _(select);
+	if (event.defaultPrevented) {
+		return;
+	}
+	const key = event.key;
+	const options = getOptionList(select);
+	if (options.length === 0) {
+		return;
+	}
+	const current = select.selectedIndex;
+
+	if (slots.extra.pickerHighlight !== null) {
+		const highlight = slots.extra.pickerHighlight;
+		if (key === "ArrowDown") {
+			slots.extra.pickerHighlight = stepSelectHighlight(select, highlight, 1);
+		} else if (key === "ArrowUp") {
+			slots.extra.pickerHighlight = stepSelectHighlight(select, highlight, -1);
+		} else if (key === "Home") {
+			slots.extra.pickerHighlight = stepSelectHighlight(select, -1, 1);
+		} else if (key === "End") {
+			slots.extra.pickerHighlight = stepSelectHighlight(
+				select,
+				options.length,
+				-1,
+			);
+		} else if (key === "Enter" || key === " ") {
+			slots.extra.pickerHighlight = null;
+			if (highlight !== current && !optionIsDisabled(options[highlight])) {
+				commitSelectOption(select, highlight);
+				return;
+			}
+			syncUAShadowTree(select); // No change: just close.
+			return;
+		} else if (key === "Escape") {
+			slots.extra.pickerHighlight = null;
+		} else {
+			return;
+		}
+		syncUAShadowTree(select);
+		return;
+	}
+
+	// CLOSED: Space or Enter opens. Arrows change the value in place.
+	if (key === "Enter" || key === " ") {
+		openPicker(select);
+		return;
+	}
+	let target: number;
+	if (key === "ArrowDown" || key === "ArrowRight") {
+		target = stepSelectHighlight(select, current, 1);
+	} else if (key === "ArrowUp" || key === "ArrowLeft") {
+		target = stepSelectHighlight(select, current, -1);
+	} else if (key === "Home") {
+		target = stepSelectHighlight(select, -1, 1);
+	} else if (key === "End") {
+		target = stepSelectHighlight(select, options.length, -1);
+	} else {
+		return;
+	}
+	if (target !== current && target >= 0) {
+		commitSelectOption(select, target);
+	}
+}
+
+function handleSelectMousedown(
+	select: HTMLSelectElement,
+	event: MouseEvent,
+): void {
+	const slots = _(select);
+	if (event.defaultPrevented || event.button !== 0) {
+		return;
+	}
+	const attached = getAttachedDocument(select)!;
+	select.focus(); // A press focuses the control, as in a browser.
+	if (slots.extra.pickerHighlight === null) {
+		openPicker(select);
+		return;
+	}
+	// The event's point is CSS pixels, and the rows' rects are cells.
+	const cell = getCellSize(select);
+	const x = event.clientX / cell.width;
+	const attachedSlots = _(attached);
+	const y =
+		event.clientY / cell.height + attachedSlots.extra.framebuffer.scrollTop;
+	const picker = slots.extra.picker!;
+	const row = (Array.from(picker.childNodes) as globalThis.HTMLElement[]).find(
+		(node) => {
+			const rect = attachedSlots.extra.layout.getRect(node);
+			return rect ? rectContains(rect, x, y) : false;
+		},
+	);
+	if (row) {
+		const index = getOptionIndex(picker, row);
+		// A disabled row does nothing. The picker stays open and
+		// nothing commits.
+		const option = getOptionList(select)[index];
+		if (option && !optionIsDisabled(option)) {
+			slots.extra.pickerHighlight = null;
+			if (index !== select.selectedIndex) {
+				commitSelectOption(select, index);
+			} else {
+				syncUAShadowTree(select); // Re-press the selection: just close.
+			}
+		}
+		return;
+	}
+	// Not on any row. A press inside the picker's own padding does
+	// nothing. A press outside it (on the closed face) dismisses.
+	const pickerRect = attachedSlots.extra.layout.getRect(picker);
+	if (!(pickerRect && rectContains(pickerRect, x, y))) {
+		slots.extra.pickerHighlight = null;
+		syncUAShadowTree(select);
+	}
+}
+
+// With no argument a select removes itself, as ChildNode's remove does.
+// With an index it removes that option.
+Object.defineProperties(HTMLSelectElement.prototype, {
+	remove: {
+		value(this: HTMLSelectElement, ...args: [index?: number]): void {
+			if (args.length > 0) {
+				this.options.remove(toLong(args[0]));
+			} else if (_(this).parent !== null) {
+				removeNode(this);
+			}
+		},
+		configurable: true,
+		enumerable: true,
+		writable: true,
+	},
+});
 
 // Same as `options` but without building a collection.
 function getOptionList(select: HTMLSelectElement): HTMLOptionElement[] {
@@ -23776,12 +24209,12 @@ export interface HTMLTextAreaElementExtra extends NodeExtra {
 	placeholderSpan: globalThis.HTMLElement | null;
 	goalColumn: number | null;
 	// A typed character arrives as insertText. A paste keeps its newlines.
-	onBeforeInput: (event: InputEvent) => void;
-	// Enter inserts a newline. The vertical arrows and Home/End move by
-	// VISUAL line (soft wraps count, as in a browser). Every other editing
-	// key is the shared text control logic. This reads laid-out geometry, so it
-	// flushes layout first.
-	onKeydown: (event: KeyboardEvent) => void;
+	onBeforeInput: (textarea: HTMLTextAreaElement, event: InputEvent) => void;
+	// Enter inserts a newline, and the vertical arrows move by visual line,
+	// counting soft wraps. Every other editing key is the shared text control
+	// logic, where a textarea's line for Home and End is the caret's visual
+	// line. This reads laid-out geometry, so it flushes layout first.
+	onKeydown: (textarea: HTMLTextAreaElement, event: KeyboardEvent) => void;
 }
 
 export interface HTMLTextAreaElementSlots extends HTMLElementSlots {
@@ -23827,111 +24260,8 @@ export class HTMLTextAreaElement extends HTMLElement {
 		slots.extra.placeholderText = null;
 		slots.extra.placeholderSpan = null;
 		slots.extra.goalColumn = null;
-		slots.extra.onBeforeInput = (event: InputEvent): void => {
-			if (event.defaultPrevented || event.data == null) {
-				return;
-			}
-			if (event.inputType === "insertText") {
-				event.preventDefault();
-				applyTextControlEdit(this, printableTextControlEdit(this, event.data), {
-					inputType: "insertText",
-					data: event.data,
-					asked: true,
-				});
-				return;
-			}
-			if (event.inputType !== "insertFromPaste") {
-				return;
-			}
-			event.preventDefault();
-			insertPaste(this, event.data);
-		};
-		slots.extra.onKeydown = (event: KeyboardEvent): void => {
-		// Editing is a default action. An author's keydown preventDefault
-		// suppresses it, exactly as it suppresses a browser textarea's edit.
-			if (event.defaultPrevented) {
-				return;
-			}
-			if (!slots.extra.upgraded) {
-				return;
-			}
-			const attached = getAttachedDocument(this)!;
-			const {key, shiftKey, ctrlKey, altKey} = event;
-			// The goal column survives only an unbroken run of vertical moves.
-			if (key !== "ArrowUp" && key !== "ArrowDown") {
-				slots.extra.goalColumn = null;
-			}
-
-			const value = slots._uaValue;
-			const {start, end, direction} = getSelectionRecord(this)!;
-			const backward = direction === "backward";
-			const caret = backward ? start : end;
-			const anchor = backward ? end : start;
-
-			let result: TextControlEditResult | null;
-			const attachedSlots = _(attached);
-			if (key === "Enter" || (ctrlKey && key === "j")) {
-			// Insert a newline like any typed character, replacing the
-			// selection. A terminal sends line feed for Ctrl+J, which is the
-			// chord that reaches a text control whose Enter an application has
-			// taken over.
-				const next = value.slice(0, start) + "\n" + value.slice(end);
-				const pos = start + 1;
-				result = {value: next, start: pos, end: pos, direction: "none"};
-			} else if (key === "ArrowUp" || key === "ArrowDown") {
-				attachedSlots.extra.layout.performLayout();
-				const target = getVerticalTarget(
-					this,
-					caret,
-					key === "ArrowDown" ? 1 : -1,
-				);
-				result = moveTextControlSelection(value, anchor, target, shiftKey);
-			} else if (
-				key === "Home" ||
-				key === "End" ||
-				(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
-			) {
-				attachedSlots.extra.layout.performLayout();
-				const visual = getTextareaVisualLines(this, attachedSlots.extra.layout);
-				const line = visual
-					? visual.lines[getTextareaLine(visual.lines, caret)]
-					: null;
-				const lineStart = line?.startOffset ?? 0;
-				const lineEnd = line?.endOffset ?? value.length;
-				if (ctrlKey && key === "k") {
-					result = createCollapsedEdit(
-						value.slice(0, caret) + value.slice(lineEnd),
-						caret,
-					);
-				} else if (ctrlKey && key === "u") {
-					result = createCollapsedEdit(
-						value.slice(0, lineStart) + value.slice(caret),
-						lineStart,
-					);
-				} else {
-					const toStart = key === "Home" || key === "a";
-					result = moveTextControlSelection(
-						value,
-						anchor,
-						toStart ? lineStart : lineEnd,
-						shiftKey,
-					);
-				}
-			} else {
-				result = applySharedTextControlEdit(
-					this,
-					key,
-					shiftKey,
-					ctrlKey,
-					altKey,
-				);
-			}
-			if (result) {
-				applyTextControlEdit(this, result, {
-					inputType: getKeyInputType(key, ctrlKey, altKey),
-				});
-			}
-		};
+		slots.extra.onBeforeInput = handleTextAreaBeforeInput;
+		slots.extra.onKeydown = handleTextAreaKeydown;
 	}
 
 	get form(): HTMLFormElement | null {
@@ -23959,7 +24289,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	set value(value: string) {
-		editedSinceChange.delete(this);
+		_(this).editedSinceChange = false;
 		const slots = _(this);
 		const previous = slots._uaValue;
 		slots.extra.value = normalizeNewlines(value === null ? "" : String(value));
@@ -24235,6 +24565,87 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 declareExtraSlots(HTMLTextAreaElement);
 
+function handleTextAreaBeforeInput(
+	textarea: HTMLTextAreaElement,
+	event: InputEvent,
+): void {
+	if (event.defaultPrevented || event.data == null) {
+		return;
+	}
+	if (event.inputType === "insertText") {
+		event.preventDefault();
+		applyTextControlEdit(
+			textarea,
+			printableTextControlEdit(textarea, event.data),
+			{inputType: "insertText", data: event.data, asked: true},
+		);
+		return;
+	}
+	if (event.inputType !== "insertFromPaste") {
+		return;
+	}
+	event.preventDefault();
+	insertPaste(textarea, event.data);
+}
+
+function handleTextAreaKeydown(
+	textarea: HTMLTextAreaElement,
+	event: KeyboardEvent,
+): void {
+	const slots = _(textarea);
+	// Editing is a default action. An author's keydown preventDefault
+	// suppresses it, as it suppresses a browser textarea's edit.
+	if (event.defaultPrevented) {
+		return;
+	}
+	if (!slots.extra.upgraded) {
+		return;
+	}
+	const {key, shiftKey, ctrlKey, altKey} = event;
+	// The goal column survives only an unbroken run of vertical moves.
+	if (key !== "ArrowUp" && key !== "ArrowDown") {
+		slots.extra.goalColumn = null;
+	}
+
+	const value = slots._uaValue;
+	const {start, end, direction} = getSelectionRecord(textarea)!;
+	const backward = direction === "backward";
+	const caret = backward ? start : end;
+	const anchor = backward ? end : start;
+
+	let result: TextControlEditResult | null;
+	if (key === "Enter" || (ctrlKey && key === "j")) {
+		// Insert a newline like any typed character, replacing the
+		// selection. A terminal sends line feed for Ctrl+J, which is the
+		// chord that reaches a text control whose Enter an application has
+		// taken over.
+		const next = value.slice(0, start) + "\n" + value.slice(end);
+		const pos = start + 1;
+		result = {value: next, start: pos, end: pos, direction: "none"};
+	} else if (key === "ArrowUp" || key === "ArrowDown") {
+		_(getAttachedDocument(textarea)!).extra.layout.performLayout();
+		const target = getVerticalTarget(
+			textarea,
+			caret,
+			key === "ArrowDown" ? 1 : -1,
+		);
+		result = moveTextControlSelection(value, anchor, target, shiftKey);
+	} else {
+		result = applySharedTextControlEdit(
+			textarea,
+			key,
+			shiftKey,
+			ctrlKey,
+			altKey,
+		);
+	}
+	if (result) {
+		applyTextControlEdit(textarea, result, {
+			inputType: getKeyInputType(key, ctrlKey, altKey),
+		});
+	}
+}
+
 // One atomic edit.
 function insertPaste(
 	textControl: HTMLInputElement | HTMLTextAreaElement,
@@ -24433,24 +24844,14 @@ interface PopoverState {
 	toggleTask: {oldState: string; canceled: boolean} | null;
 }
 
-// HTML gives these slots to every HTML element. An element that was
-// never a popover has no state to store, and the state it would have is
-// the initial one.
-const popoverStates = new WeakMap<Element, PopoverState>();
-
 function getPopoverState(element: Element): PopoverState {
-	let state = popoverStates.get(element);
-	if (state === undefined) {
-		state = {
-			visibility: "hidden",
-			mode: null,
-			previouslyFocused: null,
-			hiding: false,
-			toggleTask: null,
-		};
-		popoverStates.set(element, state);
-	}
-	return state;
+	return _(element).popoverState ??= {
+		visibility: "hidden",
+		mode: null,
+		previouslyFocused: null,
+		hiding: false,
+		toggleTask: null,
+	};
 }
 
 // Returns auto for the empty string and `auto`, manual for `manual` and
@@ -24481,7 +24882,7 @@ function getPopoverValueState(value: string | null): "auto" | "manual" | null {
 export function isShowingPopover(node: globalThis.Node): boolean {
 	return (
 		implementsInterface(node, HTMLElement) &&
-		popoverStates.get(node)?.visibility === "showing"
+		_(node).popoverState?.visibility === "showing"
 	);
 }
 
@@ -24490,7 +24891,7 @@ export function isShowingPopover(node: globalThis.Node): boolean {
 function getShowingAutoPopovers(document: Document): Element[] {
 	const popovers: Element[] = [];
 	for (const element of getTopLayer(document)) {
-		const state = popoverStates.get(element);
+		const state = _(element).popoverState;
 		if (state?.mode === "auto" && state.visibility === "showing") {
 			popovers.push(element);
 		}
@@ -24826,7 +25227,7 @@ function getNearestInclusiveOpenPopover(node: Node): Element | null {
 		current !== null;
 		current = getFlatTreeParent(current)
 	) {
-		const state = popoverStates.get(current as Element);
+		const state = _(current as Element).popoverState;
 		if (state?.mode === "auto" && state.visibility === "showing") {
 			return current as Element;
 		}
@@ -24935,12 +25336,6 @@ function queuePopoverToggleEventTask(
 	});
 }
 
-// A popovertarget or commandfor set to an ELEMENT rather than named by
-// id. The attribute cannot hold an element, so the reference is stored
-// separately. The getter returns it only while the element is in a tree
-// the invoker composes into.
-const explicitAttributeElements = new WeakMap<Element, Map<string, Element>>();
-
 // The explicitly set element if it is still reachable, otherwise the
 // element the attribute names by id in the invoker's own tree.
 function getAttributeElement(node: Node, attribute: string): Element | null {
@@ -24948,7 +25343,7 @@ function getAttributeElement(node: Node, attribute: string): Element | null {
 		return null;
 	}
 	const element = node as Element;
-	const explicit = explicitAttributeElements.get(element)?.get(attribute);
+	const explicit = _(element).attributeElements?.get(attribute);
 	if (explicit !== undefined) {
 		// The reference is valid while the target is in the invoker's own tree
 		// or in one that tree composes into. It goes stale rather than dangling
@@ -24986,16 +25381,11 @@ function setAttributeElement(
 	value: Element | null,
 ): void {
 	if (value == null) {
-		explicitAttributeElements.get(element)?.delete(attribute);
+		_(element).attributeElements?.delete(attribute);
 		removeAttributeByName(element, attribute);
 		return;
 	}
-	let explicit = explicitAttributeElements.get(element);
-	if (explicit === undefined) {
-		explicit = new Map();
-		explicitAttributeElements.set(element, explicit);
-	}
-	explicit.set(attribute, value);
+	(_(element).attributeElements ??= new Map()).set(attribute, value);
 	setAttributeByName(element, attribute, "");
 }
 
@@ -25287,27 +25677,20 @@ export function handleCloseRequest(document: globalThis.Document): boolean {
 // stack, the spec steps and the two events are user-agent state and live
 // here. The screen swap itself belongs to the engine and is bracketed
 // through the frame so no frame straddles it.
-const fullscreenStacks = new WeakMap<Document, Element[]>();
-
 function getFullscreenStack(document: Document): Element[] {
-	let stack = fullscreenStacks.get(document);
-	if (stack === undefined) {
-		stack = [];
-		fullscreenStacks.set(document, stack);
-	}
-	return stack;
+	return _(document).extra.fullscreenStack ??= [];
 }
 
 // The top of the stack is the element the viewport shows alone.
 export function getFullscreenElement(document: Document): Element | null {
-	const stack = fullscreenStacks.get(document);
+	const stack = _(document).extra.fullscreenStack;
 	return stack?.length ? stack[stack.length - 1] : null;
 }
 
 // A fullscreen element that leaves the document leaves fullscreen, and
 // the document hears it (the Fullscreen Standard's removing steps).
 function leaveFullscreenOnRemoval(document: Document, node: Node): void {
-	const stack = fullscreenStacks.get(document);
+	const stack = _(document).extra.fullscreenStack;
 	if (stack === undefined || stack.length === 0) {
 		return;
 	}
@@ -25333,7 +25716,7 @@ function leaveFullscreenOnRemoval(document: Document, node: Node): void {
 
 /** Abandon fullscreen without events. Used when the engine is tearing down. */
 export function dropFullscreen(document: globalThis.Document): void {
-	fullscreenStacks.delete(document as Document);
+	_(document as Document).extra.fullscreenStack = undefined;
 }
 
 // ONE target, per the Fullscreen Standard: the element while it is still
@@ -26467,21 +26850,14 @@ function checkValidity(element: Element): boolean {
 	return false;
 }
 
-const customValidityMessages = new WeakMap<Element, string>();
-const validityStates = new WeakMap<Element, ValidityState>();
-
 function setCustomValidity(element: Element, error: string): void {
-	customValidityMessages.set(element, String(error));
+	_(element).customValidityMessage = String(error);
 }
 
 function getValidityState(element: Element): ValidityState {
-	let state = validityStates.get(element);
-	if (state === undefined) {
-		state = constructInternal(() =>
-			new ValidityState(() => getValidityFlags(element)));
-		validityStates.set(element, state);
-	}
-	return state;
+	const slots = _(element);
+	return slots.validityState ??= constructInternal(() =>
+		new ValidityState(() => getValidityFlags(element)));
 }
 
 function getValidityFlags(element: Element): ValidityFlags {
@@ -26490,7 +26866,7 @@ function getValidityFlags(element: Element): ValidityFlags {
 		return _(internals).validityFlags;
 	}
 	const flags = noValidityFlags();
-	flags.customError = (customValidityMessages.get(element) ?? "") !== "";
+	flags.customError = _(element).customValidityMessage !== "";
 	if (implementsInterface(element, HTMLInputElement)) {
 		collectInputValidity(element, flags);
 	} else if (implementsInterface(element, HTMLSelectElement)) {
@@ -26765,7 +27141,7 @@ function getValidationMessage(element: Element): string {
 	}
 	const flags = getValidityFlags(element);
 	if (flags.customError) {
-		return customValidityMessages.get(element) ?? "";
+		return _(element).customValidityMessage;
 	}
 	if (flags.valueMissing) {
 		if (implementsInterface(element, HTMLSelectElement)) {
@@ -27439,11 +27815,6 @@ interface ContentBox {
 	left: number;
 }
 
-// Keyed by document, not by a registry object, because the document is
-// what an observer can reach from the target it was given. That is why
-// `new ResizeObserver(callback)` needs only its callback.
-const documentObservers = new WeakMap<object, Set<AnyObserver>>();
-
 /**
  * Run a document's observers against the layout just computed for it. The
  * frame the renderer is finishing is what an IntersectionObserver measures
@@ -27451,7 +27822,7 @@ const documentObservers = new WeakMap<object, Set<AnyObserver>>();
  */
 /** Whether a frame has any ResizeObserver or IntersectionObserver to run. */
 export function hasObservers(document: globalThis.Document): boolean {
-	return (documentObservers.get(document)?.size ?? 0) > 0;
+	return (_(document as Document).extra.observers?.size ?? 0) > 0;
 }
 
 export function flushObservers(
@@ -27460,7 +27831,7 @@ export function flushObservers(
 	viewport: globalThis.DOMRect,
 	frame: number,
 ): void {
-	const observers = documentObservers.get(document);
+	const observers = _(document as Document).extra.observers;
 	if (observers === undefined || observers.size === 0) {
 		return;
 	}
@@ -27478,8 +27849,9 @@ export function flushObservers(
 
 /** A torn-down document delivers nothing. */
 export function disconnectObservers(document: globalThis.Document): void {
-	documentObservers.get(document)?.clear();
-	engineObservers.get(document as Document)?.disconnect();
+	const extra = _(document as Document).extra;
+	extra.observers?.clear();
+	extra.engineObserver?.disconnect();
 }
 
 // What ResizeObserver and IntersectionObserver both hold: which elements
@@ -27549,18 +27921,13 @@ function unobserveTarget(
 function disconnectObserver(observer: AnyObserver): void {
 	_(observer).targets.clear();
 	for (const document of _(observer).homes) {
-		documentObservers.get(document)?.delete(observer);
+		_(document as Document).extra.observers?.delete(observer);
 	}
 	_(observer).homes.clear();
 }
 
 function getObservers(document: globalThis.Document): Set<AnyObserver> {
-	let observers = documentObservers.get(document);
-	if (observers === undefined) {
-		observers = new Set<AnyObserver>();
-		documentObservers.set(document, observers);
-	}
-	return observers;
+	return _(document as Document).extra.observers ??= new Set<AnyObserver>();
 }
 
 function checkObserver<TState, TEntry, TOptions>(
@@ -28092,6 +28459,10 @@ export interface DocumentExtra extends NodeExtra {
 	pendingEditingReveal: globalThis.Element | null;
 	implementation: DOMImplementation | null;
 	documentURL: string;
+	// The fragment of documentURL that :target matches, as written and as
+	// percent-decoded, or null for a URL without one. pushState() and
+	// replaceState() move documentURL and leave this where it was.
+	targetFragment?: {raw: string; decoded: string} | null;
 	mode: "no-quirks" | "quirks" | "limited-quirks";
 	type: "xml" | "html";
 	contentType: string;
@@ -28118,6 +28489,71 @@ export interface DocumentExtra extends NodeExtra {
 	popoverHidingCount: number;
 	// Made on the first read of document.all.
 	all?: HTMLAllCollection;
+	// The boxes scrolled away from the origin, which clampScrollOffsets
+	// visits.
+	scrolledElements?: Set<Element>;
+	// The scroll steps of "update the rendering": each box scrolled since
+	// the last frame gets one "scroll" event, and the document one that
+	// bubbles to the window, before the frame's callbacks run.
+	pendingScrollTargets?: Set<Element>;
+	reportedScrollTop?: number;
+	scrollEnd?: {
+		targets: Set<Document | Element>;
+		timer: ReturnType<typeof setTimeout>;
+	};
+	// The one box whose vertical scroll this frame can express as a scroll
+	// shift, meaning rows the terminal may shift instead of repainting.
+	// Repeated scrolls on one box add up. A second box scrolling means no
+	// single shift describes the frame, so the record is dropped in favor
+	// of the screen's dirty bit.
+	scrollShift?: {element: Element; delta: number};
+	// The layout pass the document's offsets were last clamped after. A
+	// write clamps itself, so until layout solves again they still fit.
+	clampedAfterSolve?: number;
+	// The range the document reuses for control-selection queries.
+	selectionRange?: globalThis.Range;
+	focusStartingPoint?: FocusStartingPoint;
+	hoverCount?: HoverListenerCount;
+	// How many activation-triggering dispatches are running.
+	activationDepth?: number;
+	// When the user last acted on the document, in performance.now() time,
+	// or undefined while the user never has.
+	lastActivation?: number;
+	// The element a mouse button is held down on, for `:active`.
+	pressedElement?: Element;
+	// Hover is not a mutation and no attribute records it. The engine
+	// writes it here as motion reports arrive, and the `:hover` resolver
+	// reads it. Absent means nothing is hovered, because the document has
+	// no motion reporting or the pointer left.
+	hoveredElement?: Element;
+	pointerState?: PointerState;
+	focusVisible?: boolean;
+	fullscreenStack?: Element[];
+	engineObserver?: MutationObserver;
+	// Whether a live collection was ever registered in the document. A
+	// collection stays registered for its owner's lifetime, so this only
+	// goes one way. A change in a document that never registered a
+	// collection skips the ancestor climb.
+	heldLists?: boolean;
+	// The document's ResizeObservers and IntersectionObservers. They are
+	// kept by document, not by a registry object, because the document is
+	// what an observer can reach from the target it was given. That is why
+	// `new ResizeObserver(callback)` needs only its callback.
+	observers?: Set<AnyObserver>;
+	sessionHistory?: SessionHistory;
+	// The MediaQueryLists with a listener, which are the only ones a
+	// viewport change has anyone to tell. `matches` reads live, so a list
+	// without a listener needs no bookkeeping and is the page's to drop.
+	// The resize path is the one place a terminal viewport changes, so the
+	// engine decides when to re-evaluate.
+	mediaQueryLists?: Set<MediaQueryList>;
+	// The requestAnimationFrame callbacks, keyed by the handle
+	// requestAnimationFrame returned, so cancelAnimationFrame can cancel.
+	// The engine fires them once the frame containing their pending
+	// mutations has been written.
+	frameCallbacks?: {next: number; held: Map<number, FrameRequestCallback>};
+	// The policies the page stated for itself with <meta> in its head.
+	metaPolicyTexts?: string[];
 }
 
 export interface DocumentSlots extends NodeSlots {
@@ -29500,28 +29936,47 @@ export class Document extends Node implements globalThis.Document {
 		return "";
 	}
 
-	// APIs that need a window manager, a network, or a compositor.
-
 	caretPositionFromPoint(
 		x: number,
 		y: number,
 		options?: globalThis.CaretPositionFromPointOptions,
 	): globalThis.CaretPosition | null {
-		toDouble(x);
-		toDouble(y);
-		toDictionary(options ?? {}, "A CaretPositionFromPointOptions");
-		throw domError(
-			"NotSupportedError",
-			"caretPositionFromPoint is not implemented",
+		const left = toDouble(x);
+		const top = toDouble(y);
+		const shadowRoots = Array.from(
+			toDictionary<globalThis.CaretPositionFromPointOptions>(
+				options,
+				"A CaretPositionFromPointOptions",
+			).shadowRoots ?? [],
+		) as unknown as ShadowRoot[];
+		if (!shadowRoots.every((root) => isShadowRoot(root))) {
+			throw new TypeError("shadowRoots holds only shadow roots");
+		}
+		const caret = getCaretAtPoint(this, left, top);
+		if (caret === null) {
+			return null;
+		}
+		const [node, offset] = retargetCaret(
+			caret.control ?? caret.node,
+			caret.offset,
+			shadowRoots,
 		);
+		return constructInternal(() =>
+			new CaretPosition(node, offset, caret.node, caret.offset),
+		) as unknown as globalThis.CaretPosition;
 	}
 
-	caretRangeFromPoint(_x: number, _y: number): globalThis.Range | null {
-		throw domError(
-			"NotSupportedError",
-			"caretRangeFromPoint is not implemented",
-		);
+	caretRangeFromPoint(x: number, y: number): globalThis.Range | null {
+		const caret = getCaretAtPoint(this, toDouble(x), toDouble(y));
+		if (caret === null) {
+			return null;
+		}
+		const range = this.createRange();
+		range.setStart(...retargetCaret(caret.node, caret.offset, []));
+		return range;
 	}
+
+	// APIs that need a window manager, a network, or a compositor.
 
 	exitPictureInPicture(): Promise<void> {
 		throw domError(
@@ -29639,24 +30094,15 @@ function isPotentiallyScrollable(body: Element): boolean {
 	);
 }
 
-// One live collection per document and kind, so `document.forms` is the
-// same object on every read, as the HTML Standard requires. `watched`
-// names the attribute that decides membership, if one does.
-const documentCollections =
-	new WeakMap<Document, Map<string, HTMLCollection>>();
-
+// `watched` names the attribute that decides membership, if one does.
 function getDocumentCollection(
 	document: Document,
 	kind: string,
 	match: (element: Element) => boolean,
 	watched: string | null = null,
 ): HTMLCollection {
-	let collections = documentCollections.get(document);
-	if (collections === undefined) {
-		collections = new Map();
-		documentCollections.set(document, collections);
-	}
-	let collection = collections.get(kind);
+	const cache = getCollectionCache(document);
+	let collection = cache.get(kind);
 	if (collection === undefined) {
 		collection = live(
 			new HTMLCollection(() =>
@@ -29664,7 +30110,7 @@ function getDocumentCollection(
 					match,
 				), document, null, watched),
 		);
-		collections.set(kind, collection);
+		cache.set(kind, collection);
 	}
 	return collection;
 }
@@ -29924,6 +30370,151 @@ function getOutsideUAShadowTrees(
 	return element as unknown as globalThis.Element | null;
 }
 
+interface CaretAtPoint {
+	node: Node;
+	offset: number;
+	control: Element | null;
+}
+
+/**
+ * The caret position under a viewport point, as layout places the caret
+ * for a click. Over a text control it is the offset in the control's
+ * value, in the value text of its UA shadow tree. Elsewhere it is a
+ * position in the text under the point, or in the nearest line of the
+ * nearest box that has text. An empty editable line holds its own
+ * position. Null off the viewport, or where there is no text.
+ */
+function getCaretAtPoint(
+	document: Document,
+	x: number,
+	y: number,
+): CaretAtPoint | null {
+	const attached = getAttachedDocument(document);
+	const cell = getCellSize(document);
+	const column = x / cell.width;
+	const row = y / cell.height;
+	if (attached === undefined || column < 0 || row < 0) {
+		return null;
+	}
+	const {framebuffer, layout} = _(attached).extra;
+	if (column > framebuffer.cols || row > framebuffer.rows) {
+		return null;
+	}
+	const top = row + framebuffer.scrollTop;
+	const element =
+		elementAtDocumentPoint(document, column, top, null) as Element |
+		null;
+	if (element === null) {
+		return null;
+	}
+	if (takesTextCursor(element)) {
+		return {
+			node: (getTextControlValueText(element) as Text | null) ?? element,
+			offset: getTextControlCaretOffset(element, column, top) ?? 0,
+			control: element,
+		};
+	}
+	let found = layout.caretPositionFromPoint(column, top, element);
+	if (
+		found === null &&
+		(element as HTMLElement).isContentEditable &&
+		(element.textContent ?? "") === ""
+	) {
+		return {node: element, offset: 0, control: null};
+	}
+	for (
+		let box: globalThis.Element | null = element;
+		found === null && box !== null;
+		box = flatParentElement(box)
+	) {
+		found = layout.caretPositionFromPoint(column, top, box, true);
+	}
+	return found === null
+		? null
+		: {
+			node: found.node as unknown as Node,
+			offset: found.offset,
+			control: null,
+		};
+}
+
+/**
+ * CSSOM View's caret position from a point, moved out of each shadow tree
+ * the caller did not pass in `shadowRoots`: a position in such a tree
+ * becomes the position of its host.
+ */
+function retargetCaret(
+	node: Node,
+	offset: number,
+	shadowRoots: readonly ShadowRoot[],
+): [Node, number] {
+	for (
+		let root = getRoot(node);
+		isShadowRoot(root) &&
+		!shadowRoots.some((listed) =>
+			isShadowIncludingInclusiveAncestor(root, listed),
+		);
+		root = getRoot(node)
+	) {
+		const host = _(root).extra.host as Element;
+		offset = getNodeIndex(host);
+		node = getObject(_(host).parent)!;
+	}
+	return [node, offset];
+}
+
+interface CaretPositionSlots {
+	offsetNode: Node;
+	offset: number;
+	rangeNode: Node;
+	rangeOffset: number;
+}
+
+interface CaretPosition {
+	readonly [internals]: CaretPositionSlots;
+}
+
+/**
+ * A caret position from caretPositionFromPoint(): the node and offset a
+ * caller sees, and the position layout found, which getClientRect()
+ * measures.
+ */
+class CaretPosition {
+	constructor(
+		offsetNode?: Node,
+		offset?: number,
+		rangeNode?: Node,
+		rangeOffset?: number,
+	) {
+		seal(this, new.target, CaretPosition);
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		const slots = _(this);
+		slots.offsetNode = offsetNode!;
+		slots.offset = offset!;
+		slots.rangeNode = rangeNode!;
+		slots.rangeOffset = rangeOffset!;
+	}
+
+	get offsetNode(): Node {
+		return _(this).offsetNode;
+	}
+
+	get offset(): number {
+		return _(this).offset;
+	}
+
+	getClientRect(): globalThis.DOMRect | null {
+		const slots = _(this);
+		const range = getOwnerDocument(slots.rangeNode)!.createRange();
+		range.setStart(slots.rangeNode, slots.rangeOffset);
+		return range.getBoundingClientRect();
+	}
+}
+
+declareSealedRoot(CaretPosition);
+
 // Hit testing. The point is viewport-relative, and the engine tests it.
 // A headless document renders nothing, so nothing is under any point.
 Object.defineProperties(Document.prototype, {
@@ -30007,7 +30598,7 @@ function copyDocumentState(from: Document, to: Document): void {
 	toSlots.extra.type = fromSlots.extra.type;
 	toSlots.extra.contentType = fromSlots.extra.contentType;
 	toSlots.extra.encoding = fromSlots.extra.encoding;
-	toSlots.extra.documentURL = fromSlots.extra.documentURL;
+	setDocumentURL(to, fromSlots.extra.documentURL);
 	toSlots.extra.mode = fromSlots.extra.mode;
 }
 
@@ -30257,7 +30848,7 @@ function createHTMLDocument(
 	const documentSlots = _(document);
 	documentSlots.registry = registry;
 	fillHTMLDocument(document, title);
-	documentSlots.extra.documentURL = url;
+	setDocumentURL(document, url);
 	return document;
 }
 
@@ -30643,16 +31234,11 @@ function scrollElementTo(
 }
 
 function writeScrollOffset(
-	element: globalThis.Element,
+	element: Element,
 	axis: "left" | "top",
 	value: number,
 ): void {
-	let offsets = scrollOffsets.get(element);
-	if (offsets === undefined) {
-		offsets = {left: 0, top: 0};
-		scrollOffsets.set(element, offsets);
-	}
-	offsets[axis] = value;
+	(_(element).scrollOffsets ??= {left: 0, top: 0})[axis] = value;
 }
 
 /** html and body scroll the document. */
@@ -30664,14 +31250,6 @@ function isDocumentScroller(element: Element): boolean {
 			element === (document.body as unknown))
 	);
 }
-
-const scrolledElements = new WeakMap<Document, Set<Element>>();
-
-// The scroll steps of "update the rendering": each box scrolled since the
-// last frame gets one "scroll" event, and the document one that bubbles
-// to the window, before the frame's callbacks run.
-const pendingScrollTargets = new WeakMap<Document, Set<Element>>();
-const reportedDocumentScrollTop = new WeakMap<Document, number>();
 
 // A write on an attached document rounds to whole cells (everything
 // paints on the cell grid, like the document scroll), clamps into the
@@ -30709,19 +31287,15 @@ function setScrollOffset(
 			next = Math.min(next, room);
 		}
 	}
-	const previous = scrollOffsets.get(element)?.[axis] ?? 0;
+	const previous = elementSlots.scrollOffsets?.[axis] ?? 0;
 	if (previous === next) {
 		return;
 	}
 	writeScrollOffset(element, axis, next);
 	const document = elementSlots.document;
+	const documentExtra = _(document).extra;
 	if (next !== 0) {
-		let held = scrolledElements.get(document);
-		if (held === undefined) {
-			held = new Set();
-			scrolledElements.set(document, held);
-		}
-		held.add(element);
+		(documentExtra.scrolledElements ??= new Set()).add(element);
 	}
 	// A vertical scroll is a run of rows the terminal may be able to shift for
 	// us. A horizontal one is not, and dirties the frame like anything else.
@@ -30730,12 +31304,7 @@ function setScrollOffset(
 	} else {
 		invalidate(_(attached).extra.framebuffer);
 	}
-	let pending = pendingScrollTargets.get(document);
-	if (pending === undefined) {
-		pending = new Set();
-		pendingScrollTargets.set(document, pending);
-	}
-	pending.add(element);
+	(documentExtra.pendingScrollTargets ??= new Set()).add(element);
 	void _(attached).extra.render();
 }
 
@@ -30744,16 +31313,17 @@ export function runScrollSteps(document: globalThis.Document): void {
 	if (attached === undefined) {
 		return;
 	}
-	const top = _(attached).extra.framebuffer.scrollTop;
-	if (top !== (reportedDocumentScrollTop.get(attached) ?? 0)) {
-		reportedDocumentScrollTop.set(attached, top);
+	const extra = _(attached).extra;
+	const top = extra.framebuffer.scrollTop;
+	if (top !== (extra.reportedScrollTop ?? 0)) {
+		extra.reportedScrollTop = top;
 		dispatchAsUserAgent(
 			attached,
 			constructInternal(() => new Event("scroll", {bubbles: true})),
 		);
 		awaitScrollEnd(attached, attached);
 	}
-	const pending = pendingScrollTargets.get(attached);
+	const pending = extra.pendingScrollTargets;
 	if (pending === undefined || pending.size === 0) {
 		return;
 	}
@@ -30770,13 +31340,9 @@ export function runScrollSteps(document: globalThis.Document): void {
 // gesture ends once.
 const SCROLL_END_MS = 100;
 
-const scrollEnds = new WeakMap<
-	Document,
-	{targets: Set<Document | Element>; timer: ReturnType<typeof setTimeout>}
->();
-
 function awaitScrollEnd(document: Document, target: Document | Element): void {
-	const waiting = scrollEnds.get(document);
+	const extra = _(document).extra;
+	const waiting = extra.scrollEnd;
 	if (waiting !== undefined) {
 		clearTimeout(waiting.timer);
 	}
@@ -30790,7 +31356,7 @@ function awaitScrollEnd(document: Document, target: Document | Element): void {
 	}
 	targets.add(target);
 	const timer = setTimeout(() => {
-		scrollEnds.delete(document);
+		extra.scrollEnd = undefined;
 		if (getAttachedDocument(document) === undefined) {
 			return;
 		}
@@ -30808,15 +31374,8 @@ function awaitScrollEnd(document: Document, target: Document | Element): void {
 			}
 		}
 	}, SCROLL_END_MS);
-	scrollEnds.set(document, {targets, timer});
+	extra.scrollEnd = {targets, timer};
 }
-
-// The one box whose vertical scroll this frame can express as a scroll shift,
-// meaning rows the terminal may shift instead of repainting. Repeated
-// scrolls on one box add up. A second box scrolling means no single shift
-// describes the frame, so the record is dropped in favor of the screen's
-// dirty bit.
-const scrollShifts = new WeakMap<Document, {element: Element; delta: number}>();
 
 /**
  * Pull every stored scroll offset back into its box's scrollable range
@@ -30827,24 +31386,21 @@ const scrollShifts = new WeakMap<Document, {element: Element; delta: number}>();
  * and requests a repaint. A clamp is not a scroll shift: it moves offsets the
  * journal already priced, and can move several boxes at once.
  */
-// The layout pass each document's offsets were last clamped after. A
-// write clamps itself, so until layout solves again they still fit.
-const clampedAfterSolve = new WeakMap<Document, number>();
-
 export function clampScrollOffsets(document: globalThis.Document): void {
 	const attached = getAttachedDocument(document);
-	const held = scrolledElements.get(document as Document);
+	const extra = _(document as Document).extra;
+	const held = extra.scrolledElements;
 	if (attached === undefined || held === undefined) {
 		return;
 	}
 	const solves = _(attached).extra.layout.solves;
-	if (clampedAfterSolve.get(document as Document) === solves) {
+	if (extra.clampedAfterSolve === solves) {
 		return;
 	}
-	clampedAfterSolve.set(document as Document, solves);
+	extra.clampedAfterSolve = solves;
 	let changed = false;
 	for (const element of held) {
-		const offsets = scrollOffsets.get(element) ?? {left: 0, top: 0};
+		const offsets = _(element).scrollOffsets ?? {left: 0, top: 0};
 		if (offsets.left === 0 && offsets.top === 0) {
 			held.delete(element);
 			continue;
@@ -30852,7 +31408,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 		// A removed box has no box to be scrolled in, so it keeps no offset,
 		// as a browser's does not, and the set does not keep it alive.
 		if (!element.isConnected) {
-			scrollOffsets.delete(element);
+			_(element).scrollOffsets = null;
 			held.delete(element);
 			continue;
 		}
@@ -30874,7 +31430,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 		changed = true;
 	}
 	if (changed) {
-		scrollShifts.delete(document as Document);
+		extra.scrollShift = undefined;
 		invalidate(_(attached).extra.framebuffer);
 		void _(attached).extra.render();
 	}
@@ -30886,13 +31442,14 @@ function recordScrollShift(
 	element: Element,
 	delta: number,
 ): void {
-	const shift = scrollShifts.get(document);
+	const extra = _(document).extra;
+	const shift = extra.scrollShift;
 	if (shift === undefined) {
-		scrollShifts.set(document, {element, delta});
+		extra.scrollShift = {element, delta};
 	} else if (shift.element === element) {
 		shift.delta += delta;
 	} else {
-		scrollShifts.delete(document);
+		extra.scrollShift = undefined;
 		invalidate(_(attached).extra.framebuffer);
 	}
 }
@@ -30901,11 +31458,12 @@ function recordScrollShift(
 export function takeScrollShift(
 	document: globalThis.Document,
 ): {element: globalThis.Element; delta: number} | null {
-	const shift = scrollShifts.get(document as Document);
+	const extra = _(document as Document).extra;
+	const shift = extra.scrollShift;
 	if (shift === undefined) {
 		return null;
 	}
-	scrollShifts.delete(document as Document);
+	extra.scrollShift = undefined;
 	return shift as unknown as {element: globalThis.Element; delta: number};
 }
 
@@ -31252,12 +31810,7 @@ function comparePoints(
 }
 
 function registerNodeIterator(treeRoot: Node, iterator: NodeIterator): void {
-	let set = nodeIteratorsByRoot.get(treeRoot);
-	if (set === undefined) {
-		set = new Set();
-		nodeIteratorsByRoot.set(treeRoot, set);
-	}
-	set.add(iterator);
+	(_(treeRoot).nodeIterators ??= new Set()).add(iterator);
 }
 
 // The mutation steps' fast path.
@@ -31268,21 +31821,16 @@ function rehomeLiveRange(range: Range, oldRoot: Node): void {
 	if (newRoot === oldRoot) {
 		return;
 	}
-	liveRangesByRoot.get(oldRoot)?.delete(range);
-	let set = liveRangesByRoot.get(newRoot);
-	if (set === undefined) {
-		set = new Set();
-		liveRangesByRoot.set(newRoot, set);
-	}
-	set.add(range);
+	_(oldRoot).liveRanges?.delete(range);
+	(_(newRoot).liveRanges ??= new Set()).add(range);
 }
 
 function forEachLiveRange(context: Node, steps: (range: Range) => void): void {
 	if (liveRangesEver === 0) {
 		return;
 	}
-	const set = liveRangesByRoot.get(getRoot(context));
-	if (set === undefined) {
+	const set = _(getRoot(context)).liveRanges;
+	if (set === null) {
 		return;
 	}
 	for (const range of set) {
@@ -32202,20 +32750,14 @@ class Range extends AbstractRange implements globalThis.Range {
 }
 
 function registerLiveRange(range: Range): void {
-	const root = getRoot(_(range).startNode);
-	let set = liveRangesByRoot.get(root);
-	if (set === undefined) {
-		set = new Set();
-		liveRangesByRoot.set(root, set);
-	}
-	set.add(range);
+	(_(getRoot(_(range).startNode)).liveRanges ??= new Set()).add(range);
 	liveRangesEver++;
 }
 
 // For a range the engine made for itself and is done with. An author's
 // range stays live for as long as the author holds it.
 function releaseLiveRange(range: Range): void {
-	liveRangesByRoot.get(getRoot(_(range).startNode))?.delete(range);
+	_(getRoot(_(range).startNode)).liveRanges?.delete(range);
 }
 
 function selectNodeWithin(range: Range, node: Node): void {
@@ -34961,26 +35503,20 @@ Object.defineProperty(TreeWalker.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-const activeElements = new WeakMap<Document, Element>();
-
 /** Record the element a mouse button is held down on, for `:active`. */
 export function setActiveElement(
 	document: globalThis.Document,
 	element: globalThis.Element | null,
 ): void {
-	if (element === null) {
-		activeElements.delete(document as Document);
-	} else {
-		activeElements.set(document as Document, element as Element);
-	}
+	_(document as Document).extra.pressedElement =
+		(element as Element | null) ?? undefined;
 }
 
 export function getActiveElement(
 	document: globalThis.Document,
 ): globalThis.Element | null {
-	return (activeElements.get(document as Document) ??
-		null) as globalThis.Element |
-		null;
+	return (_(document as Document).extra.pressedElement ?? null) as
+		globalThis.Element | null;
 }
 
 // True for the pressed element and anything that contains it in the flat
@@ -34988,7 +35524,7 @@ export function getActiveElement(
 export function isActive(element: Element): boolean {
 	const document = _(element).document;
 	for (
-		let node: Element | null = activeElements.get(document) ?? null;
+		let node: Element | null = _(document).extra.pressedElement ?? null;
 		node !== null;
 		node = getFlatTreeParent(node)
 	) {
@@ -34998,12 +35534,6 @@ export function isActive(element: Element): boolean {
 	}
 	return false;
 }
-
-// Hover is not a mutation and no attribute records it. The engine
-// writes it here as motion reports arrive, and the `:hover` resolver
-// reads it. Absent means nothing is hovered, because the document has no
-// motion reporting or the pointer left.
-const hoveredElements = new WeakMap<Document, Element>();
 
 /**
  * The mouse's buttons held down, and its capture: `pending` is what
@@ -35015,21 +35545,18 @@ export interface PointerState {
 	active: Element | null;
 }
 
-const pointerStates = new WeakMap<Document, PointerState>();
-
 export function getPointerState(document: globalThis.Document): PointerState {
-	let state = pointerStates.get(document as Document);
-	if (state === undefined) {
-		state = {buttons: 0, pending: null, active: null};
-		pointerStates.set(document as Document, state);
-	}
-	return state;
+	return _(document as Document).extra.pointerState ??= {
+		buttons: 0,
+		pending: null,
+		active: null,
+	};
 }
 
 // An element that leaves the document loses its capture at once. A move
 // is not a removal, so moveBefore keeps it.
 function releasePointerCaptureOnRemoval(document: Document, node: Node): void {
-	const state = pointerStates.get(document);
+	const state = _(document).extra.pointerState;
 	if (
 		state?.pending != null &&
 		isShadowIncludingInclusiveAncestor(node, state.pending)
@@ -35050,16 +35577,13 @@ function movePointerStatesOffRemoval(
 	const heir = implementsInterface(parent, ShadowRoot)
 		? (_(parent).extra.host as Element)
 		: getNodeType(parent) === ELEMENT_NODE ? (parent as Element) : null;
-	for (const states of [activeElements, hoveredElements]) {
-		const element = states.get(document);
+	const extra = _(document).extra;
+	for (const key of ["pressedElement", "hoveredElement"] as const) {
+		const element = extra[key];
 		if (
 			element !== undefined && isShadowIncludingInclusiveAncestor(node, element)
 		) {
-			if (heir === null) {
-				states.delete(document);
-			} else {
-				states.set(document, heir);
-			}
+			extra[key] = heir ?? undefined;
 		}
 	}
 }
@@ -35069,14 +35593,9 @@ export function setHoveredElement(
 	document: globalThis.Document,
 	element: globalThis.Element | null,
 ): void {
-	if (element === null) {
-		hoveredElements.delete(document as Document);
-	} else {
-		hoveredElements.set(document as Document, element as Element);
-	}
+	_(document as Document).extra.hoveredElement =
+		(element as Element | null) ?? undefined;
 }
-
-const focusVisibleDocuments = new WeakMap<Document, boolean>();
 
 /**
  * A focus ring depends on how focus was moved: a key shows one, a click
@@ -35087,11 +35606,11 @@ export function setDocumentFocusVisible(
 	document: globalThis.Document,
 	active: boolean,
 ): boolean {
-	const node = document as Document;
-	if ((focusVisibleDocuments.get(node) ?? true) === active) {
+	const extra = _(document as Document).extra;
+	if ((extra.focusVisible ?? true) === active) {
 		return false;
 	}
-	focusVisibleDocuments.set(node, active);
+	extra.focusVisible = active;
 	return true;
 }
 
@@ -35145,32 +35664,66 @@ export function getPartNames(element: Element): string[] {
 	return value === null ? [] : splitOnASCIIWhitespace(value);
 }
 
-interface SessionHistory {
-	state: unknown;
-	// The entries before the current one and the current one, counting the
-	// ones this document added. The embedder keeps the list itself.
-	length: number;
+// HTML's session history entry: a URL the page was at, and what the page
+// kept with it. history.state is a copy of the classic state, and an
+// entry's getState() a copy of the navigation state.
+interface SessionHistoryEntry {
+	url: URL;
+	document: Document;
+	classicState: unknown;
+	navigationState: unknown;
+	key: string;
+	id: string;
 	scrollRestoration: globalThis.ScrollRestoration;
-	// pushState() and replaceState() leave the target where it was, so
-	// this is the URL whose fragment still names it, or null when the
-	// document's own URL does.
-	targetURL: string | null;
+	// Where the document was scrolled to when the page left the entry.
+	scrollY: number | null;
 }
 
-const sessionHistories = new WeakMap<Document, SessionHistory>();
+// The entries of a document's traversable and the one it is at. A
+// frame's document keeps entries of its own.
+interface SessionHistory {
+	entries: SessionHistoryEntry[];
+	index: number;
+	state: unknown;
+}
 
 function getSessionHistory(document: Document): SessionHistory {
-	let session = sessionHistories.get(document);
-	if (session === undefined) {
-		session = {
-			state: null,
-			length: 1,
-			scrollRestoration: "auto",
-			targetURL: null,
-		};
-		sessionHistories.set(document, session);
-	}
-	return session;
+	return _(document).extra.sessionHistory ??= {
+		entries: [
+			createHistoryEntry(
+				document,
+				new URL(_(document).extra.documentURL),
+				null,
+				undefined,
+			),
+		],
+		index: 0,
+		state: null,
+	};
+}
+
+function createHistoryEntry(
+	document: Document,
+	url: URL,
+	classicState: unknown,
+	navigationState: unknown,
+	scrollRestoration: globalThis.ScrollRestoration = "auto",
+): SessionHistoryEntry {
+	return {
+		url,
+		document,
+		classicState,
+		navigationState,
+		key: globalThis.crypto.randomUUID(),
+		id: globalThis.crypto.randomUUID(),
+		scrollRestoration,
+		scrollY: null,
+	};
+}
+
+function getActiveEntry(document: Document): SessionHistoryEntry {
+	const session = getSessionHistory(document);
+	return session.entries[session.index];
 }
 
 /** Whether `:target` matches. */
@@ -35179,24 +35732,13 @@ export function isTargetElement(element: Element): boolean {
 	if (getRoot(element as unknown as Node) !== (document as unknown as Node)) {
 		return false;
 	}
-	const url =
-		sessionHistories.get(document)?.targetURL ?? _(document).extra.documentURL;
-	const hash = url.indexOf("#");
-	if (hash === -1) {
+	const target = _(document).extra.targetFragment;
+	if (target == null) {
 		return false;
 	}
-	const fragment = url.slice(hash + 1);
-	if (fragment === "") {
-		return false;
-	}
-	let decoded = fragment;
-	try {
-		decoded = decodeURIComponent(fragment);
-	} catch (_err) {
-		// A fragment that is not valid percent-encoding is used as-is.
-	}
+	const {raw, decoded} = target;
 	const id = getAttributeValue(element, "id");
-	if (id === decoded || id === fragment) {
+	if (id === decoded || id === raw) {
 		return true;
 	}
 	// The `a` element's name attribute is the old way to write an anchor.
@@ -35226,40 +35768,35 @@ function withoutFragment(url: string): string {
 	return hash === -1 ? url : url.slice(0, hash);
 }
 
-// Whether going to `url` from the document's own URL moves only the
-// fragment: HTML's "navigate to a fragment", the one navigation a
-// terminal document can make.
-function isFragmentNavigation(document: Document, url: string): boolean {
-	return url.includes("#") &&
-		withoutFragment(url) === withoutFragment(_(document).extra.documentURL);
+// A URL's fragment, or null for a URL without one.
+function getFragment(url: string): string | null {
+	const hash = url.indexOf("#");
+	return hash === -1 ? null : url.slice(hash + 1);
 }
 
-// Following a link to a fragment of the document, or setting
-// location.hash, is a new entry in its history with no state. Going to the
-// URL the document already has replaces the current one.
-function navigateToFragment(
-	document: Document,
-	url: string,
-	replace = false,
-): void {
-	const oldURL = _(document).extra.documentURL;
-	const next = moveToURL(document, url);
-	changeHistory(document, null, replace || oldURL === url);
-	(next as HTMLElement | null)?.scrollIntoView();
-	if (oldURL !== url) {
-		queueHashChange(document, oldURL, url);
+// Gives the document a URL and the fragment :target matches.
+export function setDocumentURL(document: Document, url: string): void {
+	const extra = _(document).extra;
+	extra.documentURL = url;
+	const raw = getFragment(url);
+	if (!raw) {
+		extra.targetFragment = null;
+		return;
 	}
+	let decoded = raw;
+	try {
+		decoded = decodeURIComponent(raw);
+	} catch (_err) {
+		// A fragment that is not valid percent-encoding is used as-is.
+	}
+	extra.targetFragment = {raw, decoded};
 }
 
 // Gives the document its new URL and makes the element the fragment names
 // the target, restyling the one :target matched and the one it matches.
 function moveToURL(document: Document, url: string): Element | null {
 	const previous = getTargetElement(document);
-	_(document).extra.documentURL = url;
-	const session = sessionHistories.get(document);
-	if (session !== undefined) {
-		session.targetURL = null;
-	}
+	setDocumentURL(document, url);
 	const next = getTargetElement(document);
 	for (const element of [previous, next]) {
 		if (element !== null) {
@@ -35407,7 +35944,7 @@ export function isInQuirksMode(node: Node): boolean {
 export function isHovered(element: Element): boolean {
 	const document = _(element).document;
 	for (
-		let node: Element | null = hoveredElements.get(document) ?? null;
+		let node: Element | null = _(document).extra.hoveredElement ?? null;
 		node !== null;
 		node = getFlatTreeParent(node)
 	) {
@@ -35420,7 +35957,7 @@ export function isHovered(element: Element): boolean {
 
 export function isFocusVisible(element: Element): boolean {
 	const document = _(element).document;
-	return (focusVisibleDocuments.get(document) ?? true) && hasFocus(element);
+	return (_(document).extra.focusVisible ?? true) && hasFocus(element);
 }
 
 // The climb continues past every shadow host above the focused element,
@@ -35443,7 +35980,7 @@ export function hasFocusWithin(element: Element): boolean {
 }
 
 export function isFullscreenElement(element: Element): boolean {
-	const stack = fullscreenStacks.get(_(element).document);
+	const stack = _(_(element).document).extra.fullscreenStack;
 	return stack !== undefined && stack.includes(element);
 }
 
@@ -35590,7 +36127,7 @@ function isInvalidCandidate(element: Element): boolean {
 export function getUserValidityMatch(
 	element: Element,
 ): "valid" | "invalid" | null {
-	return userValidity.has(element) ? getValidityMatch(element) : null;
+	return _(element).userValidity ? getValidityMatch(element) : null;
 }
 
 // What :in-range and :out-of-range say about an input that is being
@@ -36040,7 +36577,7 @@ export function parseHTMLDocument(
 		markScriptedDocument(document as unknown as globalThis.Document);
 	}
 	_(document).registry = registry;
-	_(document).extra.documentURL = url;
+	setDocumentURL(document, url);
 	if (allowDeclarativeShadowRoots) {
 		attachDeclarativeShadowRoots(document);
 	}
@@ -36095,15 +36632,6 @@ const PARSERERROR_NAMESPACE =
 // partner.
 const XML_FORBIDDEN_CHAR =
 	/[\0-\x08\x0B\x0C\x0E-\x1F￾￿]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-
-/* eslint-disable no-misleading-character-class -- the XML Name production
-   matches lone combining marks by definition */
-const XML_NAME_TOKEN = new RegExp(
-	`(?:[${NAME_START}]|[\uD800-\uDBFF][\uDC00-\uDFFF])` +
-	`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*`,
-	"y",
-);
-/* eslint-enable no-misleading-character-class */
 
 const PREDEFINED_ENTITIES = new Map([
 	["amp", "&"],
@@ -36844,7 +37372,9 @@ function escapeAttribute(value: string): string {
 	return value
 		.replace(/&/g, "&amp;")
 		.replace(/\u00a0/g, "&nbsp;")
-		.replace(/"/g, "&quot;");
+		.replace(/"/g, "&quot;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
 }
 
 function getAttributeSerializedName(attribute: Attr): string {
@@ -37231,13 +37761,6 @@ for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
 	}
 }
 
-// The lists with a listener, which are the only ones a viewport change
-// has anyone to tell. `matches` reads live, so a list without a listener
-// needs no bookkeeping and is the page's to drop. The resize path is the
-// one place a terminal viewport changes, so the engine decides when to
-// re-evaluate.
-const mediaQueryLists = new WeakMap<Document, Set<MediaQueryList>>();
-
 interface MediaQueryListSlots extends EventTargetSlots {
 	mediaQueryDocument: Document;
 	// The value the last "change" event reported, kept while a listener
@@ -37329,15 +37852,12 @@ function syncMediaQuery(mediaQueryList: MediaQueryList): void {
 function trackMediaQueryListeners(list: MediaQueryList): void {
 	const listSlots = _(list);
 	const document = listSlots.mediaQueryDocument;
-	let lists = mediaQueryLists.get(document);
+	const extra = _(document).extra;
 	if (listSlots.listeners.length === 0) {
-		lists?.delete(list);
+		extra.mediaQueryLists?.delete(list);
 		return;
 	}
-	if (lists === undefined) {
-		lists = new Set();
-		mediaQueryLists.set(document, lists);
-	}
+	const lists = extra.mediaQueryLists ??= new Set();
 	if (!lists.has(list)) {
 		listSlots.mediaQueryNotified = list.matches;
 		lists.add(list);
@@ -37353,7 +37873,7 @@ export function syncMediaQueries(document: globalThis.Document): void {
 	if (window !== null) {
 		syncScreenOrientation(window as unknown as Window);
 	}
-	const lists = mediaQueryLists.get(document as Document);
+	const lists = _(document as Document).extra.mediaQueryLists;
 	if (lists === undefined) {
 		return;
 	}
@@ -37453,7 +37973,7 @@ export function attachDocument(
 		attributeOldValue: true,
 		characterData: true,
 	});
-	engineObservers.set(attached, observer);
+	_(attached).extra.engineObserver = observer;
 	// The markup parsed before the engine came holds controls no insertion
 	// record will ever name, so they are upgraded here, as an insertion
 	// upgrades them.
@@ -37519,9 +38039,15 @@ export function runControlDefaultAction(
 	// A control's own slots, which only a control has.
 	const control = _(target as unknown as Element).extra as unknown as {
 		upgraded?: boolean;
-		onKeydown?: (event: globalThis.Event) => void;
-		onBeforeInput?: (event: globalThis.Event) => void;
-		onMousedown?: (event: globalThis.Event) => void;
+		onKeydown?: (control: globalThis.Element, event: globalThis.Event) => void;
+		onBeforeInput?: (
+			control: globalThis.Element,
+			event: globalThis.Event,
+		) => void;
+		onMousedown?: (
+			control: globalThis.Element,
+			event: globalThis.Event,
+		) => void;
 	} | null;
 	if (event.defaultPrevented || control?.upgraded !== true) {
 		return;
@@ -37531,7 +38057,7 @@ export function runControlDefaultAction(
 		: event.type === "beforeinput"
 			? control.onBeforeInput
 			: event.type === "mousedown" ? control.onMousedown : undefined;
-	handler?.(event);
+	handler?.(target, event);
 }
 
 /** The focused element, through shadow roots. */
@@ -37861,7 +38387,7 @@ function dropUnfocusableFocus(document: Document): void {
  * callback, so a caller that never paints must request the frame itself.
  */
 export function applyMutations(document: globalThis.Document): boolean {
-	const observer = engineObservers.get(document as Document);
+	const observer = _(document as Document).extra.engineObserver;
 	if (observer === undefined) {
 		return false;
 	}
@@ -37894,13 +38420,10 @@ export function syncFormControls(document: globalThis.Document): void {
 /**
  * Checks, for tests, that every form control's shadow tree already shows
  * its state when a frame starts, so no change of state went without
- * redrawing it. Set, a control the frame's sync would change throws,
- * naming it.
+ * redrawing it. A control the frame's sync would change throws, naming
+ * it.
  */
-export const controlCheck = {enabled: false, checked: 0};
-
 export function checkFormControls(document: globalThis.Document): void {
-	controlCheck.checked++;
 	const attached = getAttachedDocument(document);
 	if (attached === undefined) {
 		return;
@@ -37974,10 +38497,6 @@ export function revealPendingEditingCaret(document: globalThis.Document): void {
 	attachedSlots.extra.layout.revealCaret(node as Node, selection!.focusOffset);
 }
 
-// Offsets only leave their range when layout changes, since every scroll
-// clamps what it stores, so a flush after no solve has nothing to clamp.
-const clampedSolves = new WeakMap<object, number>();
-
 /**
  * Synchronously settle what a geometry read must see: pending mutations
  * delivered and layout brought up to date. A geometry read needs fresh
@@ -37991,16 +38510,13 @@ export function flushLayout(node: globalThis.Node): boolean {
 	if (attached !== undefined) {
 		const layout = _(attached).extra.layout;
 		layout.performLayout();
-		if (clampedSolves.get(layout) !== layout.solves) {
-			clampedSolves.set(layout, layout.solves);
-			clampScrollOffsets(attached);
-		}
+		clampScrollOffsets(attached);
 	}
 	return had;
 }
 
 export function hoverListenerCount(document: globalThis.Document): number {
-	return hoverListenerCounters.get(document as Document)?.count ?? 0;
+	return _(document as Document).extra.hoverCount?.count ?? 0;
 }
 
 /** The images and canvas options of the TermDOM drawing the node's document. */
@@ -38418,10 +38934,10 @@ Object.defineProperty(DOMStringList.prototype, Symbol.toStringTag, {
 
 // Every reading member is live. It re-reads the document's URL instead
 // of caching the value it was built with, because the document's URL is
-// the source of truth and a copy would go stale. Every WRITING member
-// navigates, and there is nowhere to navigate to (one document per
-// window, no way to fetch another), so each throws rather than
-// pretending it moved.
+// the source of truth and a copy would go stale. Every writing member
+// navigates. A navigation the document cannot carry out itself, to
+// another document that no navigate listener intercepts, throws a
+// NotSupportedError.
 interface LocationSlots {
 	locationWindow: Window;
 }
@@ -38444,7 +38960,7 @@ class Location {
 	}
 
 	set href(value: string) {
-		navigateLocation(this, String(value), false);
+		navigateLocation(this, String(value), "auto");
 	}
 
 	get origin(): string {
@@ -38455,48 +38971,48 @@ class Location {
 		return getLocationURL(this)?.protocol ?? "";
 	}
 
-	set protocol(_value: string) {
-		throw noNavigation();
+	set protocol(value: string) {
+		setLocationPart(this, "protocol", String(value));
 	}
 
 	get host(): string {
 		return getLocationURL(this)?.host ?? "";
 	}
 
-	set host(_value: string) {
-		throw noNavigation();
+	set host(value: string) {
+		setLocationPart(this, "host", String(value));
 	}
 
 	get hostname(): string {
 		return getLocationURL(this)?.hostname ?? "";
 	}
 
-	set hostname(_value: string) {
-		throw noNavigation();
+	set hostname(value: string) {
+		setLocationPart(this, "hostname", String(value));
 	}
 
 	get port(): string {
 		return getLocationURL(this)?.port ?? "";
 	}
 
-	set port(_value: string) {
-		throw noNavigation();
+	set port(value: string) {
+		setLocationPart(this, "port", String(value));
 	}
 
 	get pathname(): string {
 		return getLocationURL(this)?.pathname ?? "";
 	}
 
-	set pathname(_value: string) {
-		throw noNavigation();
+	set pathname(value: string) {
+		setLocationPart(this, "pathname", String(value));
 	}
 
 	get search(): string {
 		return getLocationURL(this)?.search ?? "";
 	}
 
-	set search(_value: string) {
-		throw noNavigation();
+	set search(value: string) {
+		setLocationPart(this, "search", String(value));
 	}
 
 	get hash(): string {
@@ -38510,12 +39026,11 @@ class Location {
 		if (url === null) {
 			return;
 		}
-		const next = new URL(url.href);
-		next.hash = String(value);
-		if (next.hash === url.hash) {
-			return;
+		const previous = url.hash;
+		url.hash = String(value);
+		if (url.hash !== previous) {
+			navigateLocation(this, url, "auto");
 		}
-		navigateToFragment(_(this).locationWindow.document, next.href);
 	}
 
 	/** A terminal document is not in a frame, so it has no ancestors. */
@@ -38524,15 +39039,18 @@ class Location {
 	}
 
 	assign(url: string | URL): void {
-		navigateLocation(this, String(url), false);
+		navigateLocation(this, String(url), "auto");
 	}
 
 	replace(url: string | URL): void {
-		navigateLocation(this, String(url), true);
+		navigateLocation(this, String(url), "replace");
 	}
 
 	reload(): void {
-		throw noNavigation();
+		const document = _(this).locationWindow.document as unknown as Document;
+		if (!reloadDocument(document, "none", null)) {
+			throw failNavigation(document);
+		}
 	}
 
 	toString(): string {
@@ -38551,52 +39069,62 @@ Object.defineProperty(Location.prototype, Symbol.toStringTag, {
 // null when the URL Standard cannot parse it, and each member above falls
 // back to what a browser returns for an opaque location.
 function getLocationURL(location: Location): URL | null {
-	return URL.canParse(location.href) ? new URL(location.href) : null;
+	return parseURL(location.href);
 }
 
-// Only a fragment of the document itself is somewhere to go.
+// HTML's Location-object navigate. The URL resolves against the
+// document's base URL.
 function navigateLocation(
 	location: Location,
-	value: string,
-	replace: boolean,
+	value: string | URL,
+	historyHandling: globalThis.NavigationHistoryBehavior,
 ): void {
-	const document = _(location).locationWindow.document;
-	let url: string;
-	try {
-		url = new URL(value, _(document).extra.documentURL).href;
-	} catch (_err) {
+	const document = _(location).locationWindow.document as unknown as Document;
+	const url = typeof value === "string"
+		? parseURL(value, getDocumentBaseURL(document))
+		: value;
+	if (url === null) {
 		throw domError("SyntaxError", `"${value}" is not a URL`);
 	}
-	if (!isFragmentNavigation(document, url)) {
-		throw noNavigation();
+	if (!navigateDocument(document, url, {historyHandling})) {
+		throw failNavigation(document);
 	}
-	navigateToFragment(document, url, replace);
+}
+
+// A setter of one part of the URL: the location navigates to its URL with
+// that part changed. A URL with an opaque path has no host, port or path
+// to change, and a protocol other than http and https is not one to go to.
+function setLocationPart(
+	location: Location,
+	part: "protocol" | "host" | "hostname" | "port" | "pathname" | "search",
+	value: string,
+): void {
+	const url = getLocationURL(location);
+	if (
+		url === null ||
+		(part !== "protocol" && part !== "search" && !url.pathname.startsWith("/"))
+	) {
+		return;
+	}
+	url[part] = value;
+	if (part === "protocol" && !/^https?:$/.test(url.protocol)) {
+		return;
+	}
+	navigateLocation(location, url, "auto");
 }
 
 function noNavigation(): DOMException {
 	return domError(
 		"NotSupportedError",
-		"This DOM displays one document per window and cannot navigate",
+		"This DOM shows one document per window and cannot load another",
 	);
 }
-
-// Keyed by the handle requestAnimationFrame returned, so
-// cancelAnimationFrame can cancel. The engine fires them once the frame
-// containing their pending mutations has been written.
-const frameCallbacks = new WeakMap<
-	Document,
-	{next: number; held: Map<number, FrameRequestCallback>}
->();
 
 function holdFrameCallback(
 	document: Document,
 	callback: FrameRequestCallback,
 ): number {
-	let state = frameCallbacks.get(document);
-	if (state === undefined) {
-		state = {next: 1, held: new Map()};
-		frameCallbacks.set(document, state);
-	}
+	const state = _(document).extra.frameCallbacks ??= {next: 1, held: new Map()};
 	const handle = state.next++;
 	state.held.set(handle, callback);
 	return handle;
@@ -38615,12 +39143,12 @@ export function framePainted(document: globalThis.Document): Promise<void> {
 }
 
 export function hasFrameCallbacks(document: globalThis.Document): boolean {
-	const state = frameCallbacks.get(document as Document);
+	const state = _(document as Document).extra.frameCallbacks;
 	return state !== undefined && state.held.size > 0;
 }
 
 export function runFrameCallbacks(document: globalThis.Document): boolean {
-	const state = frameCallbacks.get(document as Document);
+	const state = _(document as Document).extra.frameCallbacks;
 	if (state === undefined || state.held.size === 0) {
 		return false;
 	}
@@ -38698,33 +39226,9 @@ const EXTERNAL: globalThis.External = Object.freeze({
 	IsSearchProviderInstalled(): void {},
 });
 
-// The engine drawing the document hears of each entry the page adds or
-// changes, so its own back and forward list can follow.
-function changeHistory(
-	document: Document,
-	state: unknown,
-	replace: boolean,
-): void {
-	const session = getSessionHistory(document);
-	session.state = state;
-	if (!replace) {
-		session.length++;
-	}
-	_maybe(getAttachedDocument(document))?.extra.historyChanged(
-		_(document).extra.documentURL,
-		state,
-		replace,
-	);
-}
-
 // HTML's "can have its URL rewritten": the same origin, and for a URL
 // that is neither http nor https, nothing but the fragment changed.
-function canRewriteURL(documentURL: string, targetURL: string): boolean {
-	if (!URL.canParse(documentURL)) {
-		return false;
-	}
-	const from = new URL(documentURL);
-	const to = new URL(targetURL);
+function canRewriteURL(from: URL, to: URL): boolean {
 	if (
 		from.protocol !== to.protocol ||
 		from.username !== to.username ||
@@ -38739,11 +39243,340 @@ function canRewriteURL(documentURL: string, targetURL: string): boolean {
 	return from.pathname === to.pathname && from.search === to.search;
 }
 
+const FETCH_SCHEMES = new Set([
+	"about:",
+	"blob:",
+	"data:",
+	"file:",
+	"http:",
+	"https:",
+]);
+
+type UserInvolvement = "none" | "activation" | "browser UI";
+
+// What HTML's navigate takes beside the URL. A POST form's entries are
+// the entry list, and the navigation state is navigation.navigate()'s.
+interface NavigateParams {
+	historyHandling?: globalThis.NavigationHistoryBehavior;
+	navigationState?: {value: unknown} | null;
+	formData?: FormDataEntry[] | null;
+	userInvolvement?: UserInvolvement;
+	sourceElement?: Element | null;
+}
+
+/**
+ * HTML's navigate, for a document that navigates itself. A fragment of
+ * the document is a same-document navigation. Anywhere else is another
+ * document, which a navigate listener may intercept or cancel. False
+ * when nothing did and the navigation would load another document, which
+ * this DOM cannot do.
+ */
+function navigateDocument(
+	document: Document,
+	url: URL,
+	{
+		historyHandling = "auto",
+		navigationState = null,
+		formData = null,
+		userInvolvement = "none",
+		sourceElement = null,
+	}: NavigateParams = {},
+): boolean {
+	const documentURL = _(document).extra.documentURL;
+	const handling = historyHandling !== "auto"
+		? historyHandling
+		: url.href === documentURL ? "replace" : "push";
+	if (
+		formData === null &&
+		url.href.includes("#") &&
+		withoutFragment(url.href) === withoutFragment(documentURL)
+	) {
+		navigateToFragment(document, url, handling, {
+			userInvolvement,
+			sourceElement,
+			navigationState,
+		});
+		return true;
+	}
+	const navigation = getDocumentNavigation(document);
+	if (
+		navigation === null ||
+		!FETCH_SCHEMES.has(url.protocol) ||
+		userInvolvement === "browser UI"
+	) {
+		return false;
+	}
+	const destination = createDestination(
+		url,
+		null,
+		navigationState ?? {value: undefined},
+		false,
+	);
+	return !fireNavigateEvent(navigation, handling, destination, {
+		userInvolvement,
+		sourceElement,
+		formData,
+	});
+}
+
+// A navigation this DOM cannot carry out ends the navigate event that
+// announced it, as an aborted navigation does.
+function failNavigation(document: Document): DOMException {
+	const error = noNavigation();
+	const navigation = getDocumentNavigation(document);
+	if (navigation !== null && _(navigation).ongoingEvent !== null) {
+		abortOngoingNavigation(navigation, error);
+	}
+	return error;
+}
+
+// HTML's navigate to a fragment: a new entry for the URL, which carries
+// the navigation state over unless navigation.navigate() gave one, and
+// has no classic state. The page hears popstate, and hashchange when the
+// fragment changed.
+function navigateToFragment(
+	document: Document,
+	url: URL,
+	historyHandling: "push" | "replace",
+	{userInvolvement, sourceElement, navigationState}: NavigateParams,
+): void {
+	const active = getActiveEntry(document);
+	const state = navigationState ?? {value: active.navigationState};
+	const navigation = getDocumentNavigation(document);
+	if (
+		navigation !== null &&
+		!fireNavigateEvent(
+			navigation,
+			historyHandling,
+			createDestination(url, null, state, true),
+			{userInvolvement, sourceElement},
+		)
+	) {
+		return;
+	}
+	const oldURL = _(document).extra.documentURL;
+	getSessionHistory(document).state = null;
+	const target = moveToURL(document, url.href);
+	const entry = createHistoryEntry(
+		document,
+		url,
+		null,
+		state.value,
+		active.scrollRestoration,
+	);
+	const disposed = commitEntry(document, entry, historyHandling);
+	updateNavigationEntries(document, historyHandling, active, disposed);
+	firePopState(document);
+	if (getFragment(oldURL) !== getFragment(url.href)) {
+		queueHashChange(document, oldURL, url.href);
+	}
+	scrollToFragment(document, target);
+}
+
+// HTML's scroll to the fragment: the element it names, or the top of the
+// document for an empty fragment or "top".
+function scrollToFragment(document: Document, target: Element | null): void {
+	if (target !== null) {
+		(target as HTMLElement).scrollIntoView();
+		return;
+	}
+	const fragment = getFragment(_(document).extra.documentURL);
+	if (fragment === "" || fragment?.toLowerCase() === "top") {
+		scrollWindowTo(document, 0);
+	}
+}
+
+function scrollWindowTo(document: Document, y: number): void {
+	(_(document).extra.defaultView as Window | null)?.scrollTo(0, y);
+}
+
+// HTML's URL and history update steps, which pushState(), replaceState()
+// and an intercepted navigation take: the document's URL moves without
+// moving its target, and a new entry takes the classic state given, or
+// keeps the current one's.
+function updateURLAndHistory(
+	document: Document,
+	url: URL,
+	classicState: {value: unknown} | null,
+	historyHandling: "push" | "replace",
+): void {
+	const session = getSessionHistory(document);
+	const active = session.entries[session.index];
+	const entry = createHistoryEntry(
+		document,
+		url,
+		classicState === null ? active.classicState : classicState.value,
+		undefined,
+		active.scrollRestoration,
+	);
+	if (classicState !== null) {
+		session.state = cloneStructured(entry.classicState, "restore the state");
+	}
+	_(document).extra.documentURL = url.href;
+	const disposed = commitEntry(document, entry, historyHandling);
+	updateNavigationEntries(document, historyHandling, active, disposed);
+}
+
+// HTML's finalize a same-document navigation: the entry replaces the
+// current one and keeps its key, or follows it and drops the entries
+// ahead of it, which it returns with a replaced one. The engine drawing
+// the document hears of the change, so a back and forward list of its own
+// can follow.
+function commitEntry(
+	document: Document,
+	entry: SessionHistoryEntry,
+	historyHandling: "push" | "replace",
+): SessionHistoryEntry[] {
+	const session = getSessionHistory(document);
+	const active = session.entries[session.index];
+	let disposed: SessionHistoryEntry[];
+	if (historyHandling === "replace") {
+		entry.key = active.key;
+		session.entries[session.index] = entry;
+		disposed = [active];
+	} else {
+		active.scrollY = getScrollY(document);
+		disposed = session.entries.splice(session.index + 1);
+		session.entries.push(entry);
+		session.index++;
+	}
+	_maybe(getAttachedDocument(document))?.extra.historyChanged(
+		entry.url.href,
+		session.state,
+		historyHandling === "replace",
+	);
+	return disposed;
+}
+
+function getScrollY(document: Document): number | null {
+	return (_(document).extra.defaultView as Window | null)?.scrollY ?? null;
+}
+
+function firePopState(document: Document): void {
+	const window = _(document).extra.defaultView as unknown as EventTarget | null;
+	if (window !== null) {
+		const state = getSessionHistory(document).state;
+		dispatchAsUserAgent(
+			window,
+			constructInternal(() => new PopStateEvent("popstate", {state})),
+		);
+	}
+}
+
+// HTML's traverse the history by a delta, in a task after the call. A
+// delta past the document's entries is the embedder's to answer.
+function traverseByDelta(document: Document, delta: number): void {
+	setTimeout(() => {
+		const session = getSessionHistory(document);
+		const target = delta === 0
+			? undefined
+			: session.entries[session.index + delta];
+		if (target !== undefined) {
+			traverseToEntry(document, target, "none");
+			return;
+		}
+		const attached = getAttachedDocument(document);
+		if (attached !== undefined) {
+			_(attached).extra.historyTraversed(delta);
+		}
+	}, 0);
+}
+
+// HTML's apply the traverse history step, for an entry of the document.
+// A navigate listener can cancel a traversal the page asked for, or
+// intercept it, which commits it before its handlers run.
+function traverseToEntry(
+	document: Document,
+	entry: SessionHistoryEntry,
+	userInvolvement: UserInvolvement,
+): void {
+	const navigation = getDocumentNavigation(document);
+	if (
+		navigation !== null &&
+		!fireNavigateEvent(
+			navigation,
+			"traverse",
+			createDestination(
+				entry.url,
+				getHistoryEntry(navigation, entry),
+				{value: entry.navigationState},
+				true,
+			),
+			{userInvolvement},
+		)
+	) {
+		return;
+	}
+	applyHistoryStep(document, entry);
+}
+
+// HTML's update document for history step application, for an entry of
+// the document itself: it takes the entry's URL and state, the fragment's
+// element becomes the target, and the window hears popstate, then
+// hashchange when the fragment moved. The scroll position the entry left
+// comes back unless the page restores its own, or an intercepting
+// listener takes it over.
+function applyHistoryStep(
+	document: Document,
+	entry: SessionHistoryEntry,
+): void {
+	const session = getSessionHistory(document);
+	const from = session.entries[session.index];
+	from.scrollY = getScrollY(document);
+	session.index = session.entries.indexOf(entry);
+	session.state = cloneStructured(entry.classicState, "restore the state");
+	const oldURL = _(document).extra.documentURL;
+	const target = moveToURL(document, entry.url.href);
+	if (from !== entry) {
+		updateNavigationEntries(document, "traverse", from, []);
+	}
+	firePopState(document);
+	if (getFragment(oldURL) !== getFragment(entry.url.href)) {
+		queueHashChange(document, oldURL, entry.url.href);
+	}
+	const navigation = getDocumentNavigation(document);
+	if (
+		entry.scrollRestoration === "manual" ||
+		(navigation !== null && _(navigation).suppressScroll)
+	) {
+		return;
+	}
+	if (entry.scrollY === null) {
+		(target as HTMLElement | null)?.scrollIntoView();
+	} else {
+		scrollWindowTo(document, entry.scrollY);
+	}
+}
+
+// HTML's reload, up to the load: a navigate listener can intercept or
+// cancel it. False when nothing did.
+function reloadDocument(
+	document: Document,
+	userInvolvement: UserInvolvement,
+	navigationState: {value: unknown} | null,
+): boolean {
+	const navigation = getDocumentNavigation(document);
+	if (navigation === null || userInvolvement === "browser UI") {
+		return false;
+	}
+	const active = getActiveEntry(document);
+	const destination = createDestination(
+		active.url,
+		null,
+		navigationState ?? {value: active.navigationState},
+		false,
+	);
+	return !fireNavigateEvent(navigation, "reload", destination, {
+		userInvolvement,
+	});
+}
+
 /**
  * Goes to an entry of the document's own history: the embedder's answer
- * to a back or forward. The document takes the entry's URL and state, the
- * fragment's element becomes the target and is scrolled to, and the
- * window hears popstate, then hashchange when only the fragment moved.
+ * to a back or forward. The entry is the nearest one with the URL, which
+ * takes the state given, and the page hears navigate, popstate, then
+ * hashchange when the fragment moved. Where no other entry has the URL,
+ * the current one takes the URL and state.
  */
 export function traverseHistory(
 	document: globalThis.Document,
@@ -38753,30 +39586,30 @@ export function traverseHistory(
 	const traversed = document as unknown as Document;
 	const oldURL = _(traversed).extra.documentURL;
 	const parsed = parseURL(url, oldURL);
-	if (parsed === null || !canRewriteURL(oldURL, parsed)) {
+	if (parsed === null || !canRewriteURL(new URL(oldURL), parsed)) {
 		throw domError(
 			"SecurityError",
 			`${url} is not an entry of the document at ${oldURL}`,
 		);
 	}
-	const session = getSessionHistory(traversed);
-	session.state = cloneStructured(state, "execute 'traverse' on 'TermDOM'");
-	const next = moveToURL(traversed, parsed);
-	(next as HTMLElement | null)?.scrollIntoView();
-	const window = _(traversed).extra.defaultView as unknown as EventTarget |
-		null;
-	if (window !== null) {
-		dispatchAsUserAgent(
-			window,
-			constructInternal(() =>
-				new PopStateEvent("popstate", {state: session.state}),
-			),
-		);
+	const clone = cloneStructured(state, "execute 'traverse' on 'TermDOM'");
+	const {entries, index} = getSessionHistory(traversed);
+	let entry = entries[index];
+	for (let distance = 1; distance < entries.length; distance++) {
+		const near = [entries[index - distance], entries[index + distance]]
+			.find((candidate) => candidate?.url.href === parsed.href);
+		if (near !== undefined) {
+			entry = near;
+			break;
+		}
 	}
-	if (
-		oldURL !== parsed && withoutFragment(oldURL) === withoutFragment(parsed)
-	) {
-		queueHashChange(traversed, oldURL, parsed);
+	if (entry === entries[index]) {
+		entry.url = parsed;
+		entry.classicState = clone;
+		applyHistoryStep(traversed, entry);
+	} else {
+		entry.classicState = clone;
+		traverseToEntry(traversed, entry, "browser UI");
 	}
 }
 
@@ -38788,9 +39621,8 @@ interface History {
 	readonly [internals]: HistorySlots;
 }
 
-// HTML's History for the one document the window shows. Where the page
-// goes back or forward to is the embedder's to decide, so a traversal is
-// an event at the engine, which answers with traverseHistory().
+// HTML's History. The entries are the document's, so back and forward
+// go between them. Going past them is the embedder's to answer.
 class History {
 	constructor(window: Window) {
 		seal(this, new.target, History);
@@ -38801,17 +39633,17 @@ class History {
 	}
 
 	get length(): number {
-		return getSessionHistory(getHistoryDocument(this)).length;
+		return getSessionHistory(getHistoryDocument(this)).entries.length;
 	}
 
 	get scrollRestoration(): globalThis.ScrollRestoration {
-		return getSessionHistory(getHistoryDocument(this)).scrollRestoration;
+		return getActiveEntry(getHistoryDocument(this)).scrollRestoration;
 	}
 
 	set scrollRestoration(value: globalThis.ScrollRestoration) {
 		const mode = String(value);
 		if (mode === "auto" || mode === "manual") {
-			getSessionHistory(getHistoryDocument(this)).scrollRestoration = mode;
+			getActiveEntry(getHistoryDocument(this)).scrollRestoration = mode;
 		}
 	}
 
@@ -38820,15 +39652,24 @@ class History {
 	}
 
 	back(): void {
-		requestTraversal(getHistoryDocument(this), -1);
+		traverseByDelta(getHistoryDocument(this), -1);
 	}
 
 	forward(): void {
-		requestTraversal(getHistoryDocument(this), 1);
+		traverseByDelta(getHistoryDocument(this), 1);
 	}
 
+	// A delta of 0 reloads. A reload no listener intercepts is the
+	// embedder's to answer, after the call.
 	go(delta = 0): void {
-		requestTraversal(getHistoryDocument(this), toLong(delta));
+		const document = getHistoryDocument(this);
+		const by = toLong(delta);
+		if (by !== 0) {
+			traverseByDelta(document, by);
+		} else if (!reloadDocument(document, "none", null)) {
+			_(getDocumentNavigation(document)!).ongoingEvent = null;
+			traverseByDelta(document, 0);
+		}
 	}
 
 	pushState(data: any, _unused: string, url?: string | URL | null): void {
@@ -38851,16 +39692,10 @@ function getHistoryDocument(history: History): Document {
 	return _(history).historyWindow.document as unknown as Document;
 }
 
-function requestTraversal(document: Document, delta: number): void {
-	const attached = getAttachedDocument(document);
-	if (attached !== undefined) {
-		setTimeout(() => _(attached).extra.historyTraversed(delta), 0);
-	}
-}
-
 // HTML's shared history push/replace state steps. The URL resolves
 // against the document's base URL and may differ only where the document
-// could have reached it without leaving.
+// could have reached it without leaving. A navigate listener can cancel
+// the change or intercept it.
 function updateHistory(
 	history: History,
 	method: "pushState" | "replaceState",
@@ -38870,10 +39705,11 @@ function updateHistory(
 	const document = getHistoryDocument(history);
 	const state = cloneStructured(data, `execute '${method}' on 'History'`);
 	const documentURL = _(document).extra.documentURL;
-	let newURL = documentURL;
+	const current = new URL(documentURL);
+	let newURL = current;
 	if (url != null && String(url) !== "") {
 		const parsed = parseURL(String(url), getDocumentBaseURL(document));
-		if (parsed === null || !canRewriteURL(documentURL, parsed)) {
+		if (parsed === null || !canRewriteURL(current, parsed)) {
 			throw domError(
 				"SecurityError",
 				`Failed to execute '${method}' on 'History': A history state ` +
@@ -38883,13 +39719,1013 @@ function updateHistory(
 		}
 		newURL = parsed;
 	}
-	const session = getSessionHistory(document);
-	if (session.targetURL === null && newURL !== documentURL) {
-		session.targetURL = documentURL;
+	const historyHandling = method === "pushState" ? "push" : "replace";
+	const navigation = getDocumentNavigation(document);
+	if (
+		navigation !== null &&
+		!fireNavigateEvent(
+			navigation,
+			historyHandling,
+			createDestination(newURL, null, {value: undefined}, true),
+			{classicState: {value: state}},
+		)
+	) {
+		return;
 	}
-	_(document).extra.documentURL = newURL;
-	changeHistory(document, state, method === "replaceState");
+	updateURLAndHistory(document, newURL, {value: state}, historyHandling);
 }
+
+interface Deferred<T> {
+	promise: Promise<T>;
+	resolve: (value: T) => void;
+	reject: (reason: unknown) => void;
+}
+
+function createDeferred<T>(): Deferred<T> {
+	const deferred = {} as Deferred<T>;
+	deferred.promise = new Promise<T>((resolve, reject) => {
+		deferred.resolve = resolve;
+		deferred.reject = reject;
+	});
+	return deferred;
+}
+
+// HTML's navigation API method tracker: the promises a navigation method
+// returned, settled as its navigation commits and finishes. A traversal's
+// has the key it goes to, and no state.
+interface NavigationMethodTracker {
+	navigation: Navigation;
+	key: string | null;
+	info: unknown;
+	state: {value: unknown} | null;
+	committedTo: NavigationHistoryEntry | null;
+	committed: Deferred<NavigationHistoryEntry>;
+	finished: Deferred<NavigationHistoryEntry>;
+}
+
+function createTracker(
+	navigation: Navigation,
+	key: string | null,
+	info: unknown,
+	state: {value: unknown} | null,
+): NavigationMethodTracker {
+	const tracker: NavigationMethodTracker = {
+		navigation,
+		key,
+		info,
+		state,
+		committedTo: null,
+		committed: createDeferred(),
+		finished: createDeferred(),
+	};
+	tracker.finished.promise.catch(() => {});
+	return tracker;
+}
+
+function getTrackerResult(
+	tracker: NavigationMethodTracker,
+): globalThis.NavigationResult {
+	return {
+		committed: tracker.committed.promise,
+		finished: tracker.finished.promise,
+	};
+}
+
+function getEarlyErrorResult(error: unknown): globalThis.NavigationResult {
+	return {committed: Promise.reject(error), finished: Promise.reject(error)};
+}
+
+// HTML's notify about the committed-to entry. A method that gave a state
+// gives it to the entry.
+function notifyCommitted(
+	tracker: NavigationMethodTracker,
+	entry: NavigationHistoryEntry,
+): void {
+	tracker.committedTo = entry;
+	if (tracker.state !== null) {
+		_(entry).sessionEntry.navigationState = tracker.state.value;
+	}
+	tracker.committed.resolve(entry);
+}
+
+function resolveTracker(tracker: NavigationMethodTracker): void {
+	tracker.committed.resolve(tracker.committedTo!);
+	tracker.finished.resolve(tracker.committedTo!);
+	cleanUpTracker(tracker);
+}
+
+function rejectTracker(tracker: NavigationMethodTracker, error: unknown): void {
+	tracker.committed.reject(error);
+	tracker.finished.reject(error);
+	cleanUpTracker(tracker);
+}
+
+function cleanUpTracker(tracker: NavigationMethodTracker): void {
+	const slots = _(tracker.navigation);
+	if (slots.ongoingTracker === tracker) {
+		slots.ongoingTracker = null;
+	} else if (tracker.key !== null) {
+		slots.traverseTrackers.delete(tracker.key);
+	}
+}
+
+function getDocumentNavigation(document: Document): Navigation | null {
+	const window = _(document).extra.defaultView as Window | null;
+	return window === null ? null : getNavigation(window);
+}
+
+function getNavigation(window: Window): Navigation {
+	return _(window).navigation ??= constructInternal(() =>
+		new Navigation(window),
+	);
+}
+
+// A document is fully active while its window shows it.
+function isFullyActive(window: Window): boolean {
+	return !_(window).discarded &&
+		_(window.document as unknown as Document).extra.defaultView === window;
+}
+
+// HTML's "has entries and events disabled": a document no longer shown,
+// the about:blank a frame starts with, and a document of an opaque origin
+// have no entries the API shows, and fire none of its events.
+function hasEntriesAndEventsDisabled(navigation: Navigation): boolean {
+	const window = _(navigation).navigationWindow;
+	return !isFullyActive(window) ||
+		(_(window).frameOwner !== null && window.document.URL === "about:blank") ||
+		window.origin === "null";
+}
+
+function getNavigationEntries(navigation: Navigation): SessionHistoryEntry[] {
+	return hasEntriesAndEventsDisabled(navigation)
+		? []
+		: getSessionHistory(getNavigationDocument(navigation)).entries;
+}
+
+function getNavigationDocument(navigation: Navigation): Document {
+	return _(navigation).navigationWindow.document as unknown as Document;
+}
+
+// One NavigationHistoryEntry per session history entry, for as long as
+// the entry is in the list.
+function getHistoryEntry(
+	navigation: Navigation,
+	entry: SessionHistoryEntry,
+): NavigationHistoryEntry {
+	const slots = _(navigation);
+	let historyEntry = slots.historyEntries.get(entry);
+	if (historyEntry === undefined) {
+		historyEntry = constructInternal(() =>
+			new NavigationHistoryEntry(slots.navigationWindow, entry),
+		);
+		slots.historyEntries.set(entry, historyEntry);
+	}
+	return historyEntry;
+}
+
+function getCurrentHistoryEntry(
+	navigation: Navigation,
+): NavigationHistoryEntry | null {
+	return hasEntriesAndEventsDisabled(navigation)
+		? null
+		: getHistoryEntry(
+			navigation,
+			getActiveEntry(getNavigationDocument(navigation)),
+		);
+}
+
+// HTML's update the navigation API entries for a same-document
+// navigation: the method that asked hears its entry commit, the page
+// hears currententrychange, and the entries that left the list hear
+// dispose.
+function updateNavigationEntries(
+	document: Document,
+	navigationType: globalThis.NavigationType,
+	from: SessionHistoryEntry,
+	disposed: SessionHistoryEntry[],
+): void {
+	const navigation = getDocumentNavigation(document);
+	if (navigation === null || hasEntriesAndEventsDisabled(navigation)) {
+		return;
+	}
+	const slots = _(navigation);
+	const fromEntry = getHistoryEntry(navigation, from);
+	const current = getHistoryEntry(navigation, getActiveEntry(document));
+	if (slots.ongoingTracker !== null) {
+		notifyCommitted(slots.ongoingTracker, current);
+	}
+	if (slots.transition !== null) {
+		_(slots.transition).transitionCommitted.resolve(undefined);
+	}
+	dispatchAsUserAgent(
+		navigation,
+		constructInternal(() =>
+			new NavigationCurrentEntryChangeEvent("currententrychange", {
+				navigationType,
+				from: fromEntry as unknown as globalThis.NavigationHistoryEntry,
+			}),
+		),
+	);
+	for (const entry of disposed) {
+		const historyEntry = slots.historyEntries.get(entry);
+		if (historyEntry !== undefined) {
+			slots.historyEntries.delete(entry);
+			dispatchAsUserAgent(
+				historyEntry,
+				constructInternal(() => new Event("dispose")),
+			);
+		}
+	}
+}
+
+interface NavigateEventParams {
+	userInvolvement?: UserInvolvement;
+	sourceElement?: Element | null;
+	formData?: FormDataEntry[] | null;
+	classicState?: {value: unknown} | null;
+	downloadRequest?: string | null;
+}
+
+/**
+ * HTML's inner navigate event firing algorithm. Whether the navigation
+ * goes on as it was asked for: false once a listener canceled it, or
+ * intercepted it, which commits it here and runs the listener's handlers.
+ * A same-document navigation or an intercepted one fires navigatesuccess
+ * or navigateerror once the handlers settle.
+ */
+function fireNavigateEvent(
+	navigation: Navigation,
+	navigationType: globalThis.NavigationType,
+	destination: NavigationDestination,
+	{
+		userInvolvement = "none",
+		sourceElement = null,
+		formData = null,
+		classicState = null,
+		downloadRequest = null,
+	}: NavigateEventParams = {},
+): boolean {
+	if (hasEntriesAndEventsDisabled(navigation)) {
+		return true;
+	}
+	const slots = _(navigation);
+	const window = slots.navigationWindow;
+	const document = window.document as unknown as Document;
+	if (slots.ongoingEvent !== null) {
+		abortOngoingNavigation(navigation);
+	}
+	const {url, sameDocument, entry} = _(destination);
+	const key = entry === null ? null : _(entry).sessionEntry.key;
+	if (key === null) {
+		slots.ongoingTracker = slots.upcomingTracker;
+		slots.upcomingTracker = null;
+	} else {
+		slots.ongoingTracker = slots.traverseTrackers.get(key) ?? null;
+		slots.traverseTrackers.delete(key);
+	}
+	const tracker = slots.ongoingTracker;
+	const documentURL = _(document).extra.documentURL;
+	const controller = new globalThis.AbortController();
+	const event = constructInternal(() =>
+		new NavigateEvent("navigate", {
+			navigationType,
+			destination: destination as unknown as globalThis.NavigationDestination,
+			canIntercept:
+				canRewriteURL(new URL(documentURL), url) &&
+				(sameDocument || navigationType !== "traverse"),
+			cancelable:
+				navigationType !== "traverse" ||
+				(_(window).parentWindow === null &&
+					sameDocument &&
+					userInvolvement !== "browser UI"),
+			userInitiated: userInvolvement !== "none",
+			hashChange:
+				sameDocument &&
+				withoutFragment(url.href) === withoutFragment(documentURL) &&
+				getFragment(url.href) !== getFragment(documentURL),
+			signal: controller.signal,
+			formData: formData === null
+				? null
+				: formDataFromEntries(formData) as unknown as globalThis.FormData,
+			downloadRequest,
+			info: tracker?.info,
+			sourceElement: sourceElement as globalThis.Element | null,
+		}),
+	);
+	const eventSlots = _(event);
+	eventSlots.navigateNavigation = navigation;
+	eventSlots.navigateController = controller;
+	slots.ongoingEvent = event;
+	slots.focusChanged = false;
+	slots.suppressScroll = false;
+	if (!dispatchAsUserAgent(navigation, event)) {
+		if (!controller.signal.aborted) {
+			abortOngoingNavigation(navigation);
+		}
+		return false;
+	}
+	const intercepted = eventSlots.interception !== "none";
+	if (intercepted) {
+		eventSlots.interception = "committed";
+		const transition = constructInternal(() =>
+			new NavigationTransition(
+				navigationType,
+				getCurrentHistoryEntry(navigation)!,
+				destination,
+			),
+		);
+		slots.transition = transition;
+		if (navigationType === "traverse") {
+			slots.suppressScroll = true;
+			applyHistoryStep(document, _(entry!).sessionEntry);
+		} else if (navigationType === "reload") {
+			const active = getActiveEntry(document);
+			updateNavigationEntries(document, "reload", active, []);
+		} else {
+			updateURLAndHistory(document, url, classicState, navigationType);
+		}
+	}
+	if (!intercepted && !sameDocument) {
+		return true;
+	}
+	const results = eventSlots.handlers.map((handler) => {
+		try {
+			return Promise.resolve(runInRealm(getFunctionRealm(handler), handler));
+		} catch (error) {
+			return Promise.reject(error);
+		}
+	});
+	const settle = (fulfilled: boolean, error?: unknown): void => {
+		if (
+			!isFullyActive(window) ||
+			controller.signal.aborted ||
+			slots.ongoingEvent !== event
+		) {
+			return;
+		}
+		slots.ongoingEvent = null;
+		finishNavigateEvent(event, fulfilled);
+		const transition = slots.transition;
+		slots.transition = null;
+		if (fulfilled) {
+			if (tracker !== null) {
+				resolveTracker(tracker);
+			}
+			dispatchAsUserAgent(
+				navigation,
+				constructInternal(() => new Event("navigatesuccess")),
+			);
+			_maybe(transition)?.transitionFinished.resolve(undefined);
+		} else {
+			fireNavigateError(navigation, error);
+			if (tracker !== null) {
+				rejectTracker(tracker, error);
+			}
+			_maybe(transition)?.transitionFinished.reject(error);
+		}
+	};
+	Promise.all(results)
+		.then(() => settle(true), (error: unknown) => settle(false, error));
+	return !intercepted;
+}
+
+function fireNavigateError(navigation: Navigation, error: unknown): void {
+	dispatchAsUserAgent(
+		navigation,
+		constructInternal(() =>
+			new ErrorEvent("navigateerror", {
+				message: error instanceof Error ? error.message : String(error),
+				error,
+			}),
+		),
+	);
+}
+
+// HTML's abort the ongoing navigation: its navigate event is canceled and
+// its signal aborts, the page hears navigateerror, and what the method
+// that asked for it returned rejects.
+function abortOngoingNavigation(
+	navigation: Navigation,
+	error: unknown = domError("AbortError", "The navigation was aborted"),
+): void {
+	const slots = _(navigation);
+	const event = slots.ongoingEvent!;
+	const eventSlots = _(event);
+	slots.focusChanged = false;
+	slots.suppressScroll = false;
+	if (eventSlots.state.dispatch) {
+		eventSlots.state.canceled = true;
+	}
+	eventSlots.navigateController?.abort(error);
+	slots.ongoingEvent = null;
+	fireNavigateError(navigation, error);
+	if (slots.ongoingTracker !== null) {
+		rejectTracker(slots.ongoingTracker, error);
+	}
+	const transition = slots.transition;
+	slots.transition = null;
+	_maybe(transition)?.transitionFinished.reject(error);
+}
+
+// HTML's finish a NavigateEvent: an intercepted navigation resets the
+// focus unless it moved, and scrolls once it succeeded, unless the
+// listener asked to do either itself.
+function finishNavigateEvent(event: NavigateEvent, fulfilled: boolean): void {
+	const slots = _(event);
+	if (slots.interception === "none") {
+		return;
+	}
+	const navigation = slots.navigateNavigation!;
+	const document = getNavigationDocument(navigation);
+	const focusChanged = _(navigation).focusChanged;
+	_(navigation).focusChanged = false;
+	if (!focusChanged && slots.focusReset !== "manual") {
+		resetFocus(document);
+	}
+	if (
+		fulfilled &&
+		slots.interception !== "scrolled" &&
+		slots.scrollBehavior !== "manual"
+	) {
+		processScrollBehavior(event);
+	}
+	slots.interception = "finished";
+}
+
+// HTML's potentially reset the focus: the focus goes to the first element
+// with autofocus that takes it, or else back to the document, from where
+// sequential navigation starts.
+function resetFocus(document: Document): void {
+	const page = document as unknown as globalThis.Document;
+	for (const candidate of page.querySelectorAll("[autofocus]")) {
+		(candidate as globalThis.HTMLElement).focus();
+		if (getFocusedElement(page) === candidate) {
+			return;
+		}
+	}
+	(getFocusedElement(page) as globalThis.HTMLElement | null)?.blur();
+	_(document).extra.focusStartingPoint = undefined;
+}
+
+// HTML's process scroll behavior: a traversal goes back to where its entry
+// was scrolled, and any other navigation to its fragment's element or the
+// top of the document.
+function processScrollBehavior(event: NavigateEvent): void {
+	const slots = _(event);
+	slots.interception = "scrolled";
+	const document = getNavigationDocument(slots.navigateNavigation!);
+	if (slots.navigationType === "traverse") {
+		scrollWindowTo(document, getActiveEntry(document).scrollY ?? 0);
+	} else {
+		const target = moveToURL(document, _(document).extra.documentURL);
+		if (target === null) {
+			scrollWindowTo(document, 0);
+		} else {
+			scrollToFragment(document, target);
+		}
+	}
+}
+
+interface NavigationSlots extends EventTargetSlots {
+	navigationWindow: Window;
+	historyEntries: Map<SessionHistoryEntry, NavigationHistoryEntry>;
+	ongoingEvent: NavigateEvent | null;
+	// Whether the focus moved while the navigate event was ongoing, which
+	// leaves the focus where it went.
+	focusChanged: boolean;
+	// Whether an intercepted traversal scrolls when it finishes rather
+	// than when it commits.
+	suppressScroll: boolean;
+	transition: NavigationTransition | null;
+	activation: NavigationActivation | null | undefined;
+	ongoingTracker: NavigationMethodTracker | null;
+	upcomingTracker: NavigationMethodTracker | null;
+	traverseTrackers: Map<string, NavigationMethodTracker>;
+}
+
+interface Navigation {
+	readonly [internals]: NavigationSlots;
+}
+
+/** HTML's Navigation, a window's view of its document's session history. */
+class Navigation extends EventTarget {
+	declare oncurrententrychange: globalThis.Navigation["oncurrententrychange"];
+	declare onnavigate: globalThis.Navigation["onnavigate"];
+	declare onnavigateerror: globalThis.Navigation["onnavigateerror"];
+	declare onnavigatesuccess: globalThis.Navigation["onnavigatesuccess"];
+	constructor(window?: Window) {
+		super();
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		const slots = _(this);
+		slots.navigationWindow = window!;
+		slots.historyEntries = new Map();
+		slots.ongoingEvent = null;
+		slots.focusChanged = false;
+		slots.suppressScroll = false;
+		slots.transition = null;
+		slots.activation = undefined;
+		slots.ongoingTracker = null;
+		slots.upcomingTracker = null;
+		slots.traverseTrackers = new Map();
+	}
+
+	get currentEntry(): NavigationHistoryEntry | null {
+		return getCurrentHistoryEntry(this);
+	}
+
+	get transition(): NavigationTransition | null {
+		return _(this).transition;
+	}
+
+	// The entry the document was shown with, which a terminal document is
+	// by a push.
+	get activation(): NavigationActivation | null {
+		const slots = _(this);
+		if (slots.activation === undefined) {
+			const entry = getNavigationEntries(this)[0];
+			slots.activation = entry === undefined
+				? null
+				: constructInternal(() =>
+					new NavigationActivation(getHistoryEntry(this, entry)),
+				);
+		}
+		return slots.activation;
+	}
+
+	get canGoBack(): boolean {
+		return getNavigationEntries(this).length > 0 &&
+			getSessionHistory(getNavigationDocument(this)).index > 0;
+	}
+
+	get canGoForward(): boolean {
+		const entries = getNavigationEntries(this);
+		return entries.length >
+			getSessionHistory(getNavigationDocument(this)).index + 1;
+	}
+
+	entries(): NavigationHistoryEntry[] {
+		return getNavigationEntries(this).map((entry) =>
+			getHistoryEntry(this, entry),
+		);
+	}
+
+	updateCurrentEntry(
+		options: globalThis.NavigationUpdateCurrentEntryOptions,
+	): void {
+		const init = toDictionary<globalThis.NavigationUpdateCurrentEntryOptions>(
+			options,
+			"The options",
+		);
+		if (!("state" in init)) {
+			throw new TypeError("updateCurrentEntry needs a state");
+		}
+		const current = getCurrentHistoryEntry(this);
+		if (current === null) {
+			throw domError("InvalidStateError", "The document has no entries");
+		}
+		_(current).sessionEntry.navigationState = cloneStructured(
+			init.state,
+			"execute 'updateCurrentEntry' on 'Navigation'",
+		);
+		dispatchAsUserAgent(
+			this,
+			constructInternal(() =>
+				new NavigationCurrentEntryChangeEvent("currententrychange", {
+					navigationType: null,
+					from: current as unknown as globalThis.NavigationHistoryEntry,
+				}),
+			),
+		);
+	}
+
+	navigate(
+		url: string | URL,
+		options: globalThis.NavigationNavigateOptions = {},
+	): globalThis.NavigationResult {
+		const init = toDictionary<globalThis.NavigationNavigateOptions>(
+			options,
+			"The options",
+		);
+		const historyHandling = String(init.history ?? "auto");
+		if (!["auto", "push", "replace"].includes(historyHandling)) {
+			throw new TypeError(`"${historyHandling}" is not a history behavior`);
+		}
+		const document = getNavigationDocument(this);
+		const parsed = parseURL(String(url), getDocumentBaseURL(document));
+		if (parsed === null) {
+			return getEarlyErrorResult(
+				domError("SyntaxError", `"${String(url)}" is not a URL`),
+			);
+		}
+		if (historyHandling === "push" && parsed.protocol === "javascript:") {
+			return getEarlyErrorResult(
+				domError("NotSupportedError", "A javascript: URL replaces"),
+			);
+		}
+		let state: {value: unknown};
+		try {
+			state = {
+				value: cloneStructured(
+					init.state,
+					"execute 'navigate' on 'Navigation'",
+				),
+			};
+		} catch (error) {
+			return getEarlyErrorResult(error);
+		}
+		if (!isFullyActive(_(this).navigationWindow)) {
+			return getEarlyErrorResult(
+				domError("InvalidStateError", "The document is not shown"),
+			);
+		}
+		const tracker = setUpcomingTracker(this, init.info, state);
+		if (
+			!navigateDocument(document, parsed, {
+				historyHandling:
+					historyHandling as globalThis.NavigationHistoryBehavior,
+				navigationState: state,
+			})
+		) {
+			failNavigation(document);
+		}
+		if (_(this).upcomingTracker === tracker) {
+			_(this).upcomingTracker = null;
+			return getEarlyErrorResult(
+				domError("AbortError", "The navigation was aborted"),
+			);
+		}
+		return getTrackerResult(tracker);
+	}
+
+	reload(
+		options: globalThis.NavigationReloadOptions = {},
+	): globalThis.NavigationResult {
+		const init = toDictionary<globalThis.NavigationReloadOptions>(
+			options,
+			"The options",
+		);
+		const document = getNavigationDocument(this);
+		let state: {value: unknown};
+		try {
+			state = {
+				value: "state" in init
+					? cloneStructured(init.state, "execute 'reload' on 'Navigation'")
+					: getActiveEntry(document).navigationState,
+			};
+		} catch (error) {
+			return getEarlyErrorResult(error);
+		}
+		if (!isFullyActive(_(this).navigationWindow)) {
+			return getEarlyErrorResult(
+				domError("InvalidStateError", "The document is not shown"),
+			);
+		}
+		const tracker = setUpcomingTracker(this, init.info, state);
+		if (!reloadDocument(document, "none", state)) {
+			failNavigation(document);
+		}
+		return getTrackerResult(tracker);
+	}
+
+	traverseTo(
+		key: string,
+		options: globalThis.NavigationOptions = {},
+	): globalThis.NavigationResult {
+		const wanted = String(key);
+		const entry = getNavigationEntries(this).find((candidate) =>
+			candidate.key === wanted,
+		);
+		return entry === undefined
+			? getEarlyErrorResult(
+				domError("InvalidStateError", "No entry has that key"),
+			)
+			: traverseNavigation(this, entry, options);
+	}
+
+	back(
+		options: globalThis.NavigationOptions = {},
+	): globalThis.NavigationResult {
+		const entries = getNavigationEntries(this);
+		const index = getSessionHistory(getNavigationDocument(this)).index;
+		return entries.length === 0 || index === 0
+			? getEarlyErrorResult(
+				domError("InvalidStateError", "There is no entry to go back to"),
+			)
+			: traverseNavigation(this, entries[index - 1], options);
+	}
+
+	forward(
+		options: globalThis.NavigationOptions = {},
+	): globalThis.NavigationResult {
+		const entries = getNavigationEntries(this);
+		const index = getSessionHistory(getNavigationDocument(this)).index;
+		return index + 1 >= entries.length
+			? getEarlyErrorResult(
+				domError("InvalidStateError", "There is no entry to go forward to"),
+			)
+			: traverseNavigation(this, entries[index + 1], options);
+	}
+}
+
+installEventHandlers(Navigation.prototype, [
+	"oncurrententrychange",
+	"onnavigate",
+	"onnavigateerror",
+	"onnavigatesuccess",
+]);
+
+Object.defineProperty(Navigation.prototype, Symbol.toStringTag, {
+	value: "Navigation",
+	configurable: true,
+});
+
+// HTML's maybe set the upcoming non-traverse API method tracker.
+function setUpcomingTracker(
+	navigation: Navigation,
+	info: unknown,
+	state: {value: unknown},
+): NavigationMethodTracker {
+	const tracker = createTracker(navigation, null, info, state);
+	if (!hasEntriesAndEventsDisabled(navigation)) {
+		_(navigation).upcomingTracker = tracker;
+	}
+	return tracker;
+}
+
+// HTML's perform a navigation API traversal, which goes to the entry in a
+// task after the call. A second call for the entry before then shares the
+// first one's promises.
+function traverseNavigation(
+	navigation: Navigation,
+	entry: SessionHistoryEntry,
+	options: globalThis.NavigationOptions,
+): globalThis.NavigationResult {
+	const init = toDictionary<globalThis.NavigationOptions>(
+		options,
+		"The options",
+	);
+	const document = getNavigationDocument(navigation);
+	if (entry === getActiveEntry(document)) {
+		const current = getHistoryEntry(navigation, entry);
+		return {
+			committed: Promise.resolve(current),
+			finished: Promise.resolve(current),
+		};
+	}
+	const trackers = _(navigation).traverseTrackers;
+	const upcoming = trackers.get(entry.key);
+	if (upcoming !== undefined) {
+		return getTrackerResult(upcoming);
+	}
+	const tracker = createTracker(navigation, entry.key, init.info, null);
+	trackers.set(entry.key, tracker);
+	setTimeout(() => {
+		const session = getSessionHistory(document);
+		const target = session.entries.find((candidate) =>
+			candidate.key === entry.key,
+		);
+		if (target === undefined) {
+			rejectTracker(
+				tracker,
+				domError("InvalidStateError", "The entry is gone"),
+			);
+		} else if (target !== session.entries[session.index]) {
+			traverseToEntry(document, target, "none");
+		}
+	}, 0);
+	return getTrackerResult(tracker);
+}
+
+interface NavigationHistoryEntrySlots extends EventTargetSlots {
+	entryWindow: Window;
+	sessionEntry: SessionHistoryEntry;
+}
+
+interface NavigationHistoryEntry {
+	readonly [internals]: NavigationHistoryEntrySlots;
+}
+
+/**
+ * One entry of a window's navigation.entries(). Once its document is no
+ * longer shown, it has no URL, key or state.
+ */
+class NavigationHistoryEntry extends EventTarget {
+	declare ondispose: globalThis.NavigationHistoryEntry["ondispose"];
+	constructor(window?: Window, entry?: SessionHistoryEntry) {
+		super();
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		const slots = _(this);
+		slots.entryWindow = window!;
+		slots.sessionEntry = entry!;
+	}
+
+	get url(): string | null {
+		return isFullyActive(_(this).entryWindow)
+			? _(this).sessionEntry.url.href
+			: "";
+	}
+
+	get key(): string {
+		return isFullyActive(_(this).entryWindow) ? _(this).sessionEntry.key : "";
+	}
+
+	get id(): string {
+		return isFullyActive(_(this).entryWindow) ? _(this).sessionEntry.id : "";
+	}
+
+	get index(): number {
+		const window = _(this).entryWindow;
+		return isFullyActive(window)
+			? getNavigationEntries(getNavigation(window))
+				.indexOf(_(this).sessionEntry)
+			: -1;
+	}
+
+	get sameDocument(): boolean {
+		const {entryWindow, sessionEntry} = _(this);
+		return isFullyActive(entryWindow) &&
+			sessionEntry.document === (entryWindow.document as unknown);
+	}
+
+	getState(): any {
+		return isFullyActive(_(this).entryWindow)
+			? cloneStructured(_(this).sessionEntry.navigationState, "getState")
+			: undefined;
+	}
+}
+
+installEventHandler(NavigationHistoryEntry.prototype, "ondispose");
+
+Object.defineProperty(NavigationHistoryEntry.prototype, Symbol.toStringTag, {
+	value: "NavigationHistoryEntry",
+	configurable: true,
+});
+
+interface NavigationDestinationSlots {
+	url: URL;
+	entry: NavigationHistoryEntry | null;
+	state: {value: unknown};
+	sameDocument: boolean;
+}
+
+interface NavigationDestination {
+	readonly [internals]: NavigationDestinationSlots;
+}
+
+/** Where a navigate event's navigation goes. */
+class NavigationDestination {
+	constructor() {
+		seal(this, new.target, NavigationDestination);
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+	}
+
+	get url(): string {
+		return _(this).url.href;
+	}
+
+	get key(): string {
+		return _(this).entry?.key ?? "";
+	}
+
+	get id(): string {
+		return _(this).entry?.id ?? "";
+	}
+
+	get index(): number {
+		return _(this).entry?.index ?? -1;
+	}
+
+	get sameDocument(): boolean {
+		return _(this).sameDocument;
+	}
+
+	getState(): any {
+		return cloneStructured(_(this).state.value, "getState");
+	}
+}
+
+declareSealedRoot(NavigationDestination);
+
+Object.defineProperty(NavigationDestination.prototype, Symbol.toStringTag, {
+	value: "NavigationDestination",
+	configurable: true,
+});
+
+function createDestination(
+	url: URL,
+	entry: NavigationHistoryEntry | null,
+	state: {value: unknown},
+	sameDocument: boolean,
+): NavigationDestination {
+	const destination = constructInternal(() => new NavigationDestination());
+	Object.assign(_(destination), {url, entry, state, sameDocument});
+	return destination;
+}
+
+interface NavigationTransitionSlots {
+	navigationType: globalThis.NavigationType;
+	from: NavigationHistoryEntry;
+	to: NavigationDestination;
+	transitionCommitted: Deferred<undefined>;
+	transitionFinished: Deferred<undefined>;
+}
+
+interface NavigationTransition {
+	readonly [internals]: NavigationTransitionSlots;
+}
+
+/** An intercepted navigation while its handlers run. */
+class NavigationTransition {
+	constructor(
+		navigationType?: globalThis.NavigationType,
+		from?: NavigationHistoryEntry,
+		to?: NavigationDestination,
+	) {
+		seal(this, new.target, NavigationTransition);
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		const slots = _(this);
+		slots.navigationType = navigationType!;
+		slots.from = from!;
+		slots.to = to!;
+		slots.transitionCommitted = createDeferred();
+		slots.transitionFinished = createDeferred();
+		slots.transitionCommitted.promise.catch(() => {});
+		slots.transitionFinished.promise.catch(() => {});
+	}
+
+	get navigationType(): globalThis.NavigationType {
+		return _(this).navigationType;
+	}
+
+	get from(): NavigationHistoryEntry {
+		return _(this).from;
+	}
+
+	get to(): NavigationDestination {
+		return _(this).to;
+	}
+
+	get committed(): Promise<undefined> {
+		return _(this).transitionCommitted.promise;
+	}
+
+	get finished(): Promise<undefined> {
+		return _(this).transitionFinished.promise;
+	}
+}
+
+declareSealedRoot(NavigationTransition);
+
+Object.defineProperty(NavigationTransition.prototype, Symbol.toStringTag, {
+	value: "NavigationTransition",
+	configurable: true,
+});
+
+interface NavigationActivationSlots {
+	activationEntry: NavigationHistoryEntry;
+}
+
+interface NavigationActivation {
+	readonly [internals]: NavigationActivationSlots;
+}
+
+/** How the document came to be shown. */
+class NavigationActivation {
+	constructor(entry?: NavigationHistoryEntry) {
+		seal(this, new.target, NavigationActivation);
+		if (!internalConstruction) {
+			throw new TypeError("Illegal constructor");
+		}
+		_(this).activationEntry = entry!;
+	}
+
+	get from(): NavigationHistoryEntry | null {
+		return null;
+	}
+
+	get entry(): NavigationHistoryEntry {
+		return _(this).activationEntry;
+	}
+
+	get navigationType(): globalThis.NavigationType {
+		return "push";
+	}
+}
+
+declareSealedRoot(NavigationActivation);
+
+Object.defineProperty(NavigationActivation.prototype, Symbol.toStringTag, {
+	value: "NavigationActivation",
+	configurable: true,
+});
 
 // The runtime's own navigator's count, kept from when the module loaded,
 // before installGlobals() can put a window's navigator in its place.
@@ -39412,13 +41248,21 @@ const RANDOM_VALUE_ARRAYS = [
 	BigUint64Array,
 ];
 
-/** WebCrypto's Crypto, as far as the runtime's random source serves it. */
+/**
+ * WebCrypto's Crypto, from the runtime's random source and the runtime's
+ * SubtleCrypto.
+ */
 export class Crypto {
 	constructor() {
 		seal(this, new.target, Crypto);
 		if (!internalConstruction) {
 			throw new TypeError("Illegal constructor");
 		}
+	}
+
+	get subtle(): globalThis.SubtleCrypto {
+		_(this);
+		return runtimeCrypto.subtle;
 	}
 
 	getRandomValues<T extends ArrayBufferView | null>(array: T): T {
@@ -39458,6 +41302,7 @@ export interface WindowSlots extends EventTargetSlots {
 	windowLocation: Location | undefined;
 	closed: boolean;
 	history: globalThis.History;
+	navigation: Navigation | undefined;
 	localStorage: Storage;
 	sessionStorage: Storage;
 	screenInfo: Screen | undefined;
@@ -39474,8 +41319,21 @@ export interface WindowSlots extends EventTargetSlots {
 	parentWindow: Window | null;
 	frameOwner: HTMLIFrameElement | null;
 	realm: Realm | null;
+	// A frame's window whose iframe left the page or showed another
+	// document.
+	discarded: boolean;
 	// How many frames the window's indexed properties name.
 	frameIndexes: number;
+	// Whether the window is firing an error event now. An exception raised
+	// while it is, by an error listener itself, skips the event, as HTML's
+	// "in error reporting mode" has it, rather than firing another without
+	// end.
+	reportingError?: boolean;
+	timers?: Map<number, ReturnType<typeof setTimeout>>;
+	processTimers?: Record<string, unknown>;
+	// The tasks the engine queued for the window, such as a message on its
+	// way, which go with the window as its timers do.
+	tasks?: Set<ReturnType<typeof runtime.setTimeout>>;
 }
 
 export interface Window {
@@ -39754,6 +41612,7 @@ export class Window extends EventTarget {
 		slots.parentWindow = null;
 		slots.frameOwner = null;
 		slots.realm = null;
+		slots.discarded = false;
 		slots.frameIndexes = 0;
 		for (const name of new Set([
 			...documentSlots.extra.idMap.keys(),
@@ -39881,7 +41740,7 @@ export class Window extends EventTarget {
 				permissions: constructInternal(() => new Permissions(document)),
 				userActivation: {
 					get hasBeenActive(): boolean {
-						return everActivatedDocuments.has(document);
+						return _(document).extra.lastActivation !== undefined;
 					},
 					// HTML's transient activation, which outlasts the gesture by
 					// a moment. The clipboard asks the narrower question.
@@ -39932,6 +41791,10 @@ export class Window extends EventTarget {
 			slots.history = history;
 		}
 		return history;
+	}
+
+	get navigation(): Navigation {
+		return getNavigation(this);
 	}
 
 	get length(): number {
@@ -40041,7 +41904,7 @@ export class Window extends EventTarget {
 		if (parent !== null && (url === "about:srcdoc" || url === "about:blank")) {
 			return parent.origin;
 		}
-		return URL.canParse(url) ? new URL(url).origin : "null";
+		return parseURL(url)?.origin ?? "null";
 	}
 
 	get localStorage(): Storage {
@@ -40167,7 +42030,7 @@ export class Window extends EventTarget {
 	}
 
 	cancelAnimationFrame(handle: number): void {
-		frameCallbacks.get(this.document)?.held.delete(handle);
+		_(this.document).extra.frameCallbacks?.held.delete(handle);
 	}
 
 	// The Selection API defines the window's getSelection as a call to the
@@ -40314,13 +42177,14 @@ export class Window extends EventTarget {
 		if (targetOrigin === "/") {
 			targetOrigin = source.origin;
 		} else if (targetOrigin !== "*") {
-			if (!URL.canParse(targetOrigin)) {
+			const parsed = parseURL(targetOrigin);
+			if (parsed === null) {
 				throw domError(
 					"SyntaxError",
 					`Failed to execute 'postMessage' on 'Window': Invalid target origin '${targetOrigin}'.`,
 				);
 			}
-			targetOrigin = new URL(targetOrigin).origin;
+			targetOrigin = parsed.origin;
 		}
 		const realm = slots.realm;
 		const data = runInRealm(realm, () => {
@@ -40440,6 +42304,7 @@ export const platform = {
 	Attr,
 	BeforeUnloadEvent,
 	CDATASection,
+	CaretPosition,
 	CharacterData,
 	Clipboard,
 	ClipboardEvent,
@@ -40566,6 +42431,13 @@ export const platform = {
 	MutationObserver,
 	MutationRecord,
 	NamedNodeMap,
+	NavigateEvent,
+	Navigation,
+	NavigationActivation,
+	NavigationCurrentEntryChangeEvent,
+	NavigationDestination,
+	NavigationHistoryEntry,
+	NavigationTransition,
 	Node,
 	NodeFilter,
 	NodeIterator,
@@ -40740,12 +42612,6 @@ function cloneWithPlatformObjects(
 	return copy;
 }
 
-export const windowTimers = new WeakMap<
-	object,
-	Map<number, ReturnType<typeof setTimeout>>
->();
-export const processTimers = new WeakMap<object, Record<string, unknown>>();
-
 /**
  * The window's setTimeout and setInterval as installGlobals() puts them
  * on the global: they report what their callbacks throw as the page's
@@ -40753,22 +42619,11 @@ export const processTimers = new WeakMap<object, Record<string, unknown>>();
  * disposing the TermDOM leaves them running.
  */
 export function getProcessTimers(window: Window): Record<string, unknown> {
-	return processTimers.get(window)!;
+	return _(window).processTimers!;
 }
 
-// The tasks the engine queued for a window, such as a message on its way,
-// which go with the window as its timers do.
-const windowTasks = new WeakMap<
-	Window,
-	Set<ReturnType<typeof runtime.setTimeout>>
->();
-
 function queueWindowTask(window: Window, task: () => void): void {
-	let tasks = windowTasks.get(window);
-	if (tasks === undefined) {
-		tasks = new Set();
-		windowTasks.set(window, tasks);
-	}
+	const tasks = _(window).tasks ??= new Set();
 	const handle = runtime.setTimeout(() => {
 		tasks.delete(handle);
 		task();
@@ -40781,12 +42636,12 @@ function queueWindowTask(window: Window, task: () => void): void {
  * unloaded document's.
  */
 export function clearWindowTimers(window: Window): void {
-	const timers = windowTimers.get(window);
+	const timers = _(window).timers;
 	for (const handle of timers?.values() ?? []) {
 		runtime.clearTimeout(handle);
 	}
 	timers?.clear();
-	const tasks = windowTasks.get(window);
+	const tasks = _(window).tasks;
 	for (const handle of tasks ?? []) {
 		runtime.clearTimeout(handle);
 	}
@@ -40935,6 +42790,10 @@ export type {
 	PopStateEvent,
 	CloseEvent,
 	History,
+	NavigateEvent,
+	Navigation,
+	NavigationCurrentEntryChangeEvent,
+	NavigationHistoryEntry,
 	ErrorEvent,
 	PromiseRejectionEvent,
 	StorageEvent,
@@ -40960,6 +42819,7 @@ export type {
 	DOMTokenList,
 	CharacterData,
 	CDATASection,
+	CaretPosition,
 	ProcessingInstruction,
 	DocumentType,
 	Attr,
@@ -41093,26 +42953,18 @@ export function getEditingHost(
 	return nodeContains(body, node) ? body : null;
 }
 
-// The policies a page stated for itself with <meta> in its head.
-const metaPolicyTexts = new WeakMap<object, string[]>();
-
 /**
  * A `<meta http-equiv="Content-Security-Policy">` inserted as a child of
  * a head (HTML §4.2.5.3): its policy holds for the document from then on,
  * whatever later becomes of the element.
  */
-function addDocumentPolicy(document: object, content: string): void {
-	const texts = metaPolicyTexts.get(document);
-	if (texts === undefined) {
-		metaPolicyTexts.set(document, [content]);
-	} else {
-		texts.push(content);
-	}
+function addDocumentPolicy(document: Document, content: string): void {
+	(_(document).extra.metaPolicyTexts ??= []).push(content);
 }
 
 /** The policy texts the document's <meta> elements stated, in order. */
 export function getMetaPolicyTexts(document: object): readonly string[] {
-	return metaPolicyTexts.get(document) ?? [];
+	return _(document as Document).extra.metaPolicyTexts ?? [];
 }
 
 /**

@@ -10,7 +10,6 @@ import {
 	getTabSize,
 	getUsedOverflow,
 	getWhiteSpace,
-	mayGiveViewportOverflow,
 	resolveBorderSides,
 	resolveLength,
 	type StyleGroup,
@@ -150,8 +149,6 @@ interface PaintStyle {
 	gradient: Gradient | null;
 	border: BorderPaint | null;
 	outlineColor: number | undefined | null;
-	overflowX: string;
-	overflowY: string;
 	textTransform: string;
 	whiteSpace: string;
 	tabSize: number;
@@ -167,8 +164,6 @@ interface PaintStyle {
 	// after it, not its own cells.
 	counters: string;
 }
-
-type SharedPaintStyle = Omit<PaintStyle, "overflowX" | "overflowY">;
 
 interface BorderPaint {
 	top?: LineStyle;
@@ -195,6 +190,9 @@ const PAINTED_ELSEWHERE = [
 	"direction",
 	"text-align",
 	"text-indent",
+	"overflow-x",
+	"overflow-y",
+	"contain",
 ];
 
 /**
@@ -228,12 +226,41 @@ export function paintsAsBefore(
 	return before === after;
 }
 
-function readPaintStyle(element: Element): SharedPaintStyle {
-	const color = getComputedValue(element, "color");
+// The text cells of a box or one of its pseudo-elements: color, weight,
+// style and lines.
+function readTextCell(element: Element, pseudo = ""): CellStyle {
+	const color = getComputedValue(element, "color", pseudo);
+	const decoration = CSSValues.parseTextDecorationLine(
+		getComputedValue(element, "text-decoration-line", pseudo),
+	);
+	const {bold, dim} = resolveFontWeight(
+		getComputedValue(element, "font-weight", pseudo),
+	);
+	return {
+		fg: color && color !== "initial" && !CSSValues.isHighlightColor(color)
+			? CSSValues.numberFromCSSColor(color)
+			: undefined,
+		bold,
+		dim,
+		italic: getComputedValue(element, "font-style", pseudo) === "italic",
+		underline: decoration.underline,
+		underlineStyle:
+			getComputedValue(
+				element,
+				"text-decoration-style",
+				pseudo,
+			) ===
+			"double"
+				? "double"
+				: undefined,
+		strikethrough: decoration.lineThrough,
+	};
+}
+
+function readPaintStyle(element: Element): PaintStyle {
+	const text = readTextCell(element);
+	const fg = text.fg as number | undefined;
 	const backgroundColor = getComputedValue(element, "background-color");
-	const fg = color && color !== "initial" && !CSSValues.isHighlightColor(color)
-		? CSSValues.numberFromCSSColor(color)
-		: undefined;
 	// Canvas clears the box to the terminal's default background, opaque in
 	// every theme. Highlight fills it with inverse.
 	const isCanvasBg =
@@ -328,12 +355,6 @@ function readPaintStyle(element: Element): SharedPaintStyle {
 		shiftX = typeof left === "number" ? left : 0;
 		shiftY = typeof top === "number" ? top : 0;
 	}
-	const decoration = CSSValues.parseTextDecorationLine(
-		getComputedValue(element, "text-decoration-line"),
-	);
-	const {bold, dim} = resolveFontWeight(
-		getComputedValue(element, "font-weight"),
-	);
 	const gradient = getGradient(element);
 	const model = getBoxModel(element);
 	return {
@@ -363,7 +384,7 @@ function readPaintStyle(element: Element): SharedPaintStyle {
 		shiftX,
 		shiftY,
 		cell: {
-			fg,
+			...text,
 			// A gradient gives every cell its own background, so naming one
 			// here would repaint the run flat under the text. An undefined
 			// background leaves each cell the color the gradient put there.
@@ -377,16 +398,6 @@ function readPaintStyle(element: Element): SharedPaintStyle {
 			// The background alone carries inverse. color: HighlightText alone
 			// resolves to nothing, so an author color does not defeat it.
 			inverse: isHighlightBox || undefined,
-			bold,
-			dim,
-			italic: getComputedValue(element, "font-style") === "italic",
-			underline: decoration.underline,
-			underlineStyle:
-				getComputedValue(element, "text-decoration-style") ===
-				"double"
-					? ("double" as const)
-					: undefined,
-			strikethrough: decoration.lineThrough,
 		},
 	};
 }
@@ -766,18 +777,17 @@ export function resolveDocumentScrollBand(
 }
 
 export function paint(painter: Painter, ctx: CellContext): void {
+	clearMap(painter.paintedText);
+	clearMap(painter.inTransparent);
+	clearMap(painter.highlightStyles);
 	// A frame with no rows to paint, one asked for in case input changed
 	// something, lets go of the last frame's and does no more.
 	if (ctx.bands.length === 0) {
 		clearMap(painter.highlightedText);
-		clearMap(painter.paintedText);
-		clearMap(painter.inTransparent);
-		clearMap(painter.highlightStyles);
 		painter.selectedRange = null;
 		return;
 	}
 	painter.highlightedText = collectHighlightedText(painter.document);
-	painter.paintedText.clear();
 	painter.rectsTaken = 0;
 	painter.fragmentsTaken = 0;
 	if (painter.rects.length > KEPT_RECORDS) {
@@ -787,8 +797,6 @@ export function paint(painter: Painter, ctx: CellContext): void {
 		painter.fragments.length = KEPT_RECORDS;
 	}
 	painter.selectedRange = getSelectedRange(painter.window);
-	painter.inTransparent = new Map();
-	painter.highlightStyles = new Map();
 	const layers = collectStackingLayers(painter.layout, painter.topLayer);
 	// From the body, the root stacking context's content. A body that
 	// is inline, inline-block or display: contents puts its content in
@@ -856,17 +864,13 @@ function findCanvasElement(painter: Painter): Element | null {
 
 /**
  * Checks a frame that repainted only some rows against one painted
- * whole, for tests. Set, a frame that differs throws, naming the cells,
- * and checked counts the frames compared.
+ * whole, for tests. A frame that differs throws, naming the cells.
  */
-export const partialFrameCheck = {enabled: false, checked: 0};
-
 export function checkPartialFrame(
 	painter: Painter,
 	ctx: CellContext,
 	previousCaret: Caret | null,
 ): void {
-	partialFrameCheck.checked++;
 	const whole = new CellContext(
 		new CellGrid(ctx.rows, ctx.cols),
 		ctx.rows,
@@ -932,39 +936,20 @@ function paintBand(
 	}
 }
 
-// The paint style of every element that shares its values, and the
-// whole paint style, with the used overflow, which reads the element's
-// own display. Held once for each pair, so two alike are one object.
-const PAINT_STYLE: StyleGroup<SharedPaintStyle> = {
+// The paint style of every element that shares its values, held once
+// for each set of values, so two alike are one object.
+const PAINT_STYLE: StyleGroup<PaintStyle> = {
 	name: "paint",
 	read: readPaintStyle,
 };
-const overflowedPaintStyles = new WeakMap<
-	SharedPaintStyle,
-	Map<string, PaintStyle>
->();
 
 function getPaintStyle(painter: Painter, element: Element): PaintStyle {
 	const key = painter.cascade.getStyleKey(element);
-	const known = key === null || mayGiveViewportOverflow(element)
-		? undefined
-		: paintStyles.get(key);
+	const known = key === null ? undefined : paintStyles.get(key);
 	if (known !== undefined) {
 		return known;
 	}
-	const shared = getStyleGroup(element, PAINT_STYLE);
-	const overflowX = getUsedOverflow(element, "x");
-	const overflowY = getUsedOverflow(element, "y");
-	let styles = overflowedPaintStyles.get(shared);
-	if (styles === undefined) {
-		styles = new Map();
-		overflowedPaintStyles.set(shared, styles);
-	}
-	let style = styles.get(`${overflowX} ${overflowY}`);
-	if (style === undefined) {
-		style = Object.freeze({...shared, overflowX, overflowY});
-		styles.set(`${overflowX} ${overflowY}`, style);
-	}
+	const style = getStyleGroup(element, PAINT_STYLE);
 	if (key !== null) {
 		paintStyles.set(key, style);
 	}
@@ -1210,11 +1195,12 @@ function paintContent(
 	// Overflow clips descendants, never the element's own box.
 	const previousClip = ctx.clipRect;
 	const previousScrolled = painter.scrolledRows;
+	const overflowX = getUsedOverflow(element, "x");
 	ctx.clipRect = getOverflowClipRect(
 		element,
 		rect,
-		style.overflowX,
-		style.overflowY,
+		overflowX,
+		getUsedOverflow(element, "y"),
 		previousClip,
 	);
 	painter.scrolledRows = previousScrolled + scrolledRows;
@@ -1284,7 +1270,7 @@ function paintContent(
 				ctx,
 			);
 		}
-		if (style.overflowX !== "visible") {
+		if (overflowX !== "visible") {
 			paintOverflowMarkers(painter, element, style, ctx);
 		}
 	} finally {
@@ -1408,8 +1394,8 @@ function paintNodes(
 		const child = children[index];
 		const owner = child.owner as Node | null;
 		const childOrigin = {
-			x: origin.x + child.grid.left,
-			y: origin.y + child.grid.top,
+			x: origin.x + child.snapped.left,
+			y: origin.y + child.snapped.top,
 		};
 		// An anonymous table paints nothing of its own, only its parts.
 		if (owner === null) {
@@ -2244,68 +2230,35 @@ function renderOutsideMarker(
 }
 
 // A marker's text style, by the object its element's style keeps until it
-// changes.
+// changes, while a ::marker rule exists. A marker no rule styles takes its
+// item's. A marker takes no background, inverse, double underline or
+// line-through.
 const markerTextStyles = new WeakMap<object, CellStyle>();
-
-// A marker no rule styles reads what its item reads, so items that read
-// alike share one style, through any restyle.
-const itemMarkerStyles = new Map<string, CellStyle>();
-
-const ITEM_MARKER_STYLES = 256;
 
 function getMarkerTextStyle(painter: Painter, element: Element): CellStyle {
 	if (!painter.cascade.pseudoRulesByType.has("::marker")) {
-		const color = getComputedValue(element, "color");
-		const weight = getComputedValue(element, "font-weight");
-		const fontStyle = getComputedValue(element, "font-style");
-		const line = getComputedValue(element, "text-decoration-line");
-		const values = `${color} ${weight} ${fontStyle} ${line}`;
-		let style = itemMarkerStyles.get(values);
-		if (style === undefined) {
-			if (itemMarkerStyles.size === ITEM_MARKER_STYLES) {
-				itemMarkerStyles.clear();
-			}
-			style = createMarkerTextStyle(color, weight, fontStyle, line);
-			itemMarkerStyles.set(values, style);
-		}
-		return style;
+		return toMarkerStyle(getPaintStyle(painter, element).cell);
 	}
 	const key = painter.cascade.getStyleKey(element);
 	const known = key === null ? undefined : markerTextStyles.get(key);
 	if (known !== undefined) {
 		return known;
 	}
-	const color =
-		getComputedValue(element, "color", "::marker") ||
-		getComputedValue(element, "color");
-	const style = createMarkerTextStyle(
-		color,
-		getComputedValue(element, "font-weight", "::marker"),
-		getComputedValue(element, "font-style", "::marker"),
-		getComputedValue(element, "text-decoration-line", "::marker"),
-	);
+	const style = toMarkerStyle(readTextCell(element, "::marker"));
 	if (key !== null) {
 		markerTextStyles.set(key, style);
 	}
 	return style;
 }
 
-function createMarkerTextStyle(
-	color: string,
-	weight: string,
-	fontStyle: string,
-	line: string,
-): CellStyle {
-	const {bold, dim} = resolveFontWeight(weight);
-	return {
-		fg: color && color !== "initial"
-			? CSSValues.numberFromCSSColor(color)
-			: undefined,
-		bold,
-		dim,
-		italic: fontStyle === "italic",
-		underline: CSSValues.parseTextDecorationLine(line).underline,
-	};
+function toMarkerStyle({
+	fg,
+	bold,
+	dim,
+	italic,
+	underline,
+}: CellStyle): CellStyle {
+	return {fg, bold, dim, italic, underline};
 }
 
 // A focused editing host parks the cursor at the document selection's

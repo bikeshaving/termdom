@@ -631,6 +631,26 @@ test("fillText draws text as cells over the pixels", async () => {
 	dom.dispose();
 });
 
+test("fillText takes bold and italic from the font's weight and style", async () => {
+	const {dom, terminal, document} = await mount(
+		"<canvas id=c width=80 height=32></canvas>",
+		40,
+		12,
+		PIXELS,
+	);
+	const ctx = context2d(document);
+	ctx.fillStyle = "#ffff00";
+	ctx.textBaseline = "top";
+	ctx.font = "12px Bold, Italic";
+	ctx.fillText("Plain", 8, 0);
+	ctx.font = "italic 700 12px Plain";
+	ctx.fillText("Heavy", 8, 16);
+	await nextFrame(dom);
+	expect(cell(terminal, 1, 0)).toMatchObject({bold: false, italic: false});
+	expect(cell(terminal, 1, 1)).toMatchObject({bold: true, italic: true});
+	dom.dispose();
+});
+
 test("textAlign centers and right-aligns text on its anchor", async () => {
 	const {dom, terminal, document} = await mount(
 		"<canvas id=c width=160 height=48></canvas>",

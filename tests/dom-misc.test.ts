@@ -158,7 +158,7 @@ test("a location navigates only to a fragment, and an unmounted document has non
 		() => location.assign("https://example.com/"),
 		() => location.replace("https://example.com/"),
 		() => (location.href = "https://example.com/"),
-		() => (location.pathname = "/elsewhere"),
+		() => (location.search = "?q"),
 	]) {
 		let thrown: any = null;
 		try {
@@ -168,6 +168,9 @@ test("a location navigates only to a fragment, and an unmounted document has non
 		}
 		expect(thrown?.name).toBe("NotSupportedError");
 	}
+	// about:blank has an opaque path, so it has no path to change.
+	location.pathname = "/elsewhere";
+	expect(location.href).toBe("about:blank");
 	// A fragment of the document itself is the one place it can go.
 	location.hash = "#elsewhere";
 	expect(location.href).toBe("about:blank#elsewhere");

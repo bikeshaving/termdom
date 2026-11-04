@@ -608,22 +608,29 @@ withWorker(
 	},
 );
 
-test("where no worker starts, every image decodes on this thread", async () => {
-	try {
-		setDecodeWorkerURL(
-			new URL(
-				`data:text/javascript,${encodeURIComponent("throw new Error(\"no\");")}`,
-			),
-		);
-		const bitmaps = await Promise.all(
-			[0, 1, 2].map(() => decodeImageOffThread(getImageBytes("png-rgb.png"))),
-		);
-		expect(bitmaps.map((bitmap) => [bitmap.width, bitmap.height]))
-			.toEqual([[16, 16], [16, 16], [16, 16]]);
-	} finally {
-		setDecodeWorkerURL(null);
-	}
-});
+// The second worker is the built one as a bundler inlines it into a
+// single file: a data: URL whose import of a shared chunk resolves to
+// nothing.
+for (const source of [
+	"throw new Error(\"no\");",
+	"import \"./_chunks/chunk.js\"; postMessage({ready: true});",
+]) {
+	test(`where no worker starts, every image decodes on this thread: ${source}`, async () => {
+		try {
+			setDecodeWorkerURL(
+				new URL(`data:text/javascript,${encodeURIComponent(source)}`),
+			);
+			const bitmaps = await Promise.all(
+				[0, 1, 2].map(() =>
+					decodeImageOffThread(getImageBytes("png-rgb.png"))),
+			);
+			expect(bitmaps.map((bitmap) => [bitmap.width, bitmap.height]))
+				.toEqual([[16, 16], [16, 16], [16, 16]]);
+		} finally {
+			setDecodeWorkerURL(null);
+		}
+	});
+}
 
 test("a decode on this thread stops past its time", async () => {
 	const width = 1500;

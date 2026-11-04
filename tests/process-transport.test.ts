@@ -152,3 +152,46 @@ test("an exception nothing handles restores the terminal before it is printed", 
 	expect(written().slice(before)).toContain("\x1b[?1047l");
 	await dom.dispose();
 });
+
+test("a panic in fullscreen leaves the alternate screen with the cursor the shell had", async () => {
+	const proc = new MockProcess({cols: 30, rows: 6});
+	const written = captureRawOutput(proc);
+	const dom = new TermDOM({transport: transportFromProcess(proc)});
+	await dom.attach();
+	await nextFrame(dom);
+	const panic = (): string => {
+		const before = written().length;
+		const handlers = process.listeners("uncaughtException");
+		process.removeAllListeners("uncaughtException");
+		try {
+			process.emit(
+				"uncaughtExceptionMonitor",
+				new Error("unhandled"),
+				"uncaughtException",
+			);
+		} finally {
+			for (const handler of handlers) {
+				process.on("uncaughtException", handler);
+			}
+		}
+		return written().slice(before);
+	};
+
+	await dom.document.documentElement.requestFullscreen();
+	await nextFrame(dom);
+	const inFullscreen = panic();
+	expect(inFullscreen).toContain("\x1b[?1049l");
+	expect(inFullscreen).not.toContain("\x1b[?1047l");
+
+	const again = new TermDOM({transport: transportFromProcess(proc)});
+	await again.attach();
+	await again.document.documentElement.requestFullscreen();
+	await nextFrame(again);
+	await again.document.exitFullscreen();
+	await nextFrame(again);
+	const afterLeaving = panic();
+	expect(afterLeaving).toContain("\x1b[?1047l");
+	expect(afterLeaving).not.toContain("\x1b[?1049l");
+	await dom.dispose();
+	await again.dispose();
+});

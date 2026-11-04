@@ -1426,3 +1426,34 @@ test("ic is two cells, whatever the font size", () => {
 	}
 	dom.dispose();
 });
+
+test("a resize listener that replaces text nodes is laid out after it runs", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const errors: unknown[] = [];
+	dom.window.addEventListener("error", (event) => {
+		errors.push(event.error);
+		event.preventDefault();
+	});
+	await dom.attach();
+	dom.document.body.innerHTML = "<div>before</div>";
+	const row = dom.document.querySelector("div")!;
+	dom.window.addEventListener("resize", () => {
+		row.replaceChildren(dom.document.createTextNode("after the resize"));
+	});
+	await nextFrame(dom);
+
+	terminal.resize(50, 6);
+	(terminal as any).emit("SIGWINCH");
+	for (
+		let waited = 0;
+		!terminal.getVisibleText().includes("after the resize") && waited < 2000;
+		waited += 25
+	) {
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+
+	expect(errors).toEqual([]);
+	expect(terminal.getVisibleText()).toContain("after the resize");
+	dom.dispose();
+});

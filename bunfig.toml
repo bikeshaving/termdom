@@ -1,0 +1,11 @@
+[install]
+# Seconds a version must be public before an install resolves to it.
+minimumReleaseAge = 259200
+minimumReleaseAgeExcludes = [
+	"@b9g/crank",
+	"@b9g/eslint-config",
+	"@b9g/libuild",
+	"eslint-plugin-acrocase",
+	"eslint-plugin-crank",
+	"eslint-plugin-esfold",
+]

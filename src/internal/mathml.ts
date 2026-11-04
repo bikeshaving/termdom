@@ -1186,6 +1186,13 @@ function getTokenStyle(
 	return any ? style : null;
 }
 
+// A length attribute's number and unit, the unit empty for a bare number.
+function matchMathLength(value: string | null): RegExpExecArray | null {
+	return value === null
+		? null
+		: /^\s*([+-]?\d*\.?\d+)\s*([a-z%]*)\s*$/i.exec(value);
+}
+
 /**
  * A length attribute in cells along one axis, unrounded, measured as CSS
  * measures the element's lengths. A bare number counts cells. A
@@ -1196,10 +1203,7 @@ function parseMathLength(
 	value: string | null,
 	vertical: boolean,
 ): number | null {
-	if (value === null) {
-		return null;
-	}
-	const match = /^\s*([+-]?\d*\.?\d+)\s*([a-z%]*)\s*$/i.exec(value);
+	const match = matchMathLength(value);
 	if (!match) {
 		return null;
 	}
@@ -1238,10 +1242,7 @@ function getOperatorForm(
 
 // In ems, as the dictionary's eighteenths are.
 function readSpace(element: Element, name: string, fallback: number): number {
-	const value = getAttributeValue(element, name);
-	const match = value === null
-		? null
-		: /^\s*([+-]?\d*\.?\d+)\s*([a-z]*)\s*$/i.exec(value);
+	const match = matchMathLength(getAttributeValue(element, name));
 	if (match === null) {
 		return fallback / 18;
 	}

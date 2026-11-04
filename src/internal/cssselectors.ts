@@ -1,9 +1,7 @@
-import bidiFactory from "bidi-js";
-
 import * as CSSTree from "./csstree.ts";
 import type * as DOM from "./dom.ts";
 import type {Element, Node} from "./dom.ts";
-import {splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
+import {bidi, splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
 import {
 	CDATA_SECTION_NODE,
 	DOCUMENT_NODE,
@@ -330,7 +328,7 @@ export function getChildren(
  * the spelling, not of the name.
  */
 export function pseudoName(name: string): string {
-	return CSSTree.ident.decode(name).toLowerCase();
+	return toASCIILowercase(CSSTree.ident.decode(name));
 }
 
 /** The namespaces a selector's prefixes resolve against. */
@@ -383,9 +381,30 @@ export type FilteredSiblingIndexes = WeakMap<
 
 type Predicate = (element: Element, state: MatchState) => boolean;
 
-type Combinator = " " | ">" | "+" | "~";
+export type Combinator = " " | ">" | "+" | "~";
 
-interface CompiledCompound {
+/** A pseudo-class, with the selectors it takes compiled. */
+export interface CompiledPseudoClass {
+	name: string;
+
+	// `:not(.a, .b)`, `:has(> .b)` and `:nth-child(2n of .a)` hold
+	// selectors. `:hover` and `:lang(en)` hold none.
+	args: CompiledComplex[];
+}
+
+/** A pseudo-element, as a style rule for one is written. */
+export interface CompiledPseudoElement {
+	name: string;
+
+	// What it names, as `::part(label)` names `label`, or null.
+	argument: string | null;
+
+	// The pseudo-classes written after it, which the pseudo-element itself
+	// must match: `::part(inner):dir(rtl)`.
+	after: CompiledCompound | null;
+}
+
+export interface CompiledCompound {
 
 	tests: Predicate[];
 
@@ -399,13 +418,37 @@ interface CompiledCompound {
 
 	// May match a featureless shadow host.
 	host: boolean;
+
+	// The compound's own simple selectors, none inside an argument. The
+	// type is the lowercase local name, null for none or `*`, and an
+	// attribute is the lowercase local name a mutation reports.
+	tag: string | null;
+	ids: string[];
+	classes: string[];
+	attributes: string[];
+	pseudoClasses: CompiledPseudoClass[];
+
+	// The `::part()` or `::slotted()` the compound selects through.
+	pseudoElement: CompiledPseudoElement | null;
 }
 
-interface CompiledComplex {
+export interface CompiledComplex {
 	compounds: CompiledCompound[];
 
 	// Joins compound `index` to compound `index + 1`.
 	combinators: Combinator[];
+
+	// Ids, then classes, then types, packed so a greater number is the
+	// greater weight.
+	specificity: number;
+
+	// The pseudo-element a style rule styles, read when compiled with
+	// `pseudoElements`. The compounds select the element it belongs to.
+	pseudoElement: CompiledPseudoElement | null;
+
+	// Whether `:host` or `:host-context()` is written in it, at any depth,
+	// which only matches with the shadow root it was written in.
+	host: boolean;
 }
 
 /** A compiled selector list, ready to match against an element. */
@@ -494,8 +537,9 @@ interface CompileOptions {
 	namespaces?: SelectorNamespaces | null;
 
 	// The DOM's own query methods accept `a::before` and match nothing with
-	// it. The cascade, which matches `::slotted()` and `::part()` for real,
-	// sets this.
+	// it. The cascade sets this: a selector ending with a pseudo-element
+	// selects the element the pseudo-element belongs to, and records the
+	// pseudo-element, and its `::slotted()` and `::part()` match for real.
 	pseudoElements?: boolean;
 
 	// Allow the selector to open with a combinator, as `@scope` does.
@@ -568,21 +612,18 @@ function parseSelectorAST(text: string): CSSTree.SelectorNode | null {
  */
 export function parseSelectorList(text: string): CSSTree.SelectorNode | null {
 	const list = parseSelectorAST(text);
-	if (list === null || !isInGrammar(text)) {
-		return null;
-	}
-	return list;
+	return list !== null && isInGrammar(text, list) ? list : null;
 }
 
 // Whether a selector compiles, by its text, since a sheet repeats its
 // selectors and a page may load a sheet twice.
 const grammarChecks = new Map<string, boolean>();
 
-function isInGrammar(text: string): boolean {
+function isInGrammar(text: string, list: CSSTree.SelectorNode): boolean {
 	let valid = grammarChecks.get(text);
 	if (valid === undefined) {
 		try {
-			compileSelector(text, GRAMMAR_ONLY);
+			compileList(list, GRAMMAR_ONLY);
 			valid = true;
 		} catch (_err) {
 			valid = false;
@@ -621,17 +662,46 @@ function compileList(
 	return {list: compiled};
 }
 
+function createCompound(): CompiledCompound {
+	return {
+		tests: [],
+		origin: null,
+		originTests: [],
+		host: false,
+		tag: null,
+		ids: [],
+		classes: [],
+		attributes: [],
+		pseudoClasses: [],
+		pseudoElement: null,
+	};
+}
+
 // The compound a relative selector hangs from: the element `:has()` was
 // asked about. That can be a featureless shadow host, asked as :host.
 const ANCHOR_COMPOUND: CompiledCompound = {
+	...createCompound(),
 	tests: [
 		(element: Element, state: MatchState): boolean =>
 			element === state.anchor,
 	],
-	origin: null,
-	originTests: [],
 	host: true,
 };
+
+// The anchor of a `:has()` argument written with no combinator of its
+// own, which reaches down from it.
+const IMPLIED_ANCHOR: CompiledCompound = {...ANCHOR_COMPOUND};
+
+/** Whether the selector opens with a combinator, as a relative one may. */
+export function opensWithCombinator(complex: CompiledComplex): boolean {
+	return complex.compounds[0] === ANCHOR_COMPOUND;
+}
+
+/** Whether the selector is written with a combinator. */
+export function writesCombinator(complex: CompiledComplex): boolean {
+	return complex.combinators.length >
+		(complex.compounds[0] === IMPLIED_ANCHOR ? 1 : 0);
+}
 
 function mentionsScope(node: CSSTree.SelectorNode): boolean {
 	if (
@@ -648,21 +718,30 @@ function mentionsScope(node: CSSTree.SelectorNode): boolean {
 // matches where it stands and is limited by its root elsewhere.
 function compileComplex(
 	selector: CSSTree.SelectorNode,
-	compiling: Compiling,
+	outer: Compiling,
 	relative: boolean,
 	anchored = false,
 ): CompiledComplex {
-	const parts = getChildren(selector);
-	if (parts.length === 0) {
+	const written = getChildren(selector);
+	if (written.length === 0) {
 		throw new SelectorError("a selector selects something");
 	}
+	// A style rule's own selector may end with the pseudo-element it styles.
+	// Anywhere else a pseudo-element selects nothing.
+	const trailing = outer.pseudoElements && !outer.nested
+		? findTrailingPseudoElement(written)
+		: -1;
+	const compiling = trailing === -1 && outer.pseudoElements
+		? {...outer, pseudoElements: false}
+		: outer;
+	const parts = trailing === -1 ? written : written.slice(0, trailing);
 	const compounds: CompiledCompound[] = [];
 	const combinators: Combinator[] = [];
 	let pending: CSSTree.SelectorNode[] = [];
 	let started = false;
 	// `:has(span + span)` is `:has(:scope span + span)`.
 	if (anchored && parts[0].type !== "Combinator") {
-		compounds.push(ANCHOR_COMPOUND);
+		compounds.push(IMPLIED_ANCHOR);
 		combinators.push(" ");
 		started = true;
 	}
@@ -694,23 +773,149 @@ function compileComplex(
 		pending = [];
 		started = true;
 	}
-	if (pending.length === 0) {
+	if (pending.length === 0 && trailing === -1) {
 		throw new SelectorError("a combinator joins two compounds");
 	}
 	compounds.push(compileCompound(pending, compiling));
-	return {compounds, combinators};
+	const pseudoElement = trailing === -1
+		? null
+		: compileTrailingPseudoElement(
+			written[trailing],
+			written.slice(trailing + 1),
+			compiling,
+		);
+	const after = pseudoElement?.after ?? null;
+	return {
+		compounds,
+		combinators,
+		specificity: getSpecificity(selector),
+		pseudoElement,
+		host: (after === null ? compounds : [...compounds, after]).some(
+			(compound) => compound.pseudoClasses.some(({name, args}) =>
+				name.startsWith("host") || args.some((inner) => inner.host)),
+		),
+	};
+}
+
+// selectors-4 §17: ids, then classes/attributes/pseudo-classes, then
+// types/pseudo-elements.
+type Specificity = [number, number, number];
+
+// Their weight is their most specific argument's. The name itself
+// counts nothing.
+const ARGUMENT_WEIGHTED_PSEUDO_CLASSES = new Set([
+	"has",
+	"is",
+	"matches",
+	"not",
+	"-moz-any",
+	"-webkit-any",
+]);
+
+// Weigh as a class AND add their most specific argument's weight.
+const COMPOUND_WEIGHTED_PSEUDO_CLASSES = new Set([
+	"host",
+	"host-context",
+	"nth-child",
+	"nth-last-child",
+]);
+
+function getSpecificity(selector: CSSTree.SelectorNode): number {
+	const [ids, classes, types] = getSelectorSpecificity(selector);
+	return (ids * 2 ** 16 + classes) * 2 ** 16 + types;
+}
+
+function getListSpecificity(list: CSSTree.SelectorNode): Specificity {
+	let most: Specificity = [0, 0, 0];
+	for (const selector of getChildren(list)) {
+		const weight = getSelectorSpecificity(selector);
+		if (
+			weight[0] > most[0] ||
+			(weight[0] === most[0] &&
+				(weight[1] > most[1] || (weight[1] === most[1] && weight[2] > most[2])))
+		) {
+			most = weight;
+		}
+	}
+	return most;
+}
+
+function getSelectorSpecificity(selector: CSSTree.SelectorNode): Specificity {
+	const total: Specificity = [0, 0, 0];
+	const add = (weight: Specificity): void => {
+		total[0] += weight[0];
+		total[1] += weight[1];
+		total[2] += weight[2];
+	};
+	const argumentWeight = (node: CSSTree.SelectorNode): Specificity => {
+		for (const child of getChildren(node)) {
+			if (child.type === "SelectorList") {
+				return getListSpecificity(child);
+			}
+			if (child.type === "Selector") {
+				return getSelectorSpecificity(child);
+			}
+			if (child.type === "Nth" && child.selector) {
+				return getListSpecificity(child.selector);
+			}
+		}
+		return [0, 0, 0];
+	};
+	for (const part of getChildren(selector)) {
+		switch (part.type) {
+			case "IdSelector":
+				total[0]++;
+				break;
+			case "ClassSelector":
+			case "AttributeSelector":
+				total[1]++;
+				break;
+			// The universal selector weighs nothing, in any namespace.
+			case "TypeSelector": {
+				const name = String(part.name ?? "");
+				if (!name.endsWith("*")) {
+					total[2]++;
+				}
+				break;
+			}
+			// `::slotted(.a)` and `::part(name)`: the pseudo-element weighs as
+			// an element, and a compound argument adds to that.
+			case "PseudoElementSelector":
+				total[2]++;
+				add(argumentWeight(part));
+				break;
+			case "PseudoClassSelector": {
+				const name = pseudoName(String(part.name ?? ""));
+				// `:before` is the CSS 2 spelling of a pseudo-element, and
+				// weighs as one.
+				if (isLegacyPseudoElement(name)) {
+					total[2]++;
+					break;
+				}
+				// `:where()` contributes nothing at all, arguments included.
+				if (name === "where") {
+					break;
+				}
+				if (ARGUMENT_WEIGHTED_PSEUDO_CLASSES.has(name)) {
+					add(argumentWeight(part));
+					break;
+				}
+				total[1]++;
+				if (COMPOUND_WEIGHTED_PSEUDO_CLASSES.has(name)) {
+					add(argumentWeight(part));
+				}
+				break;
+			}
+		}
+	}
+	return total;
 }
 
 function compileCompound(
 	parts: CSSTree.SelectorNode[],
 	compiling: Compiling,
 ): CompiledCompound {
-	const compound: CompiledCompound = {
-		tests: [],
-		origin: null,
-		originTests: [],
-		host: false,
-	};
+	const compound = createCompound();
 	// A type selector is only a type selector when written first.
 	for (const [index, part] of parts.entries()) {
 		if (part.type === "TypeSelector" && index !== 0) {
@@ -741,13 +946,14 @@ function compileSimple(
 ): void {
 	switch (part.type) {
 		case "TypeSelector":
-			compound.tests.push(compileType(String(part.name ?? ""), compiling));
+			compileType(String(part.name ?? ""), compound, compiling);
 			return;
 		case "IdSelector": {
 			const id = CSSTree.ident.decode(String(part.name ?? ""));
 			if (id === "") {
 				throw new SelectorError("an id selector names an id");
 			}
+			compound.ids.push(id);
 			const folded = toASCIILowercase(id);
 			compound.tests.push((element) => {
 				const value = getAttributeValue(element, "id");
@@ -765,6 +971,7 @@ function compileSimple(
 			if (name === "") {
 				throw new SelectorError("a class selector names a class");
 			}
+			compound.classes.push(name);
 			const folded = toASCIILowercase(name);
 			compound.tests.push((element) => {
 				const value = getAttributeValue(element, "class");
@@ -784,7 +991,7 @@ function compileSimple(
 			return;
 		}
 		case "AttributeSelector":
-			compound.tests.push(compileAttribute(part, compiling));
+			compileAttribute(part, compound, compiling);
 			return;
 		case "PseudoClassSelector":
 			compilePseudoClass(part, compound, compiling);
@@ -854,10 +1061,15 @@ function qualifiedName(
 // ASCII case-insensitive against an HTML element in an HTML document,
 // case-sensitive everywhere else. That keeps `feGaussianBlur` selectable
 // and lets `DIV` match a `div`.
-function compileType(name: string, compiling: Compiling): Predicate {
+function compileType(
+	name: string,
+	compound: CompiledCompound,
+	compiling: Compiling,
+): void {
 	const {namespace, local} = qualifiedName(name, compiling.namespaces, false);
 	const folded = local === null ? null : toASCIILowercase(local);
-	return (element) => {
+	compound.tag = folded;
+	compound.tests.push((element) => {
 		if (getNodeType(element) !== ELEMENT_NODE) {
 			return false;
 		}
@@ -877,7 +1089,7 @@ function compileType(name: string, compiling: Compiling): Predicate {
 			states.isHTMLNode(element) &&
 			toASCIILowercase(elementLocal) === folded
 		);
-	};
+	});
 }
 
 // Compared case-insensitively on an HTML element in an HTML document
@@ -936,8 +1148,9 @@ const ATTRIBUTE_OPERATORS = new Set(["=", "~=", "|=", "^=", "$=", "*="]);
 
 function compileAttribute(
 	part: CSSTree.SelectorNode,
+	compound: CompiledCompound,
 	compiling: Compiling,
-): Predicate {
+): void {
 	const qualified = (part.name as {name?: string} | undefined)?.name;
 	const {namespace, local} = qualifiedName(
 		String(qualified ?? ""),
@@ -948,6 +1161,7 @@ function compileAttribute(
 		throw new SelectorError("an attribute selector names an attribute");
 	}
 	const folded = toASCIILowercase(local);
+	compound.attributes.push(folded);
 	const flags = part.flags == null ? "" : toASCIILowercase(String(part.flags));
 	if (flags !== "" && flags !== "i" && flags !== "s") {
 		throw new SelectorError(`unknown attribute flag ${flags}`);
@@ -972,7 +1186,8 @@ function compileAttribute(
 	};
 	const operator = part.matcher ?? null;
 	if (operator === null) {
-		return (element) => read(element) !== null;
+		compound.tests.push((element) => read(element) !== null);
+		return;
 	}
 	if (!ATTRIBUTE_OPERATORS.has(operator)) {
 		throw new SelectorError(`unknown attribute operator ${operator}`);
@@ -987,7 +1202,7 @@ function compileAttribute(
 		throw new SelectorError("an attribute selector compares to one value");
 	}
 	const foldedWanted = toASCIILowercase(wanted);
-	return (element) => {
+	compound.tests.push((element) => {
 		const value = read(element);
 		if (value === null) {
 			return false;
@@ -1019,8 +1234,80 @@ function compileAttribute(
 			default:
 				return target !== "" && subject.includes(target);
 		}
-	};
+	});
 }
+
+// The pseudo-classes that take no argument and test the element alone,
+// or with the match state.
+const PSEUDO_CLASS_TESTS: Readonly<Record<string, Predicate>> = {
+	scope: (element, state) => element === state.scope,
+	root: (element) => {
+		const parent = getParentNode(element);
+		return parent !== null && getNodeType(parent) === DOCUMENT_NODE;
+	},
+	empty: isEmpty,
+	"first-child": (element) => getPreviousElement(element) === null,
+	"last-child": (element) => getNextElement(element) === null,
+	"only-child": (element) =>
+		getPreviousElement(element) === null && getNextElement(element) === null,
+	"first-of-type": (element, state) =>
+		getOfTypeIndex(element, false, state) === 1,
+	"last-of-type": (element, state) =>
+		getOfTypeIndex(element, true, state) === 1,
+	"only-of-type": (element, state) =>
+		getOfTypeIndex(element, false, state) === 1 &&
+		getOfTypeIndex(element, true, state) === 1,
+	link: isHyperlink,
+	"any-link": isHyperlink,
+	// A terminal has never recorded a visited link, and answering would
+	// leak history even if it had.
+	visited: matchNothing,
+	target: (element) => states.isTargetElement(element),
+	hover: (element) => states.isHovered(element),
+	// Between a mouse press and its release, which a terminal's mouse
+	// reporting sends apart.
+	active: (element) => states.isActive(element),
+	focus: (element) => states.hasFocus(element),
+	"focus-visible": (element) => states.isFocusVisible(element),
+	"focus-within": (element) => states.hasFocusWithin(element),
+	// A dialog shown modally, or an element in fullscreen.
+	modal: (element) =>
+		states.isModalDialog(element) || states.isFullscreenElement(element),
+	"popover-open": (element) => states.isShowingPopover(element),
+	fullscreen: (element) => states.isFullscreenElement(element),
+	defined: (element) => states.isDefinedElement(element),
+	open: (element) => states.isOpenElement(element),
+	closed: (element) => canOpen(element) && !states.isOpenElement(element),
+	checked: (element) => states.isCheckedControl(element),
+	indeterminate: (element) => states.isIndeterminateControl(element),
+	"low-value": (element) => states.isMeterValue(element, "low"),
+	"high-value": (element) => states.isMeterValue(element, "high"),
+	"optimal-value": (element) => states.getMeterLevel(element) === "optimum",
+	"-moz-meter-optimum": (element) =>
+		states.getMeterLevel(element) === "optimum",
+	"-moz-meter-sub-optimum": (element) =>
+		states.getMeterLevel(element) === "suboptimum",
+	"-moz-meter-sub-sub-optimum": (element) =>
+		states.getMeterLevel(element) === "even-less-good",
+	"placeholder-shown": (element) => states.isPlaceholderShown(element),
+	default: (element) => states.isDefaultControl(element),
+	disabled: (element) => states.isActuallyDisabled(element),
+	enabled: (element) =>
+		isDisableable(element) && !states.isActuallyDisabled(element),
+	valid: (element) => states.getValidityMatch(element) === "valid",
+	invalid: (element) => states.getValidityMatch(element) === "invalid",
+	"user-valid": (element) => states.getUserValidityMatch(element) === "valid",
+	"user-invalid": (element) =>
+		states.getUserValidityMatch(element) === "invalid",
+	"in-range": (element) => states.getRangeMatch(element) === "in",
+	"out-of-range": (element) => states.getRangeMatch(element) === "out",
+	required: (element) =>
+		isRequirable(element) && getAttributeValue(element, "required") !== null,
+	optional: (element) =>
+		isRequirable(element) && getAttributeValue(element, "required") === null,
+	"read-only": (element) => !isMutable(element),
+	"read-write": isMutable,
+};
 
 function compilePseudoClass(
 	part: CSSTree.SelectorNode,
@@ -1029,6 +1316,8 @@ function compilePseudoClass(
 ): void {
 	const name = pseudoName(String(part.name ?? ""));
 	const args = getChildren(part);
+	const pseudoClass: CompiledPseudoClass = {name, args: []};
+	compound.pseudoClasses.push(pseudoClass);
 	if (LEGACY_PSEUDO_ELEMENTS.has(name) && !PSEUDO_CLASSES.has(name)) {
 		compilePseudoElement(part, compound, compiling);
 		return;
@@ -1051,6 +1340,7 @@ function compilePseudoClass(
 		case "where":
 		case "matches": {
 			const inner = compileForgiving(args, compiling);
+			pseudoClass.args = inner;
 			compound.tests.push((element, state) =>
 				inner.some((complex) => matchComplex(complex, element, state, false)),
 			);
@@ -1058,6 +1348,7 @@ function compilePseudoClass(
 		}
 		case "not": {
 			const inner = compileArgumentList(args, compiling, false);
+			pseudoClass.args = inner;
 			compound.tests.push(
 				(element, state) =>
 					!inner.some((complex) =>
@@ -1068,6 +1359,7 @@ function compilePseudoClass(
 		}
 		case "has": {
 			const inner = compileArgumentList(args, compiling, true, true);
+			pseudoClass.args = inner;
 			// Without :scope, whose meaning changes with each query, the
 			// answer depends only on the anchor and the document, so a caller
 			// can keep it for as long as the document is unchanged.
@@ -1083,6 +1375,7 @@ function compilePseudoClass(
 			const inner = args.length === 0
 				? null
 				: compileArgumentList(args, compiling, false);
+			pseudoClass.args = inner ?? [];
 			const context = name === "host-context";
 			compound.tests.push((element, state) => {
 				const shadow = state.shadow;
@@ -1113,53 +1406,11 @@ function compilePseudoClass(
 			});
 			return;
 		}
-		case "scope":
-			compound.tests.push((element, state) => element === state.scope);
-			return;
-		case "root":
-			compound.tests.push((element) => {
-				const parent = getParentNode(element);
-				return parent !== null && getNodeType(parent) === DOCUMENT_NODE;
-			});
-			return;
-		case "empty":
-			compound.tests.push(isEmpty);
-			return;
-		case "first-child":
-			compound.tests.push((element) => getPreviousElement(element) === null);
-			return;
-		case "last-child":
-			compound.tests.push((element) => getNextElement(element) === null);
-			return;
-		case "only-child":
-			compound.tests.push(
-				(element) =>
-					getPreviousElement(element) === null &&
-					getNextElement(element) === null,
-			);
-			return;
-		case "first-of-type":
-			compound.tests.push(
-				(element, state) => getOfTypeIndex(element, false, state) === 1,
-			);
-			return;
-		case "last-of-type":
-			compound.tests.push(
-				(element, state) => getOfTypeIndex(element, true, state) === 1,
-			);
-			return;
-		case "only-of-type":
-			compound.tests.push(
-				(element, state) =>
-					getOfTypeIndex(element, false, state) === 1 &&
-					getOfTypeIndex(element, true, state) === 1,
-			);
-			return;
 		case "nth-child":
 		case "nth-last-child":
 		case "nth-of-type":
 		case "nth-last-of-type":
-			compound.tests.push(compileNth(name, args, compiling));
+			compound.tests.push(compileNth(pseudoClass, args, compiling));
 			return;
 		case "lang":
 			compound.tests.push(compileLang(args));
@@ -1188,153 +1439,11 @@ function compilePseudoClass(
 			compound.tests.push((element) => states.hasCustomState(element, wanted));
 			return;
 		}
-		case "link":
-		case "any-link":
-			compound.tests.push(isHyperlink);
-			return;
-		case "visited":
-			// A terminal has never recorded a visited link, and answering would
-			// leak history even if it had.
-			compound.tests.push(matchNothing);
-			return;
-		case "target":
-			compound.tests.push((element) => states.isTargetElement(element));
-			return;
-		case "hover":
-			compound.tests.push((element) => states.isHovered(element));
-			return;
-		case "active":
-			// Between a mouse press and its release, which a terminal's mouse
-			// reporting sends apart.
-			compound.tests.push((element) => states.isActive(element));
-			return;
-		case "focus":
-			compound.tests.push((element) => states.hasFocus(element));
-			return;
-		case "focus-visible":
-			compound.tests.push((element) => states.isFocusVisible(element));
-			return;
-		case "focus-within":
-			compound.tests.push((element) => states.hasFocusWithin(element));
-			return;
-		case "modal":
-			// A dialog shown modally, or an element in fullscreen.
-			compound.tests.push(
-				(element) => states.isModalDialog(element) ||
-					states.isFullscreenElement(element),
-			);
-			return;
-		case "popover-open":
-			compound.tests.push((element) => states.isShowingPopover(element));
-			return;
-		case "fullscreen":
-			compound.tests.push((element) => states.isFullscreenElement(element));
-			return;
-		case "defined":
-			compound.tests.push((element) => states.isDefinedElement(element));
-			return;
-		case "open":
-			compound.tests.push((element) => states.isOpenElement(element));
-			return;
-		case "closed":
-			compound.tests.push(
-				(element) => canOpen(element) && !states.isOpenElement(element),
-			);
-			return;
-		case "checked":
-			compound.tests.push((element) => states.isCheckedControl(element));
-			return;
-		case "indeterminate":
-			compound.tests.push((element) => states.isIndeterminateControl(element));
-			return;
-		case "low-value":
-			compound.tests.push((element) => states.isMeterValue(element, "low"));
-			return;
-		case "high-value":
-			compound.tests.push((element) => states.isMeterValue(element, "high"));
-			return;
-		case "optimal-value":
-		case "-moz-meter-optimum":
-			compound.tests.push(
-				(element) => states.getMeterLevel(element) === "optimum",
-			);
-			return;
-		case "-moz-meter-sub-optimum":
-			compound.tests.push(
-				(element) => states.getMeterLevel(element) === "suboptimum",
-			);
-			return;
-		case "-moz-meter-sub-sub-optimum":
-			compound.tests.push(
-				(element) => states.getMeterLevel(element) === "even-less-good",
-			);
-			return;
-		case "placeholder-shown":
-			compound.tests.push((element) => states.isPlaceholderShown(element));
-			return;
-		case "default":
-			compound.tests.push((element) => states.isDefaultControl(element));
-			return;
-		case "disabled":
-			compound.tests.push(states.isActuallyDisabled);
-			return;
-		case "enabled":
-			compound.tests.push(
-				(element) => isDisableable(element) &&
-					!states.isActuallyDisabled(element),
-			);
-			return;
-		case "valid":
-			compound.tests.push(
-				(element) => states.getValidityMatch(element) === "valid",
-			);
-			return;
-		case "invalid":
-			compound.tests.push(
-				(element) => states.getValidityMatch(element) === "invalid",
-			);
-			return;
-		case "user-valid":
-			compound.tests.push(
-				(element) => states.getUserValidityMatch(element) === "valid",
-			);
-			return;
-		case "user-invalid":
-			compound.tests.push(
-				(element) => states.getUserValidityMatch(element) === "invalid",
-			);
-			return;
-		case "in-range":
-			compound.tests.push((element) => states.getRangeMatch(element) === "in");
-			return;
-		case "out-of-range":
-			compound.tests.push((element) => states.getRangeMatch(element) === "out");
-			return;
-		case "required":
-			compound.tests.push(
-				(element) =>
-					isRequirable(element) &&
-					getAttributeValue(element, "required") !== null,
-			);
-			return;
-		case "optional":
-			compound.tests.push(
-				(element) =>
-					isRequirable(element) &&
-					getAttributeValue(element, "required") === null,
-			);
-			return;
-		case "read-only":
-			compound.tests.push((element) => !isMutable(element));
-			return;
-		case "read-write":
-			compound.tests.push(isMutable);
-			return;
 		default:
-			// Everything left names a state this user agent never enters: a
-			// media element's buffering, a page box's side, a spatial
-			// navigation target, and autofill.
-			compound.tests.push(matchNothing);
+			// A pseudo-class the table leaves out names a state this user agent
+			// never enters: a media element's buffering, a page box's side, a
+			// spatial navigation target, and autofill.
+			compound.tests.push(PSEUDO_CLASS_TESTS[name] ?? matchNothing);
 	}
 }
 
@@ -1464,7 +1573,7 @@ function compilePseudoElement(
 	part: CSSTree.SelectorNode,
 	compound: CompiledCompound,
 	compiling: Compiling,
-): void {
+): CompiledPseudoElement {
 	const name = pseudoName(String(part.name ?? ""));
 	if (!PSEUDO_ELEMENTS.has(name)) {
 		throw new SelectorError(`unknown pseudo-element ::${name}`);
@@ -1477,59 +1586,95 @@ function compilePseudoElement(
 	} else if (args.length === 0) {
 		throw new SelectorError(`::${name} takes an argument`);
 	}
+	const pseudoElement: CompiledPseudoElement = {
+		name,
+		argument: null,
+		after: null,
+	};
 	if (name === "slotted") {
 		const inner = compileArgumentList(args, compiling, false);
 		if (!compiling.pseudoElements) {
 			compound.tests.push(matchNothing);
-			return;
+			return pseudoElement;
 		}
 		// The slotted element is what the compound selects. Everything written
 		// before `::slotted()` describes the slot it landed in.
 		compound.originTests = compound.tests;
 		compound.tests = [];
+		compound.pseudoElement = pseudoElement;
 		compound.origin = (element) => states.getOpenAssignedSlot(element);
 		compound.tests.push(
 			(element, state) =>
 				states.getOpenAssignedSlot(element) !== null &&
 				inner.some((complex) => matchComplex(complex, element, state, false)),
 		);
-		return;
+		return pseudoElement;
 	}
 	if (name === "part") {
 		const wanted = getIdentifierListArgument(args, "part");
+		pseudoElement.argument = wanted.join(" ");
 		if (!compiling.pseudoElements) {
 			compound.tests.push(matchNothing);
-			return;
+			return pseudoElement;
 		}
 		// The part is what the compound selects. What is written before
 		// `::part()` describes the host whose tree the part lives in.
 		compound.originTests = compound.tests;
 		compound.tests = [];
+		compound.pseudoElement = pseudoElement;
 		compound.origin = (element) => states.getShadowHost(getRoot(element));
 		compound.tests.push((element) => {
 			const names = states.getPartNames(element);
 			return wanted.every((name) => names.includes(name));
 		});
-		return;
+		return pseudoElement;
 	}
-	if (name === "picker") {
-		const argument = getIdentifierArgument(args, "picker");
-		if (argument !== "select") {
-			throw new SelectorError("::picker names the select it belongs to");
-		}
-	} else if (FUNCTIONAL_PSEUDO_ELEMENTS.has(name)) {
-		getIdentifierArgument(args, name);
+	if (FUNCTIONAL_PSEUDO_ELEMENTS.has(name)) {
+		pseudoElement.argument = getIdentifierArgument(args, name);
+	}
+	if (name === "picker" && pseudoElement.argument !== "select") {
+		throw new SelectorError("::picker names the select it belongs to");
 	}
 	// Every other pseudo-element names a box the tree has no node for, so a
 	// query over the tree never selects one.
 	compound.tests.push(matchNothing);
+	return pseudoElement;
+}
+
+// The pseudo-element a style rule's selector ends with, which only
+// pseudo-classes may follow, read apart from the compound it is written
+// on. The rule styles that pseudo-element of what the rest selects.
+function compileTrailingPseudoElement(
+	part: CSSTree.SelectorNode,
+	after: CSSTree.SelectorNode[],
+	compiling: Compiling,
+): CompiledPseudoElement {
+	const pseudoElement = compilePseudoElement(part, createCompound(), {
+		...compiling,
+		pseudoElements: false,
+	});
+	if (after.length > 0) {
+		pseudoElement.after = compileCompound(after, compiling);
+	}
+	return pseudoElement;
+}
+
+function findTrailingPseudoElement(parts: CSSTree.SelectorNode[]): number {
+	let index = parts.length - 1;
+	while (index >= 0 && parts[index].type === "PseudoClassSelector") {
+		index--;
+	}
+	return index >= 0 && parts[index].type === "PseudoElementSelector"
+		? index
+		: -1;
 }
 
 function compileNth(
-	name: string,
+	pseudoClass: CompiledPseudoClass,
 	args: CSSTree.SelectorNode[],
 	compiling: Compiling,
 ): Predicate {
+	const name = pseudoClass.name;
 	const nth = args.find((argument) => argument.type === "Nth");
 	if (!nth) {
 		throw new SelectorError(`:${name} takes an An+B`);
@@ -1541,6 +1686,7 @@ function compileNth(
 	if (filter !== null && !name.endsWith("child")) {
 		throw new SelectorError(`:${name} takes no "of" selector`);
 	}
+	pseudoClass.args = filter ?? [];
 	const fromEnd = name === "nth-last-child" || name === "nth-last-of-type";
 	const ofType = name === "nth-of-type" || name === "nth-last-of-type";
 	return (element, state) => {
@@ -1847,8 +1993,6 @@ function rangeMatchesTag(range: string, tag: string): boolean {
 	return true;
 }
 
-const bidi = bidiFactory();
-
 // Elements whose text a `dir=auto` scan above them never reads.
 const OPAQUE_TO_AUTO = new Set(["bdi", "script", "style", "textarea"]);
 
@@ -1983,6 +2127,42 @@ function matchComplex(
 	);
 }
 
+// The element the compound describes when it matches, which the
+// combinator to its left steps from, or null.
+function matchCompound(
+	compound: CompiledCompound,
+	element: Element,
+	state: MatchState,
+	featureless: boolean,
+): Element | null {
+	if (featureless && !compound.host) {
+		return null;
+	}
+	if (getNodeType(element) !== ELEMENT_NODE) {
+		return null;
+	}
+	const tests = compound.tests;
+	for (let at = 0; at < tests.length; at++) {
+		if (!tests[at](element, state)) {
+			return null;
+		}
+	}
+	if (compound.origin === null) {
+		return element;
+	}
+	const origin = compound.origin(element, state);
+	if (origin === null) {
+		return null;
+	}
+	const originTests = compound.originTests;
+	for (let at = 0; at < originTests.length; at++) {
+		if (!originTests[at](origin, state)) {
+			return null;
+		}
+	}
+	return origin;
+}
+
 function matchFrom(
 	complex: CompiledComplex,
 	index: number,
@@ -1990,32 +2170,14 @@ function matchFrom(
 	state: MatchState,
 	featureless: boolean,
 ): boolean {
-	const compound = complex.compounds[index];
-	if (featureless && !compound.host) {
+	const subject = matchCompound(
+		complex.compounds[index],
+		element,
+		state,
+		featureless,
+	);
+	if (subject === null) {
 		return false;
-	}
-	if (getNodeType(element) !== ELEMENT_NODE) {
-		return false;
-	}
-	const tests = compound.tests;
-	for (let at = 0; at < tests.length; at++) {
-		if (!tests[at](element, state)) {
-			return false;
-		}
-	}
-	let subject = element;
-	if (compound.origin !== null) {
-		const origin = compound.origin(element, state);
-		if (origin === null) {
-			return false;
-		}
-		const originTests = compound.originTests;
-		for (let at = 0; at < originTests.length; at++) {
-			if (!originTests[at](origin, state)) {
-				return false;
-			}
-		}
-		subject = origin;
 	}
 	if (index === 0) {
 		return true;
@@ -2340,7 +2502,7 @@ export function compileSelector(
 				? error
 				: new SelectorError(String((error as Error).message));
 		}
-		if (compiled.size > 1024) {
+		if (compiled.size > 16384) {
 			compiled.clear();
 		}
 		compiled.set(key, entry);
@@ -2407,6 +2569,16 @@ export function matchesCompiled(
 	options: MatchOptions = {},
 ): boolean {
 	return matchesAny(selector, element, createMatchState(options));
+}
+
+/** Whether the element matches one compound, with no combinator. */
+export function matchesCompound(
+	element: Element,
+	compound: CompiledCompound,
+	options: MatchOptions = {},
+): boolean {
+	return matchCompound(compound, element, createMatchState(options), false) !==
+		null;
 }
 
 /** In tree order. */

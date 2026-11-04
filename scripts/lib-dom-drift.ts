@@ -125,6 +125,9 @@ const AHEAD_OF_LIB_DOM: Record<string, Record<string, string>> = {
 		TrustedTypePolicy: "https://w3c.github.io/trusted-types/dist/spec/#trustedtypepolicy",
 		TrustedTypePolicyFactory: "https://w3c.github.io/trusted-types/dist/spec/#trustedtypepolicyfactory",
 	},
+	NavigationTransition: {
+		to: "https://html.spec.whatwg.org/#dom-navigationtransition-to",
+	},
 	CSSFontFeatureValuesRule: {
 		annotation: "https://drafts.csswg.org/css-fonts-4/#dom-cssfontfeaturevaluesrule-annotation",
 		ornaments: "https://drafts.csswg.org/css-fonts-4/#dom-cssfontfeaturevaluesrule-ornaments",
@@ -142,12 +145,14 @@ const TERMDOM_EXTENSIONS: Record<string, Record<string, string>> = {
 };
 
 // The runtime's own objects, handed to the page as they are. FormData
-// extends the runtime's so that its fetch() takes one, and performance is
-// the runtime's.
+// extends the runtime's so that its fetch() takes one, File is the
+// runtime's so that its FormData, Blob and fetch take one, and
+// performance is the runtime's.
 const FROM_THE_RUNTIME: Record<string, Set<string>> = {
 	FormData: new Set(
 		Object.getOwnPropertyNames(globalThis.FormData?.prototype ?? {}),
 	),
+	File: new Set(Object.getOwnPropertyNames(globalThis.File?.prototype ?? {})),
 	Performance: new Set(
 		Object.getOwnPropertyNames(Object.getPrototypeOf(globalThis.performance)),
 	),

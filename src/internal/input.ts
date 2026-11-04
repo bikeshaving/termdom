@@ -186,14 +186,12 @@ function getLegacyKeyCode(keyName: string): number {
 	if (named !== undefined) {
 		return named;
 	}
+	if (CHARACTER_CODES.has(keyName)) {
+		return keyName.toUpperCase().charCodeAt(0);
+	}
 	const code = getDOMCode(keyName);
-	if (/^Key[A-Z]$/.test(code)) {
-		return code.charCodeAt(3);
-	}
-	if (/^Digit\d$/.test(code)) {
-		return code.charCodeAt(5);
-	}
-	return PUNCTUATION_KEY_NUMBERS[code] ?? 0;
+	return PUNCTUATION_KEY_NUMBERS[code] ??
+		(code.startsWith("Digit") ? code.charCodeAt(5) : 0);
 }
 
 // What Tab traverses and what a mousedown focuses.
@@ -487,8 +485,6 @@ export class Input {
 	get mouseCaptureYielded(): boolean {
 		return this.captureYielded;
 	}
-
-	dispose(): void {}
 }
 
 export function dispatchInput(
@@ -562,6 +558,22 @@ function takeMouseBack(input: Input): void {
  * One hit-test at the last reported position, at the start of the frame.
  */
 export function resolvePendingHover(input: Input): void {
+	// The hovered element leaving the page moves hover to what is under the
+	// pointer now, as a browser's move synthesized after layout does.
+	if (
+		input.pendingHover === null &&
+		input.lastMouse !== null &&
+		input.hoverElement !== null &&
+		!isInPage(input, input.hoverElement)
+	) {
+		input.pendingHover = {
+			...input.lastMouse,
+			shiftKey: false,
+			altKey: false,
+			ctrlKey: false,
+			quiet: true,
+		};
+	}
 	const pending = input.pendingHover;
 	if (pending === null) {
 		return;
@@ -675,6 +687,23 @@ export function resolvePendingHover(input: Input): void {
 		dispatchMouseLike(input, "mouse", "mousemove", target, moveInit);
 		input.lastMouse = {x, y};
 	}
+}
+
+// Connected, in the page's document or in one an iframe in it draws.
+function isInPage(input: Input, element: Element): boolean {
+	for (
+		let node: Element | null = element;
+		node !== null;
+		node = getFrameOwner(node.ownerDocument)
+	) {
+		if (!node.isConnected) {
+			return false;
+		}
+		if (node.ownerDocument === input.document) {
+			return true;
+		}
+	}
+	return false;
 }
 
 // The viewport point of `x`, `y` in the document `level` describes: the

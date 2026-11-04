@@ -442,3 +442,46 @@ test("a canceled submit builds no entry list, and submit() fires no submit", () 
 	form.submit();
 	expect(order).toEqual(["submit", "formdata"]);
 });
+
+test("a file input takes the files of a DataTransfer", () => {
+	const window = createWindow(
+		"<!DOCTYPE html><body><form><input name=doc type=file required>" +
+			"</form></body>",
+	);
+	const {document} = window;
+	const input = document.querySelector("input")!;
+	const {File, DataTransfer} = window as unknown as typeof globalThis;
+	expect(File).toBe(globalThis.File);
+	const transfer = new DataTransfer();
+	transfer.setData("text/plain", "note");
+	const file = new File(["hello"], "a.txt", {type: "Text/Plain"});
+	const item = transfer.items.add(file)!;
+	expect(item.kind).toBe("file");
+	expect(item.type).toBe("text/plain");
+	expect(item.getAsFile()).toBe(file);
+	expect(Array.from(transfer.types)).toEqual(["text/plain", "Files"]);
+	expect(transfer.items.length).toBe(2);
+	expect(transfer.files.length).toBe(1);
+	expect(transfer.files[0]).toBe(file);
+	transfer.clearData();
+	expect(transfer.items.length).toBe(1);
+	expect(Array.from(transfer.files)).toEqual([file]);
+	expect(() => transfer.items.add("text" as never)).toThrow(TypeError);
+
+	expect(input.validity.valueMissing).toBe(true);
+	input.files = transfer.files;
+	expect(input.files.length).toBe(1);
+	expect(input.files.item(0)).toBe(file);
+	expect(input.value).toBe("C:\\fakepath\\a.txt");
+	expect(input.validity.valueMissing).toBe(false);
+	const sent = new window.FormData(input.form!).get("doc") as File;
+	expect(sent.name).toBe("a.txt");
+	expect(sent.size).toBe(5);
+
+	input.value = "";
+	expect(input.files.length).toBe(0);
+	expect(input.value).toBe("");
+	input.files = transfer.files;
+	input.form!.reset();
+	expect(input.files.length).toBe(0);
+});

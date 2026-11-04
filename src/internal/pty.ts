@@ -5,6 +5,7 @@
  */
 
 import {
+	ANSI_PALETTE,
 	type Caret,
 	CellContext,
 	CellGrid,
@@ -221,24 +222,7 @@ function createNodePTYSpawner(nodePTY: NodePTY): PTYSpawner {
 }
 
 // The 16 colors as xterm draws them, then the 6x6x6 cube and the grays.
-const PALETTE: number[] = [
-	0x000000,
-	0xcd0000,
-	0x00cd00,
-	0xcdcd00,
-	0x0000ee,
-	0xcd00cd,
-	0x00cdcd,
-	0xe5e5e5,
-	0x7f7f7f,
-	0xff0000,
-	0x00ff00,
-	0xffff00,
-	0x5c5cff,
-	0xff00ff,
-	0x00ffff,
-	0xffffff,
-];
+const PALETTE = [...ANSI_PALETTE];
 const CUBE = [0, 95, 135, 175, 215, 255];
 for (let index = 16; index < 232; index++) {
 	const n = index - 16;
@@ -294,7 +278,9 @@ function readCellStyle(line: Line, col: number): CellStyle {
 	return style;
 }
 
-const CSI_KEYS: Record<string, string> = {
+// The keys a terminal sends as CSI or SS3 and a letter, and as CSI, a
+// number and a tilde. F1-F4 are SS3. F5-F12 skip 16, as xterm's do.
+export const CSI_KEYS: Record<string, string> = {
 	ArrowUp: "A",
 	ArrowDown: "B",
 	ArrowRight: "C",
@@ -303,7 +289,7 @@ const CSI_KEYS: Record<string, string> = {
 	End: "F",
 };
 
-const TILDE_KEYS: Record<string, number> = {
+export const TILDE_KEYS: Record<string, number> = {
 	Insert: 2,
 	Delete: 3,
 	PageUp: 5,
@@ -318,7 +304,19 @@ const TILDE_KEYS: Record<string, number> = {
 	F12: 24,
 };
 
-const SS3_KEYS: Record<string, string> = {F1: "P", F2: "Q", F3: "R", F4: "S"};
+export const SS3_KEYS: Record<string, string> = {
+	F1: "P",
+	F2: "Q",
+	F3: "R",
+	F4: "S",
+};
+
+// The one named spelling that carries a modifier.
+export const SHIFT_TAB = "\x1b[Z";
+
+// The fences around a bracketed paste, mode 2004.
+export const PASTE_START = "\x1b[200~";
+export const PASTE_END = "\x1b[201~";
 
 interface KeyLike {
 	key: string;
@@ -367,7 +365,7 @@ export function encodeKey(
 		case "Backspace":
 			return `${alt}${key.ctrlKey ? "\b" : "\x7f"}`;
 		case "Tab":
-			return key.shiftKey ? "\x1b[Z" : `${alt}\t`;
+			return key.shiftKey ? SHIFT_TAB : `${alt}\t`;
 		case "Escape":
 			return `${alt}\x1b`;
 	}
@@ -619,7 +617,7 @@ export class PTYSession {
 	paste(text: string): void {
 		const body = text.replace(/\r?\n/g, "\r");
 		this.input(
-			this.terminal.bracketedPaste ? `\x1b[200~${body}\x1b[201~` : body,
+			this.terminal.bracketedPaste ? PASTE_START + body + PASTE_END : body,
 		);
 	}
 

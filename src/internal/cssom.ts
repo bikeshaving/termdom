@@ -6,15 +6,21 @@ import {
 	CSS_SHORTHANDS,
 } from "../generated/cssproperties.ts";
 import {
+	type Combinator,
+	type CompiledComplex,
+	type CompiledCompound,
 	type CompiledSelector,
 	compileSelector,
 	type FilteredSiblingIndexes,
 	type HasResults,
 	matchesCompiled,
+	matchesCompound,
+	opensWithCombinator,
 	parseSelectorList,
 	selectAllCompiled,
 	type SelectorNamespaces,
 	type SiblingIndexes,
+	writesCombinator,
 } from "./cssselectors.ts";
 import * as CSSTree from "./csstree.ts";
 import * as CSSValues from "./cssvalues.ts";
@@ -105,12 +111,7 @@ import {
 	UA_DOCUMENT_STYLES,
 	UA_ELEMENT_STYLES,
 } from "./useragent.ts";
-import {runInRealm, windowMember} from "./webidl.ts";
-
-// A regular expression literal is a new object each time it runs, so the
-// ones that run for every match and mutation are made once.
-const WHITESPACE_RUN = /\s+/;
-const PART_PSEUDO = /^::part\((.+)\)$/;
+import {getActiveRealm, runInRealm, windowMember} from "./webidl.ts";
 
 // Per-element defaults that are STATE, not stylesheet: the fullscreen
 // element's viewport block, a select sized to its widest option label so
@@ -182,9 +183,9 @@ function getMathMLDefaults(
 	if (background !== null && background.trim() !== "") {
 		(defaults ??= {})["background-color"] = background.trim();
 	}
-	const displaystyle = getAttributeValue(element, "displaystyle")
-		?.trim()
-		.toLowerCase();
+	const displaystyle = toASCIILowercase(
+		getAttributeValue(element, "displaystyle")?.trim() ?? "",
+	);
 	if (displaystyle === "true" || displaystyle === "false") {
 		(defaults ??= {})["math-style"] = displaystyle === "true"
 			? "normal"
@@ -955,7 +956,7 @@ class CSSStyleDeclaration {
 			this.removeProperty(name);
 			return;
 		}
-		const priorityText = String(priority ?? "").toLowerCase();
+		const priorityText = toASCIILowercase(String(priority ?? ""));
 		if (priorityText !== "" && priorityText !== "important") {
 			return;
 		}
@@ -1074,21 +1075,6 @@ function getDeclarationBlock(
 		}
 	});
 
-	// The block parse is the one path both the attribute and setProperty
-	// forms of an inline transition come through.
-	if (
-		styleSlots.element &&
-		(declarations["transition"] !== undefined ||
-			declarations["transition-duration"] !== undefined ||
-			declarations["transition-delay"] !== undefined)
-	) {
-		const document = styleSlots.element.ownerDocument;
-		const cascade = document ? documentCascades.get(document) : undefined;
-		if (cascade) {
-			cascade.transitionsExist = true;
-		}
-	}
-
 	// A shorthand this engine does not decompose reaches the cascade as
 	// whatever longhands it can name, with its importance applied to each.
 	if (undecomposed) {
@@ -1103,15 +1089,31 @@ function getDeclarationBlock(
 				order[property] = index;
 			}
 		});
-		return (
-			styleSlots.block = {
-				declarations: CSSValues.expandShorthands(declarations),
-				important,
-				order,
-			}
-		);
+		styleSlots.block = {
+			declarations: CSSValues.expandShorthands(declarations),
+			important,
+			order,
+		};
+	} else {
+		styleSlots.block = {declarations, important, order};
 	}
-	return (styleSlots.block = {declarations, important, order});
+	// The block parse is the one path both the attribute and setProperty
+	// forms of an inline transition come through.
+	const document = styleSlots.element?.ownerDocument;
+	const cascade = document ? documentCascades.get(document) : undefined;
+	if (cascade && startsTransitions(styleSlots.block)) {
+		cascade.transitionsExist = true;
+	}
+	return styleSlots.block;
+}
+
+// Only a duration or delay can make a transition run, so the property
+// list alone does not open the sticky gate.
+function startsTransitions(block: CSSValues.DeclarationBlock): boolean {
+	return Boolean(
+		block.declarations["transition-duration"] ||
+		block.declarations["transition-delay"],
+	);
 }
 
 // Reconstructs shorthands and keeps priority.
@@ -1509,10 +1511,8 @@ function syncViewIndices(view: CSSStyleDeclaration): void {
 
 // An error thrown out of a stylesheet has to be the document's own
 // DOMException. A sheet reaches its document through its owner node. A
-// constructed sheet has none, and uses the window its constructor came
-// from.
-let cssomWindow: Window | null = null;
-
+// constructed sheet has none, and uses the realm whose bindings are
+// running, the one its methods came from.
 function getSheetView(
 	sheet: CSSStyleSheet | null | undefined,
 ): object | undefined {
@@ -1522,7 +1522,7 @@ function getSheetView(
 }
 
 function typeError(message: string, sheet?: CSSStyleSheet | null): TypeError {
-	const view = getSheetView(sheet) ?? cssomWindow ?? undefined;
+	const view = getSheetView(sheet) ?? getActiveRealm()?.global;
 	const Constructor =
 		(view as unknown as {TypeError?: typeof TypeError} | undefined)
 			?.TypeError ?? TypeError;
@@ -1534,7 +1534,7 @@ function domException(
 	name: string,
 	sheet?: CSSStyleSheet | null,
 ): DOMException {
-	const view = getSheetView(sheet) ?? cssomWindow ?? undefined;
+	const view = getSheetView(sheet) ?? getActiveRealm()?.global;
 	const Exception =
 		(view as unknown as {DOMException?: typeof DOMException} | undefined)
 			?.DOMException ?? DOMException;
@@ -2856,7 +2856,7 @@ class CSSFontFeatureValuesRule extends CSSRule {
 				descriptors: "@font-feature-values",
 			});
 			assignDeclarations(block, CSSValues.getBlockDeclarations(child, source));
-			slots.blocks.set(child.name.toLowerCase(), block);
+			slots.blocks.set(toASCIILowercase(child.name), block);
 		}
 	}
 
@@ -3708,7 +3708,7 @@ function convertRule(
 		return null;
 	}
 	const prelude = CSSValues.getPreludeText(node);
-	switch ((node.name ?? "").toLowerCase()) {
+	switch (toASCIILowercase(node.name ?? "")) {
 		// A charset rule is not exposed in a sheet's rule list, per CSSOM.
 		case "charset":
 			return null;
@@ -3912,7 +3912,7 @@ function convertImportRule(
 	if (
 		node &&
 		(node.type === "Identifier" || node.type === "Function") &&
-		(node.name ?? "").toLowerCase() === "layer"
+		toASCIILowercase(node.name ?? "") === "layer"
 	) {
 		const layer = (node.children?.toArray() ?? []).find(
 			(child) => child.type === "Layer",
@@ -3932,7 +3932,7 @@ function convertImportRule(
 	if (
 		node?.loc &&
 		node.type === "Function" &&
-		(node.name ?? "").toLowerCase() === "supports"
+		toASCIILowercase(node.name ?? "") === "supports"
 	) {
 		// The slice spans the function: its name, its parentheses and the
 		// condition between them. A function whose parenthesis never closes is
@@ -4494,7 +4494,7 @@ export function establishesFixedContainingBlock(element: Element): boolean {
 	return getComputedValue(element, "will-change")
 		.split(",")
 		.some((name) =>
-			FIXED_CONTAINING_WILL_CHANGE.has(name.trim().toLowerCase()),
+			FIXED_CONTAINING_WILL_CHANGE.has(toASCIILowercase(name.trim())),
 		);
 }
 
@@ -4612,7 +4612,7 @@ const USED_VALUE_PROPERTIES = new Set([
 // The inline style, a text input's type and size, a list item's value,
 // and the direction and language the element states.
 const KEYED_ATTRIBUTES = ["style", "type", "size", "value", "dir", "lang"];
-const ruleIds = new WeakMap<ParsedCSSRule, number>();
+const ruleIds = new WeakMap<CascadedRule, number>();
 let nextRuleId = 0;
 const ruleIndexes = new WeakMap<Cascade, RuleIndex>();
 const childTables = new WeakMap<object, Map<string, Map<string, string>>>();
@@ -4621,20 +4621,29 @@ const treeTables = new WeakMap<
 	Map<object, Map<string, Map<string, string>>>
 >();
 
-// Counters count elements in document order, so a rule that sets or uses
-// them gives each element its own values.
-const COUNTER_PROPERTIES = [
-	"content",
-	"counter-reset",
-	"counter-increment",
-	"counter-set",
-];
+// Counters count elements in document order, so a block that sets them,
+// or calls counter() or counters() in its content, gives each element its
+// own values.
+function usesCounters(
+	block: {readonly declarations: Readonly<Record<string, string>>},
+): boolean {
+	const {declarations} = block;
+	return Boolean(
+		declarations["counter-reset"] ||
+		declarations["counter-increment"] ||
+		declarations["counter-set"] ||
+		CSSValues.getCSSValueChildren(declarations.content ?? "")
+			?.some(
+				(node) => node.type === "Function" && /^counters?$/i.test(node.name!),
+			),
+	);
+}
 
 // One rule per set of hints, so elements with the same attributes share
 // their computed values as they would with the same rules.
-const hintRules = new Map<string, ParsedCSSRule>();
+const hintRules = new Map<string, CascadedRule>();
 
-function getHintRule(element: Element): ParsedCSSRule | null {
+function getHintRule(element: Element): CascadedRule | null {
 	const hints = getPresentationalHints(element);
 	if (hints === null) {
 		return null;
@@ -4644,17 +4653,17 @@ function getHintRule(element: Element): ParsedCSSRule | null {
 	if (rule === undefined) {
 		const properties = Object.keys(hints);
 		rule = {
-			matcher: null,
-			relativeMatcher: null,
-			declarations: hints,
-			important: Object.create(null),
-			order: Object.assign(
-				Object.create(null),
-				Object.fromEntries(properties.map((name, i) => [name, i])),
-			),
-			specificity: "",
+			block: {
+				declarations: hints,
+				important: Object.create(null),
+				order: Object.assign(
+					Object.create(null),
+					Object.fromEntries(properties.map((name, i) => [name, i])),
+				),
+			},
+			origin: "author",
 			layerRank: -1,
-		} as unknown as ParsedCSSRule;
+		};
 		if (hintRules.size > 1024) {
 			hintRules.clear();
 		}
@@ -4663,14 +4672,10 @@ function getHintRule(element: Element): ParsedCSSRule | null {
 	return rule;
 }
 
-function getRuleId(rule: ParsedCSSRule): number {
+function getRuleId(rule: CascadedRule): number {
 	let id = ruleIds.get(rule);
 	if (id === undefined) {
-		id = COUNTER_PROPERTIES.some((name) =>
-			(rule.declarations[name] ?? "").includes("counter"),
-		)
-			? -1
-			: ++nextRuleId;
+		id = usesCounters(rule.block) ? -1 : ++nextRuleId;
 		ruleIds.set(rule, id);
 	}
 	return id;
@@ -4759,7 +4764,10 @@ function getDeclaredInheritedNames(
 	slots: Slots<ComputedStyleDeclaration>,
 ): string[] {
 	const names = new Set<string>();
-	const blocks = [...slots.cssRules, getInlineDeclarations(getOwner(slots))];
+	const blocks = [
+		...slots.cssRules.map((rule) => rule.block),
+		getInlineDeclarations(getOwner(slots)),
+	];
 	for (const block of blocks) {
 		for (const name of Object.keys(block.declarations)) {
 			if (CSSValues.isInheritedProperty(name)) {
@@ -4780,10 +4788,10 @@ const resetInheritors = new WeakMap<object, boolean>();
 
 function inheritsReset(
 	element: Element,
-	rules: readonly ParsedCSSRule[],
+	rules: readonly CascadedRule[],
 ): boolean {
 	for (let index = 0; index < rules.length; index++) {
-		if (blockInheritsReset(rules[index])) {
+		if (blockInheritsReset(rules[index].block)) {
 			return true;
 		}
 	}
@@ -4855,7 +4863,7 @@ function getResolvedValues(
 function getSharedResolved(
 	cascade: Cascade,
 	element: Element,
-	rules: readonly ParsedCSSRule[],
+	rules: readonly CascadedRule[],
 ): Map<string, string> {
 	if (!isShareable(element)) {
 		return new Map();
@@ -4931,7 +4939,7 @@ function getSharedResolved(
 // sheet replacements, because it re-resolves rather than being replaced.
 interface ComputedStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	element: Element;
-	cssRules: ParsedCSSRule[];
+	cssRules: CascadedRule[];
 	cascade: Cascade | null;
 	inlineBlock: CSSValues.DeclarationBlock | null;
 	// Computed strings, memoized once per property per resolution, ""
@@ -4967,7 +4975,7 @@ interface ComputedStyleDeclaration {
 class ComputedStyleDeclaration extends CSSStyleProperties {
 	constructor(
 		element: Element,
-		cssRules: ParsedCSSRule[] = [],
+		cssRules: CascadedRule[] = [],
 		cascade?: Cascade,
 	) {
 		super();
@@ -5188,7 +5196,7 @@ function getDeclaredCustomNames(
 ): string[] {
 	const names: string[] = [];
 	for (const rule of slots.cssRules) {
-		for (const name of Object.keys(rule.declarations)) {
+		for (const name of Object.keys(rule.block.declarations)) {
 			if (name.startsWith("--") && !names.includes(name)) {
 				names.push(name);
 			}
@@ -5295,7 +5303,7 @@ export function resolveLength(
 	unit: string,
 	vertical: boolean,
 ): number | null {
-	if (unit.toLowerCase() === "px") {
+	if (toASCIILowercase(unit) === "px") {
 		return length;
 	}
 	const document = element.ownerDocument;
@@ -5940,6 +5948,8 @@ function blockifyDisplay(element: Element | null, display: string): string {
 	return display;
 }
 
+const CURRENT_COLOR = /\bcurrentcolor\b/gi;
+
 // What the cascade leaves, with var() substituted, `currentcolor`
 // replaced by the color it names, and display blockified.
 function resolvePropertyValue(
@@ -5971,7 +5981,7 @@ function resolvePropertyValue(
 // css-fonts-4 §2.2: a weight computes to a number. `bolder` and `lighter`
 // step from the parent's weight by the specification's table.
 function computeFontWeight(element: Element | null, value: string): string {
-	const keyword = value.trim().toLowerCase();
+	const keyword = toASCIILowercase(value.trim());
 	if (keyword === "normal") {
 		return "400";
 	}
@@ -6015,18 +6025,29 @@ function resolveCascadedValue(
 		}
 	}
 	// `currentcolor` is the element's own color, which is what a resolved
-	// value reports. On `color` itself it means the parent's.
+	// value reports, alone or inside a color-mix(). On `color` itself it
+	// means the parent's.
 	if (
-		value.length === 12 &&
-		toASCIILowercase(value) === "currentcolor" &&
-		CSSValues.isColorProperty(property)
+		CSSValues.isColorProperty(property) &&
+		toASCIILowercase(value).includes("currentcolor")
 	) {
 		// The COMPUTED color, on the engine's own read path. The author path
 		// flushes, from inside the resolution of a style that layout is waiting
 		// on.
-		return property === "color"
+		const current = property === "color"
 			? (resolveFromParent(declaration, "color") ?? "")
 			: _(declaration)._computedValue("color");
+		if (toASCIILowercase(value) === "currentcolor") {
+			return current;
+		}
+		// A color-mix() mixes a system color as the color it reads back as,
+		// and the root's `currentcolor` as the initial color.
+		const mixed =
+			CSSValues.resolveSystemColor(
+				current || "canvastext",
+				getColorScheme(_(declaration).element.ownerDocument),
+			) ?? current;
+		return value.replace(CURRENT_COLOR, mixed);
 	}
 	return value;
 }
@@ -6064,17 +6085,17 @@ interface RuleListIndex {
 	withImportant: number[];
 }
 
-const ruleListIndexes = new WeakMap<readonly ParsedCSSRule[], RuleListIndex>();
+const ruleListIndexes = new WeakMap<readonly CascadedRule[], RuleListIndex>();
 
-function getRuleListIndex(rules: readonly ParsedCSSRule[]): RuleListIndex {
+function getRuleListIndex(rules: readonly CascadedRule[]): RuleListIndex {
 	let index = ruleListIndexes.get(rules);
 	if (index === undefined) {
 		index = {lastNormal: new Map(), withImportant: []};
 		for (let at = 0; at < rules.length; at++) {
 			const rule = rules[at];
 			let important = false;
-			for (const name in rule.declarations) {
-				if (rule.important[name]) {
+			for (const name in rule.block.declarations) {
+				if (rule.block.important[name]) {
 					important = true;
 				} else {
 					index.lastNormal.set(name, at);
@@ -6160,14 +6181,14 @@ function resolvePropertyValueRaw(
 	}
 	if (winner !== -1) {
 		const rule = rules[winner];
-		ruleValue = rule.declarations[
-			CSSValues.getDeclaredName(rule, names, false, mapsHere)!
+		ruleValue = rule.block.declarations[
+			CSSValues.getDeclaredName(rule.block, names, false, mapsHere)!
 		];
 	}
 	for (const at of index.withImportant) {
 		const rule = rules[at];
 		const importantName = CSSValues.getDeclaredName(
-			rule,
+			rule.block,
 			names,
 			true,
 			mapsHere,
@@ -6175,11 +6196,11 @@ function resolvePropertyValueRaw(
 		if (
 			importantName !== null &&
 			(importantRuleValue === "" ||
-				(Boolean(rule.uaOrigin) === importantOrigin &&
+				((rule.origin === "ua") === importantOrigin &&
 					rule.layerRank === importantLayer))
 		) {
-			importantRuleValue = rule.declarations[importantName];
-			importantOrigin = Boolean(rule.uaOrigin);
+			importantRuleValue = rule.block.declarations[importantName];
+			importantOrigin = (rule.origin === "ua");
 			importantLayer = rule.layerRank;
 		}
 	}
@@ -6512,27 +6533,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 defineLonghandIndices(ComputedStyleDeclaration.prototype);
 defineLonghandIndices(PseudoStyleDeclaration.prototype);
 
-function getPseudoTransitionValue(
-	declaration: PseudoStyleDeclaration,
-	property: string,
-): string | null {
-	const declarationSlots = _(declaration);
-	const cascade = declarationSlots.cascade;
-	if (
-		cascade === null ||
-		declarationSlots.element === null ||
-		cascade.activeTransitions.size === 0
-	) {
-		return null;
-	}
-	return getTransitionValue(
-		cascade,
-		declarationSlots.element,
-		declarationSlots.pseudoElement,
-		property,
-	);
-}
-
 // The same cascade with the pseudo-element's own node in place of the
 // element. One view per node: composition may drop a node and make
 // another, and a view naming the old one would measure a rect no layout
@@ -6558,24 +6558,6 @@ function getBoxView(
 		declarationSlots.boxView = view;
 	}
 	return view;
-}
-
-// A transitioning value reaches the element's descendants through
-// inheritance, so the subtree under each transitioning element is what
-// the style cache cannot hold.
-function isTransitioning(cascade: Cascade, element: Element): boolean {
-	const active = cascade.activeTransitions;
-	if (active.size === 0) {
-		return false;
-	}
-	for (let node: Element | null = element;
-		node;
-		node = flatParentElement(node)) {
-		if (active.has(node)) {
-			return true;
-		}
-	}
-	return false;
 }
 
 // A declaration of nothing, which CSSOM specifies for a bad pseudo
@@ -6678,7 +6660,7 @@ export function resolveBorderSides(element: Element): BorderSides {
 	// off a collapsed ellipse. A cell grid has one size of curve.
 	const roundedCorner = (corner: string): "round" | undefined => {
 		const radii = getComputedValue(element, `border-${corner}-radius`)
-			.split(WHITESPACE_RUN)
+			.split(CSSValues.WHITESPACE_RUN)
 			.filter(Boolean);
 		if (radii.length === 0) {
 			return undefined;
@@ -6805,41 +6787,24 @@ function readPseudoDeclared(
 		._computedValue(property) || declared;
 }
 
-// TODO: Just use the CSSOM CSSRule interface from the DOM
+// One selector of a style rule, compiled with the rule's declarations
+// and where the cascade sorts it. A CSSStyleRule whose list holds n
+// selectors makes n of these.
 interface ParsedCSSRule {
 
-	// Compiled against the namespaces the sheet declared, once, at parse. A
-	// rule is matched through this and never through its text. Null for a
-	// selector this engine cannot read, which styles nothing.
-	matcher: CompiledSelector | null;
+	// Compiled against the namespaces the sheet declared, once, at parse,
+	// and read relative to a scoping root, which is what
+	// `@scope { > .a { } }` writes. Outside an @scope a selector opening
+	// with a combinator selects nothing, and no rule is made for it. A rule
+	// is matched through this and never through its text.
+	selector: CompiledSelector;
 
-	// The same selector read relative to a scoping root, which is what
-	// `@scope { > .a { } }` writes. Only a rule inside an @scope has one.
-	relativeMatcher: CompiledSelector | null;
+	block: CSSValues.DeclarationBlock;
 
-	// Every rule is tried against every element, so this check keeps a
-	// document of divs from running the selector engine over a sheet's
-	// worth of rules about summaries and legends. Absent when any element
-	// could match.
-	subjectTag?: string;
-	// ":root" when the rightmost compound must be the root, or else the id
-	// or a class it requires, as "#id" or ".class", or with neither and no
-	// element name, an attribute, as "[name]", which files the rule where
-	// only elements with it look. Absent when it requires none of them.
-	subjectKey?: string;
-	declarations: Record<string, string>;
-	important: Record<string, boolean>;
-
-	// Each declaration's position in the rule's block. See CSSValues.DeclarationBlock.
-	order: Record<string, number>;
-
-	// Zero-padded for lexicographic comparison.
-	specificity: string;
-	pseudoElement?: string;
-
-	// The pseudo-classes written after `::part()`, which the part element
-	// itself must match: `::part(inner):dir(rtl)`.
-	partMatcher?: CompiledSelector | null;
+	// Cascade ORIGIN, the tier above specificity. Every author rule beats
+	// every UA rule, which lets `input::placeholder { color }` beat the UA
+	// sheet's gray despite that selector's higher specificity.
+	origin: "ua" | "author";
 
 	// The tree scope whose stylesheet declared this rule. Undefined for
 	// document rules. A rule only ever matches elements of its own tree,
@@ -6849,35 +6814,6 @@ interface ParsedCSSRule {
 	// The document's sheet that holds this rule, itself or through an
 	// @import. Document rules that tie in the cascade rank by it.
 	documentSheet?: CSSStyleSheet;
-
-	// `:host` is the one thing that reaches outside the tree its
-	// stylesheet belongs to.
-	reachesHost?: boolean;
-
-	// A pseudo-element of a part, as `input::part(label)::before` is. It
-	// originates on the part element, inside the host's shadow tree.
-	ofPart?: boolean;
-
-	// For a rule with a :has(), what its anchors must have, as the cascade's
-	// hasAnchors keeps them, and the pseudo-classes inside it.
-	hasAnchors?: readonly string[];
-	hasStates?: readonly string[];
-	hasSiblings?: boolean;
-	// The compounds the :has()es are written in, or null for one that can
-	// only be tested in its tree, as a :host's is.
-	hasCompounds?: ReadonlyArray<string | null>;
-
-	// The bits, in an element's ancestor filter, of the names, ids and
-	// classes the rule's compounds left of a descendant or child
-	// combinator require, so an element whose ancestors have none of one
-	// is ruled out without running the selector. Absent when the rule
-	// requires nothing of its ancestors, or reads them some other way.
-	ancestorBits?: Uint32Array;
-
-	// Cascade ORIGIN, the tier above specificity. Every author rule beats
-	// every UA rule, which lets `input::placeholder { color }` beat the UA
-	// sheet's gray despite that selector's higher specificity.
-	uaOrigin?: boolean;
 
 	// Dot-joined through every enclosing @layer. Null for a rule in no
 	// layer.
@@ -6890,6 +6826,75 @@ interface ParsedCSSRule {
 	// The @scope conditions the rule was declared inside, outermost first.
 	// Absent for a rule no @scope encloses, which is in scope everywhere.
 	scopes?: readonly CSSValues.ScopeCondition[];
+}
+
+// What the cascade reads of a matched rule. A presentational hint has
+// these and no selector or layer.
+type CascadedRule = Pick<
+	ParsedCSSRule,
+	"block" | "origin" | "layerRank" | "scope"
+>;
+
+function getComplex(rule: ParsedCSSRule): CompiledComplex {
+	return rule.selector.list[0];
+}
+
+// The pseudo-element the rule styles, as getComputedStyle() names it,
+// `::before` or `::part(label)`, any pseudo-element, not only the ones
+// this engine gives a box. A rule for `::highlight(x)` still has to be
+// visible through getComputedStyle.
+function getPseudoElement(rule: ParsedCSSRule): string | undefined {
+	const pseudo = getComplex(rule).pseudoElement;
+	if (pseudo === null) {
+		return undefined;
+	}
+	return pseudo.argument === null
+		? `::${pseudo.name}`
+		: `::${pseudo.name}(${pseudo.argument})`;
+}
+
+// A pseudo-element of a part, as `input::part(label)::before` is. It
+// originates on the part element, inside the host's shadow tree.
+function isOfPart(rule: ParsedCSSRule): boolean {
+	const complex = getComplex(rule);
+	const subject = complex.compounds[complex.compounds.length - 1];
+	return subject.pseudoElement?.name === "part";
+}
+
+// `:host` is the one thing that reaches outside the tree its stylesheet
+// belongs to.
+function reachesHost(rule: ParsedCSSRule): boolean {
+	return rule.scope !== undefined && getComplex(rule).host;
+}
+
+// Every rule is tried against every element, so this check keeps a
+// document of divs from running the selector engine over a sheet's worth
+// of rules about summaries and legends. Undefined when any element could
+// match, and for a subject that selects through a pseudo-element, whose
+// names describe another element.
+function getSubjectTag(rule: ParsedCSSRule): string | undefined {
+	const complex = getComplex(rule);
+	const subject = complex.compounds[complex.compounds.length - 1];
+	return subject.pseudoElement === null
+		? (getRequiredTag(subject) ?? undefined)
+		: undefined;
+}
+
+// `:where(svg)` requires its name as `svg` does.
+function getRequiredTag(compound: CompiledCompound): string | null {
+	if (compound.tag !== null) {
+		return compound.tag;
+	}
+	for (const {name, args} of compound.pseudoClasses) {
+		if (
+			(name === "is" || name === "where") &&
+			args.length === 1 &&
+			args[0].compounds.length === 1
+		) {
+			return getRequiredTag(args[0].compounds[0]);
+		}
+	}
+	return null;
 }
 
 function isScopeRootMatch(
@@ -6928,12 +6933,12 @@ function isInScope(
 // names, cast here.
 function isSelectedBy(
 	element: Element,
-	selector: CompiledSelector,
+	selector: CompiledSelector | CompiledCompound,
 	scope: Node,
 	shadow: Node | null = null,
 ): boolean {
 	const cascade = documentCascades.get(getOwnerDocument(element) as object);
-	return matchesCompiled(element as unknown as DOMElement, selector, {
+	const options = {
 		scope: scope as unknown as DOMNode,
 		shadow: shadow as DOMNode | null,
 		hasResults: cascade === undefined
@@ -6945,7 +6950,11 @@ function isSelectedBy(
 		filteredSiblings: cascade === undefined
 			? null
 			: (cascade.filteredSiblingsForMatching ??= new WeakMap()),
-	});
+	};
+	const subject = element as unknown as DOMElement;
+	return "list" in selector
+		? matchesCompiled(subject, selector, options)
+		: matchesCompound(subject, selector, options);
 }
 
 function shouldCreatePseudoElement(
@@ -6987,7 +6996,7 @@ function attachPseudoElementsToElement(
 		!tags.has(toASCIILowercase(getLocalName(element))) &&
 		!hasAttributeByName(element, "part") &&
 		pseudoElementCount(element) === 0 &&
-		!(getAttributeValue(element, "style") ?? "").includes("list-item")
+		!isListItemBlock(readInlineBlock(element))
 	) {
 		return;
 	}
@@ -7018,12 +7027,14 @@ function isStyleElement(element: Element): boolean {
 // cascade. Computing it during block layout deletes this.
 function mutationChangesListItems(mutation: MutationRecord): boolean {
 	const target = mutation.target;
-	if (getNodeType(target) === 1 && isListElement(target as Element)) {
+	if (
+		getNodeType(target) === ELEMENT_NODE && isListElement(target as Element)
+	) {
 		return true;
 	}
 	for (const list of [getAddedNodes(mutation), getRemovedNodes(mutation)]) {
 		for (const node of list) {
-			if (getNodeType(node) !== 1) {
+			if (getNodeType(node) !== ELEMENT_NODE) {
 				continue;
 			}
 			const element = node as Element;
@@ -7038,13 +7049,88 @@ function mutationChangesListItems(mutation: MutationRecord): boolean {
 	return false;
 }
 
+// What the last full parse found in the rules, for the hot paths to read
+// without walking them. A parse replaces it whole.
+interface RuleSummary {
+	// What each tree's sibling selectors can reach, by the tree whose
+	// sheets declared them: the document, or a shadow root. A rule matches
+	// only in its own tree (css-scoping-1 §3.3), so `* + *` in a shadow
+	// root restyles nothing in the document.
+	siblingRuleIndexes: Map<Node, SiblingRuleIndex>;
+	uaSiblingRuleIndex: SiblingRuleIndex | undefined;
+
+	// The keys whose change can affect an element's DESCENDANTS: those a
+	// selector tests left of a combinator (`.editing .view`), and those on
+	// rules declaring an inherited property. Collected loosely. A false
+	// positive only widens the invalidation.
+	reachingClasses: Set<string>;
+	// Whether every property the rules declare is paint, by each class, id
+	// and attribute their selectors test, as `.name`, `#name` and `[name]`.
+	// A change to a key whose properties are all paint decides nothing
+	// layout reads.
+	keyPaintsOnly: Map<string, boolean>;
+	reachingIds: Set<string>;
+	reachingAttributes: Set<string>;
+
+	// Whether any of those keys is a STATE pseudo-class (`:checked ~`),
+	// which is driven by attributes not in the sets above. While this is
+	// set, a change to any state attribute invalidates widely.
+	reachingStates: boolean;
+	// The pseudo-classes whose change on one element can restyle its
+	// descendants: tested on a compound that is not the subject, or on a
+	// rule that sets an inherited property. And those tested before a
+	// sibling combinator, which can restyle its later siblings.
+	descendantPseudoClasses: Map<string, StateAnchor[]>;
+	// For each class a rule tests above its subject, the subjects that
+	// rule can style, or null when it can style any descendant: its subject
+	// could be anyone, or it sets something they inherit.
+	classSubjects: Map<string, StateAnchor[] | null>;
+	siblingPseudoClasses: Map<string, StateAnchor[]>;
+
+	// Rule-existence gates, read with the cascade's pseudoRulesByType:
+	// whether any rule sets or uses counters, and whether an author rule
+	// makes a list item.
+	counterRulesExist: boolean;
+	listItemRulesExist: boolean;
+	// Whether an author rule may set list-style-position to anything but
+	// outside, the one position whose marker has no node of its own.
+	insideMarkerRulesExist: boolean;
+
+	// Whether any rule is scoped, which is what adds proximity to the sort.
+	scopedRulesExist: boolean;
+
+	// What each tree's rules ask of the cascade, by the tree whose sheets
+	// declared them, as siblingRuleIndexes keeps it.
+	scopeRules: Map<Node, ScopeRules>;
+}
+
+function createRuleSummary(): RuleSummary {
+	return {
+		siblingRuleIndexes: new Map(),
+		uaSiblingRuleIndex: undefined,
+		reachingClasses: new Set(),
+		keyPaintsOnly: new Map(),
+		reachingIds: new Set(),
+		reachingAttributes: new Set(),
+		reachingStates: false,
+		descendantPseudoClasses: new Map(),
+		classSubjects: new Map(),
+		siblingPseudoClasses: new Map(),
+		counterRulesExist: false,
+		listItemRulesExist: false,
+		insideMarkerRulesExist: false,
+		scopedRulesExist: false,
+		scopeRules: new Map(),
+	};
+}
+
 export class Cascade {
 	// Each element's computed declaration, as its slots.
 	computedStyleCache: WeakMap<Element, Slots<ComputedStyleDeclaration>>;
 
 	// The matched rule lists shareRuleList last shared, oldest replaced
 	// first.
-	recentRuleLists: ParsedCSSRule[][];
+	recentRuleLists: CascadedRule[][];
 	nextRecentRuleList: number;
 
 	// The slots of every declaration resolved against the current cascade.
@@ -7077,53 +7163,14 @@ export class Cascade {
 	// Every element holding a pseudo-element node, so a sheet change
 	// reconsiders them without walking the document.
 	pseudoHosts: Set<Element>;
-
-	// What each tree's sibling selectors can reach, by the tree whose
-	// sheets declared them: the document, or a shadow root. A rule matches
-	// only in its own tree (css-scoping-1 §3.3), so `* + *` in a shadow
-	// root restyles nothing in the document.
-	siblingIndexes: Map<Node, SiblingIndex>;
-	uaSiblingIndex: SiblingIndex | undefined;
-
-	// The keys whose change can affect an element's DESCENDANTS: those a
-	// selector tests left of a combinator (`.editing .view`), and those on
-	// rules declaring an inherited property. Collected loosely. A false
-	// positive only widens the invalidation.
-	reachingClasses: Set<string>;
-	// Whether every property the rules declare is paint, by each class, id
-	// and attribute their selectors test, as `.name`, `#name` and `[name]`.
-	// A change to a key whose properties are all paint decides nothing
-	// layout reads.
-	keyPaintsOnly: Map<string, boolean>;
-	reachingIds: Set<string>;
-	reachingAttributes: Set<string>;
-
-	// Whether any of those keys is a STATE pseudo-class (`:checked ~`),
-	// which is driven by attributes not in the sets above. While this is
-	// set, a change to any state attribute invalidates widely.
-	reachingStates: boolean;
-	// The pseudo-classes whose change on one element can restyle its
-	// descendants: tested on a compound that is not the subject, or on a
-	// rule that sets an inherited property. And those tested before a
-	// sibling combinator, which can restyle its later siblings.
-	descendantPseudoClasses: Map<string, StateAnchor[]>;
-	// For each class a rule tests above its subject, the subjects that
-	// rule can style, or null when it can style any descendant: its subject
-	// could be anyone, or it sets something they inherit.
-	classSubjects: Map<string, StateAnchor[] | null>;
-	siblingPseudoClasses: Map<string, StateAnchor[]>;
+	summary: RuleSummary;
 
 	// Rule-existence gates. Attaching pseudo-elements and initializing
 	// counters both build full computed-style declarations per element per
-	// mutation. A document with no such rules must not pay that, and these
-	// let the hot paths decide "could any rule apply" with a few matches()
-	// calls.
+	// mutation. A document with no such rules must not pay that, and this,
+	// with the summary's gates, lets the hot paths decide "could any rule
+	// apply" with a few matches() calls.
 	pseudoRulesByType: Map<string, ParsedCSSRule[]>;
-	counterRulesExist: boolean;
-	listItemRulesExist: boolean;
-	// Whether an author rule may set list-style-position to anything but
-	// outside, the one position whose marker has no node of its own.
-	insideMarkerRulesExist: boolean;
 	// The elements whose generated content reads a counter, and the
 	// counters each element declared when its scope was built. A counter
 	// one element changes renumbers the content of others, which nothing
@@ -7141,24 +7188,6 @@ export class Cascade {
 	// Each list's items and their numbers, dropped when its items, their
 	// display or its numbering attributes change.
 	listNumberings: WeakMap<Element, ListNumbering>;
-
-	// Whether any rule is scoped, which is what adds proximity to the sort.
-	scopedRulesExist: boolean;
-	hasRulesExist: boolean;
-
-	// What an element must have for a :has() to be tested on it: an id as
-	// "#id", a class as ".class", a local name, or "*" for anything. A
-	// change inside an element that has none of them leaves every :has()
-	// as it was.
-	hasAnchors: Set<string>;
-	// Whether a :has() argument starts with + or ~, which an element's
-	// earlier siblings can match from, and not only its ancestors.
-	hasSiblingRules: boolean;
-
-	// The engine reads this to decide whether the terminal must report
-	// pointer motion. A sheet that never tests :hover cannot show it, and
-	// motion reporting has a per-cell cost.
-	hoverRulesDeclared: boolean;
 
 	// The document's own sheets as the last parse read them, in order, or
 	// null before the first. A style element that joined since is read on
@@ -7180,6 +7209,12 @@ export class Cascade {
 	// copies. The declaration replacing its memo is what makes the old map
 	// safe to hold.
 	transitionFallback: WeakMap<Element, Map<string, ResolvedValues>>;
+
+	// The styles each whole-cascade drop let go of, newest first, which a
+	// rebuilt style takes its transitions' before-change values from. An
+	// entry goes once its style is rebuilt, and a drop lets go of the drops
+	// a finished layout pass has rebuilt the rendered styles of.
+	droppedStyles: DroppedStyles[];
 
 	activeTransitions: Map<
 		Element,
@@ -7216,17 +7251,9 @@ export class Cascade {
 	// change, so they are dropped with any change.
 	filteredSiblingsForMatching: FilteredSiblingIndexes | null;
 
-	// The pseudo-classes named anywhere inside a :has() argument. A change
-	// to one of those states can restyle an anchor's whole subtree, far
-	// from the element whose state changed.
-	hasStates: Set<string>;
-
-	// Every compound a :has() is written in, and whether one can't be
-	// tested on its own. What each anchor answered them last, as a string
-	// of 0s and 1s in their order, so a change under an anchor that leaves
+	// What each anchor answered the :has() compounds last, as a string of
+	// 0s and 1s in their order, so a change under an anchor that leaves
 	// every answer the same restyles nothing.
-	hasCompounds: Set<string>;
-	hasCompoundsUntestable: boolean;
 	hasAnswers: WeakMap<Element, string>;
 
 	// Set by the layout engine when geometry changed under the used values.
@@ -7266,20 +7293,8 @@ export class Cascade {
 		this.stylesheetsDirty = false;
 		this.parsing = false;
 		this.pseudoHosts = new Set();
-		this.siblingIndexes = new Map();
-		this.uaSiblingIndex = undefined;
-		this.reachingClasses = new Set<string>();
-		this.keyPaintsOnly = new Map<string, boolean>();
-		this.reachingIds = new Set<string>();
-		this.reachingAttributes = new Set<string>();
-		this.reachingStates = false;
-		this.descendantPseudoClasses = new Map();
-		this.classSubjects = new Map();
-		this.siblingPseudoClasses = new Map();
+		this.summary = createRuleSummary();
 		this.pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
-		this.counterRulesExist = false;
-		this.listItemRulesExist = false;
-		this.insideMarkerRulesExist = false;
 		this.counterUsers = new Set();
 		this.countersStale = false;
 		this.counterSets = new WeakMap();
@@ -7288,15 +7303,7 @@ export class Cascade {
 		this.countersCounted = false;
 		this.flatTree = null;
 		this.listNumberings = new WeakMap();
-		this.scopedRulesExist = false;
-		this.hasRulesExist = false;
-		this.hasAnchors = new Set();
-		this.hasSiblingRules = false;
-		this.hasStates = new Set();
-		this.hasCompounds = new Set();
-		this.hasCompoundsUntestable = false;
 		this.hasAnswers = new WeakMap();
-		this.hoverRulesDeclared = false;
 		this.documentSheets = null;
 		this.flushing = false;
 		this.usedValues = new WeakMap();
@@ -7310,6 +7317,7 @@ export class Cascade {
 		this.transitionsExist = false;
 		this.transitionSnapshots = new WeakMap();
 		this.transitionFallback = new WeakMap();
+		this.droppedStyles = [];
 		this.activeTransitions = new Map();
 		this.transitionClock = 0;
 		this.transitionTimer = null;
@@ -7320,23 +7328,7 @@ export class Cascade {
 		this.document = window.document;
 
 		documentCascades.set(this.document, this);
-		window.getComputedStyle = windowMember(
-			window,
-			"getComputedStyle",
-			(
-				element: Element,
-				pseudoElt?: string | null,
-			): globalThis.CSSStyleDeclaration =>
-				getPageView(
-					getResolvedStyle(this, element, pseudoElt) as unknown as
-						CSSStyleDeclaration,
-					element,
-					pseudoElt ?? "",
-				) as unknown as globalThis.CSSStyleDeclaration,
-		) as typeof window.getComputedStyle;
-
-		setupInvalidationHooks(this);
-
+		installWindowMembers(this);
 		parseStylesheets(this);
 	}
 
@@ -7431,6 +7423,67 @@ const LIST_NUMBERING_ATTRIBUTES = new Set([
 	"type",
 ]);
 
+// What one batch of records has done, for the work that waits until
+// the batch ends.
+interface MutationBatch {
+
+	// A root's sheets sync once a batch, after its records: each sync
+	// restyles the whole tree, and a page that fills its sheets a rule at
+	// a time sent a record per rule.
+	rootsToSync: Set<ShadowRoot>;
+
+	// A <style> whose text changed holds other rules than the cascade
+	// read. One that joined or left a tree is caught up with alone.
+	sheetTextChanged: boolean;
+	sheetsMoved: boolean;
+	removedElements: boolean;
+
+	// Each parent whose children came or went, with the first child a
+	// forward sibling test could see differently: the one after the
+	// change, null for every child, or undefined for none.
+	changedParents: Map<Element, Element | null | undefined>;
+
+	// Every record describes the tree as the batch left it, so a subtree
+	// invalidated once is not walked again for a later record, as a page
+	// setting hundreds of custom properties on <html> one at a time sent
+	// a record for each.
+	invalidated: Map<Element, boolean>;
+}
+
+function invalidateOnce(
+	cascade: Cascade,
+	batch: MutationBatch,
+	element: Element,
+	notifyLayout = true,
+): void {
+	if (!isInvalidatedUnder(batch.invalidated, element, notifyLayout)) {
+		batch.invalidated.set(element, notifyLayout);
+		invalidateSubtree(cascade, element, notifyLayout);
+	}
+}
+
+// A shadow sheet's sync stays inside its root.
+function noteStyleText(batch: MutationBatch, style: Element): void {
+	reparseOwnerText(getSheet(style));
+	const root = style.getRootNode();
+	if (isShadowRoot(root)) {
+		batch.rootsToSync.add(root);
+	} else {
+		batch.sheetTextChanged = true;
+	}
+}
+
+// A sheet that joined a tree. Null for one whose tree is not known to
+// be a shadow tree.
+function noteSheetMoved(batch: MutationBatch, style: Element | null): void {
+	const root = style?.getRootNode();
+	if (root !== undefined && isShadowRoot(root)) {
+		batch.rootsToSync.add(root);
+	} else {
+		batch.sheetsMoved = true;
+	}
+}
+
 export function handleMutations(
 	cascade: Cascade,
 	mutations: MutationRecord[],
@@ -7453,289 +7506,38 @@ export function handleMutations(
 		}
 	}
 	cascade.filteredSiblingsForMatching = null;
-	const Node = cascade.window.Node;
-	// A <style> whose text changed holds other rules than the cascade
-	// read. One that joined or left a tree is caught up with alone.
-	let sheetTextChanged = false;
-	let sheetsMoved = false;
-	let removedElements = false;
-	// Each parent whose children came or went, with the first child a
-	// forward sibling test could see differently: the one after the
-	// change, null for every child, or undefined for none.
-	const changedParents = new Map<Element, Element | null | undefined>();
-	// Every record describes the tree as the batch left it, so a subtree
-	// invalidated once is not walked again for a later record, as a page
-	// setting hundreds of custom properties on <html> one at a time sent
-	// a record for each.
-	const invalidated = new Map<Element, boolean>();
-	const invalidateOnce = (element: Element, notifyLayout = true): void => {
-		if (!isInvalidatedUnder(invalidated, element, notifyLayout)) {
-			invalidated.set(element, notifyLayout);
-			invalidateSubtree(cascade, element, notifyLayout);
-		}
+	const batch: MutationBatch = {
+		rootsToSync: new Set(),
+		sheetTextChanged: false,
+		sheetsMoved: false,
+		removedElements: false,
+		changedParents: new Map(),
+		invalidated: new Map(),
 	};
-
-	// A :has() anchor sits above what changed it, or before it among its
-	// siblings for :has(+ x) and :has(~ x), and the rule can style the
-	// anchor's descendants too. So each such element a :has() could be
-	// tested on restyles, with everything under it.
-	if (cascade.hasRulesExist) {
-		const anchors = new Set<Element>();
-		for (const mutation of mutations) {
-			const start = getNodeType(mutation.target) === 1
-				? (mutation.target as Element)
-				: mutation.target.parentElement;
-			for (
-				let ancestor: Element | null = start;
-				ancestor;
-				ancestor = flatParentElement(ancestor)
-			) {
-				for (
-					let element: Element | null = ancestor;
-					element !== null;
-					element = cascade.hasSiblingRules
-						? element.previousElementSibling
-						: null
-				) {
-					if (!anchors.has(element) && couldAnchorHas(cascade, element)) {
-						anchors.add(element);
-						if (hasAnswersChanged(cascade, element)) {
-							invalidateOnce(element);
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// A root's sheets sync once a batch, after its records: each sync
-	// restyles the whole tree, and a page that fills its sheets a rule at
-	// a time sent a record per rule.
-	const rootsToSync = new Set<ShadowRoot>();
+	invalidateHasAnchors(cascade, batch, mutations);
 	for (const mutation of mutations) {
 		if (mutation.type === "childList") {
-			// A <style>'s children ARE its stylesheet text. A shadow
-			// sheet's sync stays inside its root.
-			if (getHTMLLocalName(mutation.target as Element) === "style") {
-				reparseOwnerText(getSheet(mutation.target as Element));
-				const styleRoot = mutation.target.getRootNode();
-				if (isShadowRoot(styleRoot)) {
-					rootsToSync.add(styleRoot);
-				} else {
-					sheetTextChanged = true;
-				}
-			}
-			// A list's gutter is derived from its items' markers, so a
-			// change to the ITEMS invalidates the list: a wider marker added
-			// later overran the gutter the original items set. A change
-			// inside an item's content moves no marker.
-			if (mutationChangesListItems(mutation)) {
-				invalidateEnclosingList(cascade, mutation);
-			}
-
-			for (const node of getAddedNodes(mutation)) {
-				if (getNodeType(node) === Node.ELEMENT_NODE) {
-					const element = node as Element;
-					if (isStyleElement(element)) {
-						const addedRoot = getHTMLLocalName(element) === "style"
-							? element.getRootNode()
-							: null;
-						if (addedRoot !== null && isShadowRoot(addedRoot)) {
-							rootsToSync.add(addedRoot);
-						} else {
-							sheetsMoved = true;
-						}
-					} else {
-						// A detached tree's pseudo-elements and shadow roots wait
-						// for the record that brings it into the document. Its
-						// styles still answer getComputedStyle.
-						const connected = isConnectedNode(element);
-						const elements: Element[] = [];
-						for (
-							let next: DOMNode | null = element as unknown as DOMNode;
-							next !== null;
-							next = nextInTree(next, element as unknown as DOMNode)
-						) {
-							if (getNodeType(next) === Node.ELEMENT_NODE) {
-								elements.push(next as unknown as Element);
-							}
-						}
-						for (const each of elements) {
-							// A sheet brought in inside what was added, a <style>
-							// in an added <head>, is synced as one added alone.
-							if (each !== element && isStyleElement(each)) {
-								const styleRoot = each.getRootNode();
-								if (isShadowRoot(styleRoot)) {
-									rootsToSync.add(styleRoot);
-								} else {
-									sheetsMoved = true;
-								}
-							}
-							invalidateElementCaches(cascade, each);
-							if (connected) {
-								attachPseudoElementsToElement(cascade, each);
-								registerConnectedShadowRoots(cascade, each);
-							}
-						}
-					}
-				}
-			}
-
-			for (const node of getRemovedNodes(mutation)) {
-				if (getNodeType(node) === Node.ELEMENT_NODE) {
-					const element = node as Element;
-					if (isStyleElement(element)) {
-						sheetsMoved = true;
-					}
-					removedElements = true;
-					if (cascade.countersCounted && !cascade.countersStale) {
-						cascade.countersStale = declaresCounters(cascade, element);
-					}
-				}
-			}
-			// A child that came or went changes what `li + li`,
-			// `:first-child` and `:empty` match on the children around it
-			// and on the parent, none of which the mutation names. Once
-			// per parent per batch: appending n children one at a time
-			// is n records against the same parent.
-			if (
-				getNodeType(mutation.target) === Node.ELEMENT_NODE &&
-				getSiblingIndex(cascade, mutation.target as Element)?.reachesSiblings
-			) {
-				const parent = mutation.target as Element;
-				const from = getFirstChildAfterChange(mutation);
-				changedParents.set(
-					parent,
-					changedParents.has(parent)
-						? earlierChild(changedParents.get(parent), from)
-						: from,
-				);
-			}
+			handleChildListMutation(cascade, batch, mutation);
 		} else if (mutation.type === "attributes") {
-			const element = mutation.target as Element;
-			// A value written over itself changes no style.
-			if (
-				mutation.oldValue !== null &&
-				mutation.oldValue ===
-				getAttributeValue(element, mutation.attributeName!)
-			) {
-				continue;
-			}
-			// A list's numbering reads these, and renumbers markers that
-			// belong to other elements than the one changed.
-			if (
-				LIST_NUMBERING_ATTRIBUTES.has(mutation.attributeName!) &&
-				(getLocalName(element) === "ol" || getLocalName(element) === "li")
-			) {
-				noteCounterChange(cascade, element);
-				cascade.layout.invalidateFrame();
-			}
-			// A change to keys whose rules declare only paint properties
-			// leaves every box where it was. The styles are dropped so the
-			// next read resolves them, and layout is not told.
-			// Under a subtree the batch has already restyled and told layout
-			// of, there is nothing left to work out.
-			const covered = isInvalidatedUnder(invalidated, element, true);
-			const notifyLayout =
-				covered ||
-				!isPaintOnlyChange(
-					cascade,
-					element,
-					mutation.attributeName!,
-					mutation.oldValue,
-				);
-			// Only a change the sheets USE that way reaches descendants.
-			// When no rule tests the class outside its own subject and none
-			// declares an inherited property, descendant styles are
-			// unchanged.
-			const subjects = !covered && mutation.attributeName === "class"
-				? classChangeSubjects(cascade, element, mutation.oldValue)
-				: null;
-			if (covered) {
-				// Restyled with the subtree it is in.
-			} else if (subjects !== null) {
-				invalidateElementCaches(cascade, element, notifyLayout);
-				attachPseudoElementsToElement(cascade, element);
-				if (subjects.length > 0) {
-					// The flat tree, where a box's children are: a host's are
-					// its shadow tree's, a form control's included.
-					for (const descendant of flatDescendants(element)) {
-						const parent = flatParentElement(descendant);
-						if (
-							subjects.some(
-								(anchor) =>
-									couldAnchor(descendant, anchor) ||
-									// A display change blockifies the changed element's
-									// own children, and those of anyone else it anchors.
-									(anchor.children === true &&
-										parent !== null &&
-										(parent === element || couldAnchor(parent, anchor))),
-							)
-						) {
-							invalidateElementCaches(cascade, descendant, notifyLayout);
-							attachPseudoElementsToElement(cascade, descendant);
-						}
-					}
-				}
-			} else if (
-				attributeReachesDescendants(
-					cascade,
-					element,
-					mutation.attributeName!,
-					mutation.oldValue,
-				)
-			) {
-				invalidateOnce(element, notifyLayout);
-			} else {
-				invalidateElementCaches(cascade, element, notifyLayout);
-				attachPseudoElementsToElement(cascade, element);
-			}
-			// Each element restyled names its rows for the frame.
-			if (!notifyLayout) {
-				cascade.layout.invalidateFrame(false);
-			}
-			// `.on ~ .light` matches a FOLLOWING sibling whose cached
-			// styles know nothing of this change.
-			if (
-				changeReachesLaterSiblings(
-					getSiblingIndex(cascade, element),
-					element,
-					mutation.attributeName!,
-					mutation.oldValue,
-				)
-			) {
-				for (
-					let sibling = element.nextElementSibling;
-					sibling;
-					sibling = sibling.nextElementSibling
-				) {
-					invalidateSibling(cascade, sibling);
-				}
-			}
+			handleAttributeMutation(cascade, batch, mutation);
 		} else if (mutation.type === "characterData") {
 			const owner = mutation.target.parentElement;
 			if (owner !== null && getHTMLLocalName(owner) === "style") {
-				reparseOwnerText(getSheet(owner));
-				const ownerRoot = owner.getRootNode();
-				if (isShadowRoot(ownerRoot)) {
-					rootsToSync.add(ownerRoot);
-				} else {
-					sheetTextChanged = true;
-				}
+				noteStyleText(batch, owner);
 			}
 		}
 	}
-	for (const root of rootsToSync) {
+	for (const root of batch.rootsToSync) {
 		syncShadowRoot(cascade, root);
 	}
 
-	for (const [parent, from] of changedParents) {
+	for (const [parent, from] of batch.changedParents) {
 		invalidateChildren(cascade, parent, from);
 	}
 	// What left the document is let go: elements given a pseudo-element,
 	// and shadow roots with their rules. A host connected again registers
 	// its root on the way in.
-	if (removedElements) {
+	if (batch.removedElements) {
 		for (const host of cascade.pseudoHosts) {
 			if (!host.isConnected) {
 				cascade.pseudoHosts.delete(host);
@@ -7750,15 +7552,248 @@ export function handleMutations(
 		releaseRemovedNodes(cascade.document);
 	}
 	refreshCounters(cascade);
-	if (sheetTextChanged) {
+	if (batch.sheetTextChanged) {
 		cascade.syncStylesheets();
-	} else if (sheetsMoved) {
+	} else if (batch.sheetsMoved) {
 		parseStylesheetsIfStale(cascade);
 		// As syncStylesheets() does, for the boxes built under the styles
 		// before, even when a read in the same tick caught the sheets up.
 		const body = cascade.document.body;
 		if (body) {
 			cascade.layout.invalidate(body);
+		}
+	}
+}
+
+// A :has() anchor sits above what changed it, or before it among its
+// siblings for :has(+ x) and :has(~ x), and the rule can style the
+// anchor's descendants too. So each such element a :has() could be
+// tested on restyles, with everything under it.
+function invalidateHasAnchors(
+	cascade: Cascade,
+	batch: MutationBatch,
+	mutations: MutationRecord[],
+): void {
+	if (!someScopeRules(cascade, (rules) => rules.hasAnchors.size > 0)) {
+		return;
+	}
+	const siblings = someScopeRules(cascade, (rules) => rules.hasSiblings);
+	const anchors = new Set<Element>();
+	for (const mutation of mutations) {
+		const start = getNodeType(mutation.target) === ELEMENT_NODE
+			? (mutation.target as Element)
+			: mutation.target.parentElement;
+		for (
+			let ancestor: Element | null = start;
+			ancestor;
+			ancestor = flatParentElement(ancestor)
+		) {
+			for (
+				let element: Element | null = ancestor;
+				element !== null;
+				element = siblings ? element.previousElementSibling : null
+			) {
+				if (!anchors.has(element) && couldAnchorHas(cascade, element)) {
+					anchors.add(element);
+					if (hasAnswersChanged(cascade, element)) {
+						invalidateOnce(cascade, batch, element);
+					}
+				}
+			}
+		}
+	}
+}
+
+function handleChildListMutation(
+	cascade: Cascade,
+	batch: MutationBatch,
+	mutation: MutationRecord,
+): void {
+	// A <style>'s children ARE its stylesheet text.
+	if (getHTMLLocalName(mutation.target as Element) === "style") {
+		noteStyleText(batch, mutation.target as Element);
+	}
+	// A list's gutter is derived from its items' markers, so a
+	// change to the ITEMS invalidates the list: a wider marker added
+	// later overran the gutter the original items set. A change
+	// inside an item's content moves no marker.
+	if (mutationChangesListItems(mutation)) {
+		invalidateEnclosingList(cascade, mutation);
+	}
+
+	for (const node of getAddedNodes(mutation)) {
+		if (getNodeType(node) === ELEMENT_NODE) {
+			const element = node as Element;
+			if (isStyleElement(element)) {
+				noteSheetMoved(
+					batch,
+					getHTMLLocalName(element) === "style" ? element : null,
+				);
+			} else {
+				// A detached tree's pseudo-elements and shadow roots wait
+				// for the record that brings it into the document. Its
+				// styles still answer getComputedStyle.
+				const connected = isConnectedNode(element);
+				const elements: Element[] = [];
+				for (
+					let next: DOMNode | null = element as unknown as DOMNode;
+					next !== null;
+					next = nextInTree(next, element as unknown as DOMNode)
+				) {
+					if (getNodeType(next) === ELEMENT_NODE) {
+						elements.push(next as unknown as Element);
+					}
+				}
+				for (const each of elements) {
+					// A sheet brought in inside what was added, a <style>
+					// in an added <head>, is synced as one added alone.
+					if (each !== element && isStyleElement(each)) {
+						noteSheetMoved(batch, each);
+					}
+					invalidateElementCaches(cascade, each);
+					if (connected) {
+						attachPseudoElementsToElement(cascade, each);
+						registerConnectedShadowRoots(cascade, each);
+					}
+				}
+			}
+		}
+	}
+
+	for (const node of getRemovedNodes(mutation)) {
+		if (getNodeType(node) === ELEMENT_NODE) {
+			const element = node as Element;
+			if (isStyleElement(element)) {
+				batch.sheetsMoved = true;
+			}
+			batch.removedElements = true;
+			if (cascade.countersCounted && !cascade.countersStale) {
+				cascade.countersStale = declaresCounters(cascade, element);
+			}
+		}
+	}
+	// A child that came or went changes what `li + li`,
+	// `:first-child` and `:empty` match on the children around it
+	// and on the parent, none of which the mutation names. Once
+	// per parent per batch: appending n children one at a time
+	// is n records against the same parent.
+	if (
+		getNodeType(mutation.target) === ELEMENT_NODE &&
+		getSiblingRuleIndex(cascade, mutation.target as Element)?.reachesSiblings
+	) {
+		const parent = mutation.target as Element;
+		const from = getFirstChildAfterChange(mutation);
+		batch.changedParents.set(
+			parent,
+			batch.changedParents.has(parent)
+				? earlierChild(batch.changedParents.get(parent), from)
+				: from,
+		);
+	}
+}
+
+function handleAttributeMutation(
+	cascade: Cascade,
+	batch: MutationBatch,
+	mutation: MutationRecord,
+): void {
+	const element = mutation.target as Element;
+	// A value written over itself changes no style.
+	if (
+		mutation.oldValue !== null &&
+		mutation.oldValue === getAttributeValue(element, mutation.attributeName!)
+	) {
+		return;
+	}
+	// A list's numbering reads these, and renumbers markers that
+	// belong to other elements than the one changed.
+	if (
+		LIST_NUMBERING_ATTRIBUTES.has(mutation.attributeName!) &&
+		(getLocalName(element) === "ol" || getLocalName(element) === "li")
+	) {
+		noteCounterChange(cascade, element);
+		cascade.layout.invalidateFrame();
+	}
+	// A change to keys whose rules declare only paint properties
+	// leaves every box where it was. The styles are dropped so the
+	// next read resolves them, and layout is not told.
+	// Under a subtree the batch has already restyled and told layout
+	// of, there is nothing left to work out.
+	const covered = isInvalidatedUnder(batch.invalidated, element, true);
+	const notifyLayout =
+		covered ||
+		!isPaintOnlyChange(
+			cascade,
+			element,
+			mutation.attributeName!,
+			mutation.oldValue,
+		);
+	// Only a change the sheets USE that way reaches descendants.
+	// When no rule tests the class outside its own subject and none
+	// declares an inherited property, descendant styles are
+	// unchanged.
+	const subjects = !covered && mutation.attributeName === "class"
+		? classChangeSubjects(cascade, element, mutation.oldValue)
+		: null;
+	if (covered) {
+		// Restyled with the subtree it is in.
+	} else if (subjects !== null) {
+		invalidateElementCaches(cascade, element, notifyLayout);
+		attachPseudoElementsToElement(cascade, element);
+		if (subjects.length > 0) {
+			// The flat tree, where a box's children are: a host's are
+			// its shadow tree's, a form control's included.
+			for (const descendant of flatDescendants(element)) {
+				const parent = flatParentElement(descendant);
+				if (
+					subjects.some(
+						(anchor) =>
+							couldAnchor(descendant, anchor) ||
+							// A display change blockifies the changed element's
+							// own children, and those of anyone else it anchors.
+							(anchor.children === true &&
+								parent !== null &&
+								(parent === element || couldAnchor(parent, anchor))),
+					)
+				) {
+					invalidateElementCaches(cascade, descendant, notifyLayout);
+					attachPseudoElementsToElement(cascade, descendant);
+				}
+			}
+		}
+	} else if (
+		attributeReachesDescendants(
+			cascade,
+			element,
+			mutation.attributeName!,
+			mutation.oldValue,
+		)
+	) {
+		invalidateOnce(cascade, batch, element, notifyLayout);
+	} else {
+		invalidateElementCaches(cascade, element, notifyLayout);
+		attachPseudoElementsToElement(cascade, element);
+	}
+	// Each element restyled names its rows for the frame.
+	if (!notifyLayout) {
+		cascade.layout.invalidateFrame(false);
+	}
+	// `.on ~ .light` matches a FOLLOWING sibling whose cached
+	// styles know nothing of this change.
+	if (
+		changeReachesLaterSiblings(
+			getSiblingRuleIndex(cascade, element),
+			element,
+			mutation.attributeName!,
+			mutation.oldValue,
+		)
+	) {
+		for (
+			let sibling = element.nextElementSibling;
+			sibling;
+			sibling = sibling.nextElementSibling
+		) {
+			invalidateSibling(cascade, sibling);
 		}
 	}
 }
@@ -7770,7 +7805,7 @@ export function handleFocusChange(
 	cascade: Cascade,
 	...elements: Array<Element | null>
 ): void {
-	if (FOCUS_STATES.some((state) => cascade.hasStates.has(state))) {
+	if (FOCUS_STATES.some((state) => hasStateRules(cascade, state))) {
 		restyleAll(cascade);
 		return;
 	}
@@ -7797,7 +7832,7 @@ export function handleStateChange(
 	element: Element,
 	states: readonly string[],
 ): void {
-	if (states.some((state) => cascade.hasStates.has(state))) {
+	if (states.some((state) => hasStateRules(cascade, state))) {
 		restyleAll(cascade);
 		return;
 	}
@@ -7834,7 +7869,7 @@ export function handleActiveChange(
 // describes the current document.
 export function hoverRulesExist(cascade: Cascade): boolean {
 	parseStylesheetsIfStale(cascade);
-	return cascade.hoverRulesDeclared;
+	return someScopeRules(cascade, (rules) => rules.hover);
 }
 
 // The slots of the declaration, which the cache holds, so a read of a
@@ -7864,6 +7899,21 @@ function buildComputedSlots(
 		),
 	);
 	cascade.computedStyleCache.set(element, fresh);
+	for (const {styles} of cascade.droppedStyles) {
+		const dropped = styles.get(element);
+		if (dropped !== undefined) {
+			styles.delete(element);
+			if (cascade.transitionsExist) {
+				storeTransitionFallback(
+					cascade,
+					element,
+					"",
+					getDroppedValues(dropped),
+				);
+			}
+			break;
+		}
+	}
 	// Building a fresh declaration is the other form of the style change
 	// event _syncResolved sees.
 	processTransitionStyle(
@@ -7946,6 +7996,7 @@ export function dispose(cascade: Cascade): void {
 		clearLastRead();
 	}
 	cascade.computedStyleCache = new WeakMap();
+	cascade.droppedStyles = [];
 	cascade.hasResults = null;
 	cascade.pseudoElementStyleCache = new WeakMap();
 	forgetCounters(cascade);
@@ -7992,232 +8043,176 @@ function registerConnectedShadowRoots(
 	}
 }
 
-// In place rather than by a full parse, which renews every rule's id and
-// leaves no shared table reusable.
-function noteHasRule(
+// What one tree's rules ask of the cascade.
+interface ScopeRules {
+
+	// The engine reads this to decide whether the terminal must report
+	// pointer motion. A sheet that never tests :hover cannot show it, and
+	// motion reporting has a per-cell cost.
+	hover: boolean;
+
+	// What an element must have for a :has() to be tested on it: an id as
+	// "#id", a class as ".class", a local name, or "*" for anything. A
+	// change inside an element that has none of them leaves every :has()
+	// as it was.
+	hasAnchors: Set<string>;
+
+	// Whether a :has() argument starts with + or ~, which an element's
+	// earlier siblings can match from, and not only its ancestors.
+	hasSiblings: boolean;
+
+	// The pseudo-classes named anywhere inside a :has() argument. A change
+	// to one of those states can restyle an anchor's whole subtree, far
+	// from the element whose state changed.
+	hasStates: Set<string>;
+
+	// Every compound a :has() is written in, and whether one can't be
+	// tested on its own.
+	hasCompounds: Set<CompiledCompound>;
+	hasUntestable: boolean;
+}
+
+function getScopeRules(cascade: Cascade, scope: Node | undefined): ScopeRules {
+	const key = scope ?? cascade.document;
+	let rules = cascade.summary.scopeRules.get(key);
+	if (rules === undefined) {
+		rules = {
+			hover: false,
+			hasAnchors: new Set(),
+			hasSiblings: false,
+			hasStates: new Set(),
+			hasCompounds: new Set(),
+			hasUntestable: false,
+		};
+		cascade.summary.scopeRules.set(key, rules);
+	}
+	return rules;
+}
+
+function someScopeRules(
 	cascade: Cascade,
-	anchors: readonly string[],
-	states: readonly string[],
-	siblings: boolean,
-	compounds: ReadonlyArray<string | null>,
-): void {
-	cascade.hasRulesExist = true;
-	for (const compound of compounds) {
-		if (compound === null) {
-			cascade.hasCompoundsUntestable = true;
-		} else if (!cascade.hasCompounds.has(compound)) {
-			cascade.hasCompounds.add(compound);
-			cascade.hasAnswers = new WeakMap();
-		}
-	}
-	if (siblings) {
-		cascade.hasSiblingRules = true;
-	}
-	for (const anchor of anchors) {
-		cascade.hasAnchors.add(anchor);
-	}
-	for (const state of states) {
-		cascade.hasStates.add(state);
-	}
-}
-
-// Whether a :has() in the selector takes a relative selector that starts
-// with + or ~.
-function hasSiblingArgument(selector: string): boolean {
-	for (
-		let at = selector.indexOf(":has(");
-		at !== -1;
-		at = selector.indexOf(":has(", at + 5)
-	) {
-		let depth = 0;
-		let start = at + 5;
-		for (let index = start; index < selector.length; index++) {
-			const char = selector[index];
-			if (char === "(" || char === "[") {
-				depth++;
-			} else if (char === ")" || char === "]") {
-				if (depth === 0) {
-					if (/^\s*[+~]/.test(selector.slice(start, index))) {
-						return true;
-					}
-					break;
-				}
-				depth--;
-			} else if (char === "," && depth === 0) {
-				if (/^\s*[+~]/.test(selector.slice(start, index))) {
-					return true;
-				}
-				start = index + 1;
-			}
-		}
-	}
-	return false;
-}
-
-// For each :has() in a selector, what the compound it is written on asks
-// of an element: its id, else a class, else its local name, else
-// anything. What a functional pseudo-class or an attribute selector asks
-// is left out, so the answer only ever asks for less.
-function getHasAnchors(selector: string): string[] {
-	const anchors: string[] = [];
-	for (
-		let at = selector.indexOf(":has(");
-		at !== -1;
-		at = selector.indexOf(":has(", at + 5)
-	) {
-		let start = at;
-		let depth = 0;
-		while (start > 0) {
-			const char = selector[start - 1];
-			if (char === ")" || char === "]") {
-				depth++;
-			} else if (char === "(" || char === "[") {
-				if (depth === 0) {
-					break;
-				}
-				depth--;
-			} else if (depth === 0 && /[\s>+~,]/.test(char)) {
-				break;
-			}
-			start--;
-		}
-		let compound = selector.slice(start, at);
-		if (/[\\|]/.test(compound)) {
-			anchors.push("*");
-			continue;
-		}
-		let previous;
-		do {
-			previous = compound;
-			compound = compound
-				.replace(/:[\w-]+\([^()]*\)/g, "")
-				.replace(/\[[^[\]]*\]/g, "");
-		} while (compound !== previous);
-		const id = /#([\w-]+)/.exec(compound);
-		const className = /\.([\w-]+)/.exec(compound);
-		const tag = /^([a-zA-Z][\w-]*)/.exec(compound);
-		anchors.push(
-			id
-				? `#${id[1]}`
-				: className ? `.${className[1]}` : tag ? tag[1].toLowerCase() : "*",
-		);
-	}
-	return anchors;
-}
-
-// For each :has() in a selector, the whole compound it is written in, as
-// `.a:has(> .b):not(.c)`, which tested on an anchor says whether that
-// part of the rule holds there. Null for a compound that only means
-// something in its tree.
-function getHasCompounds(selector: string): Array<string | null> {
-	const compounds: Array<string | null> = [];
-	for (
-		let at = selector.indexOf(":has(");
-		at !== -1;
-		at = selector.indexOf(":has(", at + 5)
-	) {
-		let start = at;
-		let depth = 0;
-		while (start > 0) {
-			const char = selector[start - 1];
-			if (char === ")" || char === "]") {
-				depth++;
-			} else if (char === "(" || char === "[") {
-				if (depth === 0) {
-					break;
-				}
-				depth--;
-			} else if (depth === 0 && /[\s>+~,]/.test(char)) {
-				break;
-			}
-			start--;
-		}
-		let end = at;
-		depth = 0;
-		for (; end < selector.length; end++) {
-			const char = selector[end];
-			if (char === "(" || char === "[") {
-				depth++;
-			} else if (char === ")" || char === "]") {
-				if (depth === 0) {
-					break;
-				}
-				depth--;
-			} else if (depth === 0 && /[\s>+~,]/.test(char)) {
-				break;
-			}
-		}
-		const compound = selector.slice(start, end);
-		compounds.push(
-			/::|:host|[\\|]/.test(compound) ||
-			compound.indexOf(":has(") !== compound.lastIndexOf(":has(")
-				? null
-				: compound,
-		);
-	}
-	return compounds;
-}
-
-function couldAnchorHas(cascade: Cascade, element: Element): boolean {
-	const anchors = cascade.hasAnchors;
-	if (anchors.has("*") || anchors.has(getLocalName(element).toLowerCase())) {
-		return true;
-	}
-	const id = getAttributeValue(element, "id");
-	if (id !== null && anchors.has(`#${id}`)) {
-		return true;
-	}
-	for (const className of element.classList) {
-		if (anchors.has(`.${className}`)) {
+	test: (rules: ScopeRules) => boolean,
+): boolean {
+	for (const rules of cascade.summary.scopeRules.values()) {
+		if (test(rules)) {
 			return true;
 		}
 	}
 	return false;
 }
 
+function hasStateRules(cascade: Cascade, state: string): boolean {
+	return someScopeRules(cascade, (rules) => rules.hasStates.has(state));
+}
+
+// What the :has()es in a selector ask of the cascade, at any depth. A
+// compound holding a pseudo-element or :host, or a second :has(), only
+// means something in its tree, and is not tested on its own.
+function noteHasRules(
+	cascade: Cascade,
+	rules: ScopeRules,
+	complex: CompiledComplex,
+): void {
+	const after = complex.pseudoElement?.after ?? null;
+	const compounds = after === null
+		? complex.compounds
+		: [...complex.compounds, after];
+	for (const [index, compound] of compounds.entries()) {
+		const names = getPseudoClassNames(getNestedCompounds(compound));
+		if (compound.pseudoClasses.some(({name}) => name === "has")) {
+			const required = getRequiredKeys(compound);
+			rules.hasAnchors.add(
+				required.ids.length > 0
+					? `#${required.ids[0]}`
+					: required.classes.length > 0
+					? `.${required.classes[0]}`
+					: (required.tag ?? "*"),
+			);
+			if (
+				compound.pseudoElement !== null ||
+				(complex.pseudoElement !== null &&
+					index >= complex.compounds.length - 1) ||
+				names.filter((name) => name === "has").length > 1 ||
+				names.some((name) => name.startsWith("host"))
+			) {
+				rules.hasUntestable = true;
+			} else if (!rules.hasCompounds.has(compound)) {
+				rules.hasCompounds.add(compound);
+				cascade.hasAnswers = new WeakMap();
+			}
+		}
+		for (const {name, args} of compound.pseudoClasses) {
+			for (const argument of args) {
+				if (name === "has") {
+					if (isSiblingCombinator(argument.combinators[0])) {
+						rules.hasSiblings = true;
+					}
+					for (const inner of argument.compounds) {
+						for (const state of getPseudoClassNames(
+							getNestedCompounds(inner),
+						)) {
+							rules.hasStates.add(state);
+						}
+					}
+				}
+				noteHasRules(cascade, rules, argument);
+			}
+		}
+	}
+}
+
+function couldAnchorHas(cascade: Cascade, element: Element): boolean {
+	const tag = toASCIILowercase(getLocalName(element));
+	const id = getAttributeValue(element, "id");
+	return someScopeRules(cascade, ({hasAnchors: anchors}) => {
+		if (anchors.size === 0) {
+			return false;
+		}
+		if (
+			anchors.has("*") ||
+			anchors.has(tag) ||
+			(id !== null && anchors.has(`#${id}`))
+		) {
+			return true;
+		}
+		for (const className of element.classList) {
+			if (anchors.has(`.${className}`)) {
+				return true;
+			}
+		}
+		return false;
+	});
+}
+
 // Whether the element answers any :has() compound otherwise than it did
 // when last asked, which a first ask always counts as.
 function hasAnswersChanged(cascade: Cascade, element: Element): boolean {
-	if (cascade.hasCompoundsUntestable) {
+	if (someScopeRules(cascade, (rules) => rules.hasUntestable)) {
 		return true;
 	}
 	let answers = "";
-	for (const compound of cascade.hasCompounds) {
-		answers += matchesCompiled(
-			element as unknown as DOMElement,
-			compileSelector(compound),
-			{hasResults: null},
-		)
-			? "1"
-			: "0";
+	for (const rules of cascade.summary.scopeRules.values()) {
+		for (const compound of rules.hasCompounds) {
+			answers += matchesCompound(element as unknown as DOMElement, compound, {
+				hasResults: null,
+			})
+				? "1"
+				: "0";
+		}
 	}
 	const previous = cascade.hasAnswers.get(element);
 	cascade.hasAnswers.set(element, answers);
 	return previous !== answers;
 }
 
+// In place rather than by a full parse, which renews every rule's id and
+// leaves no shared table reusable. The root's rules go, and so does what
+// they asked for.
 function forgetShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	dropScopedRules(cascade, root);
-	cascade.siblingIndexes.delete(root);
-	// The root's :has() rules went with it, and so does what they asked for.
-	cascade.hasRulesExist = false;
-	cascade.hasAnchors = new Set();
-	cascade.hasSiblingRules = false;
-	cascade.hasStates = new Set();
-	cascade.hasCompounds = new Set();
-	cascade.hasCompoundsUntestable = false;
+	cascade.summary.siblingRuleIndexes.delete(root);
+	cascade.summary.scopeRules.delete(root);
 	cascade.hasAnswers = new WeakMap();
-	for (const rule of cascade.parsedRules) {
-		if (rule.hasAnchors !== undefined) {
-			noteHasRule(
-				cascade,
-				rule.hasAnchors,
-				rule.hasStates ?? [],
-				rule.hasSiblings === true,
-				rule.hasCompounds ?? [null],
-			);
-		}
-	}
 }
 
 // A tree's rules, wherever the cascade files them: the pseudo-element rules
@@ -8244,7 +8239,9 @@ function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 		return;
 	}
 	dropScopedRules(cascade, root);
-	cascade.siblingIndexes.delete(root);
+	cascade.summary.siblingRuleIndexes.delete(root);
+	cascade.summary.scopeRules.delete(root);
+	cascade.hasAnswers = new WeakMap();
 	const before = cascade.parsedRules.length;
 	for (const sheet of getShadowStyleSheets(root)) {
 		parseStyleSheet(cascade, sheet, root);
@@ -8268,7 +8265,7 @@ function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 	}
 	// The UA shadow trees' sheets have no pseudo-generating rules, so the
 	// attach sweep runs only for an author shadow root that does.
-	if (fresh.some((rule) => generatesPseudoElement(rule.pseudoElement))) {
+	if (fresh.some((rule) => generatesPseudoElement(getPseudoElement(rule)))) {
 		attachPseudoElements(cascade);
 	}
 }
@@ -8365,7 +8362,7 @@ function reachesSiblings(
 ): boolean {
 	parseStylesheetsIfStale(cascade);
 	return states.some((state) =>
-		cascade.siblingPseudoClasses
+		cascade.summary.siblingPseudoClasses
 			.get(state)?.some((anchor) => couldAnchor(element, anchor)),
 	);
 }
@@ -8379,7 +8376,7 @@ function reachesDescendants(
 ): boolean {
 	parseStylesheetsIfStale(cascade);
 	return states.some((state) =>
-		cascade.descendantPseudoClasses
+		cascade.summary.descendantPseudoClasses
 			.get(state)?.some((anchor) => couldAnchor(element, anchor)),
 	);
 }
@@ -8410,8 +8407,8 @@ const RECENT_RULE_LISTS = 16;
 // shared and held once. What is shared is frozen. A list holding a shadow
 // tree's rule keeps its own, since the cascade outlives the tree.
 function isSameRuleList(
-	recent: readonly ParsedCSSRule[],
-	rules: readonly ParsedCSSRule[],
+	recent: readonly CascadedRule[],
+	rules: readonly CascadedRule[],
 ): boolean {
 	if (recent.length !== rules.length) {
 		return false;
@@ -8426,8 +8423,8 @@ function isSameRuleList(
 
 function shareRuleList(
 	cascade: Cascade,
-	rules: ParsedCSSRule[],
-): ParsedCSSRule[] {
+	rules: CascadedRule[],
+): CascadedRule[] {
 	const recents = cascade.recentRuleLists;
 	for (let index = 0; index < recents.length; index++) {
 		if (isSameRuleList(recents[index], rules)) {
@@ -8439,14 +8436,14 @@ function shareRuleList(
 			return rules;
 		}
 	}
-	const shared = Object.freeze(rules.slice()) as ParsedCSSRule[];
+	const shared = Object.freeze(rules.slice()) as CascadedRule[];
 	cascade.recentRuleLists[cascade.nextRecentRuleList] = shared;
 	cascade.nextRecentRuleList =
 		(cascade.nextRecentRuleList + 1) % RECENT_RULE_LISTS;
 	return shared;
 }
 
-function getCascadeRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
+function getCascadeRules(cascade: Cascade, element: Element): CascadedRule[] {
 	parseStylesheetsIfStale(cascade);
 	const rules = getMatchingRules(cascade, element);
 	const hints = getHintRule(element);
@@ -8456,7 +8453,7 @@ function getCascadeRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	// Author level, zero specificity, ahead of every author rule and
 	// layer (HTML §15.1).
 	let at = 0;
-	while (at < rules.length && rules[at].uaOrigin) {
+	while (at < rules.length && rules[at].origin === "ua") {
 		at++;
 	}
 	return shareRuleList(cascade, [
@@ -8515,13 +8512,10 @@ function flushCascadeStyle(cascade: Cascade): void {
 /**
  * Checks each frame's styles against styles resolved from nothing, for
  * tests: every value an element's cached style has served must be what
- * the cascade resolves with every cache dropped. Set, a value served
+ * the cascade resolves with every cache dropped. A value served
  * otherwise throws, naming it.
  */
-export const styleCheck = {enabled: false, checked: 0};
-
 export function checkStylesFromScratch(cascade: Cascade): void {
-	styleCheck.checked++;
 	const elements: Element[] =
 		[...cascade.document.querySelectorAll("*")] as Element[];
 	for (const root of cascade.shadowRoots) {
@@ -8547,6 +8541,7 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 		currentDeclarations: cascade.currentDeclarations,
 		usedValues: cascade.usedValues,
 		computedStyleCache: cascade.computedStyleCache,
+		droppedStyles: cascade.droppedStyles,
 		hasResults: cascade.hasResults,
 		pseudoElementStyleCache: cascade.pseudoElementStyleCache,
 		counterSets: cascade.counterSets,
@@ -8557,6 +8552,7 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 		passedTokens: cascade.passedTokens,
 	};
 	dropCache(cascade);
+	cascade.droppedStyles = [];
 	cascade.sharedRoot = new Map();
 	cascade.passedTokens = new Map();
 	const differences: string[] = [];
@@ -8583,12 +8579,30 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 	}
 }
 
+interface DroppedStyles {
+	styles: WeakMap<Element, Slots<ComputedStyleDeclaration>>;
+	pseudoStyles: WeakMap<Element, Map<string, PseudoStyleDeclaration>>;
+	// The layout pass the drop came in, or the one running then.
+	pass: number;
+}
+
 function dropCache(cascade: Cascade): void {
 	// Every computed style ever handed out re-resolves on its next read.
 	cascade.siblingIndexesForMatching = null;
 	cascade.filteredSiblingsForMatching = null;
 	cascade.currentDeclarations = new WeakSet<object>();
 	cascade.usedValues = new WeakMap();
+	const {layout} = cascade;
+	cascade.droppedStyles = [
+		{
+			styles: cascade.computedStyleCache,
+			pseudoStyles: cascade.pseudoElementStyleCache,
+			pass: layout.pass,
+		},
+		...cascade.droppedStyles.filter(({pass}) =>
+			pass === layout.pass || (layout.inPass && pass === layout.pass - 1),
+		),
+	];
 	cascade.computedStyleCache = new WeakMap();
 	cascade.hasResults = null;
 	cascade.pseudoElementStyleCache = new WeakMap();
@@ -8613,7 +8627,7 @@ function classChangeSubjects(
 	element: Element,
 	oldValue: string | null,
 ): StateAnchor[] | null {
-	if (oldValue === null || cascade.reachingAttributes.has("class")) {
+	if (oldValue === null || cascade.summary.reachingAttributes.has("class")) {
 		return null;
 	}
 	const before = getValueTokens(oldValue);
@@ -8638,7 +8652,7 @@ function addClassSubjects(
 	token: string,
 	anchors: StateAnchor[],
 ): boolean {
-	const subjects = cascade.classSubjects.get(token);
+	const subjects = cascade.summary.classSubjects.get(token);
 	if (subjects === null) {
 		return false;
 	}
@@ -8659,7 +8673,7 @@ function chainStateChange(
 	next: Element | null,
 	state: string,
 ): void {
-	if (cascade.hasStates.has(state)) {
+	if (hasStateRules(cascade, state)) {
 		restyleAll(cascade);
 		return;
 	}
@@ -8711,10 +8725,10 @@ function attributeReachesDescendants(
 		);
 	}
 	if (name === "class") {
-		if (cascade.reachingAttributes.has("class")) {
+		if (cascade.summary.reachingAttributes.has("class")) {
 			return true;
 		}
-		if (cascade.reachingClasses.size === 0) {
+		if (cascade.summary.reachingClasses.size === 0) {
 			return false;
 		}
 		// With no old value, the classes that LEFT cannot be known.
@@ -8725,31 +8739,31 @@ function attributeReachesDescendants(
 		const before = getValueTokens(oldValue);
 		const after = getClassTokens(element);
 		for (const token of after) {
-			if (!before.has(token) && cascade.reachingClasses.has(token)) {
+			if (!before.has(token) && cascade.summary.reachingClasses.has(token)) {
 				return true;
 			}
 		}
 		for (const token of before) {
-			if (!after.has(token) && cascade.reachingClasses.has(token)) {
+			if (!after.has(token) && cascade.summary.reachingClasses.has(token)) {
 				return true;
 			}
 		}
 		return false;
 	}
 	if (name === "id") {
-		if (cascade.reachingAttributes.has("id")) {
+		if (cascade.summary.reachingAttributes.has("id")) {
 			return true;
 		}
-		if (oldValue !== null && cascade.reachingIds.has(oldValue)) {
+		if (oldValue !== null && cascade.summary.reachingIds.has(oldValue)) {
 			return true;
 		}
 		const id = getAttributeValue(element, "id");
-		return id !== null && cascade.reachingIds.has(id);
+		return id !== null && cascade.summary.reachingIds.has(id);
 	}
-	if (cascade.reachingAttributes.has(name)) {
+	if (cascade.summary.reachingAttributes.has(name)) {
 		return true;
 	}
-	return cascade.reachingStates && CSSValues.isStateAttribute(name);
+	return cascade.summary.reachingStates && CSSValues.isStateAttribute(name);
 }
 
 // The flush runs once per change, not once per read. A caller reading
@@ -8801,6 +8815,19 @@ function getPseudoDeclaration(
 		cascade.pseudoElementStyleCache.set(element, elementCache);
 	}
 	elementCache.set(pseudoElement, declaration);
+	for (const {pseudoStyles} of cascade.droppedStyles) {
+		const dropped = pseudoStyles.get(element)?.get(pseudoElement);
+		if (dropped !== undefined) {
+			pseudoStyles.get(element)!.delete(pseudoElement);
+			storeTransitionFallback(
+				cascade,
+				element,
+				pseudoElement,
+				_(dropped).resolved,
+			);
+			break;
+		}
+	}
 	processTransitionStyle(
 		cascade,
 		element,
@@ -8885,10 +8912,12 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 	const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 	let count = 0;
 	for (const rule of cascade.parsedRules) {
-		if (generatesPseudoElement(rule.pseudoElement) && mayGiveContent(rule)) {
-			const rules = pseudoRulesByType.get(rule.pseudoElement!) || [];
+		if (
+			generatesPseudoElement(getPseudoElement(rule)) && mayGiveContent(rule)
+		) {
+			const rules = pseudoRulesByType.get(getPseudoElement(rule)!) || [];
 			rules.push(rule);
-			pseudoRulesByType.set(rule.pseudoElement!, rules);
+			pseudoRulesByType.set(getPseudoElement(rule)!, rules);
 			count++;
 		}
 	}
@@ -8914,7 +8943,9 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 		cascade.document.querySelectorAll('[style*="list-item"], li, summary'),
 	);
 	for (const rule of cascade.parsedRules) {
-		if (rule.declarations["display"] === "list-item" && !rule.uaOrigin) {
+		if (
+			rule.block.declarations["display"] === "list-item" && rule.origin !== "ua"
+		) {
 			const scope = (rule.scope ?? cascade.document) as Node;
 			for (const element of selectForRule(scope, rule)) {
 				listItems.add(element);
@@ -8950,14 +8981,14 @@ function attachPseudoElementsFromRules(
 			for (const element of selectForRule(scope, rule)) {
 				matchingElements.add(element);
 			}
-			if (rule.ofPart) {
+			if (isOfPart(rule)) {
 				for (const root of cascade.shadowRoots) {
 					for (const element of selectForRule(root, rule)) {
 						matchingElements.add(element);
 					}
 				}
 			}
-			const host = rule.reachesHost
+			const host = reachesHost(rule)
 				? ((rule.scope as ShadowRoot).host as Element | null)
 				: null;
 			if (host && ruleSelectorMatches(host, rule)) {
@@ -9352,8 +9383,7 @@ function getElementCounterEffects(
 ): CounterEffects {
 	const slots = _(cascade.declarationFor(element));
 	const declares =
-		cascade.counterRulesExist ||
-		(getAttributeValue(element, "style") ?? "").includes("counter");
+		cascade.summary.counterRulesExist || usesCounters(readInlineBlock(element));
 	const effects = readCounterEffects((property) =>
 		declares ? (slots._computedValue(property) ?? undefined) : undefined,
 	);
@@ -9393,7 +9423,8 @@ function getPseudoCounterEffects(
 	type: string,
 ): CounterEffects | null {
 	if (
-		!cascade.counterRulesExist || !hasGeneratedContent(cascade, element, type)
+		!cascade.summary.counterRulesExist ||
+		!hasGeneratedContent(cascade, element, type)
 	) {
 		return null;
 	}
@@ -9575,6 +9606,45 @@ function getResolvedStyle(
 	) as unknown as globalThis.CSSStyleDeclaration;
 }
 
+function getPseudoTransitionValue(
+	declaration: PseudoStyleDeclaration,
+	property: string,
+): string | null {
+	const declarationSlots = _(declaration);
+	const cascade = declarationSlots.cascade;
+	if (
+		cascade === null ||
+		declarationSlots.element === null ||
+		cascade.activeTransitions.size === 0
+	) {
+		return null;
+	}
+	return getTransitionValue(
+		cascade,
+		declarationSlots.element,
+		declarationSlots.pseudoElement,
+		property,
+	);
+}
+
+// A transitioning value reaches the element's descendants through
+// inheritance, so the subtree under each transitioning element is what
+// the style cache cannot hold.
+function isTransitioning(cascade: Cascade, element: Element): boolean {
+	const active = cascade.activeTransitions;
+	if (active.size === 0) {
+		return false;
+	}
+	for (let node: Element | null = element;
+		node;
+		node = flatParentElement(node)) {
+		if (active.has(node)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 interface QueuedTransitionEvent {
 	element: Element;
 	type: string;
@@ -9617,9 +9687,8 @@ function processTransitionStyle(
 	const active = cascade.activeTransitions.get(element)?.get(pseudo);
 	if (!cascade.transitionsExist && !active) {
 		// An inline transition written right before this event may not have
-		// parsed yet. The attribute text is the one place it already shows.
-		const attribute = getAttributeValue(element, "style");
-		if (!attribute || !attribute.includes("transition")) {
+		// parsed yet.
+		if (!startsTransitions(readInlineBlock(element))) {
 			return;
 		}
 		cascade.transitionsExist = true;
@@ -9640,14 +9709,16 @@ function processTransitionStyle(
 		...(candidates?.keys() ?? []),
 		...(active?.keys() ?? []),
 	]);
+	const snapshot = new Map<string, string>();
 	for (const property of names) {
 		const after = CSSValues.getTransitionBase(read, property);
 		const timing = candidates?.get(property);
-		const runnable =
-			timing !== undefined && timing.duration + Math.max(timing.delay, 0) > 0;
+		if (timing !== undefined) {
+			snapshot.set(property, after);
+		}
 		const running = active?.get(property);
 		if (running) {
-			if (!runnable) {
+			if (timing === undefined) {
 				cancelTransition(cascade, element, pseudo, property, now);
 				continue;
 			}
@@ -9695,23 +9766,19 @@ function processTransitionStyle(
 				CSS_INITIAL_VALUES[property] ?? "",
 			)
 			: raw;
-		if (before === undefined || before === after || !runnable) {
+		if (before === undefined || before === after || timing === undefined) {
 			continue;
 		}
 		startTransition(cascade, element, pseudo, property, {
 			from: before,
 			to: after,
-			timing: timing!,
+			timing,
 			now,
 			reversingAdjustedStartValue: before,
 			reversingShorteningFactor: 1,
 		});
 	}
 	if (candidates) {
-		const snapshot = new Map<string, string>();
-		for (const property of candidates.keys()) {
-			snapshot.set(property, CSSValues.getTransitionBase(read, property));
-		}
 		if (!snapshots) {
 			snapshots = new Map();
 			cascade.transitionSnapshots.set(element, snapshots);
@@ -10072,8 +10139,8 @@ function appendDocumentSheets(cascade: Cascade): boolean {
 // matching it as the pseudo-element, or by changing whether the element
 // is a list item with its marker inside.
 function mayChangePseudoElements(rule: ParsedCSSRule): boolean {
-	const declarations = rule.declarations;
-	return generatesPseudoElement(rule.pseudoElement) ||
+	const declarations = rule.block.declarations;
+	return generatesPseudoElement(getPseudoElement(rule)) ||
 		declarations.display !== undefined ||
 		declarations["list-style-position"] !== undefined ||
 		declarations.all !== undefined;
@@ -10163,13 +10230,28 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 	cascade.computedStyleCache.delete(element);
 	forgetLastRead(element);
 	cascade.hasResults = null;
-	const hadPseudoStyles = cascade.pseudoElementStyleCache.delete(element);
+	const hadPseudoStyles = dropPseudoStyles(cascade, element);
 	// A style change can flip display: contents, which moves the node's
 	// flat-tree BOX parent, so every box enumeration is stale. A change
 	// layout sees repaints what it moves. The element's own rows repaint
 	// for one it does not.
 	cascade.layout.invalidateFrame(false);
 	recordRestyle(cascade, element, dropped, hadPseudoStyles);
+}
+
+// Whether the element had pseudo-element styles, which become the
+// before-change styles of their transitions.
+function dropPseudoStyles(cascade: Cascade, element: Element): boolean {
+	const dropped = cascade.pseudoElementStyleCache.get(element);
+	if (dropped === undefined) {
+		return false;
+	}
+	for (const [name, declaration] of dropped) {
+		cascade.currentDeclarations.delete(_(declaration));
+		storeTransitionFallback(cascade, element, name, _(declaration).resolved);
+	}
+	cascade.pseudoElementStyleCache.delete(element);
+	return true;
 }
 
 // The style an element painted under, kept until the next frame compares
@@ -10221,9 +10303,11 @@ function invalidateChildren(
 	from: Element | null | undefined = null,
 ): void {
 	invalidateSibling(cascade, element);
-	let child = getSiblingIndex(cascade, element)?.countsFromEnd || from === null
-		? element.firstElementChild
-		: from;
+	let child =
+		getSiblingRuleIndex(cascade, element)?.countsFromEnd ||
+		from === null
+			? element.firstElementChild
+			: from;
 	for (; child; child = child.nextElementSibling) {
 		invalidateSibling(cascade, child as Element);
 	}
@@ -10239,7 +10323,7 @@ function getFirstChildAfterChange(
 		return null;
 	}
 	for (let node = before.nextSibling; node; node = node.nextSibling) {
-		if (getNodeType(node) === 1) {
+		if (getNodeType(node) === ELEMENT_NODE) {
 			return node as Element;
 		}
 	}
@@ -10262,7 +10346,7 @@ function earlierChild(
 // `:focus ~ .card` and `:hover + label` match siblings AFTER the element
 // whose state changed, and their cached styles know nothing of it.
 function invalidateLaterSiblings(cascade: Cascade, element: Element): void {
-	if (!getSiblingIndex(cascade, element)?.reachesSiblings) {
+	if (!getSiblingRuleIndex(cascade, element)?.reachesSiblings) {
 		return;
 	}
 	for (
@@ -10275,7 +10359,7 @@ function invalidateLaterSiblings(cascade: Cascade, element: Element): void {
 }
 
 function invalidateSibling(cascade: Cascade, element: Element): void {
-	const index = getSiblingIndex(cascade, element);
+	const index = getSiblingRuleIndex(cascade, element);
 	if (index === undefined || !isSiblingTested(index, element)) {
 		return;
 	}
@@ -10287,7 +10371,7 @@ function invalidateSibling(cascade: Cascade, element: Element): void {
 	attachPseudoElementsToElement(cascade, element);
 }
 
-interface SiblingIndex {
+interface SiblingRuleIndex {
 	// Whether a selector can reach OUTSIDE a mutated element's subtree, to
 	// its following siblings. The string tests are deliberately loose. A
 	// false positive only widens the rebuild.
@@ -10313,24 +10397,24 @@ interface SiblingIndex {
 // The index of the tree whose rules could match the element: its shadow
 // root's, or the document's. The UA sheet's rules match in every tree, so
 // each tree's index starts from theirs.
-function getSiblingIndex(
+function getSiblingRuleIndex(
 	cascade: Cascade,
 	element: Element,
-): SiblingIndex | undefined {
+): SiblingRuleIndex | undefined {
 	const root = element.getRootNode();
-	return cascade.siblingIndexes.get(
+	return cascade.summary.siblingRuleIndexes.get(
 		isShadowRoot(root) ? root : cascade.document,
-	) ?? cascade.uaSiblingIndex;
+	) ?? cascade.summary.uaSiblingRuleIndex;
 }
 
-function getOrCreateSiblingIndex(
+function getOrCreateSiblingRuleIndex(
 	cascade: Cascade,
 	scope: Node | undefined,
-): SiblingIndex {
+): SiblingRuleIndex {
 	const key = scope ?? cascade.document;
-	let index = cascade.siblingIndexes.get(key);
+	let index = cascade.summary.siblingRuleIndexes.get(key);
 	if (index === undefined) {
-		const ua = cascade.uaSiblingIndex;
+		const ua = cascade.summary.uaSiblingRuleIndex;
 		index = {
 			reachesSiblings: ua?.reachesSiblings ?? false,
 			reachesDescendants: ua?.reachesDescendants ?? false,
@@ -10340,7 +10424,7 @@ function getOrCreateSiblingIndex(
 			anchorKeys: new Set(ua?.anchorKeys),
 			anchorsUniversal: ua?.anchorsUniversal ?? false,
 		};
-		cascade.siblingIndexes.set(key, index);
+		cascade.summary.siblingRuleIndexes.set(key, index);
 	}
 	return index;
 }
@@ -10350,7 +10434,7 @@ function getOrCreateSiblingIndex(
 // Only a class, id or attribute such a compound names can: `.on ~ .light`
 // cares about `on`, and `summary:first-of-type` about no attribute at all.
 function changeReachesLaterSiblings(
-	index: SiblingIndex | undefined,
+	index: SiblingRuleIndex | undefined,
 	element: Element,
 	attributeName: string,
 	oldValue: string | null,
@@ -10387,7 +10471,7 @@ function changeReachesLaterSiblings(
 }
 
 // Whether some sibling-tested compound could name the element.
-function isSiblingTested(index: SiblingIndex, element: Element): boolean {
+function isSiblingTested(index: SiblingRuleIndex, element: Element): boolean {
 	if (index.universal) {
 		return true;
 	}
@@ -10439,14 +10523,7 @@ function invalidateElementCaches(
 	cascade.computedStyleCache.delete(element);
 	forgetLastRead(element);
 	cascade.hasResults = null;
-	const droppedPseudos = cascade.pseudoElementStyleCache.get(element);
-	if (droppedPseudos) {
-		for (const [name, declaration] of droppedPseudos) {
-			cascade.currentDeclarations.delete(_(declaration));
-			storeTransitionFallback(cascade, element, name, _(declaration).resolved);
-		}
-	}
-	cascade.pseudoElementStyleCache.delete(element);
+	dropPseudoStyles(cascade, element);
 	cascade.counterSets.delete(element);
 	cascade.counterEnds.delete(element);
 	cascade.listNumberings.delete(element);
@@ -10545,7 +10622,7 @@ function isPaintOnlyChange(
 	if (
 		name === "style" ||
 		isLayoutHintAttribute(element, name) ||
-		(cascade.reachingStates && CSSValues.isStateAttribute(name))
+		(cascade.summary.reachingStates && CSSValues.isStateAttribute(name))
 	) {
 		return false;
 	}
@@ -10581,7 +10658,7 @@ function idPaintsOnly(cascade: Cascade, id: string | null): boolean {
 }
 
 function keyPaintsOnly(cascade: Cascade, key: string): boolean {
-	return cascade.keyPaintsOnly.get(key) ?? true;
+	return cascade.summary.keyPaintsOnly.get(key) ?? true;
 }
 
 // The list's padding-left is a function of its items' markers and
@@ -10627,7 +10704,7 @@ function couldChangeMarkers(list: Element, mutation: MutationRecord): boolean {
 	}
 	for (const nodes of [getAddedNodes(mutation), getRemovedNodes(mutation)]) {
 		for (const node of nodes) {
-			if (getNodeType(node) !== 1) {
+			if (getNodeType(node) !== ELEMENT_NODE) {
 				continue;
 			}
 			const element = node as Element;
@@ -10675,32 +10752,12 @@ function parseStylesheetsNow(cascade: Cascade): void {
 function parseAllStylesheets(cascade: Cascade): void {
 	const document = cascade.document;
 	cascade.parsedRules = [];
+	cascade.summary = createRuleSummary();
 	cascade.sharedRoot = new Map();
 	cascade.passedTokens = new Map();
-	cascade.siblingIndexes = new Map();
-	cascade.uaSiblingIndex = undefined;
-	cascade.reachingClasses.clear();
-	cascade.keyPaintsOnly.clear();
-	cascade.reachingIds.clear();
-	cascade.reachingAttributes.clear();
-	cascade.reachingStates = false;
-	cascade.descendantPseudoClasses = new Map();
-	cascade.classSubjects = new Map();
-	cascade.siblingPseudoClasses = new Map();
 	cascade.pseudoRulesByType = new Map();
 	cascade.pseudoSubjectTags = undefined;
-	cascade.counterRulesExist = false;
-	cascade.listItemRulesExist = false;
-	cascade.insideMarkerRulesExist = false;
-	cascade.scopedRulesExist = false;
-	cascade.hasRulesExist = false;
-	cascade.hasAnchors = new Set();
-	cascade.hasSiblingRules = false;
-	cascade.hasStates = new Set();
-	cascade.hasCompounds = new Set();
-	cascade.hasCompoundsUntestable = false;
 	cascade.hasAnswers = new WeakMap();
-	cascade.hoverRulesDeclared = false;
 	cascade.stylesheetsDirty = false;
 	cascade.layerPaths = [];
 	cascade.anonymousLayers = 0;
@@ -10709,9 +10766,9 @@ function parseAllStylesheets(cascade: Cascade): void {
 	// Origin ordering, not source order, keeps the UA sheet beneath every
 	// author rule.
 	parseStyleSheet(cascade, getUAStyleSheet(), undefined, true);
-	const uaIndex = cascade.siblingIndexes.get(document);
+	const uaIndex = cascade.summary.siblingRuleIndexes.get(document);
 	if (uaIndex !== undefined) {
-		cascade.uaSiblingIndex = {
+		cascade.summary.uaSiblingRuleIndex = {
 			...uaIndex,
 			keys: new Set(uaIndex.keys),
 			anchorKeys: new Set(uaIndex.anchorKeys),
@@ -10752,14 +10809,14 @@ function parseAllStylesheets(cascade: Cascade): void {
 // sort keeps, where every document sheet comes before every shadow
 // tree's, even one appended after the trees' were read.
 function compareRules(a: ParsedCSSRule, b: ParsedCSSRule): number {
-	if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
-		return a.uaOrigin ? -1 : 1;
+	if ((a.origin === "ua") !== (b.origin === "ua")) {
+		return a.origin === "ua" ? -1 : 1;
 	}
 	if (a.layerRank !== b.layerRank) {
 		return a.layerRank - b.layerRank;
 	}
-	if (a.specificity !== b.specificity) {
-		return a.specificity < b.specificity ? -1 : 1;
+	if (getComplex(a).specificity !== getComplex(b).specificity) {
+		return getComplex(a).specificity - getComplex(b).specificity;
 	}
 	if ((a.scope === undefined) !== (b.scope === undefined)) {
 		return a.scope === undefined ? -1 : 1;
@@ -10819,14 +10876,15 @@ function rankRules(cascade: Cascade, start: number): boolean {
 function fileRulesByPseudoElement(cascade: Cascade): void {
 	cascade.pseudoRulesByType = new Map();
 	for (const rule of cascade.parsedRules) {
-		if (rule.pseudoElement === undefined) {
+		const pseudoElement = getPseudoElement(rule);
+		if (pseudoElement === undefined) {
 			continue;
 		}
-		const byType = cascade.pseudoRulesByType.get(rule.pseudoElement);
+		const byType = cascade.pseudoRulesByType.get(pseudoElement);
 		if (byType) {
 			byType.push(rule);
 		} else {
-			cascade.pseudoRulesByType.set(rule.pseudoElement, [rule]);
+			cascade.pseudoRulesByType.set(pseudoElement, [rule]);
 		}
 	}
 }
@@ -10954,12 +11012,12 @@ function mediaQueryNodeMatches(
 	cascade: Cascade,
 	query: CSSTree.MediaQueryNode,
 ): boolean {
-	const type = (query.mediaType ?? "").toLowerCase();
+	const type = toASCIILowercase(query.mediaType ?? "");
 	let result: MediaResult = type === "" || type === "all" || type === "screen";
 	if (result && query.condition) {
 		result = mediaConditionMatches(cascade, query.condition);
 	}
-	if (result !== null && (query.modifier ?? "").toLowerCase() === "not") {
+	if (result !== null && toASCIILowercase(query.modifier ?? "") === "not") {
 		result = !result;
 	}
 	return result === true;
@@ -10974,7 +11032,7 @@ function mediaConditionMatches(
 	let negate = false;
 	for (const part of CSSValues.getMediaConditionParts(condition)) {
 		if (part.type === "Identifier") {
-			const word = (part.name ?? "").toLowerCase();
+			const word = toASCIILowercase(part.name ?? "");
 			if (word === "not") {
 				negate = true;
 			} else if (word === "and" || word === "or") {
@@ -11260,7 +11318,7 @@ function getMediaValue(
 			if (node.type !== "Dimension" || !(value >= 0)) {
 				return null;
 			}
-			switch ((node.unit ?? "").toLowerCase()) {
+			switch (toASCIILowercase(node.unit ?? "")) {
 				case "dppx":
 				case "x":
 					return value;
@@ -11299,7 +11357,7 @@ function mediaFeatureMatches(
 	feature: CSSTree.MediaConditionNode,
 ): MediaResult {
 	const window = cascade.window;
-	const name = (feature.name ?? "").toLowerCase();
+	const name = toASCIILowercase(feature.name ?? "");
 	const value = feature.value ?? null;
 	const discrete = MEDIA_DISCRETE_FEATURES[name];
 	if (discrete) {
@@ -11308,7 +11366,7 @@ function mediaFeatureMatches(
 			return actual !== discrete.falsy;
 		}
 		const wanted = value.type === "Identifier"
-			? (value.name ?? "").toLowerCase()
+			? toASCIILowercase(value.name ?? "")
 			: "";
 		return discrete.values.includes(wanted) ? wanted === actual : null;
 	}
@@ -11344,7 +11402,7 @@ function mediaFeatureRangeMatches(
 	range: CSSTree.MediaConditionNode,
 ): MediaResult {
 	const named = (node: CSSTree.ValueNode | null | undefined): string =>
-		node?.type === "Identifier" ? (node.name ?? "").toLowerCase() : "";
+		node?.type === "Identifier" ? toASCIILowercase(node.name ?? "") : "";
 	const window = cascade.window;
 	if (range.right) {
 		const feature = MEDIA_RANGE_FEATURES[named(range.middle)];
@@ -11506,15 +11564,167 @@ interface StateAnchor {
 	attributes: string[];
 }
 
-function getStateAnchor(
-	keys: CSSValues.SelectorReading["compounds"][number],
-): StateAnchor {
+function getStateAnchor(nested: CompiledCompound[]): StateAnchor {
+	const names = getPseudoClassNames(nested);
 	return {
 		anyElement:
-			keys.nestedCombinator || keys.pseudoClasses.includes("host-context"),
-		host: keys.pseudoClasses.includes("host"),
-		...keys.required,
+			writesNestedCombinator(nested) || names.includes("host-context"),
+		host: names.includes("host"),
+		...getRequiredKeys(nested[0]),
 	};
+}
+
+// A selector testing one of these on an ancestor affects the ancestor's
+// descendants when the attribute behind it changes, and no attribute
+// NAME in the selector reveals that.
+const STATE_PSEUDO_CLASSES = new Set([
+	"-moz-meter-optimum",
+	"-moz-meter-sub-optimum",
+	"-moz-meter-sub-sub-optimum",
+	"any-link",
+	"checked",
+	"heading",
+	"high-value",
+	"closed",
+	"default",
+	"defined",
+	"disabled",
+	"enabled",
+	"in-range",
+	"indeterminate",
+	"invalid",
+	"link",
+	"low-value",
+	"open",
+	"optimal-value",
+	"optional",
+	"out-of-range",
+	"placeholder-shown",
+	"popover-open",
+	"read-only",
+	"read-write",
+	"required",
+	"target",
+	"valid",
+	"visited",
+]);
+
+const STRUCTURAL_PSEUDO_CLASS = /^(?:nth-|first-|last-|only-|empty)/;
+
+function isSiblingCombinator(combinator: Combinator | undefined): boolean {
+	return combinator === "+" || combinator === "~";
+}
+
+// The compound and the compounds in its arguments, at any depth. A class
+// inside :not() or :is() is tested on the element the compound matches,
+// or on one it leads to.
+function getNestedCompounds(compound: CompiledCompound): CompiledCompound[] {
+	const nested = [compound];
+	for (const {args} of compound.pseudoClasses) {
+		for (const argument of args) {
+			for (const inner of argument.compounds) {
+				nested.push(...getNestedCompounds(inner));
+			}
+		}
+	}
+	return nested;
+}
+
+// What compound `index` of a selector names, the pseudo-classes written
+// after the pseudo-element it ends with included.
+function getWrittenCompounds(
+	complex: CompiledComplex,
+	index: number,
+): CompiledCompound[] {
+	const nested = getNestedCompounds(complex.compounds[index]);
+	const after = complex.pseudoElement?.after ?? null;
+	if (index === complex.compounds.length - 1 && after !== null) {
+		nested.push(...getNestedCompounds(after));
+	}
+	return nested;
+}
+
+function getPseudoClassNames(nested: CompiledCompound[]): string[] {
+	return nested.flatMap((compound) =>
+		compound.pseudoClasses.map((pseudoClass) => pseudoClass.name));
+}
+
+// The class, id and attribute keys the compounds name, as `.name`,
+// `#name` and `[name]`.
+function getNamedKeys(nested: CompiledCompound[]): string[] {
+	return nested.flatMap((compound) => [
+		...compound.classes.map((name) => `.${name}`),
+		...compound.ids.map((name) => `#${name}`),
+		...compound.attributes.map((name) => `[${name}]`),
+	]);
+}
+
+// Whether an argument holds a combinator, and so describes elements
+// other than the one the compound matches.
+function writesNestedCombinator(nested: CompiledCompound[]): boolean {
+	return nested.some((compound) =>
+		compound.pseudoClasses.some((pseudoClass) =>
+			pseudoClass.args.some(writesCombinator)));
+}
+
+// Whether the keys the compounds name can fail to name the element: some
+// of them sit inside :not(), or inside an argument with combinators of its
+// own, where they describe another element. `:not(.b ~ *)` matches
+// elements with no class at all.
+function describesAnyElement(nested: CompiledCompound[]): boolean {
+	return writesNestedCombinator(nested) ||
+		getPseudoClassNames(nested).includes("not");
+}
+
+// Whether matching compound `index` reads the element's siblings or
+// children: it follows a sibling combinator, or tests a tree-structural
+// pseudo-class or :empty, or holds an argument with a sibling combinator.
+function testsSiblings(complex: CompiledComplex, index: number): boolean {
+	return isSiblingCombinator(complex.combinators[index - 1]) ||
+		getWrittenCompounds(complex, index).some((compound) =>
+			compound.pseudoClasses.some((pseudoClass) =>
+				STRUCTURAL_PSEUDO_CLASS.test(pseudoClass.name) ||
+				pseudoClass.args.some((argument) =>
+					argument.combinators.some(isSiblingCombinator))));
+}
+
+interface RequiredKeys {
+	tag: string | null;
+	classes: string[];
+	ids: string[];
+	attributes: string[];
+	root: boolean;
+}
+
+// The keys the element a compound matches must have, and whether it must
+// be the root: the compound's own, and those of a lone compound in :is()
+// or :where(). With alternatives, or a combinator, nothing one of them
+// names is required of the element.
+function getRequiredKeys(compound: CompiledCompound): RequiredKeys {
+	const required: RequiredKeys = {
+		tag: compound.tag,
+		classes: [...compound.classes],
+		ids: [...compound.ids],
+		attributes: [...compound.attributes],
+		root: false,
+	};
+	for (const {name, args} of compound.pseudoClasses) {
+		if (name === "root") {
+			required.root = true;
+		} else if (
+			(name === "is" || name === "where") &&
+			args.length === 1 &&
+			args[0].compounds.length === 1
+		) {
+			const inner = getRequiredKeys(args[0].compounds[0]);
+			required.tag ??= inner.tag;
+			required.classes.push(...inner.classes);
+			required.ids.push(...inner.ids);
+			required.attributes.push(...inner.attributes);
+			required.root ||= inner.root;
+		}
+	}
+	return required;
 }
 
 function addStateAnchor(
@@ -11550,8 +11760,7 @@ function couldAnchor(element: Element, anchor: StateAnchor): boolean {
 // changes nothing but the element's own box.
 function indexReachingKeys(
 	cascade: Cascade,
-	selector: string,
-	reading: CSSValues.SelectorReading,
+	complex: CompiledComplex,
 	declarations: Record<string, string>,
 	scope: Node | undefined,
 ): void {
@@ -11568,166 +11777,111 @@ function indexReachingKeys(
 	}
 	const subjectInherits = inherits;
 	inherits ||= blockifies;
-	const compounds = reading.compounds;
-	if (reading.reachesSiblings) {
-		const index = getOrCreateSiblingIndex(cascade, scope);
+	const compounds = complex.compounds.map((_, index) =>
+		getWrittenCompounds(complex, index));
+	const siblingTested = compounds.map((_, index) =>
+		testsSiblings(complex, index));
+	const precedesSibling = compounds.map((_, index) =>
+		isSiblingCombinator(complex.combinators[index]));
+	const names = getPseudoClassNames(compounds.flat());
+	if (siblingTested.includes(true)) {
+		const index = getOrCreateSiblingRuleIndex(cascade, scope);
 		index.reachesSiblings = true;
-		if (reading.siblingsReachDescendants || inherits) {
+		if (siblingTested.slice(0, -1).includes(true) || inherits) {
 			index.reachesDescendants = true;
 		}
-		if (/:nth-[a-z-]*\([^)]*\bof\b/i.test(selector)) {
+		if (compounds.flat().some((compound) =>
+			compound.pseudoClasses.some((pseudoClass) =>
+				pseudoClass.name.startsWith("nth-") && pseudoClass.args.length > 0))) {
 			index.anchorsUniversal = true;
 		}
-		if (/:(?:last-|only-|nth-last-)/i.test(selector)) {
+		if (names.some((name) => /^(?:last-|only-|nth-last-)/.test(name))) {
 			index.countsFromEnd = true;
 		}
-		for (const keys of compounds) {
-			if (!keys.precedesSibling) {
+		for (const [i, nested] of compounds.entries()) {
+			if (!precedesSibling[i]) {
 				continue;
 			}
-			if (keys.anyElement || keys.pseudoClasses.length > 0 || keys.states) {
+			if (
+				describesAnyElement(nested) || getPseudoClassNames(nested).length > 0
+			) {
 				index.anchorsUniversal = true;
 			}
-			for (const key of [
-				...keys.classes.map((name) => `.${name}`),
-				...keys.ids.map((name) => `#${name}`),
-				...keys.attributes.map((name) => `[${name}]`),
-			]) {
+			for (const key of getNamedKeys(nested)) {
 				index.anchorKeys.add(key);
 			}
 		}
 	}
-	for (const keys of compounds) {
-		if (!keys.siblingTested) {
+	for (const [i, nested] of compounds.entries()) {
+		if (!siblingTested[i]) {
 			continue;
 		}
-		const index = getOrCreateSiblingIndex(cascade, scope);
+		const index = getOrCreateSiblingRuleIndex(cascade, scope);
+		const keys = getNamedKeys(nested);
+		const tags = nested.flatMap((compound) => compound.tag ?? []);
 		if (
-			keys.anyElement ||
-			(keys.tag === null &&
-				keys.classes.length === 0 &&
-				keys.ids.length === 0 &&
-				keys.attributes.length === 0)
+			describesAnyElement(nested) || (tags.length === 0 && keys.length === 0)
 		) {
 			index.universal = true;
 		}
-		if (keys.tag !== null) {
-			index.keys.add(keys.tag);
-		}
-		for (const key of [
-			...keys.classes.map((name) => `.${name}`),
-			...keys.ids.map((name) => `#${name}`),
-			...keys.attributes.map((name) => `[${name}]`),
-		]) {
+		for (const key of [...tags, ...keys]) {
 			index.keys.add(key);
 		}
 	}
 	const paintsOnly = Object.keys(declarations).every((name) =>
 		PAINT_ONLY_PROPERTIES.has(name));
-	for (const keys of compounds) {
-		for (const key of [
-			...keys.classes.map((name) => `.${name}`),
-			...keys.ids.map((name) => `#${name}`),
-			...keys.attributes.map((name) => `[${name}]`),
-		]) {
-			cascade.keyPaintsOnly.set(
-				key,
-				paintsOnly && (cascade.keyPaintsOnly.get(key) ?? true),
-			);
-		}
+	for (const key of getNamedKeys(compounds.flat())) {
+		cascade.summary.keyPaintsOnly.set(
+			key,
+			paintsOnly && (cascade.summary.keyPaintsOnly.get(key) ?? true),
+		);
 	}
 	const last = inherits ? compounds.length : compounds.length - 1;
-	for (const [i, keys] of compounds.entries()) {
+	for (const [i, nested] of compounds.entries()) {
 		// A compound with a combinator inside an argument describes other
 		// elements too, so what it tests can reach anywhere, from anyone.
-		const nested = keys.nestedCombinator;
-		const anchor = getStateAnchor(keys);
-		for (const name of keys.pseudoClasses) {
-			if (i < last || nested) {
-				addStateAnchor(cascade.descendantPseudoClasses, name, anchor);
+		const inner = writesNestedCombinator(nested);
+		const anchor = getStateAnchor(nested);
+		for (const name of getPseudoClassNames(nested)) {
+			if (i < last || inner) {
+				addStateAnchor(cascade.summary.descendantPseudoClasses, name, anchor);
 			}
-			if (keys.precedesSibling || nested) {
-				addStateAnchor(cascade.siblingPseudoClasses, name, anchor);
+			if (precedesSibling[i] || inner) {
+				addStateAnchor(cascade.summary.siblingPseudoClasses, name, anchor);
 			}
 		}
 	}
-	const subject = compounds.length === 0
-		? null
-		: getStateAnchor(compounds[compounds.length - 1]);
-	const reach = subjectInherits || subject === null || subject.anyElement
+	const subject = getStateAnchor(compounds[compounds.length - 1]);
+	const reach = subjectInherits || subject.anyElement
 		? null
 		: {...subject, children: blockifies};
 	for (let i = 0; i < last; i++) {
-		const keys = compounds[i];
-		for (const name of keys.classes) {
-			cascade.reachingClasses.add(name);
-			const subjects = cascade.classSubjects.get(name);
-			if (reach === null || subjects === null) {
-				cascade.classSubjects.set(name, null);
-			} else if (subjects === undefined) {
-				cascade.classSubjects.set(name, [reach]);
-			} else {
-				subjects.push(reach);
+		const nested = compounds[i];
+		for (const compound of nested) {
+			for (const name of compound.classes) {
+				cascade.summary.reachingClasses.add(name);
+				const subjects = cascade.summary.classSubjects.get(name);
+				if (reach === null || subjects === null) {
+					cascade.summary.classSubjects.set(name, null);
+				} else if (subjects === undefined) {
+					cascade.summary.classSubjects.set(name, [reach]);
+				} else {
+					subjects.push(reach);
+				}
+			}
+			for (const name of compound.ids) {
+				cascade.summary.reachingIds.add(name);
+			}
+			for (const name of compound.attributes) {
+				cascade.summary.reachingAttributes.add(name);
 			}
 		}
-		for (const name of keys.ids) {
-			cascade.reachingIds.add(name);
-		}
-		for (const name of keys.attributes) {
-			cascade.reachingAttributes.add(name);
-		}
-		if (keys.states) {
-			cascade.reachingStates = true;
+		if (
+			getPseudoClassNames(nested).some((name) => STATE_PSEUDO_CLASSES.has(name))
+		) {
+			cascade.summary.reachingStates = true;
 		}
 	}
-}
-
-// A selector this engine cannot read compiles to neither reading, and
-// the rule styles nothing.
-// A selector written alike under the same namespaces compiles alike, so
-// a sheet that repeats another's rules, or a page that loads one twice,
-// compiles each selector once, and its rules share the matcher.
-const compiledSelectors = new Map<string, CompiledSelector | null>();
-
-function getNamespacesKey(namespaces: SelectorNamespaces): string {
-	let key = namespaces.default ?? "";
-	for (const [prefix, uri] of namespaces.prefixes) {
-		key += ` ${prefix}=${uri}`;
-	}
-	return key;
-}
-
-function compileRuleSelector(
-	selector: string,
-	namespaces: SelectorNamespaces | undefined,
-	scopes: readonly CSSValues.ScopeCondition[] | undefined,
-	pseudoElements = false,
-): Pick<ParsedCSSRule, "matcher" | "relativeMatcher"> {
-	const read = (relative: boolean): CompiledSelector | null => {
-		const key = `${relative ? "r" : ""}${pseudoElements ? "p" : ""} ${
-			namespaces === undefined ? "" : getNamespacesKey(namespaces)
-		}\0${selector}`;
-		let compiled = compiledSelectors.get(key);
-		if (compiled === undefined) {
-			try {
-				compiled = compileSelector(selector, {
-					namespaces,
-					relative,
-					pseudoElements,
-				});
-			} catch (_err) {
-				// Only the shape of a sheet's selector was checked when the rule
-				// was parsed. A prefix no `@namespace` declared is rejected here.
-				compiled = null;
-			}
-			if (compiledSelectors.size > 16384) {
-				compiledSelectors.clear();
-			}
-			compiledSelectors.set(key, compiled);
-		}
-		return compiled;
-	};
-	return {matcher: read(false), relativeMatcher: scopes ? read(true) : null};
 }
 
 function parseSelector(
@@ -11739,169 +11893,71 @@ function parseSelector(
 	namespaces?: SelectorNamespaces,
 	context: CSSValues.RuleContext = UNCONDITIONAL,
 ): void {
-	const {declarations, important, order} = block;
-	// Only a duration or delay can make a transition run, so the property
-	// list alone does not open the sticky gate.
-	if (declarations["transition-duration"] || declarations["transition-delay"]) {
+	if (startsTransitions(block)) {
 		cascade.transitionsExist = true;
 	}
 	const layer = context.layer;
-	// A :has() rule reads DOWN the tree, the one relational direction the
-	// per-target invalidation cannot see, so the flag enables the ancestor
-	// sweep only for documents that need it.
-	let hasAnchors: string[] | undefined;
-	let hasStates: string[] | undefined;
-	let hasSiblings: boolean | undefined;
-	let hasCompounds: Array<string | null> | undefined;
-	if (selector.includes(":has(")) {
-		hasAnchors = getHasAnchors(selector);
-		hasCompounds = getHasCompounds(selector);
-		const inside = selector.slice(selector.indexOf(":has(") + 5);
-		hasStates = Array.from(inside.matchAll(/:([a-zA-Z-]+)/g), (match) =>
-			match[1].toLowerCase(),
-		);
-		hasSiblings = hasSiblingArgument(selector);
-		noteHasRule(cascade, hasAnchors, hasStates, hasSiblings, hasCompounds);
+	let compiled: CompiledSelector;
+	try {
+		compiled = compileSelector(selector, {
+			namespaces,
+			relative: true,
+			pseudoElements: true,
+		});
+	} catch (_err) {
+		// Only the shape of a sheet's selector was checked when the rule was
+		// parsed. A prefix no `@namespace` declared is rejected here.
+		return;
 	}
-	if (selector.includes(":hover")) {
-		cascade.hoverRulesDeclared = true;
+	const complex = compiled.list[0];
+	// Outside an @scope, a selector opening with a combinator has nothing to
+	// be relative to, and selects nothing.
+	if (context.scopes.length === 0 && opensWithCombinator(complex)) {
+		return;
+	}
+	// A :has() rule reads DOWN the tree, the one relational direction the
+	// per-target invalidation cannot see, so its anchors enable the
+	// ancestor sweep only for documents that need it.
+	const rules = getScopeRules(cascade, scope);
+	noteHasRules(cascade, rules, complex);
+	const pseudoClasses = getPseudoClassNames(
+		complex.compounds.flatMap((_, index) =>
+			getWrittenCompounds(complex, index),
+		),
+	);
+	if (pseudoClasses.includes("hover")) {
+		rules.hover = true;
 	}
 	let scopes: readonly CSSValues.ScopeCondition[] | undefined;
 	if (context.scopes.length > 0) {
 		scopes = context.scopes;
-		cascade.scopedRulesExist = true;
+		cascade.summary.scopedRulesExist = true;
 	}
-	if (
-		selector.includes("|") &&
-		!CSSValues.namespacePrefixesDeclared(selector, namespaces)
-	) {
-		return;
+	indexReachingKeys(cascade, complex, block.declarations, scope);
+	if (usesCounters(block)) {
+		cascade.summary.counterRulesExist = true;
 	}
-	const reading = CSSValues.readSelector(selector);
-	indexReachingKeys(cascade, selector, reading, declarations, scope);
-	if (
-		declarations["counter-reset"] ||
-		declarations["counter-increment"] ||
-		declarations["counter-set"] ||
-		declarations["content"]?.includes("counter")
-	) {
-		cascade.counterRulesExist = true;
-	}
-	const specificity = reading.specificity;
-	const uaOrigin = Boolean(
-		uaOriginSheet || (scope != null && isUAShadowTree(scope)),
-	);
+	const origin = uaOriginSheet || (scope != null && isUAShadowTree(scope))
+		? "ua"
+		: "author";
 	// The UA sheet's own `li { display: list-item }` is covered by the tag
 	// tests that read this flag. Set by the UA sheet too, the flag was
 	// always on, and every element paid for a ::marker it could not have.
-	if (!uaOrigin && declarations["display"] === "list-item") {
-		cascade.listItemRulesExist = true;
+	if (origin === "author" && isListItemBlock(block)) {
+		cascade.summary.listItemRulesExist = true;
 	}
-	if (
-		!uaOrigin &&
-		((declarations["list-style-position"] ?? "outside") !== "outside" ||
-			declarations.all !== undefined)
-	) {
-		cascade.insideMarkerRulesExist = true;
+	if (origin === "author" && mayPlaceMarkerInside(block)) {
+		cascade.summary.insideMarkerRulesExist = true;
 	}
-
-	const required = reading.compounds.at(-1)?.required;
-	// `:where(svg)` requires its name as `svg` does.
-	const subjectTag = reading.subjectTag ?? required?.tag ?? undefined;
-	const subjectKey = required === undefined
-		? undefined
-		: required.root
-		? ":root"
-		: required.ids.length > 0
-			? `#${required.ids[0]}`
-			: required.classes.length > 0
-				? `.${required.classes[0]}`
-				: required.tag === null && required.attributes.length > 0
-					? `[${toASCIILowercase(required.attributes[0])}]`
-					: undefined;
-	// A :host rule is tried against the host as well as the tree's
-	// elements.
-	const reachesHost = scope !== undefined && selector.includes(":host");
-
-	// Any pseudo-element, not just the ones this engine gives a box. A rule
-	// for `::highlight(x)` still has to be visible through
-	// getComputedStyle.
-	const pseudoMatch = selector.match(
-		/^(.*?)(::[-\w]+(?:\([^)]*\))?)((?::[-\w]+(?:\([^)]*\))?)*)$/,
-	);
-
-	if (pseudoMatch) {
-		const [, baseSelector, , trailing] = pseudoMatch;
-		const pseudoElement = unescapeHighlightName(pseudoMatch[2]);
-		let partMatcher: CompiledSelector | null | undefined;
-		if (trailing && pseudoElement.startsWith("::part(")) {
-			try {
-				partMatcher = compileSelector(`*${trailing}`, {namespaces});
-			} catch (_err) {
-				partMatcher = null;
-			}
-		}
-		const ofPart = baseSelector.includes("::part(");
-		const rule: ParsedCSSRule = {
-			// A pseudo-element written with no originating selector originates
-			// on every element, which is what `*` means.
-			...compileRuleSelector(
-				baseSelector.trim() || "*",
-				namespaces,
-				scopes,
-				ofPart,
-			),
-			subjectTag: ofPart ? undefined : subjectTag,
-			subjectKey: ofPart ? undefined : subjectKey,
-			ofPart,
-			declarations,
-			important,
-			order,
-			specificity,
-			pseudoElement,
-			partMatcher,
-			scope,
-			uaOrigin,
-			reachesHost,
-			hasAnchors,
-			hasStates,
-			hasSiblings,
-			hasCompounds,
-			layer,
-			layerRank: 0,
-			scopes,
-		};
-		cascade.parsedRules.push(rule);
-		const byType = cascade.pseudoRulesByType.get(pseudoElement);
-		if (byType) {
-			byType.push(rule);
-		} else {
-			cascade.pseudoRulesByType.set(pseudoElement, [rule]);
-		}
-	} else {
-		cascade.parsedRules.push({
-			...compileRuleSelector(selector, namespaces, scopes),
-			ancestorBits: scopes || reachesHost || selector.includes("&")
-				? undefined
-				: getAncestorBits(reading),
-			subjectTag,
-			subjectKey,
-			declarations,
-			important,
-			order,
-			specificity,
-			scope,
-			uaOrigin,
-			reachesHost,
-			hasAnchors,
-			hasStates,
-			hasSiblings,
-			hasCompounds,
-			layer,
-			layerRank: 0,
-			scopes,
-		});
-	}
+	cascade.parsedRules.push({
+		selector: compiled,
+		block,
+		origin,
+		scope,
+		layer,
+		layerRank: 0,
+		scopes,
+	});
 }
 
 // Farther from any element than any scoping root can be.
@@ -11927,9 +11983,42 @@ interface RuleIndex {
 	pseudoKeyed: Map<string, number[]>;
 	pseudoTagged: Map<string, number[]>;
 	pseudoUnkeyedPositions: number[];
+	// By position, the bits, in an element's ancestor filter, of the names,
+	// ids and classes the rule's compounds left of a descendant or child
+	// combinator require, so an element whose ancestors have none of one is
+	// ruled out without running the selector. Undefined when the rule
+	// requires nothing of its ancestors, or reads them some other way.
+	ancestorBits: Array<Uint32Array | undefined>;
 	// Candidates by the name, id and classes that chose them, since elements
 	// alike in those, like an editor's lines, try the same rules.
-	candidates: Map<string, ParsedCSSRule[]>;
+	candidates: Map<string, CandidateRules>;
+}
+
+// The rules an element could match, in cascade order, with the ancestor
+// bits of each.
+interface CandidateRules {
+	rules: ParsedCSSRule[];
+	ancestorBits: Array<Uint32Array | undefined>;
+}
+
+// ":root" when the rightmost compound must be the root, or else the id or
+// a class it requires, as "#id" or ".class", or with neither and no
+// element name, an attribute, as "[name]", which files the rule where only
+// elements with it look. Undefined when it requires none of them.
+function getSubjectKey(rule: ParsedCSSRule): string | undefined {
+	const complex = getComplex(rule);
+	const required = getRequiredKeys(
+		complex.compounds[complex.compounds.length - 1],
+	);
+	return required.root
+		? ":root"
+		: required.ids.length > 0
+		? `#${required.ids[0]}`
+		: required.classes.length > 0
+		? `.${required.classes[0]}`
+		: required.tag === null && required.attributes.length > 0
+		? `[${required.attributes[0]}]`
+		: undefined;
 }
 
 const MAX_CANDIDATE_LISTS = 4096;
@@ -11955,28 +12044,36 @@ function getRuleIndex(cascade: Cascade, quirks: boolean): RuleIndex {
 		pseudoKeyed: new Map(),
 		pseudoTagged: new Map(),
 		pseudoUnkeyedPositions: [],
+		ancestorBits: [],
 		candidates: new Map(),
 	};
 	for (const [position, rule] of rules.entries()) {
-		const pseudo = Boolean(rule.pseudoElement);
+		const pseudo = getComplex(rule).pseudoElement !== null;
+		const host = reachesHost(rule);
+		index.ancestorBits.push(
+			pseudo || host || rule.scopes
+				? undefined
+				: getAncestorBits(getComplex(rule)),
+		);
 		// A :host rule matches through the tree's host, so it is not filed
 		// under the element.
-		if (rule.reachesHost || rule.ofPart) {
+		if (host || isOfPart(rule)) {
 			(pseudo ? index.pseudoUnkeyedPositions : index.unkeyedPositions)
 				.push(position);
 			continue;
 		}
-		const key = rule.subjectKey === undefined
-			? rule.subjectTag
-			: quirks && rule.subjectKey[0] !== "[" && rule.subjectKey !== ":root"
-				? toASCIILowercase(rule.subjectKey)
-				: rule.subjectKey;
+		const subjectKey = getSubjectKey(rule);
+		const key = subjectKey === undefined
+			? getSubjectTag(rule)
+			: quirks && subjectKey[0] !== "[" && subjectKey !== ":root"
+				? toASCIILowercase(subjectKey)
+				: subjectKey;
 		if (key === undefined) {
 			(pseudo ? index.pseudoUnkeyedPositions : index.unkeyedPositions)
 				.push(position);
 			continue;
 		}
-		const buckets = rule.subjectKey === undefined
+		const buckets = subjectKey === undefined
 			? pseudo ? index.pseudoTagged : index.tagged
 			: pseudo ? index.pseudoKeyed : index.keyed;
 		const bucket = buckets.get(key);
@@ -12010,7 +12107,7 @@ function getCandidateRules(
 	cascade: Cascade,
 	element: Element | null,
 	host: Element | null = null,
-): ParsedCSSRule[] {
+): CandidateRules {
 	const subject = (element ?? host)!;
 	const quirks = subject.ownerDocument?.compatMode === "BackCompat";
 	const index = getRuleIndex(cascade, quirks);
@@ -12045,10 +12142,14 @@ function getCandidateRules(
 			index.pseudoKeyed,
 		);
 	}
-	candidates = Array.from(
-		Int32Array.from(positions).sort(),
-		(position) => index.rules[position],
-	);
+	const sorted = Int32Array.from(positions).sort();
+	candidates = {
+		rules: Array.from(sorted, (position) => index.rules[position]),
+		ancestorBits: Array.from(
+			sorted,
+			(position) => index.ancestorBits[position],
+		),
+	};
 	if (index.candidates.size < MAX_CANDIDATE_LISTS) {
 		index.candidates.set(key, candidates);
 	}
@@ -12104,7 +12205,7 @@ function addCandidatePositions(
 	// A foreign element's name keeps its case, and a type selector may
 	// still match it lowercased, as isRuleMatch allows.
 	const tag = getLocalName(element);
-	const lower = tag.toLowerCase();
+	const lower = toASCIILowercase(tag);
 	for (const name of lower === tag ? [tag] : [tag, lower]) {
 		for (const position of tagged.get(name) ?? []) {
 			positions.add(position);
@@ -12240,23 +12341,19 @@ function hasAncestorBits(filter: Uint32Array, bits: Uint32Array): boolean {
 	return true;
 }
 
-// The keys a reading's compounds require of the subject's ancestors: a
+// The keys a selector's compounds require of the subject's ancestors: a
 // compound followed by a descendant or child combinator matches an
 // ancestor of the compound after it, and that compound is the subject,
 // one of its ancestors, or a sibling of one, so an ancestor of the
 // subject either way. One followed by a sibling combinator need not be.
-function getAncestorBits(
-	reading: CSSValues.SelectorReading,
-): Uint32Array | undefined {
+function getAncestorBits(complex: CompiledComplex): Uint32Array | undefined {
 	const bits = new Uint32Array(FILTER_WORDS);
 	let any = false;
-	const compounds = reading.compounds;
-	for (let i = 0; i < compounds.length - 1; i++) {
-		const compound = compounds[i];
-		if (compound.precedesSibling) {
+	for (let i = 0; i < complex.compounds.length - 1; i++) {
+		if (isSiblingCombinator(complex.combinators[i])) {
 			continue;
 		}
-		const {tag, ids, classes} = compound.required;
+		const {tag, ids, classes} = getRequiredKeys(complex.compounds[i]);
 		if (tag !== null) {
 			addFilterKey(bits, `<${toASCIILowercase(tag)}`);
 			any = true;
@@ -12282,11 +12379,16 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	const shadowHost = isShadowRoot(root) ? root.host : null;
 	let partNames: string[] | null = null;
 	const filter = getAncestorFilter(cascade, element);
-	const candidates = getCandidateRules(cascade, element, shadowHost);
+	const {rules: candidates, ancestorBits} = getCandidateRules(
+		cascade,
+		element,
+		shadowHost,
+	);
 	const matched: ParsedCSSRule[] = [];
 	for (let index = 0; index < candidates.length; index++) {
 		const rule = candidates[index];
-		if (rule.pseudoElement) {
+		const pseudo = getComplex(rule).pseudoElement;
+		if (pseudo !== null) {
 			if (shadowHost === null) {
 				continue;
 			}
@@ -12295,36 +12397,32 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 			// Parts crossing. A built-in control's parts are the UA's, as in
 			// every browser, and a page reaches them only through the
 			// pseudo-elements above.
-			const partArg = rule.pseudoElement.startsWith("::part(")
-				? rule.pseudoElement.match(PART_PSEUDO)
-				: null;
-			if (partArg) {
+			if (pseudo.name === "part") {
 				partNames ??= (getAttributeValue(element, "part") ?? "")
-					.split(WHITESPACE_RUN)
+					.split(CSSValues.WHITESPACE_RUN)
 					.filter(Boolean);
 				const names = partNames;
 				if (
-					(rule.uaOrigin || !isUAShadowTree(root)) &&
-					splitOnASCIIWhitespace(partArg[1])
+					(rule.origin === "ua" || !isUAShadowTree(root)) &&
+					splitOnASCIIWhitespace(pseudo.argument!)
 						.every((name) => names.includes(name)) &&
 					isRuleMatch(shadowHost, rule) &&
-					(rule.partMatcher === undefined ||
-						(rule.partMatcher !== null &&
-							isSelectedBy(element, rule.partMatcher, element)))
+					(pseudo.after === null ||
+						isSelectedBy(element, pseudo.after, element))
 				) {
 					matched.push(rule);
 				}
 			} else if (
-				partPseudos.includes(rule.pseudoElement) &&
+				partPseudos.includes(getPseudoElement(rule)!) &&
 				isRuleMatch(shadowHost, rule)
 			) {
 				matched.push(rule);
 			}
 			continue;
 		}
+		const bits = ancestorBits[index];
 		if (
-			(rule.ancestorBits === undefined ||
-				hasAncestorBits(filter, rule.ancestorBits)) &&
+			(bits === undefined || hasAncestorBits(filter, bits)) &&
 			isRuleMatch(element, rule, rootNode)
 		) {
 			matched.push(rule);
@@ -12334,7 +12432,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	// (css-cascade-6 §3.1.3), and unlike either it depends on THIS element.
 	// The sort is stable, so a comparison that only compares proximity
 	// leaves every other tier as it was.
-	if (!cascade.scopedRulesExist) {
+	if (!cascade.summary.scopedRulesExist) {
 		return matched;
 	}
 	const proximity = new Map(
@@ -12347,13 +12445,13 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 		),
 	);
 	return matched.sort((a, b) => {
-		if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
+		if ((a.origin === "ua") !== (b.origin === "ua")) {
 			return 0;
 		}
 		if (a.layerRank !== b.layerRank) {
 			return 0;
 		}
-		if (a.specificity !== b.specificity) {
+		if (getComplex(a).specificity !== getComplex(b).specificity) {
 			return 0;
 		}
 		return proximity.get(b)! - proximity.get(a)!;
@@ -12365,27 +12463,31 @@ function ruleSelectorMatches(
 	rule: ParsedCSSRule,
 	root?: Element,
 ): boolean {
-	// From a scoping root, use the relative reading. Anywhere else, the
-	// plain one.
-	const matcher = root === undefined ? rule.matcher : rule.relativeMatcher;
-	if (matcher === null) {
+	// A selector opening with a combinator is read from a scoping root, and
+	// selects nothing without one.
+	if (root === undefined && opensWithCombinator(getComplex(rule))) {
 		return false;
 	}
-	return isSelectedBy(element, matcher, root ?? element, ruleShadow(rule));
+	return isSelectedBy(
+		element,
+		rule.selector,
+		root ?? element,
+		ruleShadow(rule),
+	);
 }
 
 function selectForRule(root: Node, rule: ParsedCSSRule): Element[] {
-	if (rule.matcher === null) {
+	if (opensWithCombinator(getComplex(rule))) {
 		return [];
 	}
-	return selectAllCompiled(root as unknown as DOMNode, rule.matcher, {
+	return selectAllCompiled(root as unknown as DOMNode, rule.selector, {
 		scope: root as unknown as DOMNode,
 		shadow: ruleShadow(rule) as DOMNode | null,
 	}) as unknown as Element[];
 }
 
 function ruleShadow(rule: ParsedCSSRule): Node | null {
-	return (rule.reachesHost ? rule.scope : null) ?? null;
+	return (reachesHost(rule) ? rule.scope : null) ?? null;
 }
 
 function matchesRule(element: Element, rule: ParsedCSSRule): boolean {
@@ -12465,7 +12567,7 @@ function getPartPseudos(element: Element, root: Node): string[] {
 	}
 	const host = getHTMLLocalName((root as unknown as ShadowRoot).host) ?? "";
 	const pseudos: string[] = [];
-	for (const name of part.split(WHITESPACE_RUN)) {
+	for (const name of part.split(CSSValues.WHITESPACE_RUN)) {
 		pseudos.push(
 			...(PART_PSEUDOS["*"][name] ?? PART_PSEUDOS[host]?.[name] ?? []),
 		);
@@ -12485,15 +12587,18 @@ function isRuleMatch(
 	const root = elementRoot ?? element.getRootNode();
 	if (rule.scope !== undefined && rule.scope !== root) {
 		// A :host rule's subject is outside the tree it was written in.
-		if (!rule.reachesHost || element !== (rule.scope as ShadowRoot).host) {
+		if (!reachesHost(rule) || element !== (rule.scope as ShadowRoot).host) {
 			return false;
 		}
-	} else if (rule.subjectTag !== undefined && !rule.reachesHost) {
+	} else if (getSubjectTag(rule) !== undefined && !reachesHost(rule)) {
 		const local = getLocalName(element);
 		// A foreign element's local name keeps its case (feGaussianBlur), so
 		// the rejection fires only when neither reading matches. The matcher
 		// decides the case sensitivity a selector really has.
-		if (local !== rule.subjectTag && local.toLowerCase() !== rule.subjectTag) {
+		if (
+			local !== getSubjectTag(rule) &&
+			toASCIILowercase(local) !== getSubjectTag(rule)
+		) {
 			return false;
 		}
 	}
@@ -12502,13 +12607,13 @@ function isRuleMatch(
 	}
 	// The selector itself checks the host the part belongs to. A built-in
 	// control's parts are the UA's alone.
-	if (rule.ofPart) {
-		return (rule.uaOrigin || !isUAShadowTree(root)) &&
+	if (isOfPart(rule)) {
+		return (rule.origin === "ua" || !isUAShadowTree(root)) &&
 			matchesRule(element, rule);
 	}
 	// UA document rules apply in EVERY tree scope, as a browser's own UA
 	// sheet styles shadow trees.
-	if (rule.uaOrigin) {
+	if (rule.origin === "ua") {
 		return matchesRule(element, rule);
 	}
 	// Author document rules match everything outside shadow trees,
@@ -12530,9 +12635,9 @@ function computePseudoElementStyle(
 		return NO_PSEUDO_DECLARATIONS;
 	}
 	const pseudoRoot = element.getRootNode() as unknown as Node;
-	const matchingRules = getCandidateRules(cascade, null, element).filter(
+	const matchingRules = getCandidateRules(cascade, null, element).rules.filter(
 		(rule) =>
-			rule.pseudoElement === pseudoElement &&
+			getPseudoElement(rule) === pseudoElement &&
 			isRuleMatch(element, rule, pseudoRoot),
 	);
 	if (matchingRules.length === 0) {
@@ -12546,10 +12651,10 @@ function computePseudoElementStyle(
 	const computedStyle: Record<string, string> = Object.create(null);
 	let direction: string | null = null;
 	for (const rule of matchingRules) {
-		const names = Object.keys(rule.declarations)
-			.sort((a, b) => (rule.order[a] ?? 0) - (rule.order[b] ?? 0));
+		const names = Object.keys(rule.block.declarations)
+			.sort((a, b) => (rule.block.order[a] ?? 0) - (rule.block.order[b] ?? 0));
 		for (const name of names) {
-			const value = rule.declarations[name];
+			const value = rule.block.declarations[name];
 			computedStyle[name] = value;
 			if (!CSSValues.hasSlotAliases(name)) {
 				continue;
@@ -12620,7 +12725,7 @@ function getPseudoSubjects(cascade: Cascade): Set<string> | null {
 	if (cascade.pseudoSubjectTags !== undefined) {
 		return cascade.pseudoSubjectTags;
 	}
-	if (cascade.counterRulesExist || cascade.listItemRulesExist) {
+	if (cascade.summary.counterRulesExist || cascade.summary.listItemRulesExist) {
 		return (cascade.pseudoSubjectTags = null);
 	}
 	// A list carries the one counter no rule declares, and its items carry
@@ -12632,13 +12737,14 @@ function getPseudoSubjects(cascade: Cascade): Set<string> | null {
 	// live on nodes the UA shadow tree trees already hold.
 	for (const type of ["::before", "::after"]) {
 		for (const rule of cascade.pseudoRulesByType.get(type) ?? []) {
-			if (rule.ofPart || !mayGiveContent(rule)) {
+			if (isOfPart(rule) || !mayGiveContent(rule)) {
 				continue;
 			}
-			if (!rule.subjectTag) {
+			const tag = getSubjectTag(rule);
+			if (tag === undefined) {
 				return (cascade.pseudoSubjectTags = null);
 			}
-			tags.add(toASCIILowercase(rule.subjectTag));
+			tags.add(toASCIILowercase(tag));
 		}
 	}
 	return (cascade.pseudoSubjectTags = tags);
@@ -12660,8 +12766,8 @@ function pseudoRuleCouldMatch(
 		return (
 			(name === "li" ||
 				name === "summary" ||
-				(getAttributeValue(element, "style") ?? "").includes("list-item") ||
-				(cascade.listItemRulesExist &&
+				isListItemBlock(readInlineBlock(element)) ||
+				(cascade.summary.listItemRulesExist &&
 					anyRuleMatches(cascade, element, "list-item", isListItemRule))) &&
 			markerMayBeInside(cascade, element)
 		);
@@ -12671,15 +12777,15 @@ function pseudoRuleCouldMatch(
 	}
 	// Rules that repeat a selector share its matcher, and one that missed
 	// misses again.
-	const missed = new Set<CompiledSelector | null>();
+	const missed = new Set<CompiledSelector>();
 	const candidates = narrowCandidates(
-		getCandidateRules(cascade, null, element),
+		getCandidateRules(cascade, null, element).rules,
 		pseudoType,
-		(rule) => rule.pseudoElement === pseudoType && mayGiveContent(rule),
+		(rule) => getPseudoElement(rule) === pseudoType && mayGiveContent(rule),
 	);
 	for (const rule of candidates) {
 		if (
-			(!rule.reachesHost && missed.has(rule.matcher)) ||
+			(!reachesHost(rule) && missed.has(rule.selector)) ||
 			!subjectCouldMatch(element, rule)
 		) {
 			continue;
@@ -12687,8 +12793,8 @@ function pseudoRuleCouldMatch(
 		if (ruleSelectorMatches(element, rule)) {
 			return true;
 		}
-		if (!rule.reachesHost) {
-			missed.add(rule.matcher);
+		if (!reachesHost(rule)) {
+			missed.add(rule.selector);
 		}
 	}
 	return false;
@@ -12701,8 +12807,8 @@ function pseudoRuleCouldMatch(
 function markerMayBeInside(cascade: Cascade, element: Element): boolean {
 	if (
 		getHTMLLocalName(element) === "summary" ||
-		(getAttributeValue(element, "style") ?? "").includes("inside") ||
-		(cascade.insideMarkerRulesExist &&
+		mayPlaceMarkerInside(readInlineBlock(element)) ||
+		(cascade.summary.insideMarkerRulesExist &&
 			anyRuleMatches(cascade, element, "marker-position", setsMarkerPosition))
 	) {
 		return true;
@@ -12711,7 +12817,7 @@ function markerMayBeInside(cascade: Cascade, element: Element): boolean {
 	if (parent === null) {
 		return false;
 	}
-	if (!cascade.insideMarkerRulesExist) {
+	if (!cascade.summary.insideMarkerRulesExist) {
 		return mayInheritInsideMarker(parent);
 	}
 	return _(cascade.declarationFor(parent))._computedValue(
@@ -12727,7 +12833,7 @@ function mayInheritInsideMarker(element: Element): boolean {
 	) {
 		if (
 			getHTMLLocalName(at) === "summary" ||
-			(getAttributeValue(at, "style") ?? "").includes("inside")
+			mayPlaceMarkerInside(readInlineBlock(at))
 		) {
 			return true;
 		}
@@ -12735,13 +12841,24 @@ function mayInheritInsideMarker(element: Element): boolean {
 	return false;
 }
 
+function isListItemBlock(block: CSSValues.DeclarationBlock): boolean {
+	return block.declarations.display === "list-item";
+}
+
 function isListItemRule(rule: ParsedCSSRule): boolean {
-	return rule.declarations.display === "list-item";
+	return isListItemBlock(rule.block);
+}
+
+// Whether the block may put its markers inside: it declares a
+// list-style-position other than outside, or `all`.
+function mayPlaceMarkerInside(block: CSSValues.DeclarationBlock): boolean {
+	const position = block.declarations["list-style-position"];
+	return (position !== undefined && position !== "outside") ||
+		block.declarations.all !== undefined;
 }
 
 function setsMarkerPosition(rule: ParsedCSSRule): boolean {
-	return rule.declarations["list-style-position"] !== undefined ||
-		rule.declarations.all !== undefined;
+	return mayPlaceMarkerInside(rule.block);
 }
 
 // A candidate list keeps the same rules until they change, so the few that
@@ -12776,9 +12893,9 @@ function anyRuleMatches(
 	wanted: (rule: ParsedCSSRule) => boolean,
 ): boolean {
 	const candidates = narrowCandidates(
-		getCandidateRules(cascade, element),
+		getCandidateRules(cascade, element).rules,
 		name,
-		(rule) => rule.pseudoElement === undefined && wanted(rule),
+		(rule) => getPseudoElement(rule) === undefined && wanted(rule),
 	);
 	for (const rule of candidates) {
 		if (
@@ -12790,41 +12907,24 @@ function anyRuleMatches(
 	return false;
 }
 
-// The tag, id or class the rule's subject requires rules most elements
-// out without running the selector. A rule through ::part() reaches only
-// an element with a part attribute, and its compounds name the host. One
-// through :host names the host too, and in quirks mode a class matches
-// whatever its case.
+// The tag the rule's subject requires rules most elements out without
+// running the selector, as the id or class it requires did when the rule
+// was filed among the element's candidates. A rule through ::part()
+// reaches only an element with a part attribute, and its compounds name
+// the host. One through :host names the host too.
 function subjectCouldMatch(element: Element, rule: ParsedCSSRule): boolean {
-	if (rule.ofPart) {
+	if (isOfPart(rule)) {
 		return hasAttributeByName(element, "part");
 	}
-	if (rule.reachesHost) {
+	if (reachesHost(rule)) {
 		return true;
 	}
-	const tag = rule.subjectTag;
-	if (tag !== undefined) {
-		const local = getLocalName(element);
-		if (local !== tag && local.toLowerCase() !== tag) {
-			return false;
-		}
-	}
-	const key = rule.subjectKey;
-	if (key === undefined) {
+	const tag = getSubjectTag(rule);
+	if (tag === undefined) {
 		return true;
 	}
-	if (key[0] === "[") {
-		return getAttributeKeys(element).includes(key);
-	}
-	if (key === ":root") {
-		return isDocumentElement(element);
-	}
-	if (element.ownerDocument?.compatMode === "BackCompat") {
-		return true;
-	}
-	return key[0] === "#"
-		? getIdValue(element) === key.slice(1)
-		: getClassTokens(element).has(key.slice(1));
+	const local = getLocalName(element);
+	return local === tag || toASCIILowercase(local) === tag;
 }
 
 // A ::before or ::after exists only while its content is something, and
@@ -12832,8 +12932,8 @@ function subjectCouldMatch(element: Element, rule: ParsedCSSRule): boolean {
 // common reset `*, ::before, ::after { box-sizing: border-box }` matches
 // every element's and makes none.
 function mayGiveContent(rule: ParsedCSSRule): boolean {
-	return rule.declarations.content !== undefined ||
-		rule.declarations.all !== undefined;
+	return rule.block.declarations.content !== undefined ||
+		rule.block.declarations.all !== undefined;
 }
 
 function attachPseudoElementToElementForType(
@@ -12872,9 +12972,8 @@ function attachPseudoElementToElementForType(
 	const existing = pseudoElement<Element>(element, pseudoType);
 
 	// Node identity is stable. Layout keys the pseudo-element's boxes by
-	// instance, and a fresh node per attach orphans the mapped one (a
-	// positioned button's ::after glyph simply vanished). Only the text
-	// changes.
+	// instance, and a fresh node per attach would orphan the mapped one.
+	// Only the text changes.
 	if (content === null) {
 		if (existing) {
 			removePseudoElement(cascade, element, pseudoType);
@@ -12940,10 +13039,25 @@ export const CSSOM_INTERFACES = {
 	CSSStyleProperties,
 };
 
-function setupInvalidationHooks(cascade: Cascade): void {
-	// An error thrown out of a constructed sheet belongs to this realm.
-	cssomWindow = cascade.window;
-	Object.assign(cascade.window, {CSS: createCSSNamespace(cascade.document)});
+// The window's getComputedStyle and CSS namespace, which read this
+// cascade.
+function installWindowMembers(cascade: Cascade): void {
+	const window = cascade.window;
+	window.getComputedStyle = windowMember(
+		window,
+		"getComputedStyle",
+		(
+			element: Element,
+			pseudoElt?: string | null,
+		): globalThis.CSSStyleDeclaration =>
+			getPageView(
+				getResolvedStyle(cascade, element, pseudoElt) as unknown as
+					CSSStyleDeclaration,
+				element,
+				pseudoElt ?? "",
+			) as unknown as globalThis.CSSStyleDeclaration,
+	) as typeof window.getComputedStyle;
+	Object.assign(window, {CSS: createCSSNamespace(cascade.document)});
 }
 
 /** The element's inline style declaration, one per element for its lifetime. */

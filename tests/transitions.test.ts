@@ -319,3 +319,104 @@ test("a style attribute's transition runs in every engine that reads its text", 
 		await dom.dispose();
 	}
 });
+
+test("a custom property keeps its case in the transition list", async () => {
+	const {dom, document, window} = attached(
+		"<style>@property --Foo { syntax: '<number>'; inherits: false; " +
+		"initial-value: 0 } " +
+		"#box { --Foo: 0; transition: --Foo 100s steps(1, jump-both); }" +
+		"</style><div id='box'></div>",
+	);
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	expect(window.getComputedStyle(box).transitionProperty).toBe("--Foo");
+	box.style.setProperty("--Foo", "10");
+	await nextFrame(dom);
+	expect(window.getComputedStyle(box).getPropertyValue("--Foo")).toBe("5");
+	await dom.dispose();
+});
+
+test("only the properties a transition names, with time to run, transition", async () => {
+	const {dom, document, window} = attached(
+		"<style>div { width: 10px; height: 1px; color: rgb(0, 0, 0) } " +
+		"div.on { width: 20px; color: rgb(255, 255, 255) } " +
+		"#zero { transition: width 0s } " +
+		"#box { transition: width 100s steps(1, jump-both) }</style>" +
+		"<div id='plain'></div><div id='zero'></div><div id='box'></div>" +
+		"<div style='transition: opacity 1s'></div>",
+	);
+	await nextFrame(dom);
+	const runs: string[] = [];
+	document.addEventListener("transitionrun", (event) => {
+		const target = event.target as unknown as {id: string};
+		runs.push(`${target.id} ${(event as any).propertyName}`);
+	});
+	for (const id of ["plain", "zero", "box"]) {
+		document.getElementById(id)!.className = "on";
+	}
+	await nextFrame(dom);
+	const style = (id: string) =>
+		window.getComputedStyle(document.getElementById(id)!);
+	expect(style("plain").width).toBe("20px");
+	expect(style("zero").width).toBe("20px");
+	expect(style("box").width).toBe("15px");
+	expect(style("box").color).toBe("rgb(255, 255, 255)");
+	expect(runs).toEqual(["box width"]);
+	await dom.dispose();
+});
+
+test("a stylesheet's first transition transitions from the style before it", async () => {
+	const {dom, document, window} = attached(
+		"<style id='sheet'>#box { color: rgb(0, 0, 0) }</style>" +
+		"<div id='box'>x</div>",
+	);
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	expect(window.getComputedStyle(box).color).toBe("rgb(0, 0, 0)");
+	document.getElementById("sheet")!.textContent =
+		"#box { color: rgb(255, 255, 255); " +
+		"transition: color 100s steps(1, jump-both) }";
+	await nextFrame(dom);
+	expect(window.getComputedStyle(box).color).toBe("rgb(128, 128, 128)");
+	await dom.dispose();
+});
+
+test("two stylesheet changes in a row keep the style before both", async () => {
+	const {dom, document, window} = attached(
+		"<style>p { transition: opacity 1s } #box { color: rgb(0, 0, 0) }" +
+		"</style><div id='box'>x</div>",
+	);
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	expect(window.getComputedStyle(box).color).toBe("rgb(0, 0, 0)");
+	const first = new window.CSSStyleSheet();
+	first.replaceSync(".other { color: green }");
+	const second = new window.CSSStyleSheet();
+	second.replaceSync(
+		"#box { color: rgb(255, 255, 255); " +
+			"transition: color 100s steps(1, jump-both) }",
+	);
+	document.adoptedStyleSheets = [first];
+	document.adoptedStyleSheets = [first, second];
+	await nextFrame(dom);
+	expect(window.getComputedStyle(box).color).toBe("rgb(128, 128, 128)");
+	await dom.dispose();
+});
+
+test("a pseudo-element's first transition transitions from the style before it", async () => {
+	const {dom, document, window} = attached(
+		"<style>#box::before { content: 'b'; color: rgb(0, 0, 0) } " +
+		"#box.on::before { color: rgb(255, 255, 255); " +
+		"transition: color 100s steps(1, jump-both) }</style>" +
+		"<div id='box'>x</div>",
+	);
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	expect(window.getComputedStyle(box, "::before").color).toBe("rgb(0, 0, 0)");
+	box.className = "on";
+	await nextFrame(dom);
+	expect(window.getComputedStyle(box, "::before").color).toBe(
+		"rgb(128, 128, 128)",
+	);
+	await dom.dispose();
+});

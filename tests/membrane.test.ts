@@ -31,11 +31,14 @@ for (const object of [
 	new DOMException("x"),
 	new AbortController().signal,
 	new AbortController(),
+	new File([], "x"),
 	Event,
 	EventTarget,
 	DOMException,
 	AbortController,
 	AbortSignal,
+	Blob,
+	File,
 ]) {
 	for (let o: object | null = object;
 		o !== null;
@@ -280,5 +283,22 @@ test("a window's timers are numbers, as a browser's are", async () => {
 	window.clearTimeout(kept);
 	await new Promise((resolve) => setTimeout(resolve, 20));
 	expect(ran).toBe(1);
+	dom.dispose();
+});
+
+test("crypto.subtle is the runtime's SubtleCrypto", async () => {
+	const dom = create();
+	const {crypto} = dom.window as unknown as Global;
+	expect(crypto.subtle).toBe(globalThis.crypto.subtle);
+	const digest = await crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode("abc"),
+	);
+	expect(new Uint8Array(digest)[0]).toBe(0xba);
+	const getter = Object.getOwnPropertyDescriptor(
+		Object.getPrototypeOf(crypto),
+		"subtle",
+	)!.get!;
+	expect(() => getter.call({})).toThrow(TypeError);
 	dom.dispose();
 });

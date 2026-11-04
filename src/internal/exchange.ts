@@ -1,5 +1,6 @@
 import type {Cascade} from "./cssom.ts";
 import {
+	applyMutations,
 	constructInternal,
 	dispatchAsUserAgent,
 	Event,
@@ -26,6 +27,7 @@ import {
 	invalidateTextMeasurement,
 	type Layout,
 } from "./layout.ts";
+import {CSI_KEYS, PASTE_END, SS3_KEYS, TILDE_KEYS} from "./pty.ts";
 import {_, type internals} from "./slots.ts";
 import {isControlByte, recordClusterAdvance} from "./text.ts";
 import {
@@ -35,10 +37,7 @@ import {
 	setInterval,
 	setTimeout,
 } from "./timers.ts";
-
-// Made once: a regular expression literal is a new object each time it
-// runs, and this runs for every chunk the terminal writes.
-const CURSOR_STYLE = /\x1b\[(\d) q/g;
+import {OSC_LIMIT, Parser, type ParserHandlers} from "./vt.ts";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
 
@@ -214,13 +213,30 @@ const MODE_SPELLINGS = {
 	// XTWINOPS 22 and 23: push the title onto the terminal's stack and pop
 	// it back.
 	titleStack: {set: "\x1b[22;0t", reset: "\x1b[23;0t", panic: true},
+	// Negotiated, and before the alternate screen, which keeps flags of its
+	// own. The kitty keyboard protocol's flags 1 and 4: Escape and keys
+	// with modifiers as CSI u, with the key Shift makes. The flags are set
+	// rather than pushed, so a reset that says what they were is safe to
+	// write twice, as the panic path and the queued restore both do. These
+	// spellings are for a terminal whose flags were 0. getModeEscape keeps
+	// any it had.
+	kittyKeys: {set: "\x1b[=5;1u", reset: "\x1b[=0;1u", panic: false},
 	// The panic spelling is ?1047, without the cursor restore. A bare
 	// ?1049l restores a saved cursor even when the alternate screen is not
 	// active (tmux and xterm both), which would teleport the queued output.
 	altScreen: {set: "\x1b[?1049h", reset: "\x1b[?1049l", panic: "\x1b[?1047l"},
 	// Negotiated. A terminal that ignored the offer must not see the reset.
 	clusterWidths: {set: "\x1b[?2027h", reset: "\x1b[?2027l", panic: false},
+	// Negotiated. xterm's modifyOtherKeys at level 1, which tmux forwards
+	// when its extended-keys option is on. The reset is the terminal's
+	// initial level.
+	otherKeys: {set: "\x1b[>4;1m", reset: "\x1b[>4m", panic: false},
 } as const;
+
+// The kitty keyboard flags asked for.
+const KITTY_FLAGS = 5;
+
+const KEYBOARD_MODES = ["kittyKeys", "otherKeys"] as const;
 
 type ModeName = keyof typeof MODE_SPELLINGS;
 
@@ -239,27 +255,7 @@ const PANIC_RESTORE = MODE_RESTORE_ORDER.filter(
 	return typeof panic === "string" ? panic : reset;
 }).join("");
 
-function decodeMouseEscape(
-	token: string,
-): {button: number; col: number; row: number; release: boolean} | null {
-	const match = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
-	if (!match) {
-		return null;
-	}
-	return {
-		button: parseInt(match[1], 10),
-		col: parseInt(match[2], 10),
-		row: parseInt(match[3], 10),
-		release: match[4] === "m",
-	};
-}
-
-const PASTE_START = "\x1b[200~";
-const PASTE_END = "\x1b[201~";
-
 const CLIPBOARD_START = "\x1b]52;";
-// The payload stops at ESC so a reply ended by ST is still bounded.
-const CLIPBOARD_REPLY = /^\x1b\]52;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/;
 
 /**
  * `key` is a name ("ArrowUp") or the character itself. `char` is empty when the
@@ -297,8 +293,8 @@ export interface WireFocus {
 	focused: boolean;
 }
 
-// A clipboard reply's text is null when it outgrew the held-reply
-// limit.
+// A clipboard reply's text is null when it outgrew the parser's
+// string limit for input.
 type WireItem =
 	WireKey |
 	WireMouse |
@@ -312,78 +308,33 @@ type WireItem =
 	{kind: "capability-report"; known: boolean} |
 	{kind: "secondary-attributes"; params: string} |
 	{kind: "background"; red: number; green: number; blue: number} |
-	{kind: "device-attributes"};
-
-// The one named spelling that carries a modifier.
-const SHIFT_TAB = "\x1b[Z";
+	{kind: "device-attributes"} |
+	{kind: "keyboard-flags"; flags: number} |
+	{kind: "terminal-version"; name: string};
 
 // Line feed is not here. It is the Ctrl+J chord. A lone ESC is the
-// Escape key, since the reader peels CSI and SS3 off whole. F1-F4 are
-// SS3. F5-F12 are CSI-tilde with xterm's historical gap at 16.
+// Escape key, since the reader peels CSI and SS3 off whole.
 const KEY_BY_TOKEN: Record<string, string> = {
 	"\r": "Enter",
 	"\t": "Tab",
-	[SHIFT_TAB]: "Tab",
 	"\x7f": "Backspace",
 	"\x1b": "Escape",
-	"\x1b[A": "ArrowUp",
-	"\x1b[B": "ArrowDown",
-	"\x1b[C": "ArrowRight",
-	"\x1b[D": "ArrowLeft",
-	"\x1bOA": "ArrowUp",
-	"\x1bOB": "ArrowDown",
-	"\x1bOC": "ArrowRight",
-	"\x1bOD": "ArrowLeft",
-	"\x1b[H": "Home",
-	"\x1b[1~": "Home",
-	"\x1bOH": "Home",
-	"\x1b[F": "End",
-	"\x1b[4~": "End",
-	"\x1bOF": "End",
-	"\x1b[2~": "Insert",
-	"\x1b[3~": "Delete",
-	"\x1b[5~": "PageUp",
-	"\x1b[6~": "PageDown",
-	"\x1bOP": "F1",
-	"\x1bOQ": "F2",
-	"\x1bOR": "F3",
-	"\x1bOS": "F4",
-	"\x1b[15~": "F5",
-	"\x1b[17~": "F6",
-	"\x1b[18~": "F7",
-	"\x1b[19~": "F8",
-	"\x1b[20~": "F9",
-	"\x1b[21~": "F10",
-	"\x1b[23~": "F11",
-	"\x1b[24~": "F12",
 };
 
-const MODIFIED_CURSOR_KEYS: Record<string, string> = {
-	A: "ArrowUp",
-	B: "ArrowDown",
-	C: "ArrowRight",
-	D: "ArrowLeft",
-	F: "End",
-	H: "Home",
-	P: "F1",
-	Q: "F2",
-	R: "F3",
-	S: "F4",
-};
+// The keys that CSI <letter> and xterm's CSI 1 ; <mod> <letter> name by
+// their final byte, and CSI <code> ~ and CSI <code> ; <mod> ~ by their
+// code. CSI 1 ~ and CSI 4 ~ are Home and End from the VT220 editing
+// keypad.
+const KEY_BY_FINAL: Record<string, string> = {};
+const KEY_BY_TILDE_CODE: Record<number, string> = {1: "Home", 4: "End"};
 
-// xterm's modified cursor and F1-F4 keys: CSI 1 ; <mod> <letter>, e.g.
-// Alt+Up = CSI 1;3A.
-const MODIFIED_CURSOR_KEY = /^\x1b\[1;(\d+)([ABCDHFPQRS])$/;
-
-// xterm's modified tilde keys: CSI <n> ; <mod> ~, e.g. Ctrl+Delete =
-// CSI 3;5~.
-const MODIFIED_TILDE_KEY = /^\x1b\[(\d+);(\d+)~$/;
-
-// A key with its modifiers spelled out, sent by a terminal that reports
-// them all: CSI u (fixterms and kitty) as CSI <code>[:...] ; <mod>[:...]
-// [; <text>] u, and xterm's modifyOtherKeys as CSI 27 ; <mod> ; <code> ~.
-const CSI_U_KEY = /^\x1b\[(\d+)(?::[\d:]*)?(?:;(\d*)(?::\d*)?)?(?:;[\d:]*)?u$/;
-const OTHER_KEY = /^\x1b\[27;(\d+);(\d+)~$/;
+for (const [key, letter] of Object.entries({...CSI_KEYS, ...SS3_KEYS})) {
+	KEY_BY_FINAL[letter] = key;
+	KEY_BY_TOKEN[`\x1bO${letter}`] = key;
+}
+for (const [key, code] of Object.entries(TILDE_KEYS)) {
+	KEY_BY_TILDE_CODE[code] = key;
+}
 
 // The keys CSI u names by their control code rather than a character.
 const KEY_BY_CODE: Record<number, string> = {
@@ -394,12 +345,34 @@ const KEY_BY_CODE: Record<number, string> = {
 	127: "Backspace",
 };
 
+// The kitty protocol's keys in its private-use block: F13 to F35 from
+// 57376, and the keypad from 57399. The protocol's other private-use
+// codes are keys with no character, and decode as Unidentified.
+for (let i = 13; i <= 35; i++) {
+	KEY_BY_CODE[57363 + i] = `F${i}`;
+}
+[
+	..."0123456789./*-+",
+	"Enter",
+	"=",
+	",",
+	"ArrowLeft",
+	"ArrowRight",
+	"ArrowUp",
+	"ArrowDown",
+	"PageUp",
+	"PageDown",
+	"Home",
+	"End",
+	"Insert",
+	"Delete",
+	"Clear",
+].forEach((key, i) => (KEY_BY_CODE[57399 + i] = key));
+
 // mod - 1 is a bitmask: 1 Shift, 2 Alt, 4 Ctrl, 8 Super, and in CSI u 32
-// Meta. Super is the Meta key a browser reports.
-function decodeModifiers(
-	mod: string | undefined,
-): {shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean} {
-	const bits = mod === undefined || mod === "" ? 0 : parseInt(mod, 10) - 1;
+// Meta. Super is the Meta key a browser reports. An empty mod is 0.
+function decodeModifiers(mod: number): Omit<WireKey, "kind" | "key" | "char"> {
+	const bits = Math.max(mod - 1, 0);
 	return {
 		shiftKey: (bits & 1) !== 0,
 		altKey: (bits & 2) !== 0,
@@ -408,14 +381,24 @@ function decodeModifiers(
 	};
 }
 
-function decodeCodedKey(codepoint: number, mod: string | undefined): WireKey {
+function decodeNamedKey(key: string | undefined, mod: number): WireKey | null {
+	return key === undefined
+		? null
+		: {kind: "key", key, char: "", ...decodeModifiers(mod)};
+}
+
+// `shifted` is the key Shift makes, which the kitty protocol's flag 4
+// reports as a subparameter. Without it, the key is upper-cased.
+function decodeCodedKey(codepoint: number, mod: number, shifted = 0): WireKey {
 	const modifiers = decodeModifiers(mod);
-	const named = KEY_BY_CODE[codepoint];
+	const named =
+		KEY_BY_CODE[codepoint] ??
+		(codepoint >= 0xe000 && codepoint <= 0xf8ff ? "Unidentified" : undefined);
 	let key = named ?? String.fromCodePoint(codepoint);
 	if (named === undefined && modifiers.shiftKey) {
-		key = key.toUpperCase();
+		key = shifted > 0 ? String.fromCodePoint(shifted) : key.toUpperCase();
 	}
-	const printable = named === undefined || key === " ";
+	const printable = named === undefined || key.length === 1;
 	return {
 		kind: "key",
 		key,
@@ -429,6 +412,9 @@ function decodeCodedKey(codepoint: number, mod: string | undefined): WireKey {
 		...modifiers,
 	};
 }
+
+// The symbols a US layout types with Shift.
+const US_SHIFTED_SYMBOLS = '~!@#$%^&*()_+{}|:"<>?';
 
 function decodeKeyToken(token: string): WireKey {
 	const code = token.charCodeAt(0);
@@ -460,35 +446,9 @@ function decodeKeyToken(token: string): WireKey {
 		};
 	}
 
-	const modified = token.match(MODIFIED_CURSOR_KEY);
-	if (modified) {
-		return {
-			kind: "key",
-			key: MODIFIED_CURSOR_KEYS[modified[2]],
-			char: "",
-			...decodeModifiers(modified[1]),
-		};
-	}
-	const other = token.match(OTHER_KEY);
-	if (other) {
-		return decodeCodedKey(parseInt(other[2], 10), other[1]);
-	}
-	const tilde = token.match(MODIFIED_TILDE_KEY);
-	if (tilde && KEY_BY_TOKEN[`\x1b[${tilde[1]}~`] !== undefined) {
-		return {
-			kind: "key",
-			key: KEY_BY_TOKEN[`\x1b[${tilde[1]}~`],
-			char: "",
-			...decodeModifiers(tilde[2]),
-		};
-	}
-	const coded = token.match(CSI_U_KEY);
-	if (coded) {
-		return decodeCodedKey(parseInt(coded[1], 10), coded[2]);
-	}
-
 	// A character outside the basic plane is one character across two
-	// units.
+	// units. An uppercase ASCII letter, or a character a US layout types
+	// with Shift, comes with Shift, as the US-layout code it is given says.
 	const astral = token.length === 2 && code >= 0xd800 && code <= 0xdbff;
 	const printable =
 		astral || (token.length === 1 && code >= 32 && code !== 127);
@@ -496,31 +456,116 @@ function decodeKeyToken(token: string): WireKey {
 		kind: "key",
 		key: KEY_BY_TOKEN[token] ?? token,
 		char: printable ? token : "",
-		shiftKey: token === SHIFT_TAB,
+		shiftKey:
+			(code >= 0x41 && code <= 0x5a) ||
+			(token.length === 1 && US_SHIFTED_SYMBOLS.includes(token)),
 		ctrlKey: false,
 		altKey: false,
 		metaKey: false,
 	};
 }
 
-// A larger reply is not a clipboard. It is given up as null.
-const REPLY_LIMIT = 1 << 16;
+/**
+ * What a whole CSI the terminal sent means: a key, a report, or for
+ * CSI 200 ~, a paste's opening fence, as an empty paste. None takes
+ * subparameters but CSI u, a key with its modifiers spelled out, sent by
+ * a terminal that reports them all: CSI <code>[:...] ; <mod>[:<event>]
+ * [; <text>] u (fixterms and kitty). xterm's modifyOtherKeys sends
+ * CSI 27 ; <mod> ; <code> ~.
+ */
+function decodeCSI(parser: Parser, final: string): WireItem | null {
+	const {prefix, params, intermediates} = parser;
+	const [a, b = 0, c = 0] = params.map(([value]) => value);
+	const count = params.every((param) => param.length === 1) ? params.length : 0;
+	switch (prefix + intermediates + final) {
+		case "<M":
+		case "<m":
+			return count === 3
+				? {
+					kind: "mouse",
+					button: a,
+					col: b,
+					row: c,
+					release: final === "m",
+					ticks: 1,
+				}
+				: null;
+		case "I":
+		case "O":
+			return count === 1 && a === 0
+				? {kind: "focus", focused: final === "I"}
+				: null;
+		case "?c":
+			return count === 0 ? null : {kind: "device-attributes"};
+		case "?u":
+			return count === 1 ? {kind: "keyboard-flags", flags: a} : null;
+		case ">c":
+			return count === 0
+				? null
+				: {kind: "secondary-attributes", params: params.join(";")};
+		case "$y":
+		case "?$y":
+			return count === 2
+				? {kind: "mode-report", mode: prefix + a, value: b}
+				: null;
+		// XTWINOPS reports the cell height before its width.
+		case "t":
+			return count === 3 && a === 6
+				? {kind: "cell-size", height: b, width: c}
+				: null;
+		case "u":
+			return a > 0 && params.length <= 3 && (params[1]?.length ?? 0) <= 2
+				? decodeCodedKey(a, b, params[0][1])
+				: null;
+		case "~":
+			if (count === 1 && a === 200) {
+				return {kind: "paste", text: ""};
+			}
+			if (count === 3 && a === 27) {
+				return decodeCodedKey(c, b);
+			}
+			return count === 1 || count === 2
+				? decodeNamedKey(KEY_BY_TILDE_CODE[a], b)
+				: null;
+		case "Z":
+			return count === 1 && a === 0 ? decodeNamedKey("Tab", 2) : null;
+		// A cursor report has the shape of xterm's modified F3, and wins.
+		case "R":
+			if (count === 2) {
+				return {kind: "cursor-report", row: a, col: b};
+			}
+	}
+	const key = prefix + intermediates === "" ? KEY_BY_FINAL[final] : undefined;
+	if (count === 2 && a === 1) {
+		return decodeNamedKey(key, b);
+	}
+	return count === 1 && a === 0 && key !== undefined && CSI_KEYS[key] === final
+		? decodeNamedKey(key, 0)
+		: null;
+}
+
 // A paste this large is delivered as it stands, and the rest of it as it
 // arrives, up to the end fence: as paste, never as keystrokes.
 const PASTE_LIMIT = 1 << 20;
 // A split sequence longer than this is not one a terminal sends.
 const HOLD_LIMIT = 4096;
 
-const STRING_OPENERS = new Set(["]", "P", "_", "^", "X"]);
+const STRING_OPENERS = "]P_^X";
 
 // OSC 11 answered: the default background, each channel one to four hex
-// digits, ended by BEL or ST.
+// digits.
 const BACKGROUND_REPLY =
-	/^\x1b\]11;rgba?:([0-9a-f]{1,4})\/([0-9a-f]{1,4})\/([0-9a-f]{1,4})(?:\/[0-9a-f]{1,4})?(?:\x07|\x1b\\)/i;
+	/^11;rgba?:([0-9a-f]{1,4})\/([0-9a-f]{1,4})\/([0-9a-f]{1,4})(?:\/[0-9a-f]{1,4})?$/i;
 
 const BACKGROUND_QUERY = "\x1b]11;?\x1b\\";
 
 const DEVICE_ATTRIBUTES_QUERY = "\x1b[c";
+// The kitty keyboard protocol's flags, which a terminal that has the
+// protocol answers as CSI ? <flags> u.
+const KEYBOARD_FLAGS_QUERY = "\x1b[?u";
+// XTVERSION, answered as DCS > | <name and version> ST.
+const VERSION_QUERY = "\x1b[>0q";
+const VERSION_REPLY = /^>\|(.*)$/s;
 const SECONDARY_ATTRIBUTES_QUERY = "\x1b[>c";
 
 // XTGETTCAP names its capabilities in hex.
@@ -534,11 +579,11 @@ function readChannel(hex: string): number {
 // DECRQSS answered for SGR: the parameters of the terminal's current
 // style, as `0;53`, between DCS 1 $ r and m ST. DCS 0 $ r is a terminal
 // (tmux, say) that has no answer for the request.
-const SGR_REPORT = /^\x1bP([01])\$r([\d;:]*)m?\x1b\\/;
+const SGR_REPORT = /^([01])\$r([\d;:]*)m?$/;
 
 // XTGETTCAP answered: DCS 1 + r for a capability the terminal has, with
 // its value when it has one, and DCS 0 + r for one it does not.
-const CAPABILITY_REPORT = /^\x1bP([01])\+r[^\x1b]*\x1b\\/;
+const CAPABILITY_REPORT = /^([01])\+r/;
 
 // Asked after setting a 24-bit color: the color comes back in the
 // terminal's style when it keeps 24-bit color. Some write the color space
@@ -557,25 +602,28 @@ const TMUX_ATTRIBUTES = /^84;/;
 /**
  * Decodes one chunk into what it meant. Keeps what a chunk boundary can
  * cut: a split escape (never a bare trailing ESC, which may be the
- * Escape key), an open paste body, and an open clipboard reply. Nothing
- * here may hold the keystrokes that follow it for long: a paste that
- * grows past a size is delivered in parts, a sequence that never finishes is
- * dropped at a size, and a clipboard reply is only kept open while a
- * query is waiting for it.
+ * Escape key), an open paste body, and a clipboard reply while a query is
+ * waiting for it. Nothing here may hold the keystrokes that follow it for
+ * long: a paste that grows past a size is delivered in parts, and a
+ * sequence that never finishes is dropped at a size.
  */
-class WireReader {
+class WireReader implements ParserHandlers {
 	tail: string;
 	pasteBody: string | null;
 	pasteOverflowed: boolean;
-	replyBody: string | null;
 	expectingReply: boolean;
+	parser: Parser;
+	// What the sequence the parser read last meant, when it was a reply or
+	// a key.
+	item: WireItem | null;
 
 	constructor() {
 		this.tail = "";
 		this.pasteBody = null;
 		this.pasteOverflowed = false;
-		this.replyBody = null;
 		this.expectingReply = false;
+		this.parser = new Parser(this);
+		this.item = null;
 	}
 
 	holdsEscape(): boolean {
@@ -594,8 +642,8 @@ class WireReader {
 	 */
 	expectClipboardReply(expecting: boolean): void {
 		this.expectingReply = expecting;
-		if (!expecting) {
-			this.replyBody = null;
+		if (!expecting && this.tail.startsWith(CLIPBOARD_START)) {
+			this.tail = "";
 		}
 	}
 
@@ -605,14 +653,8 @@ class WireReader {
 	 * it waits for the next chunk or for release().
 	 */
 	feed(chunk: string, holdEscape = false): WireItem[] {
-		let data = this.tail + chunk;
+		const data = this.tail + chunk;
 		this.tail = "";
-		const held = splitTrailingEscape(data, holdEscape);
-		if (held > 0 && held <= HOLD_LIMIT) {
-			this.tail = data.slice(-held);
-			data = data.slice(0, -held);
-		}
-
 		const items: WireItem[] = [];
 		let i = 0;
 		while (i < data.length) {
@@ -620,7 +662,9 @@ class WireReader {
 			if (this.pasteBody !== null) {
 				const end = data.indexOf(PASTE_END, i);
 				if (end === -1) {
-					this.pasteBody += data.slice(i);
+					const kept = findFenceStart(data, i, holdEscape);
+					this.tail = data.slice(kept);
+					this.pasteBody += data.slice(i, kept);
 					if (this.pasteOverflowed || this.pasteBody.length > PASTE_LIMIT) {
 						if (this.pasteBody !== "") {
 							items.push({kind: "paste", text: this.pasteBody});
@@ -639,245 +683,200 @@ class WireReader {
 				i = end + PASTE_END.length;
 				continue;
 			}
-			// A payload no decoding rescues is reported as an empty clipboard.
-			if (this.replyBody !== null) {
-				const reply = this.replyBody + data.slice(i);
-				this.replyBody = null;
-				const match = reply.match(CLIPBOARD_REPLY);
-				if (!match) {
-					if (reply.length <= REPLY_LIMIT) {
-						this.replyBody = reply;
-					} else {
-						items.push({kind: "clipboard", text: null});
-					}
-					return items;
-				}
-				const decoded = decode64(match[1]);
-				items.push({
-					kind: "clipboard",
-					text: decoded === null ? "" : new TextDecoder().decode(decoded),
-				});
-				data = reply;
-				i = match[0].length;
-				continue;
-			}
-			if (data.startsWith(PASTE_START, i)) {
-				this.pasteBody = "";
-				i += PASTE_START.length;
-				continue;
-			}
-			if (data.startsWith(CLIPBOARD_START, i) && this.expectingReply) {
-				this.replyBody = "";
-				continue;
-			}
-			// OSC, DCS, APC, PM and SOS are strings a terminal writes, not
-			// keys it sends. One that arrives whole is discarded through its
-			// terminator. One with no terminator in the same write is keys:
-			// Escape and then a bracket is what a person typing sends too.
-			if (data[i] === "\x1b" && data[i + 1] === "P") {
-				const report = SGR_REPORT.exec(data.slice(i));
-				if (report !== null) {
-					items.push({
-						kind: "sgr-report",
-						params: report[1] === "1" ? report[2] : null,
-					});
-					i += report[0].length;
-					continue;
-				}
-				const capability = CAPABILITY_REPORT.exec(data.slice(i));
-				if (capability !== null) {
-					items.push({kind: "capability-report", known: capability[1] === "1"});
-					i += capability[0].length;
-					continue;
-				}
-			}
-			if (data[i] === "\x1b" && data[i + 1] === "]") {
-				const background = BACKGROUND_REPLY.exec(data.slice(i));
-				if (background !== null) {
-					items.push({
-						kind: "background",
-						red: readChannel(background[1]),
-						green: readChannel(background[2]),
-						blue: readChannel(background[3]),
-					});
-					i += background[0].length;
-					continue;
-				}
-			}
-			if (
-				data[i] === "\x1b" &&
-				i + 1 < data.length &&
-				STRING_OPENERS.has(data[i + 1])
-			) {
-				const end = findStringTerminator(data, i + 2);
-				if (end !== -1) {
-					i = end;
-					continue;
-				}
-			}
-			if (data[i] === "\x1b" && i + 1 < data.length) {
-				if (data[i + 1] === "[") {
-					let end = i + 2;
-					while (
-						end < data.length &&
-						!(data.charCodeAt(end) >= 0x40 && data.charCodeAt(end) <= 0x7e)
-					) {
-						end++;
-					}
-					// A sequence with no final byte, or one nothing here names,
-					// is not a keystroke.
-					if (end < data.length) {
-						const item = decodeControlToken(data.slice(i, end + 1));
-						if (item.kind !== "key" || !item.key.includes("\x1b")) {
-							items.push(item);
-						}
-					}
-					i = end + 1;
-					continue;
-				}
-				if (data[i + 1] === "O" && i + 2 < data.length) {
-					const item = decodeKeyToken(data.slice(i, i + 3));
-					if (!item.key.includes("\x1b")) {
-						items.push(item);
-					}
-					i += 3;
-					continue;
-				}
-				// ESC and a key in one write is that key with Alt, the way a
-				// terminal sends it. A person pressing Escape and then a key
-				// sends two writes.
-				const next = data.charCodeAt(i + 1);
-				if (next !== 0x1b && !(next >= 0x80 && next <= 0x9f)) {
-					const width = next >= 0xd800 && next <= 0xdbff && i + 2 < data.length
-						? 2
-						: 1;
-					const item = decodeKeyToken(data.slice(i + 1, i + 1 + width));
-					items.push({...item, char: "", altKey: true});
-					i += 1 + width;
-					continue;
-				}
-			}
-			// A C1 control is not a keystroke a terminal sends.
-			const code = data.charCodeAt(i);
-			if (code >= 0x80 && code <= 0x9f) {
-				i++;
-				continue;
-			}
-			// A surrogate pair is one keystroke.
-			const width = code >= 0xd800 && code <= 0xdbff && i + 1 < data.length
-				? 2
-				: 1;
-			items.push(decodeKeyToken(data.slice(i, i + width)));
-			i += width;
+			i = data[i] === "\x1b"
+				? this.readEscape(data, i, holdEscape, items)
+				: readKey(data, i, items);
 		}
 		return items;
 	}
-}
 
-/** The index just past BEL or ST, or -1 when neither closes the string. */
-function findStringTerminator(data: string, from: number): number {
-	for (let i = from; i < data.length; i++) {
-		if (data[i] === "\x07") {
+	// The keys or the sequence that the ESC at `i` starts, and the index
+	// past them.
+	readEscape(
+		data: string,
+		i: number,
+		replyDue: boolean,
+		items: WireItem[],
+	): number {
+		const next = data[i + 1];
+		// A lone ESC at the end is the Escape key, unless a reply is due.
+		if (next === undefined) {
+			if (replyDue && data[i - 1] !== "\x1b") {
+				this.tail = "\x1b";
+			} else {
+				items.push(decodeKeyToken("\x1b"));
+			}
 			return i + 1;
 		}
-		if (data[i] === "\x1b" && data[i + 1] === "\\") {
+		if (next === "[" || STRING_OPENERS.includes(next)) {
+			this.item = null;
+			const end = this.parser.parse(data, i, "input");
+			if (end !== -1) {
+				// A sequence nothing here names is not a keystroke.
+				if (this.item !== null) {
+					items.push(this.item);
+				}
+				return end;
+			}
+			// A CSI the chunk cuts waits for the rest of it. OSC, DCS, APC,
+			// PM and SOS are strings a terminal writes, not keys it sends.
+			// One with no terminator in the same write is keys: Escape and
+			// then a bracket is what a person typing sends too.
+			const opened = data.slice(i);
+			if (next === "[") {
+				if (opened.length <= HOLD_LIMIT) {
+					this.tail = opened;
+				}
+				return data.length;
+			}
+			if (this.expectingReply && opened.startsWith(CLIPBOARD_START)) {
+				if (opened.length < OSC_LIMIT.input) {
+					this.tail = opened;
+				} else {
+					items.push({kind: "clipboard", text: null});
+				}
+				return data.length;
+			}
+			if (isHeldString(opened, replyDue)) {
+				this.tail = opened;
+				return data.length;
+			}
+			items.push({...decodeKeyToken(next), char: "", altKey: true});
 			return i + 2;
 		}
-	}
-	return -1;
-}
-
-function splitTrailingEscape(chunk: string, replyDue: boolean): number {
-	// While a reply is due, an OSC or DCS cut before its terminator, even
-	// between the ESC and backslash of its ST, is a reply.
-	if (replyDue) {
-		const opener = Math.max(
-			chunk.lastIndexOf("\x1b]"),
-			chunk.lastIndexOf("\x1bP"),
-		);
-		const inner = chunk.indexOf("\x1b", opener + 2);
-		if (
-			opener !== -1 &&
-			findStringTerminator(chunk, opener + 2) === -1 &&
-			(inner === -1 || inner === chunk.length - 1)
-		) {
-			return chunk.length - opener;
-		}
-		if (chunk.endsWith("\x1b") && !chunk.endsWith("\x1b\x1b")) {
-			return 1;
-		}
-	}
-	const esc = chunk.lastIndexOf("\x1b");
-	if (esc === -1 || esc === chunk.length - 1) {
-		return 0;
-	}
-	const kind = chunk[esc + 1];
-	if (kind === "[") {
-		for (let i = esc + 2; i < chunk.length; i++) {
-			const code = chunk.charCodeAt(i);
-			if (code >= 0x40 && code <= 0x7e) {
-				return 0;
+		if (next === "O") {
+			if (i + 2 === data.length) {
+				this.tail = "\x1bO";
+				return data.length;
 			}
+			const item = decodeKeyToken(data.slice(i, i + 3));
+			if (!item.key.includes("\x1b")) {
+				items.push(item);
+			}
+			return i + 3;
 		}
-		return chunk.length - esc;
+		// ESC and a key in one write is that key with Alt, the way a
+		// terminal sends it. A person pressing Escape and then a key sends
+		// two writes.
+		const code = data.charCodeAt(i + 1);
+		if (code === 0x1b || (code >= 0x80 && code <= 0x9f)) {
+			items.push(decodeKeyToken("\x1b"));
+			return i + 1;
+		}
+		const width = getKeyWidth(data, i + 1);
+		const item = decodeKeyToken(data.slice(i + 1, i + 1 + width));
+		items.push({...item, char: "", altKey: true});
+		return i + 1 + width;
 	}
-	if (kind === "O" && esc + 2 >= chunk.length) {
-		return chunk.length - esc;
+
+	print(): void {}
+
+	execute(): void {}
+
+	esc(): void {}
+
+	csi(final: string): void {
+		const item = decodeCSI(this.parser, final);
+		if (item?.kind === "paste") {
+			this.pasteBody = "";
+		} else {
+			this.item = item;
+		}
 	}
-	// A DCS reply cut before its terminator.
-	if (kind === "P" && findStringTerminator(chunk, esc + 2) === -1) {
-		return chunk.length - esc;
+
+	// A whole string is a reply, or is discarded.
+	osc(text: string): void {
+		if (this.expectingReply && text.startsWith("52;")) {
+			const decoded = decode64(text.slice(text.indexOf(";", 3) + 1));
+			this.item = {
+				kind: "clipboard",
+				text: text.length >= OSC_LIMIT.input
+					? null
+					: decoded === null ? "" : new TextDecoder().decode(decoded),
+			};
+			return;
+		}
+		const background = BACKGROUND_REPLY.exec(text);
+		if (background !== null) {
+			this.item = {
+				kind: "background",
+				red: readChannel(background[1]),
+				green: readChannel(background[2]),
+				blue: readChannel(background[3]),
+			};
+		}
 	}
-	const tail = chunk.slice(esc);
-	if (
-		tail.length < CLIPBOARD_START.length && CLIPBOARD_START.startsWith(tail)
-	) {
-		return tail.length;
+
+	dcs(text: string): void {
+		const report = SGR_REPORT.exec(text);
+		if (report !== null) {
+			this.item = {
+				kind: "sgr-report",
+				params: report[1] === "1" ? report[2] : null,
+			};
+		}
+		const capability = CAPABILITY_REPORT.exec(text);
+		if (capability !== null) {
+			this.item = {kind: "capability-report", known: capability[1] === "1"};
+		}
+		const version = VERSION_REPLY.exec(text);
+		if (version !== null) {
+			this.item = {kind: "terminal-version", name: version[1]};
+		}
 	}
-	return 0;
 }
 
-function decodeControlToken(token: string): WireItem {
-	const mouse = decodeMouseEscape(token);
-	if (mouse) {
-		return {kind: "mouse", ...mouse, ticks: 1};
+// The key at `i`, and the index past it. A C1 control is not a keystroke
+// a terminal sends.
+function readKey(data: string, i: number, items: WireItem[]): number {
+	const code = data.charCodeAt(i);
+	if (code >= 0x80 && code <= 0x9f) {
+		return i + 1;
 	}
-	if (token === "\x1b[I" || token === "\x1b[O") {
-		return {kind: "focus", focused: token === "\x1b[I"};
+	const width = getKeyWidth(data, i);
+	items.push(decodeKeyToken(data.slice(i, i + width)));
+	return i + width;
+}
+
+// A surrogate pair is one keystroke.
+function getKeyWidth(data: string, i: number): number {
+	const code = data.charCodeAt(i);
+	return code >= 0xd800 && code <= 0xdbff && i + 1 < data.length ? 2 : 1;
+}
+
+/**
+ * Whether a string the chunk cuts waits for the rest of it. While a reply
+ * is due an OSC or a DCS does, even cut between the ESC and backslash of
+ * its ST. Otherwise a DCS does, and the start of a clipboard reply's
+ * opener.
+ */
+function isHeldString(opened: string, replyDue: boolean): boolean {
+	if (opened.length > HOLD_LIMIT) {
+		return false;
 	}
-	if (/^\x1b\[\?[\d;]*c$/.test(token)) {
-		return {kind: "device-attributes"};
+	const inner = opened.indexOf("\x1b", 2);
+	if (replyDue) {
+		return (opened[1] === "]" || opened[1] === "P") &&
+			(inner === -1 || inner === opened.length - 1);
 	}
-	const secondary = token.match(/^\x1b\[>([\d;]*)c$/);
-	if (secondary) {
-		return {kind: "secondary-attributes", params: secondary[1]};
+	return inner === -1 && (
+		opened[1] === "P" ||
+		(opened.length < CLIPBOARD_START.length &&
+			CLIPBOARD_START.startsWith(opened))
+	);
+}
+
+// Where a paste body the chunk cuts may start its end fence, or the end
+// of `data`. A lone ESC there waits only while a reply is due.
+function findFenceStart(data: string, from: number, replyDue: boolean): number {
+	const esc = data.lastIndexOf("\x1b");
+	if (esc < from) {
+		return data.length;
 	}
-	const cursor = token.match(/^\x1b\[(\d+);(\d+)R$/);
-	if (cursor) {
-		return {
-			kind: "cursor-report",
-			row: parseInt(cursor[1], 10),
-			col: parseInt(cursor[2], 10),
-		};
-	}
-	const mode = token.match(/^\x1b\[(\??)(\d+);(\d+)\$y$/);
-	if (mode) {
-		return {
-			kind: "mode-report",
-			mode: (mode[1] ? "?" : "") + mode[2],
-			value: parseInt(mode[3], 10),
-		};
-	}
-	// XTWINOPS reports the cell height before its width.
-	const cell = token.match(/^\x1b\[6;(\d+);(\d+)t$/);
-	if (cell) {
-		return {
-			kind: "cell-size",
-			height: parseInt(cell[1], 10),
-			width: parseInt(cell[2], 10),
-		};
-	}
-	return decodeKeyToken(token);
+	const held = esc === data.length - 1
+		? replyDue && data[esc - 1] !== "\x1b"
+		: PASTE_END.startsWith(data.slice(esc));
+	return held ? esc : data.length;
 }
 
 // A question awaiting its reply. The first pending question an item
@@ -901,6 +900,44 @@ interface PendingReply {
 // Set on a process transport whose stdin is no terminal, so that what the
 // terminal answers cannot be read, and nothing is asked of it.
 const kReadsNoReplies = Symbol("readsNoReplies");
+
+// Whether the page has styled the cursor shape or color of a process
+// transport's terminal, so the panic paths reset those too, and only
+// those, since a reset takes back what the shell itself set. A flag stays
+// set once the page has styled, because the reset the page writes later
+// may still be queued when the panic path runs. `keys` is the reset of
+// the keyboard modes the terminal agreed to, kept once set for that reason.
+interface PanicState {
+	shape: boolean;
+	color: boolean;
+	keys: string;
+	altScreen: boolean;
+}
+
+const kPanicState = Symbol("panicState");
+
+type ProcessTransport =
+	TerminalTransport & {[kReadsNoReplies]: boolean; [kPanicState]: PanicState};
+
+function setPanicState(exchange: Exchange): void {
+	const slots = _(exchange);
+	const styled = (slots.transport as Partial<ProcessTransport>)[kPanicState];
+	if (styled !== undefined) {
+		styled.shape ||= slots.cursorShape !== 0;
+		styled.color ||= slots.cursorColor !== null;
+		styled.keys ||= KEYBOARD_MODES.filter((name) =>
+			slots.engagedModes.has(name),
+		).map((name) => getModeEscape(slots, name, false)).join("");
+	}
+}
+
+function setPanicAltScreen(exchange: Exchange, on: boolean): void {
+	const styled =
+		(_(exchange).transport as Partial<ProcessTransport>)[kPanicState];
+	if (styled !== undefined) {
+		styled.altScreen = on;
+	}
+}
 
 // How long a question to the terminal waits for an answer before it is
 // taken as unanswered. A terminal that answers DA1 asked after it ends the
@@ -936,6 +973,9 @@ export interface ExchangeSlots extends EventTargetSlots {
 	// waits on rather than asking again.
 	cellQuery: Promise<{width: number; height: number} | null> | null;
 	engagedModes: Set<ModeName>;
+	// The kitty keyboard flags the terminal had when asked, once it agreed
+	// to the protocol.
+	keyFlags: number | null;
 	// The cursor style and color the terminal last got: a DECSCUSR style,
 	// 0 for its own, and 0xRRGGBB, null for its own.
 	cursorShape: number;
@@ -1040,6 +1080,7 @@ export class Exchange extends EventTarget {
 		slots.asking = asking;
 		slots.cellQuery = null;
 		slots.engagedModes = new Set<ModeName>();
+		slots.keyFlags = null;
 		slots.cursorShape = 0;
 		slots.cursorColor = null;
 		// Anchor detection only makes sense when a shell's rows are above ours.
@@ -1229,14 +1270,15 @@ export class Exchange extends EventTarget {
 			slots.pendingReplies.filter((entry) => entry.sequence !== undefined)
 				.length;
 		slots.probingEnded = true;
-		if (slots.resizeTimer !== null) {
-			clearTimeout(slots.resizeTimer);
-			slots.resizeTimer = null;
-		}
-		if (slots.escapeTimer !== null) {
-			clearTimeout(slots.escapeTimer);
-			slots.escapeTimer = null;
-		}
+		const widths = slots.widths;
+		clearTimeout(slots.resizeTimer ?? undefined);
+		clearTimeout(slots.escapeTimer ?? undefined);
+		clearTimeout(widths.timer ?? undefined);
+		clearTimeout(widths.deferralTimer ?? undefined);
+		slots.resizeTimer = null;
+		slots.escapeTimer = null;
+		widths.timer = null;
+		widths.deferralTimer = null;
 
 		// Only when it was set. Reset is where we left it anyway.
 		if (slots.priorBidiMode === 1) {
@@ -1249,15 +1291,6 @@ export class Exchange extends EventTarget {
 		abandonClipboardQuery(this);
 		for (const entry of slots.pendingReplies.splice(0)) {
 			entry.giveUp();
-		}
-		const widths = slots.widths;
-		if (widths.timer !== null) {
-			clearTimeout(widths.timer);
-			widths.timer = null;
-		}
-		if (widths.deferralTimer !== null) {
-			clearTimeout(widths.deferralTimer);
-			widths.deferralTimer = null;
 		}
 		widths.pending.length = 0;
 		widths.probing = false;
@@ -1298,6 +1331,11 @@ export function deferResizeEvent(exchange: Exchange): void {
 	_(exchange).defersResize = true;
 }
 
+/** Whether the display type is engaged, including while suspended. */
+export function hasDisplayType(exchange: Exchange, name: ModeName): boolean {
+	return _(exchange).engagedModes.has(name);
+}
+
 /** Writes on change only. Teardown restores what was engaged. */
 export function setDisplayType(
 	exchange: Exchange,
@@ -1313,7 +1351,10 @@ export function setDisplayType(
 	} else {
 		slots.engagedModes.delete(name);
 	}
-	let output = on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset;
+	if (name === "altScreen") {
+		setPanicAltScreen(exchange, on);
+	}
+	let output = getModeEscape(slots, name, on);
 	// tmux clears every mouse mode when any one of ?1000 to ?1003 is
 	// reset, so turning motion reporting off took the button mode with
 	// it and clicks stopped arriving. The base capture is asserted again.
@@ -1322,7 +1363,35 @@ export function setDisplayType(
 	) {
 		output += MODE_SPELLINGS.mouseCapture.set;
 	}
+	// The screen switched back to keeps the kitty flags of its own.
+	if (name === "altScreen" && !on && slots.engagedModes.has("kittyKeys")) {
+		output += getModeEscape(slots, "kittyKeys", true);
+	}
 	void exchange.write(output);
+}
+
+/**
+ * A mode's spelling, keeping the kitty keyboard flags the terminal had.
+ * The alternate screen keeps kitty flags of its own, so entering it sets
+ * them there, and leaving it resets them there and on the screen
+ * switched back to.
+ */
+function getModeEscape(
+	slots: ExchangeSlots,
+	name: ModeName,
+	on: boolean,
+): string {
+	const flags = slots.keyFlags;
+	if (name === "kittyKeys") {
+		const before = flags ?? 0;
+		return `\x1b[=${on ? before | KITTY_FLAGS : before};1u`;
+	}
+	const spelling = on ? MODE_SPELLINGS[name].set : MODE_SPELLINGS[name].reset;
+	if (name !== "altScreen" || flags === null) {
+		return spelling;
+	}
+	const kitty = getModeEscape(slots, "kittyKeys", on);
+	return on ? spelling + kitty : kitty + spelling + kitty;
 }
 
 /**
@@ -1361,6 +1430,7 @@ export function setCursorStyle(
 		slots.cursorColor = color;
 		void exchange.write(getCursorColorEscape(color));
 	}
+	setPanicState(exchange);
 }
 
 function resetCursorStyle(exchange: Exchange): void {
@@ -1381,9 +1451,10 @@ export function releaseModes(exchange: Exchange): void {
 	const slots = _(exchange);
 	for (const name of MODE_RESTORE_ORDER) {
 		if (slots.engagedModes.has(name)) {
-			void exchange.write(MODE_SPELLINGS[name].reset);
+			void exchange.write(getModeEscape(slots, name, false));
 		}
 	}
+	setPanicAltScreen(exchange, false);
 	resetCursorStyle(exchange);
 	if (slots.priorBidiMode === 1) {
 		void exchange.write(BIDI_IMPLICIT);
@@ -1398,9 +1469,10 @@ export function reclaimModes(exchange: Exchange): void {
 	}
 	for (const name of MODE_RESTORE_ORDER) {
 		if (slots.engagedModes.has(name)) {
-			void exchange.write(MODE_SPELLINGS[name].set);
+			void exchange.write(getModeEscape(slots, name, true));
 		}
 	}
+	setPanicAltScreen(exchange, slots.engagedModes.has("altScreen"));
 	if (slots.cursorShape !== 0) {
 		void exchange.write(getCursorShapeEscape(slots.cursorShape));
 	}
@@ -1410,14 +1482,17 @@ export function reclaimModes(exchange: Exchange): void {
 }
 
 export function restoreEngagedModes(exchange: Exchange): void {
+	const slots = _(exchange);
 	for (const name of MODE_RESTORE_ORDER) {
-		if (_(exchange).engagedModes.delete(name)) {
-			void exchange.write(MODE_SPELLINGS[name].reset);
+		if (slots.engagedModes.delete(name)) {
+			void exchange.write(getModeEscape(slots, name, false));
 		}
 	}
+	setPanicAltScreen(exchange, false);
+	slots.keyFlags = null;
 	resetCursorStyle(exchange);
-	_(exchange).cursorShape = 0;
-	_(exchange).cursorColor = null;
+	slots.cursorShape = 0;
+	slots.cursorColor = null;
 }
 
 export function flushExchange(exchange: Exchange): Promise<void> {
@@ -1715,6 +1790,58 @@ export async function negotiateGraphemeClusters(
 	if (slots.graphemeClustersNegotiated) {
 		slots.engagedModes.add("clusterWidths");
 	}
+}
+
+/**
+ * Escape, and keys whose modifiers send the bytes of the key alone
+ * (Ctrl+Enter, Shift+Enter, Ctrl+Tab), each as a sequence of its own.
+ * Another terminal could read the request as something else, so it is
+ * made only of one that has said it understands: one that answers the
+ * kitty keyboard protocol's question gets the protocol, and one whose
+ * XTVERSION names tmux or xterm gets modifyOtherKeys. A DA1 asked behind
+ * them ends the wait on a terminal that answers neither.
+ */
+export async function negotiateKeyboard(exchange: Exchange): Promise<void> {
+	const slots = _(exchange);
+	if (!slots.interactive) {
+		return;
+	}
+	let answered!: () => void;
+	const until = new Promise<void>((resolve) => (answered = resolve));
+	const flags = nextReply<"keyboard-flags", number | null>(
+		exchange,
+		"keyboard-flags",
+		{
+			ask: KEYBOARD_FLAGS_QUERY,
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: null,
+			until,
+			read: (item) => item.flags,
+		},
+	);
+	const version = nextReply<"terminal-version", string | null>(
+		exchange,
+		"terminal-version",
+		{
+			ask: VERSION_QUERY,
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: null,
+			until,
+			read: (item) => item.name,
+		},
+	);
+	void queryDeviceAttributes(exchange).then(answered);
+	const [before, name] = await Promise.all([flags, version]);
+	if (slots.disposed) {
+		return;
+	}
+	if (before !== null) {
+		slots.keyFlags = before;
+		setDisplayType(exchange, "kittyKeys", true);
+	} else if (name !== null && /^(?:tmux|XTerm)\b/.test(name)) {
+		setDisplayType(exchange, "otherKeys", true);
+	}
+	setPanicState(exchange);
 }
 
 /**
@@ -2117,11 +2244,12 @@ function terminalResized(
 	const framebuffer = sessionSlots.framebuffer;
 	// A SIGWINCH with an unchanged size still redraws but fires no event.
 	const sizeChanged = width !== framebuffer.cols || height !== framebuffer.rows;
+	const window = sessionSlots.window;
+	applyMutations(window.document);
 	resize(framebuffer, height, width);
 	sessionSlots.layout.resize(width, height);
 	// A size change can flip any @media result and every vw/vh value.
 	sessionSlots.cascade.syncStylesheets();
-	const window = sessionSlots.window;
 	if (sizeChanged && !sessionSlots.defersResize) {
 		dispatchAsUserAgent(
 			window,
@@ -2129,6 +2257,7 @@ function terminalResized(
 		);
 	}
 	syncMediaQueries(window.document);
+	applyMutations(window.document);
 	session.dispatchEvent(
 		constructInternal(() => new TerminalResizeEvent(sizeChanged)),
 	);
@@ -2509,49 +2638,44 @@ export interface ProcessLike {
 // cursor and the modes set. One exit hook restores every engaged process
 // transport. Each process counts its engaged transports, and only the
 // last to let go hands its terminal back.
-const engagedProcesses = new Map<ProcessLike, number>();
+const engagedProcesses = new Map<ProcessLike, Set<PanicState>>();
 
-// Whether a process's terminal has the page's cursor style or color, as
-// its stream last set or reset them, so the panic paths reset those too,
-// and only those, since a reset takes back what the shell itself set.
-const styledCursors = new WeakMap<
-	ProcessLike,
-	{shape: boolean; color: boolean}
->();
-
-function noteCursorStyle(proc: ProcessLike, chunk: string): void {
-	if (!chunk.includes(" q") && !chunk.includes("\x1b]1")) {
-		return;
+function getPanicRestore(styles: Iterable<PanicState>): string {
+	let shape = false;
+	let color = false;
+	let keys = "";
+	let altScreen = false;
+	for (const styled of styles) {
+		shape ||= styled.shape;
+		color ||= styled.color;
+		keys ||= styled.keys;
+		altScreen ||= styled.altScreen;
 	}
-	const styled = styledCursors.get(proc) ?? {shape: false, color: false};
-	for (const match of chunk.matchAll(CURSOR_STYLE)) {
-		styled.shape = match[1] !== "0";
-	}
-	const colorSet = chunk.lastIndexOf("\x1b]12;");
-	const colorReset = chunk.lastIndexOf(CURSOR_COLOR_RESET);
-	if (colorSet !== colorReset) {
-		styled.color = colorSet > colorReset;
-	}
-	styledCursors.set(proc, styled);
-}
-
-function getPanicRestore(proc: ProcessLike): string {
-	const styled = styledCursors.get(proc);
-	return PANIC_RESTORE +
-		(styled?.shape === true ? CURSOR_SHAPE_RESET : "") +
-		(styled?.color === true ? CURSOR_COLOR_RESET : "");
+	const restore = altScreen
+		? PANIC_RESTORE.replace(
+			MODE_SPELLINGS.altScreen.panic,
+			MODE_SPELLINGS.altScreen.reset,
+		)
+		: PANIC_RESTORE;
+	// The keyboard resets go on both sides of leaving the alternate
+	// screen, which keeps flags of its own.
+	return keys +
+		restore +
+		keys +
+		(shape ? CURSOR_SHAPE_RESET : "") +
+		(color ? CURSOR_COLOR_RESET : "");
 }
 
 const ownSignalListeners = new WeakSet<object>();
 let exitHookInstalled = false;
 
 function restoreEngagedProcesses(): void {
-	for (const proc of engagedProcesses.keys()) {
+	for (const [proc, styles] of engagedProcesses) {
 		if (proc.stdout.isTTY !== true) {
 			continue;
 		}
 		try {
-			proc.stdout.write(getPanicRestore(proc));
+			proc.stdout.write(getPanicRestore(styles));
 		} catch (_err) {
 			// The stream may already be gone.
 		}
@@ -2605,6 +2729,82 @@ const STOP_GRACE = 1000;
 // The size a terminal that reports none is taken to have, as a VT100's.
 const DEFAULT_COLS = 80;
 export const DEFAULT_ROWS = 24;
+
+// The terminal's size, each time SIGWINCH says it changed.
+function watchResizes(proc: ProcessLike): ReadableStream<TerminalSize> {
+	let resizeListener: (() => void) | null = null;
+	return new ReadableStream<TerminalSize>(
+		{
+			pull: (controller) => {
+				if (resizeListener) {
+					return;
+				}
+				resizeListener = () => {
+					controller.enqueue({
+						cols: proc.stdout.columns || DEFAULT_COLS,
+						rows: proc.stdout.rows || DEFAULT_ROWS,
+					});
+				};
+				proc.on("SIGWINCH", resizeListener);
+			},
+			cancel: () => {
+				if (resizeListener) {
+					proc.removeListener?.("SIGWINCH", resizeListener);
+					resizeListener = null;
+				}
+			},
+		},
+		{highWaterMark: 0},
+	);
+}
+
+// Job control stops a job with SIGTSTP, which raw mode keeps the
+// terminal from sending, so the process sends it to its process
+// group, as the terminal would. A launcher that runs it as a child
+// and waits on it stops too, and the shell sees the job stop.
+// Windows has no such signal.
+function createSuspend(
+	proc: ProcessLike,
+	isEngaged: () => boolean,
+): (() => Promise<void>) | undefined {
+	if (
+		proc.kill === undefined || (proc.platform ?? process.platform) === "win32"
+	) {
+		return undefined;
+	}
+	return () => new Promise<void>((resolve) => {
+		const stdin = proc.stdin;
+		if (!isEngaged() || stdin === undefined) {
+			resolve();
+			return;
+		}
+		stdin.setRawMode?.(false);
+		stdin.pause();
+		// The timer holds the process open while it waits, as paused
+		// stdin no longer does. A process the signal did not stop,
+		// as the kernel discards it for a session leader, finds the
+		// timer on time, and goes on.
+		const sent = performance.now();
+		let continued = false;
+		const onContinue = () => {
+			continued = true;
+			proc.removeListener?.("SIGCONT", onContinue);
+			stdin.setRawMode?.(true);
+			stdin.resume();
+			resolve();
+		};
+		const watch = setInterval(() => {
+			if (!continued && performance.now() - sent < STOP_GRACE) {
+				onContinue();
+			}
+			if (continued) {
+				clearInterval(watch);
+			}
+		}, STOP_CHECK);
+		proc.on("SIGCONT", onContinue);
+		proc.kill!(0, "SIGTSTP");
+	});
+}
 
 /**
  * Inert until the first read of `readable` engages raw mode and the
@@ -2666,6 +2866,12 @@ export function transportFromProcess(
 		}));
 	};
 
+	const styled: PanicState = {
+		shape: false,
+		color: false,
+		keys: "",
+		altScreen: false,
+	};
 	let engaged = false;
 	let stopWatching: (() => void) | undefined;
 	let dataListener:
@@ -2685,9 +2891,9 @@ export function transportFromProcess(
 			proc.removeListener?.(signal, listener);
 		}
 		signalListeners.length = 0;
-		const others = (engagedProcesses.get(proc) ?? 1) - 1;
-		if (others > 0) {
-			engagedProcesses.set(proc, others);
+		const others = engagedProcesses.get(proc);
+		others?.delete(styled);
+		if (others !== undefined && others.size > 0) {
 			return;
 		}
 		engagedProcesses.delete(proc);
@@ -2696,7 +2902,7 @@ export function transportFromProcess(
 		// terminal had modes to restore.
 		if (proc.stdout.isTTY === true) {
 			try {
-				proc.stdout.write(getPanicRestore(proc));
+				proc.stdout.write(getPanicRestore([styled]));
 			} catch (_err) {
 				// The terminal is gone, and its modes with it.
 			}
@@ -2739,7 +2945,8 @@ export function transportFromProcess(
 				};
 				stdin.on("data", dataListener);
 
-				engagedProcesses.set(proc, (engagedProcesses.get(proc) ?? 0) + 1);
+				const others = engagedProcesses.get(proc) ?? new Set();
+				engagedProcesses.set(proc, others.add(styled));
 				installCursorRestoreOnExit();
 
 				// A SIGINT here is an external kill, since raw mode delivers
@@ -2786,7 +2993,6 @@ export function transportFromProcess(
 		// terminal has the bytes.
 		write: (chunk) => {
 			writes++;
-			noteCursorStyle(proc, chunk);
 			const written = new Promise<void>((resolve, reject) => {
 				proc.stdout.write(chunk, "utf8", (error?: Error) => {
 					if (error) {
@@ -2801,32 +3007,7 @@ export function transportFromProcess(
 		},
 	});
 
-	let resizeListener: (() => void) | null = null;
-	const resizes = new ReadableStream<TerminalSize>(
-		{
-			pull: (controller) => {
-				if (resizeListener) {
-					return;
-				}
-				resizeListener = () => {
-					controller.enqueue({
-						cols: proc.stdout.columns || DEFAULT_COLS,
-						rows: proc.stdout.rows || DEFAULT_ROWS,
-					});
-				};
-				proc.on("SIGWINCH", resizeListener);
-			},
-			cancel: () => {
-				if (resizeListener) {
-					proc.removeListener?.("SIGWINCH", resizeListener);
-					resizeListener = null;
-				}
-			},
-		},
-		{highWaterMark: 0},
-	);
-
-	const transport: TerminalTransport & {[kReadsNoReplies]: boolean} = {
+	const transport: ProcessTransport = {
 		get cols() {
 			return proc.stdout.columns || DEFAULT_COLS;
 		},
@@ -2836,6 +3017,7 @@ export function transportFromProcess(
 		sharesScreen,
 		interactive: proc.stdout.isTTY === true,
 		[kReadsNoReplies]: proc.stdin?.isTTY !== true,
+		[kPanicState]: styled,
 		writeSync(text: string): void {
 			try {
 				proc.stdout.write(text);
@@ -2852,51 +3034,11 @@ export function transportFromProcess(
 			stderr.write(text + "\n");
 			return true;
 		},
-		// Job control stops a job with SIGTSTP, which raw mode keeps the
-		// terminal from sending, so the process sends it to its process
-		// group, as the terminal would. A launcher that runs it as a child
-		// and waits on it stops too, and the shell sees the job stop.
-		// Windows has no such signal.
-		suspend:
-			proc.kill === undefined ||
-			(proc.platform ?? process.platform) === "win32"
-				? undefined
-				: () => new Promise<void>((resolve) => {
-					const stdin = proc.stdin;
-					if (!engaged || stdin === undefined) {
-						resolve();
-						return;
-					}
-					stdin.setRawMode?.(false);
-					stdin.pause();
-					// The timer holds the process open while it waits, as paused
-					// stdin no longer does. A process the signal did not stop,
-					// as the kernel discards it for a session leader, finds the
-					// timer on time, and goes on.
-					const sent = performance.now();
-					let continued = false;
-					const onContinue = () => {
-						continued = true;
-						proc.removeListener?.("SIGCONT", onContinue);
-						stdin.setRawMode?.(true);
-						stdin.resume();
-						resolve();
-					};
-					const watch = setInterval(() => {
-						if (!continued && performance.now() - sent < STOP_GRACE) {
-							onContinue();
-						}
-						if (continued) {
-							clearInterval(watch);
-						}
-					}, STOP_CHECK);
-					proc.on("SIGCONT", onContinue);
-					proc.kill!(0, "SIGTSTP");
-				}),
+		suspend: createSuspend(proc, () => engaged),
 		ready: Promise.resolve(),
 		readable,
 		writable,
-		resizes,
+		resizes: watchResizes(proc),
 		closed,
 		close(info?: TerminalCloseInfo) {
 			disengage();

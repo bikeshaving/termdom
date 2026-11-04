@@ -797,6 +797,18 @@ test("row-gap separates the rows", async () => {
 	expect(items()[1].top).toBe(2);
 });
 
+test("an inline-grid rounds its row gap to whole rows as a grid does", async () => {
+	const styles = "grid-auto-rows: 1px; row-gap: 1.6px";
+	const block = await render(grid(styles, letters(4)));
+	const inline = await render(
+		`<div id="g" style="display:inline-grid;${styles}">${letters(4)}</div>`,
+	);
+	expect(block.items().map((item) => item.top)).toEqual([0, 3, 6, 9]);
+	expect(inline.items().map((item) => item.top)).toEqual([0, 3, 6, 9]);
+	block.dom.dispose();
+	inline.dom.dispose();
+});
+
 test("the gap shorthand states the row gap first", async () => {
 	const {items} = await render(
 		grid(

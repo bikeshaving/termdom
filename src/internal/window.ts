@@ -24,15 +24,14 @@ import {
 	parseHTMLDocument,
 	parseXMLDocument,
 	platform,
-	processTimers,
 	reportError,
 	runtime,
 	setAttributeByName,
+	setDocumentURL,
 	setFrameWindowFactory,
 	startPendingImages,
 	toImageDimension,
 	Window,
-	windowTimers,
 } from "./dom.ts";
 import {createRealm, rehomeClone} from "./realms.ts";
 import {
@@ -89,7 +88,7 @@ export function buildWindow(
 	// number HTML hands the page for each: the runtime's own handle is the
 	// runtime's object.
 	const timers = new Map<number, ReturnType<typeof setTimeout>>();
-	windowTimers.set(window, timers);
+	_(window as unknown as Window).timers = timers;
 	let lastTimerId = 0;
 	const clearTimer = (id: unknown) => {
 		const key = Number(id);
@@ -99,12 +98,12 @@ export function buildWindow(
 			runtime.clearTimeout(handle);
 		}
 	};
-	processTimers.set(window, {
+	_(window as unknown as Window).processTimers = {
 		setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) =>
 			runtime.setTimeout(guard(handler, args) as () => void, timeout),
 		setInterval: (handler: unknown, timeout?: number, ...args: unknown[]) =>
 			runtime.setInterval(guard(handler, args) as () => void, timeout),
-	});
+	};
 	Object.assign(
 		window,
 		getWindowClasses(),
@@ -114,6 +113,8 @@ export function buildWindow(
 		// throw. A caller's `instanceof DOMException` has to match the class
 		// the engine builds its errors from.
 			DOMException,
+			// The runtime's File, which its FormData, Blob and fetch take.
+			File: globalThis.File,
 			setTimeout: (handler: unknown, timeout?: number, ...args: unknown[]) => {
 				const guarded = guard(handler, args);
 				const id = ++lastTimerId;
@@ -300,7 +301,7 @@ export function createWindow(
 	const documentSlots = _(document);
 	documentSlots.registry = createWindowRegistry();
 	if (url !== undefined) {
-		documentSlots.extra.documentURL = url;
+		setDocumentURL(document, url);
 	}
 	return buildWindow(document);
 }

@@ -356,7 +356,7 @@ function inRanges(
 // reordering alone would leave isolated.
 const {ArabicShaper} = arabicPersianReshaper;
 
-const bidi = bidiFactory();
+export const bidi = bidiFactory();
 
 // Escapes, not literals. U+FEFF looks like stray whitespace in an
 // editor.

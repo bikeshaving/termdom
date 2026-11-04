@@ -7,8 +7,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {partialFrameCheck} from "../src/internal/painter.ts";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, takePartialFrame} from "./test-utils.js";
 
 const STYLE =
 	"<style>body { margin: 0; height: 100vh; display: flex; " +
@@ -36,20 +35,26 @@ async function list(
 	};
 }
 
-async function walk(dom: TermDOM, items: Element[], to: number): Promise<void> {
+async function walk(
+	dom: TermDOM,
+	items: Element[],
+	to: number,
+): Promise<number> {
+	let partial = 0;
+	takePartialFrame(dom);
 	for (let at = 1; at <= to; at++) {
 		items[at - 1].classList.remove("on");
 		items[at].classList.add("on");
 		items[at].scrollIntoView({block: "nearest"});
 		await nextFrame(dom);
+		partial += Number(takePartialFrame(dom));
 	}
+	return partial;
 }
 
 test("a list scrolled a row at a time paints only what the shift exposed", async () => {
 	const {terminal, dom, items} = await list();
-	const checked = partialFrameCheck.checked;
-	await walk(dom, items, 20);
-	expect(partialFrameCheck.checked - checked).toBeGreaterThanOrEqual(20);
+	expect(await walk(dom, items, 20)).toBeGreaterThanOrEqual(20);
 	const rows = terminal.getVisibleText().split("\n");
 	expect(rows[0]).toContain("Inbox");
 	expect(rows.some((row) => row.includes("item 20"))).toBe(true);

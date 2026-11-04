@@ -1730,6 +1730,8 @@ interface State {
 	lineDash: number[];
 	lineDashOffset: number;
 	font: string;
+	bold: boolean;
+	italic: boolean;
 	textAlign: string;
 	textBaseline: string;
 	direction: string;
@@ -1757,6 +1759,8 @@ function defaultState(): State {
 		lineDash: [],
 		lineDashOffset: 0,
 		font: "10px sans-serif",
+		bold: false,
+		italic: false,
 		textAlign: "start",
 		textBaseline: "alphabetic",
 		direction: "inherit",
@@ -1930,9 +1934,15 @@ export class CanvasRenderingContext2D {
 
 	set font(value: string) {
 		const font = parseCanvasFont(String(value));
-		if (font !== null) {
-			_(this).state.font = font.serialized;
+		if (font === null) {
+			return;
 		}
+		const state = _(this).state;
+		const weight = font.longhands["font-weight"];
+		state.font = font.serialized;
+		state.bold =
+			weight === "bold" || weight === "bolder" || Number(weight) >= 600;
+		state.italic = font.longhands["font-style"] !== "normal";
 	}
 
 	get textAlign(): string {
@@ -3076,7 +3086,6 @@ function drawContextText(
 			(align === "start" && rtl)
 			? "right"
 			: "left";
-	const words = slots.state.font.toLowerCase().split(/\s+/);
 	const run: CanvasTextRun = {
 		text: toVisualOrder(text.replace(/[\t\n\f\r]/g, " "), rtl ? "rtl" : "ltr"),
 		x: px,
@@ -3085,12 +3094,8 @@ function drawContextText(
 		baseline: slots.state.textBaseline,
 		color: {...color, a: color.a * slots.state.globalAlpha},
 		covered: 0,
-		bold: words.some(
-			(word) => word === "bold" ||
-				word === "bolder" ||
-			(/^\d+$/.test(word) && Number(word) >= 600),
-		),
-		italic: words.includes("italic") || words.includes("oblique"),
+		bold: slots.state.bold,
+		italic: slots.state.italic,
 	};
 	slots.text.push(run);
 	slots.host.changed();

@@ -52,9 +52,9 @@
   "dependencies": {
     "arabic-persian-reshaper": "1.0.1",
     "bidi-js": "1.1.0",
-    "css-tree": "^3.2.1",
+    "css-tree": "3.2.1",
     "linebreak": "1.1.0",
-    "parse5": "^8.0.1"
+    "parse5": "8.1.0"
   },
   "peerDependencies": {
     "node-pty": "^1.1.0"
@@ -67,7 +67,7 @@
   "devDependencies": {
     "@b9g/crank": "^0.7.12",
     "@b9g/eslint-config": "^0.1.10",
-    "@b9g/libuild": "^0.2.30",
+    "@b9g/libuild": "^0.2.31",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/language": "^6.12.4",
@@ -101,6 +101,7 @@
     "react-dom": "^19.3.0",
     "ssh2": "^1.17.0",
     "svelte": "^5.57.1",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "vue": "^3.5.43",
     "webidl2": "^24.5.0"
