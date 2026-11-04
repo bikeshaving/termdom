@@ -2452,21 +2452,23 @@ interface WebWorker {
 
 // The runtime's own web Worker, where it has one: Bun, Deno, a browser,
 // and Node from 26.9 with --experimental-web-worker. Without one, images
-// decode on this thread.
+// decode on this thread. It is read when this module loads, so a Worker an
+// app puts on globalThis afterward does not run TermDOM's decoder.
+const RuntimeWorker = (globalThis as {Worker?: new (
+	url: URL,
+	options: {type: "module"},
+) => WebWorker;}).Worker;
+
 function startWorker(
 	url: URL,
 	onMessage: (data: unknown) => void,
 	onError: (error: unknown) => void,
 ): DecodeWorker | null {
-	const Worker = (globalThis as {Worker?: new (
-		url: URL,
-		options: {type: "module"},
-	) => WebWorker;}).Worker;
-	if (Worker === undefined) {
+	if (RuntimeWorker === undefined) {
 		return null;
 	}
 	try {
-		const worker = new Worker(url, {type: "module"});
+		const worker = new RuntimeWorker(url, {type: "module"});
 		worker.addEventListener("message", (event) => onMessage(event.data));
 		worker.addEventListener("error", (event) => {
 			event.preventDefault?.();
