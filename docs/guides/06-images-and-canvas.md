@@ -1,6 +1,6 @@
 ---
 title: Images and canvas
-description: How <img> and <canvas> draw pixels in cells, and how <embed> runs a program.
+description: How <img> and <canvas> draw pixels, and how <embed> runs a program.
 ---
 
 A cell shows two pixels: a lower half block, `▄`, in the foreground
@@ -15,13 +15,25 @@ slightly off center.
 The `images` option controls `<img>`, and `canvas` controls the `"2d"`
 context:
 
-- `"auto"` (default) uses the best method the terminal supports.
-  Currently that's always cells.
+- `"auto"` (default) uses the best method the terminal supports: the
+  kitty graphics protocol in kitty and Ghostty, and cells everywhere
+  else.
 - `"cells"` always draws cells.
+- `"kitty"` always uses the kitty graphics protocol, without asking the
+  terminal.
 - `"none"` draws nothing. An `<img>` loads nothing and shows its `alt`
   text. `getContext("2d")` returns `null`, so a canvas shows its
   fallback content. A `"termdom-cellgrid"` context still works, but its
   `drawImage()` draws nothing.
+
+With the kitty graphics protocol, an image is sent to the terminal
+once, at the terminal's own pixel resolution, and its box is painted
+with kitty's Unicode placeholder characters. The placeholders are
+still cells, so an image clips, stacks under other boxes, and scrolls
+like one drawn in half blocks. The protocol needs 24-bit color, and
+it can't number a box more than 297 cells across or down. Those
+images, and every image in a terminal without the protocol, are drawn
+in cells. Each frame a canvas draws is sent again.
 
 Pages written for a browser often read better with `"none"`: half
 blocks blur logos and detail, and alt text says what they show.

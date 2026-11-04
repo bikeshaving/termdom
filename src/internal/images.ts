@@ -4,9 +4,10 @@
  * pixels a cell shows.
  *
  * A cell draws two pixels stacked: the lower half block (U+2584) in the
- * foreground color under the background color. Everything a terminal can
- * show of an image goes through cells that way, so an image scrolls,
- * clips and diffs like any other text, over SSH and inside tmux too.
+ * foreground color under the background color. An image drawn that way
+ * scrolls, clips and diffs like any other text, over SSH and inside tmux
+ * too. A terminal that draws the kitty graphics protocol is sent the
+ * pixels themselves instead (see kitty.ts).
  *
  * Nothing here touches the DOM. The elements register what they hold,
  * and the canvas and the painter read it back through the registry at

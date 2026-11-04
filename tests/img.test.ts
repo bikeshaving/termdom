@@ -785,16 +785,16 @@ test("with images off, an image loads nothing and shows its alt text", async () 
 	dom.dispose();
 });
 
-test("images and canvas are \"auto\", \"cells\" or \"none\"", () => {
-	for (const value of ["auto", "cells", "none"] as const) {
+test("images and canvas are \"auto\", \"cells\", \"kitty\" or \"none\"", () => {
+	for (const value of ["auto", "cells", "kitty", "none"] as const) {
 		new TermDOM({
 			transport: new MockProcess().transport,
 			images: value,
 			canvas: value,
 		}).dispose();
 	}
-	expect(() => new TermDOM({images: "kitty" as "cells"})).toThrow(TypeError);
-	expect(() => new TermDOM({canvas: "kitty" as "cells"})).toThrow(TypeError);
+	expect(() => new TermDOM({images: "sixel" as "cells"})).toThrow(TypeError);
+	expect(() => new TermDOM({canvas: "sixel" as "cells"})).toThrow(TypeError);
 });
 
 test("by default images load from anywhere and a canvas draws", async () => {
