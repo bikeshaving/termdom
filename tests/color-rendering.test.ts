@@ -683,6 +683,24 @@ test("color-mix() mixes in sRGB, linear sRGB, OKLab and OKLCh", async () => {
 	dom.dispose();
 });
 
+test("a color-mix() of currentcolor mixes a system color and the root's", () => {
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 20, rows: 4}).transport,
+		colorDepth: "rgb",
+		html:
+			"<style>:root{color:color-mix(in srgb,currentcolor 50%,#f00)}" +
+			"p{color:canvastext;" +
+			"background-color:color-mix(in srgb,currentcolor 50%,#f00)}" +
+			"</style><p>p</p>",
+	});
+	const {document, window} = dom;
+	const p = document.querySelector("p")!;
+	const black = "rgb(128, 0, 0)";
+	expect(window.getComputedStyle(document.documentElement).color).toBe(black);
+	expect(window.getComputedStyle(p).backgroundColor).toBe(black);
+	dom.dispose();
+});
+
 test("a color-mix() of variables and currentcolor paints", async () => {
 	const dom = new TermDOM({
 		transport: new MockProcess({cols: 20, rows: 4}).transport,

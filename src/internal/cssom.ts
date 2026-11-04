@@ -6037,7 +6037,17 @@ function resolveCascadedValue(
 		const current = property === "color"
 			? (resolveFromParent(declaration, "color") ?? "")
 			: _(declaration)._computedValue("color");
-		return value.replace(CURRENT_COLOR, current);
+		if (toASCIILowercase(value) === "currentcolor") {
+			return current;
+		}
+		// A color-mix() mixes a system color as the color it reads back as,
+		// and the root's `currentcolor` as the initial color.
+		const mixed =
+			CSSValues.resolveSystemColor(
+				current || "canvastext",
+				getColorScheme(_(declaration).element.ownerDocument),
+			) ?? current;
+		return value.replace(CURRENT_COLOR, mixed);
 	}
 	return value;
 }

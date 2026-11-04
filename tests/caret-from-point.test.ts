@@ -71,6 +71,23 @@ test("caretPositionFromPoint over a text control gives the value offset", async 
 	dom.dispose();
 });
 
+test("a text control in a shadow tree not passed in retargets to its host", async () => {
+	const dom = await open("<div id=host></div>");
+	const {document} = dom;
+	const root = document.getElementById("host")!.attachShadow({mode: "closed"});
+	root.innerHTML = "<input value=secret>";
+	await nextFrame(dom);
+	const input = root.querySelector("input")!;
+	const left = input.getBoundingClientRect().left;
+	const outside = document.caretPositionFromPoint(left + 3, 0)!;
+	expect([outside.offsetNode, outside.offset]).toEqual([document.body, 0]);
+	const inside = document.caretPositionFromPoint(left + 3, 0, {
+		shadowRoots: [root],
+	})!;
+	expect([inside.offsetNode, inside.offset]).toEqual([input, 3]);
+	dom.dispose();
+});
+
 test("CaretPosition cannot be constructed by script", async () => {
 	const dom = await open("");
 	expect(() => new (dom.window.CaretPosition as any)()).toThrow(TypeError);

@@ -19254,6 +19254,7 @@ function discardFrame(frame: HTMLIFrameElement): void {
 	if (document !== null) {
 		discardFrames(document);
 		disconnectObservers(document as unknown as globalThis.Document);
+		_(document).extra.defaultView = null;
 	}
 	if (implementsInterface(window, Window)) {
 		clearWindowTimers(window);
@@ -29955,9 +29956,11 @@ export class Document extends Node implements globalThis.Document {
 		if (caret === null) {
 			return null;
 		}
-		const [node, offset] = caret.control === null
-			? retargetCaret(caret.node, caret.offset, shadowRoots)
-			: [caret.control, caret.offset];
+		const [node, offset] = retargetCaret(
+			caret.control ?? caret.node,
+			caret.offset,
+			shadowRoots,
+		);
 		return constructInternal(() =>
 			new CaretPosition(node, offset, caret.node, caret.offset),
 		) as unknown as globalThis.CaretPosition;
@@ -40372,6 +40375,11 @@ class Navigation extends EventTarget {
 			};
 		} catch (error) {
 			return getEarlyErrorResult(error);
+		}
+		if (!isFullyActive(_(this).navigationWindow)) {
+			return getEarlyErrorResult(
+				domError("InvalidStateError", "The document is not shown"),
+			);
 		}
 		const tracker = setUpcomingTracker(this, init.info, state);
 		if (!reloadDocument(document, "none", state)) {

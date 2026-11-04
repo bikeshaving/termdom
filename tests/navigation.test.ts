@@ -498,3 +498,25 @@ test("traverse() goes to the nearest entry with the URL", async () => {
 	await tick();
 	dom.dispose();
 });
+
+test("a removed frame's navigation is not shown and rejects", async () => {
+	const dom = created("<iframe srcdoc=\"<p>hi</p>\"></iframe>");
+	await tick();
+	const frame = dom.document.querySelector("iframe")!;
+	const frameWindow = frame.contentWindow!;
+	const {navigation} = frameWindow;
+	const entry = navigation.currentEntry!;
+	expect(entry.url).toBe("about:srcdoc");
+	frame.remove();
+	expect(frame.contentWindow).toBe(null);
+	expect([entry.url, entry.key, entry.index]).toEqual(["", "", -1]);
+	expect(await rejections(navigation.navigate("#x"))).toEqual([
+		"InvalidStateError",
+		"InvalidStateError",
+	]);
+	expect(await rejections(navigation.reload())).toEqual([
+		"InvalidStateError",
+		"InvalidStateError",
+	]);
+	dom.dispose();
+});
