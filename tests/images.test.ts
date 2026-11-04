@@ -497,6 +497,33 @@ function outcomes(decodes: Array<Promise<{width: number}>>): Promise<string[]> {
 const ANSWER =
 	"port.postMessage({id: data.id, width: 1, height: 1, data: new ArrayBuffer(4)})";
 
+test("a Worker an app puts on globalThis does not run the decoder", async () => {
+	const runtime = Object.getOwnPropertyDescriptor(globalThis, "Worker");
+	let constructed = false;
+	Object.defineProperty(globalThis, "Worker", {
+		configurable: true,
+		writable: true,
+		value: class {
+			constructor() {
+				constructed = true;
+				throw new Error("Only inline workers are supported");
+			}
+		},
+	});
+	try {
+		setDecodeWorkerURL(fakeWorker(ANSWER));
+		await decodeImageOffThread(getImageBytes("png-rgb.png"));
+		expect(constructed).toBe(false);
+	} finally {
+		setDecodeWorkerURL(null);
+		if (runtime) {
+			Object.defineProperty(globalThis, "Worker", runtime);
+		} else {
+			delete (globalThis as {Worker?: unknown}).Worker;
+		}
+	}
+});
+
 withWorker(
 	"an image past its time fails alone, and the images behind it decode",
 	async () => {
