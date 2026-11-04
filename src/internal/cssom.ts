@@ -7210,10 +7210,11 @@ export class Cascade {
 	// safe to hold.
 	transitionFallback: WeakMap<Element, Map<string, ResolvedValues>>;
 
-	// The computed styles a whole-cascade drop let go of, which a rebuilt
-	// style takes its transitions' before-change values from. An element's
-	// entry goes once its style is rebuilt.
-	droppedStyles: WeakMap<Element, Slots<ComputedStyleDeclaration>>;
+	// The styles each whole-cascade drop let go of, newest first, which a
+	// rebuilt style takes its transitions' before-change values from. An
+	// entry goes once its style is rebuilt, and a drop lets go of the drops
+	// a finished layout pass has rebuilt the rendered styles of.
+	droppedStyles: DroppedStyles[];
 
 	activeTransitions: Map<
 		Element,
@@ -7316,7 +7317,7 @@ export class Cascade {
 		this.transitionsExist = false;
 		this.transitionSnapshots = new WeakMap();
 		this.transitionFallback = new WeakMap();
-		this.droppedStyles = new WeakMap();
+		this.droppedStyles = [];
 		this.activeTransitions = new Map();
 		this.transitionClock = 0;
 		this.transitionTimer = null;
@@ -7898,11 +7899,19 @@ function buildComputedSlots(
 		),
 	);
 	cascade.computedStyleCache.set(element, fresh);
-	const dropped = cascade.droppedStyles.get(element);
-	if (dropped !== undefined) {
-		cascade.droppedStyles.delete(element);
-		if (cascade.transitionsExist) {
-			storeTransitionFallback(cascade, element, "", getDroppedValues(dropped));
+	for (const {styles} of cascade.droppedStyles) {
+		const dropped = styles.get(element);
+		if (dropped !== undefined) {
+			styles.delete(element);
+			if (cascade.transitionsExist) {
+				storeTransitionFallback(
+					cascade,
+					element,
+					"",
+					getDroppedValues(dropped),
+				);
+			}
+			break;
 		}
 	}
 	// Building a fresh declaration is the other form of the style change
@@ -7987,6 +7996,7 @@ export function dispose(cascade: Cascade): void {
 		clearLastRead();
 	}
 	cascade.computedStyleCache = new WeakMap();
+	cascade.droppedStyles = [];
 	cascade.hasResults = null;
 	cascade.pseudoElementStyleCache = new WeakMap();
 	forgetCounters(cascade);
@@ -8542,7 +8552,7 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 		passedTokens: cascade.passedTokens,
 	};
 	dropCache(cascade);
-	cascade.droppedStyles = new WeakMap();
+	cascade.droppedStyles = [];
 	cascade.sharedRoot = new Map();
 	cascade.passedTokens = new Map();
 	const differences: string[] = [];
@@ -8569,13 +8579,30 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 	}
 }
 
+interface DroppedStyles {
+	styles: WeakMap<Element, Slots<ComputedStyleDeclaration>>;
+	pseudoStyles: WeakMap<Element, Map<string, PseudoStyleDeclaration>>;
+	// The layout pass the drop came in, or the one running then.
+	pass: number;
+}
+
 function dropCache(cascade: Cascade): void {
 	// Every computed style ever handed out re-resolves on its next read.
 	cascade.siblingIndexesForMatching = null;
 	cascade.filteredSiblingsForMatching = null;
 	cascade.currentDeclarations = new WeakSet<object>();
 	cascade.usedValues = new WeakMap();
-	cascade.droppedStyles = cascade.computedStyleCache;
+	const {layout} = cascade;
+	cascade.droppedStyles = [
+		{
+			styles: cascade.computedStyleCache,
+			pseudoStyles: cascade.pseudoElementStyleCache,
+			pass: layout.pass,
+		},
+		...cascade.droppedStyles.filter(({pass}) =>
+			pass === layout.pass || (layout.inPass && pass === layout.pass - 1),
+		),
+	];
 	cascade.computedStyleCache = new WeakMap();
 	cascade.hasResults = null;
 	cascade.pseudoElementStyleCache = new WeakMap();
@@ -8788,6 +8815,19 @@ function getPseudoDeclaration(
 		cascade.pseudoElementStyleCache.set(element, elementCache);
 	}
 	elementCache.set(pseudoElement, declaration);
+	for (const {pseudoStyles} of cascade.droppedStyles) {
+		const dropped = pseudoStyles.get(element)?.get(pseudoElement);
+		if (dropped !== undefined) {
+			pseudoStyles.get(element)!.delete(pseudoElement);
+			storeTransitionFallback(
+				cascade,
+				element,
+				pseudoElement,
+				_(dropped).resolved,
+			);
+			break;
+		}
+	}
 	processTransitionStyle(
 		cascade,
 		element,
@@ -10190,13 +10230,28 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 	cascade.computedStyleCache.delete(element);
 	forgetLastRead(element);
 	cascade.hasResults = null;
-	const hadPseudoStyles = cascade.pseudoElementStyleCache.delete(element);
+	const hadPseudoStyles = dropPseudoStyles(cascade, element);
 	// A style change can flip display: contents, which moves the node's
 	// flat-tree BOX parent, so every box enumeration is stale. A change
 	// layout sees repaints what it moves. The element's own rows repaint
 	// for one it does not.
 	cascade.layout.invalidateFrame(false);
 	recordRestyle(cascade, element, dropped, hadPseudoStyles);
+}
+
+// Whether the element had pseudo-element styles, which become the
+// before-change styles of their transitions.
+function dropPseudoStyles(cascade: Cascade, element: Element): boolean {
+	const dropped = cascade.pseudoElementStyleCache.get(element);
+	if (dropped === undefined) {
+		return false;
+	}
+	for (const [name, declaration] of dropped) {
+		cascade.currentDeclarations.delete(_(declaration));
+		storeTransitionFallback(cascade, element, name, _(declaration).resolved);
+	}
+	cascade.pseudoElementStyleCache.delete(element);
+	return true;
 }
 
 // The style an element painted under, kept until the next frame compares
@@ -10468,14 +10523,7 @@ function invalidateElementCaches(
 	cascade.computedStyleCache.delete(element);
 	forgetLastRead(element);
 	cascade.hasResults = null;
-	const droppedPseudos = cascade.pseudoElementStyleCache.get(element);
-	if (droppedPseudos) {
-		for (const [name, declaration] of droppedPseudos) {
-			cascade.currentDeclarations.delete(_(declaration));
-			storeTransitionFallback(cascade, element, name, _(declaration).resolved);
-		}
-	}
-	cascade.pseudoElementStyleCache.delete(element);
+	dropPseudoStyles(cascade, element);
 	cascade.counterSets.delete(element);
 	cascade.counterEnds.delete(element);
 	cascade.listNumberings.delete(element);

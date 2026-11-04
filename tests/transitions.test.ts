@@ -380,3 +380,43 @@ test("a stylesheet's first transition transitions from the style before it", asy
 	expect(window.getComputedStyle(box).color).toBe("rgb(128, 128, 128)");
 	await dom.dispose();
 });
+
+test("two stylesheet changes in a row keep the style before both", async () => {
+	const {dom, document, window} = attached(
+		"<style>p { transition: opacity 1s } #box { color: rgb(0, 0, 0) }" +
+		"</style><div id='box'>x</div>",
+	);
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	expect(window.getComputedStyle(box).color).toBe("rgb(0, 0, 0)");
+	const first = new window.CSSStyleSheet();
+	first.replaceSync(".other { color: green }");
+	const second = new window.CSSStyleSheet();
+	second.replaceSync(
+		"#box { color: rgb(255, 255, 255); " +
+			"transition: color 100s steps(1, jump-both) }",
+	);
+	document.adoptedStyleSheets = [first];
+	document.adoptedStyleSheets = [first, second];
+	await nextFrame(dom);
+	expect(window.getComputedStyle(box).color).toBe("rgb(128, 128, 128)");
+	await dom.dispose();
+});
+
+test("a pseudo-element's first transition transitions from the style before it", async () => {
+	const {dom, document, window} = attached(
+		"<style>#box::before { content: 'b'; color: rgb(0, 0, 0) } " +
+		"#box.on::before { color: rgb(255, 255, 255); " +
+		"transition: color 100s steps(1, jump-both) }</style>" +
+		"<div id='box'>x</div>",
+	);
+	await nextFrame(dom);
+	const box = document.getElementById("box")!;
+	expect(window.getComputedStyle(box, "::before").color).toBe("rgb(0, 0, 0)");
+	box.className = "on";
+	await nextFrame(dom);
+	expect(window.getComputedStyle(box, "::before").color).toBe(
+		"rgb(128, 128, 128)",
+	);
+	await dom.dispose();
+});
