@@ -398,7 +398,7 @@ function decodeCodedKey(codepoint: number, mod: number, shifted = 0): WireKey {
 	if (named === undefined && modifiers.shiftKey) {
 		key = shifted > 0 ? String.fromCodePoint(shifted) : key.toUpperCase();
 	}
-	const printable = named === undefined || key === " ";
+	const printable = named === undefined || key.length === 1;
 	return {
 		kind: "key",
 		key,

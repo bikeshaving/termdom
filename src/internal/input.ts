@@ -564,7 +564,7 @@ export function resolvePendingHover(input: Input): void {
 		input.pendingHover === null &&
 		input.lastMouse !== null &&
 		input.hoverElement !== null &&
-		!isInPage(input.hoverElement)
+		!isInPage(input, input.hoverElement)
 	) {
 		input.pendingHover = {
 			...input.lastMouse,
@@ -689,9 +689,8 @@ export function resolvePendingHover(input: Input): void {
 	}
 }
 
-// Connected, in a document shown in the page: its own, or one an iframe
-// in the page draws.
-function isInPage(element: Element): boolean {
+// Connected, in the page's document or in one an iframe in it draws.
+function isInPage(input: Input, element: Element): boolean {
 	for (
 		let node: Element | null = element;
 		node !== null;
@@ -700,8 +699,11 @@ function isInPage(element: Element): boolean {
 		if (!node.isConnected) {
 			return false;
 		}
+		if (node.ownerDocument === input.document) {
+			return true;
+		}
 	}
-	return true;
+	return false;
 }
 
 // The viewport point of `x`, `y` in the document `level` describes: the

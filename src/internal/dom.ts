@@ -19254,10 +19254,10 @@ function discardFrame(frame: HTMLIFrameElement): void {
 	if (document !== null) {
 		discardFrames(document);
 		disconnectObservers(document as unknown as globalThis.Document);
-		_(document).extra.defaultView = null;
 	}
 	if (implementsInterface(window, Window)) {
 		clearWindowTimers(window);
+		_(window).discarded = true;
 		_(window).parentWindow = null;
 		_(window).frameOwner = null;
 		forgetClasses();
@@ -35775,7 +35775,7 @@ function getFragment(url: string): string | null {
 }
 
 // Gives the document a URL and the fragment :target matches.
-function setDocumentURL(document: Document, url: string): void {
+export function setDocumentURL(document: Document, url: string): void {
 	const extra = _(document).extra;
 	extra.documentURL = url;
 	const raw = getFragment(url);
@@ -39842,7 +39842,8 @@ function getNavigation(window: Window): Navigation {
 
 // A document is fully active while its window shows it.
 function isFullyActive(window: Window): boolean {
-	return _(window.document as unknown as Document).extra.defaultView === window;
+	return !_(window).discarded &&
+		_(window.document as unknown as Document).extra.defaultView === window;
 }
 
 // HTML's "has entries and events disabled": a document no longer shown,
@@ -41318,6 +41319,9 @@ export interface WindowSlots extends EventTargetSlots {
 	parentWindow: Window | null;
 	frameOwner: HTMLIFrameElement | null;
 	realm: Realm | null;
+	// A frame's window whose iframe left the page or showed another
+	// document.
+	discarded: boolean;
 	// How many frames the window's indexed properties name.
 	frameIndexes: number;
 	// Whether the window is firing an error event now. An exception raised
@@ -41608,6 +41612,7 @@ export class Window extends EventTarget {
 		slots.parentWindow = null;
 		slots.frameOwner = null;
 		slots.realm = null;
+		slots.discarded = false;
 		slots.frameIndexes = 0;
 		for (const name of new Set([
 			...documentSlots.extra.idMap.keys(),

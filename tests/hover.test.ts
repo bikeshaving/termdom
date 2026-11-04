@@ -256,6 +256,29 @@ test("removing the hovered element hovers what is under the pointer", async () =
 	termdom.dispose();
 });
 
+test("removing the iframe the pointer is in hovers what is under it", async () => {
+	const {proc, termdom, document} = makeApp({
+		html:
+			"<iframe srcdoc=\"<p style='margin: 0'>inside</p>\" " +
+			"style=\"display: block; border: 0; width: 20ch; height: 2px\">" +
+			"</iframe>",
+	});
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	await nextFrame(termdom);
+	const frame = document.querySelector("iframe")!;
+	const inside = frame.contentDocument!.querySelector("p")!;
+	await send(proc, motion(2, 1));
+	await nextFrame(termdom);
+	expect(inside.matches(":hover")).toBe(true);
+
+	const over: EventTarget[] = [];
+	document.addEventListener("mouseover", (event) => over.push(event.target!));
+	frame.remove();
+	await nextFrame(termdom);
+	expect(over).toEqual([document.body]);
+	termdom.dispose();
+});
+
 test("motion reports coalesce into at most one hit-test per frame", async () => {
 	const {proc, termdom, document} = makeApp();
 	for (let i = 0; i < 5; i++) {

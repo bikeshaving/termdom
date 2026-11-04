@@ -501,6 +501,12 @@ test("the states the document holds answer their pseudo-classes", async () => {
 test(":target is the element the document's URL fragment names", () => {
 	const document = tree("<div id=t></div><div id=u></div>", "about:blank#t");
 	expect(found(document, ":target")).toEqual(["t"]);
+	const xhtml = createWindow(
+		'<html xmlns="http://www.w3.org/1999/xhtml"><body><div id="t"/></body></html>',
+		"https://example.com/#t",
+		"application/xhtml+xml",
+	).document as unknown as Document;
+	expect(found(xhtml, ":target")).toEqual(["t"]);
 });
 
 test(":open and :closed only speak of what can be open", () => {

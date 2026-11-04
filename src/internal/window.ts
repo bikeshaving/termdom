@@ -27,6 +27,7 @@ import {
 	reportError,
 	runtime,
 	setAttributeByName,
+	setDocumentURL,
 	setFrameWindowFactory,
 	startPendingImages,
 	toImageDimension,
@@ -300,7 +301,7 @@ export function createWindow(
 	const documentSlots = _(document);
 	documentSlots.registry = createWindowRegistry();
 	if (url !== undefined) {
-		documentSlots.extra.documentURL = url;
+		setDocumentURL(document, url);
 	}
 	return buildWindow(document);
 }

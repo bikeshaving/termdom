@@ -506,9 +506,13 @@ test("a removed frame's navigation is not shown and rejects", async () => {
 	const frameWindow = frame.contentWindow!;
 	const {navigation} = frameWindow;
 	const entry = navigation.currentEntry!;
+	const p = frame.contentDocument!.querySelector("p")!;
 	expect(entry.url).toBe("about:srcdoc");
 	frame.remove();
 	expect(frame.contentWindow).toBe(null);
+	expect(p.checkVisibility()).toBe(false);
+	p.style.width = "10px";
+	p.getBoundingClientRect();
 	expect([entry.url, entry.key, entry.index]).toEqual(["", "", -1]);
 	expect(await rejections(navigation.navigate("#x"))).toEqual([
 		"InvalidStateError",

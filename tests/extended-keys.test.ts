@@ -136,6 +136,16 @@ test("CSI u keys decode with their modifiers", async () => {
 	await dom.dispose();
 });
 
+test("a keypad digit types its digit", async () => {
+	const {dom, terminal} = await attach([{ask: FLAGS_QUERY, reply: "\x1b[?0u"}]);
+	dom.document.body.innerHTML = "<input>";
+	const input = dom.document.querySelector("input")!;
+	input.focus();
+	await press(dom, terminal, "\x1b[57400u\x1b[57409u");
+	expect(input.value).toBe("1.");
+	await dom.dispose();
+});
+
 test("tmux and xterm are asked for modifyOtherKeys", async () => {
 	for (const name of ["tmux 3.6b", "XTerm(390)"]) {
 		const {dom, terminal, output} = await attach([
