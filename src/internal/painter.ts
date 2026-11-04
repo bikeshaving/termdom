@@ -81,6 +81,8 @@ import {
 	isStackingContext,
 	type Layout,
 	paintExtent,
+	type PreparedFragment,
+	prepareTextFragments,
 	renderTextFragment,
 	scrolledAncestorRows,
 	snapToClusters,
@@ -2632,14 +2634,20 @@ function renderTextHighlights(
 	const layers: HighlightLayer[] = [];
 	const parent = flatParentElement(textNode);
 	const runs = painter.highlightedText.get(textNode);
+	let prepared: PreparedFragment[] | null = null;
+	const snap = (from: number, to: number) =>
+		snapToClusters(
+			painter.layout,
+			textNode,
+			from,
+			to,
+			prepared ??= prepareTextFragments(painter.layout, textNode),
+		);
 	if (parent !== null && runs !== undefined) {
 		for (const run of runs) {
 			const paint = getHighlightStyle(painter, parent, run.name);
 			if (paint !== null) {
-				layers.push({
-					...snapToClusters(painter.layout, textNode, run.from, run.to),
-					paint,
-				});
+				layers.push({...snap(run.from, run.to), paint});
 			}
 		}
 	}
@@ -2647,10 +2655,7 @@ function renderTextHighlights(
 	if (selected !== null) {
 		const paint = readSelectionStyle(selected.selectionParent);
 		if (paint !== null) {
-			layers.push({
-				...snapToClusters(painter.layout, textNode, selected.from, selected.to),
-				paint,
-			});
+			layers.push({...snap(selected.from, selected.to), paint});
 		}
 	}
 	if (layers.length === 0) {
@@ -2666,7 +2671,9 @@ function renderTextHighlights(
 		if (style === textStyle) {
 			continue;
 		}
-		for (const run of painter.layout.getTextSpans(textNode, from, to)) {
+		for (
+			const run of painter.layout.getTextSpans(textNode, from, to, prepared!)
+		) {
 			drawText(
 				ctx,
 				applyTextTransform(run.text, textTransform),

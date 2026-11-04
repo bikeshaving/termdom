@@ -6932,8 +6932,11 @@ export class Layout {
 		textNode: Text,
 		from: number,
 		to: number,
+		prepared?: PreparedFragment[],
 	): Array<{rect: DOMRect; text: string}> {
-		return to > from ? getSelectionSpans(this, textNode, from, to) : [];
+		return to > from
+			? getSelectionSpans(this, textNode, from, to, prepared)
+			: [];
 	}
 
 	// The text a text node's boxes show, in logical order, as innerText
@@ -8077,16 +8080,11 @@ export function snapToClusters(
 	textNode: Text,
 	from: number,
 	to: number,
+	prepared = prepareTextFragments(layout, textNode),
 ): {from: number; to: number} {
 	let start = from;
 	let end = to;
-	const whiteSpace = getWhiteSpace(textNode);
-	for (const fragment of layout.lineFragments(textNode)) {
-		const {text, offsets} = renderWhiteSpaceOffsets(
-			textNode.data.slice(fragment.startOffset, fragment.endOffset),
-			whiteSpace,
-		);
-		const clusterStarts = getClusterStarts(text);
+	for (const {fragment, text, offsets, clusters: clusterStarts} of prepared) {
 		for (let i = 0; i < text.length; i++) {
 			const dataOffset = fragment.startOffset + getDataOffset(offsets, i);
 			if (dataOffset < from || dataOffset >= to) {
@@ -9123,34 +9121,78 @@ function getOffsetInFragment(
 
 // The cluster boundaries of a string: where the cluster holding an
 // index starts, and where the first cluster at or after an index starts.
-function getClusterStarts(text: string): {
+interface ClusterStarts {
 	at(index: number): number;
 	after(index: number): number;
-} {
+}
+
+function getClusterStarts(text: string): ClusterStarts {
 	const starts: number[] = [];
 	for (const {index} of graphemeSegmenter.segment(text)) {
 		starts.push(index);
 	}
+	// The first start past an index.
+	const past = (index: number): number => {
+		let low = 0;
+		let high = starts.length;
+		while (low < high) {
+			const middle = (low + high) >> 1;
+			if (starts[middle] > index) {
+				high = middle;
+			} else {
+				low = middle + 1;
+			}
+		}
+		return low;
+	};
 	return {
 		at(index) {
-			let start = 0;
-			for (const candidate of starts) {
-				if (candidate > index) {
-					break;
-				}
-				start = candidate;
-			}
-			return start;
+			const found = past(index);
+			return found === 0 ? 0 : starts[found - 1];
 		},
 		after(index) {
-			for (const candidate of starts) {
-				if (candidate >= index) {
-					return candidate;
-				}
-			}
-			return text.length;
+			const found = past(index - 1);
+			return found < starts.length ? starts[found] : text.length;
 		},
 	};
+}
+
+// A text node's line fragments with their white space processed, once
+// for each run of the node a frame paints over it. `shown` has its
+// preserved tabs expanded to the spaces the cells hold.
+export interface PreparedFragment {
+	fragment: LineFragment;
+	text: string;
+	offsets: Int32Array | null;
+	clusters: ClusterStarts;
+	shown: {text: string; offsets: Int32Array | null; clusters: ClusterStarts};
+}
+
+export function prepareTextFragments(
+	layout: Layout,
+	textNode: Text,
+): PreparedFragment[] {
+	const whiteSpace = getWhiteSpace(textNode);
+	const expandsTabs = isSpacePreserving(whiteSpace);
+	return layout.lineFragments(textNode).map((fragment) => {
+		// A collapsing run makes column and offset diverge.
+		const {text, offsets} = renderWhiteSpaceOffsets(
+			textNode.data.slice(fragment.startOffset, fragment.endOffset),
+			whiteSpace,
+		);
+		const clusters = getClusterStarts(text);
+		let shown = {text, offsets, clusters};
+		if (expandsTabs && text.includes("\t")) {
+			const expanded = expandTabRun(
+				text,
+				offsets,
+				getTextTabSize(textNode),
+				fragment.column,
+			);
+			shown = {...expanded, clusters: getClusterStarts(expanded.text)};
+		}
+		return {fragment, text, offsets, clusters, shown};
+	});
 }
 
 // The text is included because the only way to restyle a cell is to
@@ -9160,27 +9202,14 @@ function getSelectionSpans(
 	textNode: Text,
 	from: number,
 	to: number,
+	prepared = prepareTextFragments(layout, textNode),
 ): Array<{rect: DOMRect; text: string}> {
 	const runs: Array<{rect: DOMRect; text: string}> = [];
-	const whiteSpace = getWhiteSpace(textNode);
-	for (const fragment of layout.lineFragments(textNode)) {
-		// A collapsing run makes column and offset diverge.
-		let {text, offsets} = renderWhiteSpaceOffsets(
-			textNode.data.slice(fragment.startOffset, fragment.endOffset),
-			whiteSpace,
-		);
-		if (text.includes("\t") && isSpacePreserving(whiteSpace)) {
-			({text, offsets} = expandTabRun(
-				text,
-				offsets,
-				getTextTabSize(textNode),
-				fragment.column,
-			));
-		}
+	for (const {fragment, shown} of prepared) {
+		const {text, offsets, clusters: clusterStarts} = shown;
 		// A cell holds a whole cluster, so a run that starts or ends inside
 		// one takes the cluster whole. Measured off a cluster boundary, a run
 		// landed inside the span of the glyph before it.
-		const clusterStarts = getClusterStarts(text);
 		let runStart = -1;
 		for (let i = 0; i <= text.length; i++) {
 			const dataOffset = i < text.length
