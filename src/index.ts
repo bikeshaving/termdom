@@ -71,6 +71,7 @@ import {
 	negotiateColorScheme,
 	negotiateGraphemeClusters,
 	negotiateKeyboard,
+	negotiateKittyGraphics,
 	negotiateOverline,
 	queryCellPixels,
 	queryDeviceAttributes,
@@ -94,6 +95,7 @@ import {
 	beginFrame,
 	endFrame,
 	Framebuffer,
+	invalidate,
 	rebind,
 	repaintAll,
 	scrollTo,
@@ -104,6 +106,11 @@ import {
 	setDecodeWorkerURL,
 } from "./internal/images.ts";
 import {Input, resolvePendingHover} from "./internal/input.ts";
+import {
+	forgetKittyImages,
+	KittyImages,
+	takeKittyOutput,
+} from "./internal/kitty.ts";
 import {
 	checkLayoutFromScratch,
 	framePainted,
@@ -296,14 +303,19 @@ export interface TermDOMOptions {
 	/**
 	 * How an <img> draws.
 	 *
-	 * - `"auto"` (the default): in the best way the terminal has. Today
-	 *   that is cells: two pixels to a cell in half blocks, which every
-	 *   terminal shows.
-	 * - `"cells"`: in cells, whatever else the terminal could do.
+	 * - `"auto"` (the default): in the best way the terminal has. That is
+	 *   the kitty graphics protocol in kitty and Ghostty, which say so
+	 *   when asked, and cells everywhere else.
+	 * - `"cells"`: in cells, two pixels to a cell in half blocks, which
+	 *   every terminal shows.
+	 * - `"kitty"`: in the kitty graphics protocol's Unicode placeholders,
+	 *   without asking the terminal. The page must be drawn in 24-bit
+	 *   color; in fewer colors, and in a box more than 297 cells across
+	 *   or down, images draw in cells.
 	 * - `"none"`: not at all. An <img> loads nothing and shows its alt
 	 *   text, as HTML renders one when images are disabled.
 	 */
-	images?: "auto" | "cells" | "none";
+	images?: "auto" | "cells" | "kitty" | "none";
 
 	/**
 	 * How a canvas's "2d" context draws, with the same values as `images`.
@@ -311,7 +323,7 @@ export interface TermDOMOptions {
 	 * its fallback content. The "termdom-cellgrid" context, which draws
 	 * glyphs rather than pixels, works either way.
 	 */
-	canvas?: "auto" | "cells" | "none";
+	canvas?: "auto" | "cells" | "kitty" | "none";
 
 	/**
 	 * Whether `<embed type="application/x-pty" src="htop">` runs its
@@ -415,13 +427,28 @@ function toGraphicsSetting(
 	name: "images" | "canvas",
 	option: TermDOMOptions["images"],
 ): GraphicsSetting {
-	if (option === undefined || option === "auto" || option === "cells") {
+	if (
+		option === undefined ||
+		option === "auto" ||
+		option === "cells" ||
+		option === "kitty"
+	) {
 		return "cells";
 	}
 	if (option === "none") {
 		return "none";
 	}
-	throw new TypeError(`${name} must be "auto", "cells" or "none"`);
+	throw new TypeError(`${name} must be "auto", "cells", "kitty" or "none"`);
+}
+
+// Whether pixels go out in the kitty graphics protocol: "kitty" as asked,
+// "auto" once the terminal says it draws it, "cells" never.
+function toGraphicsProtocol(
+	option: TermDOMOptions["images"],
+): "auto" | "cells" | "kitty" {
+	return option === undefined || option === "auto"
+		? "auto"
+		: option === "kitty" ? "kitty" : "cells";
 }
 
 function toScripting(option: TermDOMOptions["scripting"]): boolean {
@@ -604,6 +631,11 @@ interface TermDOMSlots extends EventTargetSlots {
 	transport: TerminalTransport;
 	// The colorDepth option, or undefined when the terminal is to be asked.
 	colorDepth: EmittedColorDepth | undefined;
+	// How the images and canvas options send pixels.
+	graphicsProtocols: {
+		images: "auto" | "cells" | "kitty";
+		canvas: "auto" | "cells" | "kitty";
+	};
 	exchange: Exchange;
 	// Resolves once the session is established and the first frame written.
 	attachReady: Promise<void>;
@@ -652,6 +684,10 @@ export class TermDOM extends EventTarget {
 		const pty = toPTYSpawner(options.ptyEmbeds);
 		const slots = _(this);
 		slots.colorDepth = toColorDepth(options.colorDepth);
+		slots.graphicsProtocols = {
+			images: toGraphicsProtocol(options.images),
+			canvas: toGraphicsProtocol(options.canvas),
+		};
 		const url = toDocumentURL(options.url);
 		slots.sealed = false;
 
@@ -728,6 +764,7 @@ export class TermDOM extends EventTarget {
 
 		// The framebuffer measures widths over the exchange's probe channel.
 		slots.framebuffer.measurer = exchange;
+		enableKittyGraphics(this, "kitty");
 
 		attachDocument(document, {
 			layout: slots.layout,
@@ -1042,6 +1079,7 @@ export class TermDOM extends EventTarget {
 				holdError(this, error);
 			}
 		}
+		forgetGraphics(this);
 
 		// Leaving the alternate screen puts the cursor where the switch saved
 		// it, on the flow content's bottom row. Step below it, or the shell's
@@ -1128,6 +1166,7 @@ function listenToExchange(term: TermDOM, exchange: Exchange): void {
 			event.target === exchange && isAttached(term) && slots.renderCount > 0
 		) {
 			flushDocument(term);
+			forgetGraphics(term);
 			slots.sealed = true;
 		}
 	});
@@ -1186,6 +1225,19 @@ function startSession(term: TermDOM): void {
 		abandonColorSchemeQuery(slots.exchange);
 		abandonColorDepthQuery(slots.exchange);
 	});
+	// Whether images draw in pixels, which the first frame waits for
+	// so it does not draw them in cells first.
+	const graphicsSettled =
+		slots.graphicsProtocols.images === "auto" ||
+			slots.graphicsProtocols.canvas === "auto"
+			? negotiateKittyGraphics(slots.exchange).then((drawn) => {
+				if (drawn && isAttached(term)) {
+					enableKittyGraphics(term, "auto");
+					invalidate(slots.framebuffer);
+					void render(term);
+				}
+			})
+			: Promise.resolve();
 	void negotiateBidi(slots.exchange);
 	void negotiateGraphemeClusters(slots.exchange);
 	void negotiateKeyboard(slots.exchange);
@@ -1220,6 +1272,7 @@ function startSession(term: TermDOM): void {
 	slots.firstFrame = Promise.all([
 		schemeSettled,
 		depthSettled,
+		graphicsSettled,
 		...(measuresCell ? [cellAnswered] : []),
 	]).then(() => {});
 	// A font zoom resizes the grid, and the cell with it, so the cell
@@ -1272,6 +1325,7 @@ async function suspendTermDOM(termDOM: TermDOM): Promise<void> {
 		flushDocument(termDOM);
 		termDOMSlots.sealed = true;
 	}
+	forgetGraphics(termDOM);
 	releaseModes(termDOMSlots.exchange);
 	await flushExchange(termDOMSlots.exchange);
 	await suspend.call(termDOMSlots.transport);
@@ -1853,6 +1907,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	const wantAlt = isFullscreen(termDOM);
 	if (wantAlt !== termDOMSlots.onAlternateScreen) {
 		termDOMSlots.onAlternateScreen = wantAlt;
+		forgetGraphics(termDOM);
 		setDisplayType(termDOMSlots.exchange, "altScreen", wantAlt);
 		if (wantAlt) {
 			setDisplayType(termDOMSlots.exchange, "cursorHidden", true);
@@ -1979,6 +2034,18 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	}
 	const ansi = endFrame(termDOMSlots.framebuffer);
 	framePainted(termDOMSlots.layout);
+	// The images the frame's cells name go first, so the terminal has
+	// them when it draws the cells.
+	const graphics = termDOMSlots.framebuffer.graphics;
+	if (graphics !== null) {
+		const images = await takeKittyOutput(
+			graphics,
+			termDOMSlots.framebuffer.prev,
+		);
+		if (images) {
+			await termDOMSlots.exchange.write(images);
+		}
+	}
 
 	// The cursor stays hidden while a frame paints and between frames. It
 	// is parked for resize bookkeeping, and a cursor blinking there is not
@@ -2006,6 +2073,37 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		);
 	}
 	afterRender(termDOM);
+}
+
+// Frees the images the terminal holds, before the screen they are on
+// goes or is handed back.
+function forgetGraphics(termDOM: TermDOM): void {
+	const slots = _(termDOM);
+	const graphics = slots.framebuffer.graphics;
+	if (graphics !== null && slots.transport.interactive) {
+		const deletes = forgetKittyImages(graphics);
+		if (deletes) {
+			void slots.exchange.write(deletes);
+		}
+	}
+}
+
+// The images and the canvas whose option is `protocol` send their pixels
+// in the kitty graphics protocol from the next frame.
+function enableKittyGraphics(
+	termDOM: TermDOM,
+	protocol: "auto" | "kitty",
+): void {
+	const slots = _(termDOM);
+	const {images, canvas} = slots.graphicsProtocols;
+	if (images !== protocol && canvas !== protocol) {
+		return;
+	}
+	const framebuffer = slots.framebuffer;
+	const graphics =
+		framebuffer.graphics ??= new KittyImages(() => framebuffer.cellPixels);
+	graphics.images ||= images === protocol;
+	graphics.canvas ||= canvas === protocol;
 }
 
 function renderStaticHTML(

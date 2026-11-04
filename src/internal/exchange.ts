@@ -309,6 +309,7 @@ type WireItem =
 	{kind: "secondary-attributes"; params: string} |
 	{kind: "background"; red: number; green: number; blue: number} |
 	{kind: "device-attributes"} |
+	{kind: "kitty-graphics"; ok: boolean} |
 	{kind: "keyboard-flags"; flags: number} |
 	{kind: "terminal-version"; name: string};
 
@@ -599,6 +600,17 @@ const RGB_STYLE =
 // other terminal sends it.
 const TMUX_ATTRIBUTES = /^84;/;
 
+// The kitty graphics protocol's query: a one-pixel image the terminal
+// checks and does not keep. One that speaks the protocol answers APC G
+// with the id, then OK or an error.
+const KITTY_GRAPHICS_QUERY =
+	"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\";
+const KITTY_GRAPHICS_REPORT = /^\x1b_G[^;\x1b]*;([^\x1b]*)\x1b\\/;
+
+// The terminals whose XTVERSION names one that draws the protocol's
+// Unicode placeholders.
+const PLACEHOLDER_TERMINALS = /^(?:kitty|ghostty)\b/i;
+
 /**
  * Decodes one chunk into what it meant. Keeps what a chunk boundary can
  * cut: a split escape (never a bare trailing ESC, which may be the
@@ -707,6 +719,13 @@ class WireReader implements ParserHandlers {
 				items.push(decodeKeyToken("\x1b"));
 			}
 			return i + 1;
+		}
+		if (next === "_") {
+			const graphics = KITTY_GRAPHICS_REPORT.exec(data.slice(i));
+			if (graphics !== null) {
+				items.push({kind: "kitty-graphics", ok: graphics[1] === "OK"});
+				return i + graphics[0].length;
+			}
 		}
 		if (next === "[" || STRING_OPENERS.includes(next)) {
 			this.item = null;
@@ -856,7 +875,7 @@ function isHeldString(opened: string, replyDue: boolean): boolean {
 	}
 	const inner = opened.indexOf("\x1b", 2);
 	if (replyDue) {
-		return (opened[1] === "]" || opened[1] === "P") &&
+		return (opened[1] === "]" || opened[1] === "P" || opened[1] === "_") &&
 			(inner === -1 || inner === opened.length - 1);
 	}
 	return inner === -1 && (
@@ -1667,6 +1686,42 @@ export async function negotiateColorScheme(
 			},
 		},
 	);
+}
+
+/**
+ * Whether the terminal draws kitty graphics through Unicode
+ * placeholders. It answers the protocol's query, and names itself in
+ * XTVERSION as one of the terminals known to draw placeholders: others
+ * that answer the query, such as WezTerm and Konsole, place images only
+ * at the cursor. A DA1 asked behind both ends the wait on a terminal
+ * that answers neither.
+ */
+export async function negotiateKittyGraphics(
+	exchange: Exchange,
+): Promise<boolean> {
+	if (!_(exchange).interactive) {
+		return false;
+	}
+	let answered!: () => void;
+	const until = new Promise<void>((resolve) => (answered = resolve));
+	const [ok, name] = await Promise.all([
+		nextReply<"kitty-graphics", boolean>(exchange, "kitty-graphics", {
+			ask: KITTY_GRAPHICS_QUERY,
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: false,
+			until,
+			read: (item) => item.ok,
+		}),
+		nextReply<"terminal-version", string>(exchange, "terminal-version", {
+			ask: VERSION_QUERY,
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: "",
+			until,
+			read: (item) => item.name,
+		}),
+		queryDeviceAttributes(exchange).then(answered),
+	]);
+	return ok && PLACEHOLDER_TERMINALS.test(name);
 }
 
 /**
