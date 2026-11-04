@@ -22,6 +22,7 @@ import {
 	wrappedRowsAbovePark,
 } from "./framebuffer.ts";
 import {dispatchInput, type Input} from "./input.ts";
+import {wrapForTmux} from "./kitty.ts";
 import {
 	adoptTerminalReordering,
 	invalidateTextMeasurement,
@@ -1701,38 +1702,70 @@ export async function negotiateColorScheme(
 
 /**
  * Whether the terminal draws kitty graphics through Unicode
- * placeholders. It answers the protocol's query, and names itself in
- * XTVERSION as one of the terminals known to draw placeholders: others
- * that answer the query, such as WezTerm and Konsole, place images only
- * at the cursor. A DA1 asked behind both ends the wait on a terminal
- * that answers neither.
+ * placeholders, and whether through tmux. It answers the protocol's
+ * query, and names itself in XTVERSION as one of the terminals known to
+ * draw placeholders: others that answer the query, such as WezTerm and
+ * Konsole, place images only at the cursor. tmux answers for itself, so
+ * the terminal it runs in is asked again through it.
  */
 export async function negotiateKittyGraphics(
 	exchange: Exchange,
-): Promise<boolean> {
+): Promise<"direct" | "tmux" | null> {
 	if (!_(exchange).interactive) {
-		return false;
+		return null;
 	}
+	const direct = await askKittyGraphics(exchange, (escape) => escape, () =>
+		queryDeviceAttributes(exchange),
+	);
+	if (direct.ok && PLACEHOLDER_TERMINALS.test(direct.name)) {
+		return "direct";
+	}
+	if (!/^tmux\b/.test(direct.name) || _(exchange).disposed) {
+		return null;
+	}
+	const inner = await askKittyGraphics(exchange, wrapForTmux, () =>
+		nextReply<"secondary-attributes", boolean>(
+			exchange,
+			"secondary-attributes",
+			{
+				ask: wrapForTmux(SECONDARY_ATTRIBUTES_QUERY),
+				timeoutMs: QUERY_TIMEOUT_MS,
+				absent: false,
+				read: () => true,
+			},
+		).then(() => {}));
+	return inner.ok && PLACEHOLDER_TERMINALS.test(inner.name) ? "tmux" : null;
+}
+
+// The graphics query and XTVERSION, each as `wrap` sends it, and then
+// `behind`, a question whose answer ends the wait on a terminal that
+// answers neither. Through tmux that is a DA2: tmux answers a DA1 at
+// once, ahead of what comes back from the terminal it runs in.
+async function askKittyGraphics(
+	exchange: Exchange,
+	wrap: (escape: string) => string,
+	behind: () => Promise<void>,
+): Promise<{ok: boolean; name: string}> {
 	let answered!: () => void;
 	const until = new Promise<void>((resolve) => (answered = resolve));
 	const [ok, name] = await Promise.all([
 		nextReply<"kitty-graphics", boolean>(exchange, "kitty-graphics", {
-			ask: KITTY_GRAPHICS_QUERY,
+			ask: wrap(KITTY_GRAPHICS_QUERY),
 			timeoutMs: QUERY_TIMEOUT_MS,
 			absent: false,
 			until,
 			read: (item) => item.ok,
 		}),
 		nextReply<"terminal-version", string>(exchange, "terminal-version", {
-			ask: VERSION_QUERY,
+			ask: wrap(VERSION_QUERY),
 			timeoutMs: QUERY_TIMEOUT_MS,
 			absent: "",
 			until,
 			read: (item) => item.name,
 		}),
-		queryDeviceAttributes(exchange).then(answered),
+		behind().then(answered),
 	]);
-	return ok && PLACEHOLDER_TERMINALS.test(name);
+	return {ok, name};
 }
 
 /**

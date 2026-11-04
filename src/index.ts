@@ -1230,9 +1230,10 @@ function startSession(term: TermDOM): void {
 	const graphicsSettled =
 		slots.graphicsProtocols.images === "auto" ||
 			slots.graphicsProtocols.canvas === "auto"
-			? negotiateKittyGraphics(slots.exchange).then((drawn) => {
-				if (drawn && isAttached(term)) {
+			? negotiateKittyGraphics(slots.exchange).then((route) => {
+				if (route !== null && isAttached(term)) {
 					enableKittyGraphics(term, "auto");
+					slots.framebuffer.graphics!.passthrough = route === "tmux";
 					invalidate(slots.framebuffer);
 					void render(term);
 				}

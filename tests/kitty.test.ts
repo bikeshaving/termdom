@@ -369,6 +369,34 @@ test("a query answer split across reads is no keystrokes", async () => {
 	}
 });
 
+test("\"auto\" in tmux asks the terminal it runs in, through it", async () => {
+	const wrap = (escape: string) =>
+		`\x1bPtmux;${escape.replaceAll("\x1b", "\x1b\x1b")}\x1b\\`;
+	const {dom, terminal, output} = await mount(`<img src="${BANDS}">`, {
+		images: "auto",
+		replies: [
+			{ask: wrap(KITTY_QUERY), reply: KITTY_OK},
+			{ask: wrap(VERSION_QUERY), reply: "\x1bP>|ghostty 1.4.0\x1b\\"},
+			{ask: wrap("\x1b[>c"), reply: "\x1b[>1;10;0c"},
+			{ask: VERSION_QUERY, reply: "\x1bP>|tmux 3.6b\x1b\\"},
+		],
+	});
+	await loaded(dom);
+	const text = output();
+	expect(readUploads(text)).toEqual([]);
+	const wrapped = text.match(/\x1bPtmux;\x1b\x1b_G[^\x1b]*\x1b\x1b\\\x1b\\/g)!;
+	expect(wrapped.length).toBeGreaterThan(0);
+	const inner = wrapped
+		.map((escape) => escape.slice(7, -2).replaceAll("\x1b\x1b", "\x1b"))
+		.join("");
+	const [upload] = readUploads(inner);
+	expect(cell(terminal, 0, 0)).toEqual({
+		char: getPlaceholder(0, 0),
+		fg: Number(upload.control.i),
+	});
+	dom.dispose();
+});
+
 test("\"auto\" draws in cells where the terminal does not answer", async () => {
 	const {dom, terminal, output} =
 		await mount(`<img src="${BANDS}">`, {images: "auto"});

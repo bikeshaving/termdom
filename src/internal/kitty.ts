@@ -160,6 +160,8 @@ export class KittyImages {
 	canvas: boolean;
 	// The terminal's cell in its pixels, read when an image is drawn.
 	cellPixels: () => {width: number; height: number};
+	// Whether the escapes go through tmux to the terminal it runs in.
+	passthrough: boolean;
 	byKey: Map<string, KittyImage>;
 	byId: Map<number, KittyImage>;
 	nextId: number;
@@ -169,6 +171,7 @@ export class KittyImages {
 		this.images = false;
 		this.canvas = false;
 		this.cellPixels = cellPixels;
+		this.passthrough = false;
 		this.byKey = new Map();
 		this.byId = new Map();
 		this.nextId = 1;
@@ -249,6 +252,20 @@ export async function takeKittyOutput(
 		// Upper-case I frees the pixels with the placements.
 		out += `\x1b_Ga=d,d=I,i=${image.id},q=2\x1b\\`;
 	}
+	return images.passthrough ? wrapForTmux(out) : out;
+}
+
+/**
+ * `escapes` as tmux passes them on to the terminal it runs in: each one
+ * in a DCS of its own, with the ESCs inside doubled.
+ */
+export function wrapForTmux(escapes: string): string {
+	let out = "";
+	for (const escape of escapes.split(/(?<=\x1b\\)/)) {
+		if (escape) {
+			out += `\x1bPtmux;${escape.replaceAll("\x1b", "\x1b\x1b")}\x1b\\`;
+		}
+	}
 	return out;
 }
 
@@ -264,7 +281,7 @@ export function forgetKittyImages(images: KittyImages): string {
 	}
 	images.byKey.clear();
 	images.byId.clear();
-	return out;
+	return images.passthrough ? wrapForTmux(out) : out;
 }
 
 // Transmit and place virtually, at once: zlib-compressed RGBA in base64,
