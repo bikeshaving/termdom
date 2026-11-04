@@ -4735,7 +4735,10 @@ function getPassedValues(
 		}
 	}
 	const slots = computedSlotsFor(cascade, element);
-	if (!isShareable(element)) {
+	// The top of a shadow tree takes a token of its own, so the tables
+	// under it go with the tree's and not with the host's.
+	const scope = element.parentNode;
+	if (!isShareable(element) || (scope !== null && isShadowRoot(scope))) {
 		token = {id: ++nextPassedId};
 	} else {
 		const names = getDeclaredInheritedNames(slots);
@@ -7147,7 +7150,8 @@ export class Cascade {
 	// again.
 	sharedRoot: Map<string, Map<string, string>>;
 	// The tokens of the values parents pass down, by what those values are,
-	// emptied with the root so the tables under them go too.
+	// emptied with the root, and when a shadow tree's sheets change, so the
+	// tables under them go too.
 	passedTokens: Map<string, PassedToken>;
 	// The ancestor filter each element's children share, by the element,
 	// dropped with every mutation.
@@ -8239,6 +8243,10 @@ function syncShadowRoot(cascade: Cascade, root: ShadowRoot): void {
 		return;
 	}
 	dropScopedRules(cascade, root);
+	// The shared tables' keys hold the ids of the rules dropped above, and
+	// tables a token reaches outlive the elements that filled them.
+	treeTables.delete(root);
+	cascade.passedTokens = new Map();
 	cascade.summary.siblingRuleIndexes.delete(root);
 	cascade.summary.scopeRules.delete(root);
 	cascade.hasAnswers = new WeakMap();
