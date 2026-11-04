@@ -368,3 +368,33 @@ async function showImages(dom: TermDOM, round: number): Promise<void> {
 		expect(grown).toBeLessThan(MB);
 	},
 );
+
+// A range nothing holds can never be read, so the document drops it as a
+// browser does, and the mutations after it do not walk it.
+(collect === null ? test.skip : test)(
+	"ranges dropped by the page are collected",
+	async () => {
+		const dom = create();
+		const {document} = dom;
+		document.body.innerHTML = "<p>some text</p>";
+		const text = document.querySelector("p")!.firstChild!;
+		const makeRanges = () => {
+			for (let i = 0; i < 20_000; i++) {
+				const range = document.createRange();
+				range.setStart(text, 1);
+				range.setEnd(text, 4);
+			}
+		};
+		makeRanges();
+		const before = await heldHeap();
+		for (let round = 0; round < 5; round++) {
+			makeRanges();
+		}
+		await settle();
+		// The next mutation of the tree lets go of the collected ones.
+		document.body.prepend(document.createElement("i"));
+		const grown = (await heldHeap()) - before;
+		expect(grown).toBeLessThan(4 * 1024 * 1024);
+		dom.dispose();
+	},
+);
