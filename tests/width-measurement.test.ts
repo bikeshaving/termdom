@@ -540,6 +540,32 @@ test("Escape pressed while a reply is due still arrives", async () => {
 	dom.dispose();
 });
 
+test("Escape and a key in the next read, while a reply is due, are two keys", async () => {
+	const cluster = "\u{1F335}"; // 🌵
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const stdin =
+		terminal.stdin as unknown as {simulateResponse: (data: string) => void};
+	scriptTerminal(terminal, () => null);
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = `<div>${cluster}</div>`;
+
+	await nextFrame(dom);
+	const keys: string[] = [];
+	dom.document.addEventListener("keydown", (event) => {
+		const {altKey, ctrlKey, key} = event as KeyboardEvent;
+		keys.push(`${altKey ? "Alt+" : ""}${ctrlKey ? "Ctrl+" : ""}${key}`);
+	});
+	// The ESC waits in case it begins the reply. Ctrl+N cannot continue
+	// one, so the ESC was Escape.
+	stdin.simulateResponse("\x1b");
+	stdin.simulateResponse("\x0e");
+	await settle(100);
+
+	expect(keys).toEqual(["Escape", "Ctrl+n"]);
+
+	dom.dispose();
+});
+
 test("replies interleaved with typing reach the right side of the demux", async () => {
 	const cluster = "\u{1F327}️"; // 🌧️
 	const terminal = new MockProcess({cols: 20, rows: 6});

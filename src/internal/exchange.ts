@@ -653,9 +653,20 @@ class WireReader implements ParserHandlers {
 	 * it waits for the next chunk or for release().
 	 */
 	feed(chunk: string, holdEscape = false): WireItem[] {
-		const data = this.tail + chunk;
-		this.tail = "";
 		const items: WireItem[] = [];
+		let data = this.tail + chunk;
+		// A held ESC that the next read does not continue as a reply or a
+		// key sequence was the Escape key, pressed in a read of its own.
+		if (
+			this.pasteBody === null &&
+			this.tail === "\x1b" &&
+			chunk !== "" &&
+			!("[O" + STRING_OPENERS).includes(chunk[0])
+		) {
+			items.push(decodeKeyToken("\x1b"));
+			data = chunk;
+		}
+		this.tail = "";
 		let i = 0;
 		while (i < data.length) {
 			// Inside a paste only the end fence means anything.
