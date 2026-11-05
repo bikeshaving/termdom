@@ -9279,6 +9279,25 @@ function getSelectionSpans(
 	prepared = prepareTextFragments(layout, textNode),
 ): Array<{rect: DOMRect; text: string}> {
 	const runs: Array<{rect: DOMRect; text: string}> = [];
+	forEachSelectionSpan(from, to, prepared, (text, x, y, width, height) => {
+		runs.push({rect: new layout.domRect(x, y, width, height), text});
+	});
+	return runs;
+}
+
+// getSelectionSpans for a painter, which draws each run as it is found.
+export function forEachSelectionSpan(
+	from: number,
+	to: number,
+	prepared: PreparedFragment[],
+	visit: (
+		text: string,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+	) => void,
+): void {
 	for (const {fragment, shown} of prepared) {
 		if (fragment.endOffset <= from || fragment.startOffset >= to) {
 			continue;
@@ -9299,25 +9318,20 @@ function getSelectionSpans(
 				i = clusterStarts.after(i);
 				const x =
 					Math.round(fragment.rect.x) + getStringWidth(text.slice(0, runStart));
-				const width = getStringWidth(text.slice(runStart, i));
-				runs.push({
-					rect: new layout.domRect(
-						x,
-						Math.round(fragment.rect.y),
-						width,
-						fragment.rect.height,
-					),
+				const run = text.slice(runStart, i);
+				visit(
 					// Painted order. A selected run of a bidirectional line
 					// reverses just as the line it sits on did.
-					text: fragment.visualBase
-						? toVisualOrder(text.slice(runStart, i), fragment.visualBase)
-						: text.slice(runStart, i),
-				});
+					fragment.visualBase ? toVisualOrder(run, fragment.visualBase) : run,
+					x,
+					Math.round(fragment.rect.y),
+					getStringWidth(run),
+					fragment.rect.height,
+				);
 				runStart = -1;
 			}
 		}
 	}
-	return runs;
 }
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an

@@ -67,6 +67,7 @@ import {
 	type BreakResult,
 	collectStackingLayers,
 	type Display,
+	forEachSelectionSpan,
 	fullWidthFixedRows,
 	getExtentFrame,
 	getLayoutNode,
@@ -2763,16 +2764,8 @@ function renderTextHighlights(
 		if (style === textStyle) {
 			continue;
 		}
-		for (
-			const run of painter.layout.getTextSpans(textNode, from, to, prepared!)
-		) {
-			drawText(
-				ctx,
-				applyTextTransform(run.text, textTransform),
-				run.rect.x,
-				run.rect.y,
-				style,
-			);
-		}
+		forEachSelectionSpan(from, to, prepared!, (text, x, y) => {
+			drawText(ctx, applyTextTransform(text, textTransform), x, y, style);
+		});
 	}
 }
