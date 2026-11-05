@@ -10546,7 +10546,9 @@ function invalidateChildren(
 ): void {
 	invalidateSibling(cascade, element);
 	const index = getSiblingRuleIndex(cascade, element);
-	let child = element.firstElementChild;
+	let child = from === null || index !== undefined
+		? element.firstElementChild
+		: from ?? null;
 	if (from !== null && index !== undefined) {
 		const fromEnd = index.fromEnd;
 		const counts =
