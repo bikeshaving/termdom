@@ -7,6 +7,8 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {pseudoElementCount} from "../src/internal/dom.ts";
+import {invalidate, repaintAll} from "../src/internal/framebuffer.ts";
+import {_} from "../src/internal/slots.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 function highlightDOM(options: {rows?: number; cols?: number} = {}): {
@@ -715,6 +717,224 @@ test("a non-empty highlight refuses the scroll transform", async () => {
 	document.getElementById("pane")!.scrollTop = 4;
 	await nextFrame(dom);
 	expect(rawAgain()).not.toMatch(band);
+
+	dom.dispose();
+});
+
+/**
+ * Runs a change after two frames, and answers the rows the frame after it
+ * painted, or null for a frame painted whole. The screen it leaves has to
+ * match the one a whole repaint then paints.
+ */
+async function paintedRows(
+	dom: TermDOM,
+	terminal: MockProcess,
+	change: () => void,
+): Promise<number[] | null> {
+	await nextFrame(dom);
+	await nextFrame(dom);
+	const framebuffer = (_(dom as any) as any).framebuffer;
+	framebuffer.unchangedRows = null;
+	change();
+	await nextFrame(dom);
+	const unchanged: Uint8Array | null = framebuffer.unchangedRows;
+	framebuffer.unchangedRows = null;
+	const yellow = () =>
+		Array.from(
+			{length: framebuffer.rows},
+			(_, row) => yellowCells(terminal, row),
+		);
+	const shown = terminal.getScreenContents();
+	const colored = yellow();
+	repaintAll(framebuffer);
+	invalidate(framebuffer);
+	await nextFrame(dom);
+	expect(terminal.getScreenContents()).toBe(shown);
+	expect(yellow()).toEqual(colored);
+	if (unchanged === null) {
+		return null;
+	}
+	const rows: number[] = [];
+	unchanged.forEach((flag, row) => {
+		if (flag === 0) {
+			rows.push(row);
+		}
+	});
+	return rows;
+}
+
+/** Twelve one-line paragraphs, and the text node of each. */
+function linesDOM(): {
+	terminal: MockProcess;
+	dom: TermDOM;
+	window: any;
+	texts: any[];
+} {
+	const {terminal, dom, window} = highlightDOM({rows: 12, cols: 20});
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>body { margin: 0 } p { margin: 0 }" +
+		" ::highlight(hit) { background-color: yellow }</style>";
+	document.body.innerHTML = Array.from(
+		{length: 12},
+		(_, i) => `<p>line ${i}</p>`,
+	).join("");
+	const texts = Array.from(
+		document.querySelectorAll("p"),
+		(p: any) => p.firstChild,
+	);
+	return {terminal, dom, window, texts};
+}
+
+function textRange(window: any, text: any, from: number, to: number): any {
+	return new window.StaticRange({
+		startContainer: text,
+		startOffset: from,
+		endContainer: text,
+		endOffset: to,
+	});
+}
+
+test("adding and deleting a range repaints the rows it covers", async () => {
+	const {terminal, dom, window, texts} = linesDOM();
+	const highlight = new window.Highlight(textRange(window, texts[1], 0, 4));
+	window.CSS.highlights.set("hit", highlight);
+
+	const added = textRange(window, texts[6], 0, 4);
+	expect(await paintedRows(dom, terminal, () => highlight.add(added)))
+		.toEqual([4, 5, 6, 7, 8]);
+	expect(yellowCells(terminal, 6)).toEqual([0, 1, 2, 3]);
+
+	expect(await paintedRows(dom, terminal, () => highlight.delete(added)))
+		.toEqual([4, 5, 6, 7, 8]);
+	expect(yellowCells(terminal, 6)).toEqual([]);
+	expect(yellowCells(terminal, 1)).toEqual([0, 1, 2, 3]);
+
+	dom.dispose();
+});
+
+test("moving a range repaints the rows it left and the rows it reached", async () => {
+	const {terminal, dom, window, texts} = linesDOM();
+	const highlight = new window.Highlight();
+	window.CSS.highlights.set("hit", highlight);
+	let range = textRange(window, texts[2], 0, 4);
+	highlight.add(range);
+
+	expect(
+		await paintedRows(dom, terminal, () => {
+			highlight.delete(range);
+			range = textRange(window, texts[9], 5, 6);
+			highlight.add(range);
+		}),
+	).toEqual([0, 1, 2, 3, 4, 7, 8, 9, 10, 11]);
+	expect(yellowCells(terminal, 2)).toEqual([]);
+	expect(yellowCells(terminal, 9)).toEqual([5]);
+
+	dom.dispose();
+});
+
+test("a range deleted after its text changed repaints that text", async () => {
+	const {terminal, dom, window, texts} = linesDOM();
+	const highlight = new window.Highlight();
+	window.CSS.highlights.set("hit", highlight);
+	const range = textRange(window, texts[5], 2, 6);
+	highlight.add(range);
+	const live = dom.document.createRange();
+	live.setStart(texts[8], 0);
+	live.setEnd(texts[8], 6);
+	highlight.add(live);
+
+	expect(
+		await paintedRows(dom, terminal, () => {
+			texts[5].data = "li";
+			highlight.delete(range);
+			texts[8].data = "x";
+			highlight.delete(live);
+		}),
+	).not.toBeNull();
+	expect(yellowCells(terminal, 5)).toEqual([]);
+	expect(yellowCells(terminal, 8)).toEqual([]);
+
+	dom.dispose();
+});
+
+test("a live range across elements repaints the rows of each", async () => {
+	const {terminal, dom, window, texts} = linesDOM();
+	const highlight = new window.Highlight();
+	window.CSS.highlights.set("hit", highlight);
+	const range = dom.document.createRange();
+	range.setStart(texts[3], 5);
+	range.setEnd(texts[5], 1);
+
+	expect(await paintedRows(dom, terminal, () => highlight.add(range)))
+		.toEqual([1, 2, 3, 4, 5, 6, 7]);
+	expect(yellowCells(terminal, 4)).toEqual([0, 1, 2, 3, 4, 5]);
+
+	dom.dispose();
+});
+
+test("a range in slotted, shadow, scrolled and fixed text repaints its rows", async () => {
+	const {terminal, dom, window} = highlightDOM({rows: 12, cols: 20});
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>body { margin: 0 } p { margin: 0 }" +
+		" ::highlight(hit) { background-color: yellow }</style>";
+	document.body.innerHTML =
+		"<p>top</p><div id=host><span>slotted</span></div>" +
+		"<div id=pane style=\"height: 3em; overflow-y: scroll\">" +
+		Array.from({length: 8}, (_, i) => `<p>row ${i}</p>`).join("") +
+		"</div><div style=\"position: fixed; top: 10em\">fixed</div>";
+	const host = document.getElementById("host")!;
+	const shadow = host.attachShadow({mode: "open"});
+	shadow.innerHTML = "<b>shadow</b> <slot></slot>";
+	document.getElementById("pane")!.scrollTop = 2;
+	const highlight = new window.Highlight();
+	window.CSS.highlights.set("hit", highlight);
+	const nodes: any[] = [
+		host.querySelector("span")!.firstChild,
+		shadow.querySelector("b")!.firstChild,
+		document.querySelectorAll("#pane p")[3].firstChild,
+		document.querySelector("[style*=fixed]")!.firstChild,
+	];
+	for (const node of nodes) {
+		const range = document.createRange();
+		range.setStart(node, 1);
+		range.setEnd(node, 3);
+		expect(await paintedRows(dom, terminal, () => highlight.add(range)))
+			.not.toBeNull();
+		expect(await paintedRows(dom, terminal, () => highlight.delete(range)))
+			.not.toBeNull();
+	}
+
+	dom.dispose();
+});
+
+test("a change whose rows cannot be bounded repaints whole", async () => {
+	const {terminal, dom, window, texts} = linesDOM();
+	const highlight = new window.Highlight();
+	window.CSS.highlights.set("hit", highlight);
+	const across = new window.StaticRange({
+		startContainer: texts[2],
+		startOffset: 0,
+		endContainer: texts[4],
+		endOffset: 2,
+	});
+	expect(await paintedRows(dom, terminal, () => highlight.add(across)))
+		.toBeNull();
+	expect(await paintedRows(dom, terminal, () => highlight.clear()))
+		.toBeNull();
+	highlight.add(textRange(window, texts[7], 0, 2));
+	expect(
+		await paintedRows(dom, terminal, () => {
+			highlight.priority = 2;
+		}),
+	).toBeNull();
+	expect(
+		await paintedRows(dom, terminal, () => {
+			window.CSS.highlights.delete("hit");
+		}),
+	).toBeNull();
+	expect(yellowCells(terminal, 7)).toEqual([]);
 
 	dom.dispose();
 });
