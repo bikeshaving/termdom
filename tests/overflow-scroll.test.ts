@@ -8,6 +8,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {_} from "../src/internal/slots.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 function makeScrollerApp(options?: {
@@ -246,6 +247,101 @@ test("preventDefault on wheel keeps a scroller still", async () => {
 	);
 	await send(terminal, "\x1b[<65;2;2M");
 	expect(box.scrollTop).toBe(0);
+	dom.dispose();
+});
+
+function getLayout(dom: TermDOM): {solves: number} {
+	return (_(dom) as unknown as {layout: {solves: number}}).layout;
+}
+
+test("a scrollTop write after a DOM change waits for a read to lay out", async () => {
+	const {dom, box} = makeScrollerApp();
+	await nextFrame(dom);
+	const layout = getLayout(dom);
+
+	box.removeChild(box.lastChild!);
+	box.removeChild(box.lastChild!);
+	const solves = layout.solves;
+	box.scrollTop = 99;
+	expect(layout.solves).toBe(solves);
+	// Six rows of content in a three-row box.
+	expect(box.scrollTop).toBe(3);
+	expect(layout.solves).toBe(solves + 1);
+	dom.dispose();
+});
+
+test("a scrollTop write after a DOM change lands at the next frame", async () => {
+	const {dom, box} = makeScrollerApp();
+	await nextFrame(dom);
+	const layout = getLayout(dom);
+	const seen: number[] = [];
+	box.addEventListener("scroll", () => seen.push(box.scrollTop));
+
+	const line = dom.document.createElement("div");
+	line.textContent = "row 8";
+	box.appendChild(line);
+	const solves = layout.solves;
+	box.scrollTop = 99;
+	expect(layout.solves).toBe(solves);
+	await nextFrame(dom);
+	expect(layout.solves).toBe(solves + 1);
+	expect(seen).toEqual([6]);
+	expect(box.getBoundingClientRect().height).toBe(3);
+	expect(box.scrollTop).toBe(6);
+	dom.dispose();
+});
+
+test("writes before a layout clamp against it, and the last one lands", async () => {
+	const {dom, box} = makeScrollerApp();
+	await nextFrame(dom);
+	const seen: number[] = [];
+	box.addEventListener("scroll", () => seen.push(box.scrollTop));
+
+	box.scrollTop = 4;
+	box.scrollTop = 2;
+	while (box.children.length > 4) {
+		box.removeChild(box.lastChild!);
+	}
+	box.scrollTop = 99;
+	expect(box.scrollTop).toBe(1);
+	await nextFrame(dom);
+	expect(seen).toEqual([1]);
+
+	// Each write clamps to the offset the box has, so nothing scrolls.
+	box.scrollTop = 1;
+	box.scrollTop = 50;
+	await nextFrame(dom);
+	expect(box.scrollTop).toBe(1);
+	expect(seen).toEqual([1]);
+
+	// A write away and back scrolls, as two scrolls in one task do.
+	box.scrollTop = 0;
+	box.scrollTop = 1;
+	await nextFrame(dom);
+	expect(box.scrollTop).toBe(1);
+	expect(seen).toEqual([1, 1]);
+	dom.dispose();
+});
+
+test("a write on a box not laid out yet clamps once it is", async () => {
+	const {dom, box} = makeScrollerApp();
+	await nextFrame(dom);
+	box.style.display = "none";
+	box.scrollTop = 0;
+	await nextFrame(dom);
+
+	box.style.display = "";
+	box.scrollTop = 99;
+	expect(box.scrollTop).toBe(5);
+
+	const fresh = dom.document.createElement("div");
+	fresh.style.height = "2px";
+	fresh.style.overflow = "auto";
+	fresh.innerHTML = "<div>a</div><div>b</div><div>c</div>";
+	dom.document.body.appendChild(fresh);
+	fresh.scrollTop = 99;
+	await nextFrame(dom);
+	expect(fresh.scrollTop).toBe(1);
 	dom.dispose();
 });
 

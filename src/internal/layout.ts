@@ -47,6 +47,7 @@ import {
 	isUAShadowTree,
 	pseudoElementCount,
 	renderedTopLayer,
+	setScrollOffset,
 	type Window,
 } from "./dom.ts";
 import {
@@ -9956,13 +9957,21 @@ function revealInPort(
 	);
 	// The offsets are cells here, and scrollTop is CSS pixels.
 	if (down !== 0) {
-		scroller.scrollTop += pxFromCells(down, true, scroller);
+		setScrollOffset(
+			scroller,
+			"top",
+			scroller.scrollTop + pxFromCells(down, true, scroller),
+		);
 	}
 	const across = Math.round(
 		getAlignmentDelta(rect.left, rect.right, portLeft, portRight, inline),
 	);
 	if (across !== 0) {
-		scroller.scrollLeft += pxFromCells(across, false, scroller);
+		setScrollOffset(
+			scroller,
+			"left",
+			scroller.scrollLeft + pxFromCells(across, false, scroller),
+		);
 	}
 }
 
