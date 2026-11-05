@@ -836,7 +836,6 @@ class CSSStyleDeclaration {
 	get length(): number {
 		const slots = _(this);
 		if (slots.computedView !== undefined) {
-			syncViewIndices(this);
 			return slots.computedView.length;
 		}
 		slots._sync!();
@@ -888,7 +887,6 @@ class CSSStyleDeclaration {
 	[Symbol.iterator](): IterableIterator<string> {
 		const slots = _(this);
 		if (slots.computedView !== undefined) {
-			syncViewIndices(this);
 			return slots.computedView[Symbol.iterator]();
 		}
 		slots._sync!();
@@ -1465,8 +1463,7 @@ const pageViews = new WeakMap<Element, Map<string, CSSStyleProperties>>();
 // a page must not find in a prototype chain. What a page gets is a plain
 // CSSStyleProperties that reads through to the engine's, one per element
 // and pseudo-element, so asking again returns the same object. A restyle
-// gives the element a new declaration, and the view reads through to it,
-// keeping the indices it already defined.
+// gives the element a new declaration, and the view reads through to it.
 function getPageView(
 	source: CSSStyleDeclaration,
 	element: Element,
@@ -1479,34 +1476,118 @@ function getPageView(
 	}
 	let view = views.get(pseudoElement);
 	if (view === undefined) {
-		view = Object.create(CSSStyleProperties.prototype) as CSSStyleProperties;
+		view = createIndexedView();
 		seal(view, CSSStyleProperties, CSSStyleDeclaration);
-		_(view).indexed = 0;
 		views.set(pseudoElement, view);
 	}
 	_(view).computedView = source;
-	syncViewIndices(view);
 	return view;
 }
 
-// A computed style lists a custom property only while one applies, so
-// its indices follow its length each time the page reads it.
-function syncViewIndices(view: CSSStyleDeclaration): void {
-	const viewSlots = _(view);
-	const length = viewSlots.computedView!.length;
-	for (let index = viewSlots.indexed; index < length; index++) {
-		Object.defineProperty(view, index, {
-			get(this: CSSStyleDeclaration): string {
-				return this.item(index);
-			},
-			enumerable: true,
-			configurable: true,
-		});
+// The array index a property key names, or -1.
+function toArrayIndex(key: string | symbol): number {
+	if (typeof key !== "string" || key === "") {
+		return -1;
 	}
-	for (let index = length; index < viewSlots.indexed; index++) {
-		delete (view as unknown as Record<number, string>)[index];
+	const code = key.charCodeAt(0);
+	if (code < 48 || code > 57) {
+		return -1;
 	}
-	viewSlots.indexed = length;
+	const index = Number(key);
+	return String(index) === key && index < 4294967295 ? index : -1;
+}
+
+// A computed style has several hundred indices, one per property, and a
+// page asks for the styles of elements it has just made. Defining each as
+// a property took most of a getComputedStyle call, so the view answers
+// them as Web IDL's legacy platform objects do (§3.9): an index below the
+// length is a read-only property holding that item, read when asked, and
+// no index can be written or defined.
+class IndexedViewHandler implements ProxyHandler<CSSStyleProperties> {
+	view!: CSSStyleProperties;
+
+	supported(key: string | symbol): number {
+		const index = toArrayIndex(key);
+		return index !== -1 && index < this.view.length ? index : -1;
+	}
+
+	get(
+		object: CSSStyleProperties,
+		key: string | symbol,
+		receiver: unknown,
+	): unknown {
+		const index = this.supported(key);
+		return index === -1
+			? Reflect.get(object, key, receiver)
+			: this.view.item(index);
+	}
+
+	getOwnPropertyDescriptor(
+		object: CSSStyleProperties,
+		key: string | symbol,
+	): PropertyDescriptor | undefined {
+		const index = this.supported(key);
+		return index === -1
+			? Reflect.getOwnPropertyDescriptor(object, key)
+			: {
+				value: this.view.item(index),
+				writable: false,
+				enumerable: true,
+				configurable: true,
+			};
+	}
+
+	has(object: CSSStyleProperties, key: string | symbol): boolean {
+		return this.supported(key) !== -1 || Reflect.has(object, key);
+	}
+
+	set(
+		object: CSSStyleProperties,
+		key: string | symbol,
+		value: unknown,
+		receiver: unknown,
+	): boolean {
+		return toArrayIndex(key) === -1 &&
+			Reflect.set(object, key, value, receiver);
+	}
+
+	defineProperty(
+		object: CSSStyleProperties,
+		key: string | symbol,
+		descriptor: PropertyDescriptor,
+	): boolean {
+		return toArrayIndex(key) === -1 &&
+			Reflect.defineProperty(object, key, descriptor);
+	}
+
+	deleteProperty(object: CSSStyleProperties, key: string | symbol): boolean {
+		const index = toArrayIndex(key);
+		return index === -1
+			? Reflect.deleteProperty(object, key)
+			: index >= this.view.length;
+	}
+
+	ownKeys(object: CSSStyleProperties): Array<string | symbol> {
+		const keys: Array<string | symbol> = [];
+		for (let index = 0, end = this.view.length; index < end; index++) {
+			keys.push(String(index));
+		}
+		return [...keys, ...Reflect.ownKeys(object)];
+	}
+
+	preventExtensions(): boolean {
+		return false;
+	}
+}
+
+function createIndexedView(): CSSStyleProperties {
+	const handler = new IndexedViewHandler();
+	// eslint-disable-next-line no-restricted-globals
+	handler.view = new Proxy(
+		Object.create(CSSStyleProperties.prototype) as CSSStyleProperties,
+		handler,
+	);
+	return handler.view;
 }
 
 // An error thrown out of a stylesheet has to be the document's own
