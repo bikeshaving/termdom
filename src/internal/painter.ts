@@ -2696,6 +2696,23 @@ function collectHighlightedText(document: Document): Map<Text, HighlightRun[]> {
 	return highlighted;
 }
 
+function getHighlightLayer(
+	painter: Painter,
+	textNode: Text,
+	range: {from: number; to: number},
+	paint: HighlightPaint,
+	prepared: PreparedFragment[],
+): HighlightLayer {
+	const {from, to} = snapToClusters(
+		painter.layout,
+		textNode,
+		range.from,
+		range.to,
+		prepared,
+	);
+	return {from, to, paint};
+}
+
 // Redraws the highlighted runs over the base pass, one draw per run of
 // cells the same layers cover, the selection included.
 function renderTextHighlights(
@@ -2705,37 +2722,38 @@ function renderTextHighlights(
 	textTransform: string,
 	ctx: CellContext,
 ): void {
+	const runs = painter.highlightedText.get(textNode);
+	const selected = getPaintSelectionRange(painter, textNode);
+	if (runs === undefined && selected === null) {
+		return;
+	}
 	const layers: HighlightLayer[] = [];
 	const parent = flatParentElement(textNode);
-	const runs = painter.highlightedText.get(textNode);
 	let prepared: PreparedFragment[] | null = null;
-	const snap = (from: number, to: number) =>
-		snapToClusters(
-			painter.layout,
-			textNode,
-			from,
-			to,
-			prepared ??= prepareTextFragments(painter.layout, textNode),
-		);
 	if (parent !== null && runs !== undefined) {
 		for (const run of runs) {
 			const paint = getHighlightStyle(painter, parent, run.name);
 			if (paint !== null) {
-				layers.push({...snap(run.from, run.to), paint});
+				prepared ??= prepareTextFragments(painter.layout, textNode);
+				layers.push(getHighlightLayer(painter, textNode, run, paint, prepared));
 			}
 		}
 	}
-	const selected = getPaintSelectionRange(painter, textNode);
 	if (selected !== null) {
 		const paint = readSelectionStyle(selected.selectionParent);
 		if (paint !== null) {
-			layers.push({...snap(selected.from, selected.to), paint});
+			prepared ??= prepareTextFragments(painter.layout, textNode);
+			layers.push(
+				getHighlightLayer(painter, textNode, selected, paint, prepared),
+			);
 		}
 	}
 	if (layers.length === 0) {
 		return;
 	}
-	for (const [from, to] of getHighlightSegments(layers)) {
+	const segments = getHighlightSegments(layers);
+	for (let i = 0; i < segments.length; i++) {
+		const [from, to] = segments[i];
 		let style = textStyle;
 		for (const layer of layers) {
 			if (layer.from <= from && layer.to >= to) {
