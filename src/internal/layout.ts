@@ -8358,14 +8358,16 @@ function pruneDisconnectedNodes(layout: Layout): void {
 	layout.prunedAtUnlinks = unlinks;
 	// A box outlives the nodes that pass through it, but not its
 	// container.
-	for (const box of [...layout.anonymousBoxes.values()]) {
+	// Map.forEach hands each entry over without an entry array, and
+	// visits none deleted before it is reached, as for...of does.
+	layout.anonymousBoxes.forEach((box) => {
 		if (!flatIsConnected(box.container)) {
 			dropAnonymousBox(layout, box);
 		}
-	}
-	for (const [node, layoutNode] of layout.nodeMap) {
+	});
+	layout.nodeMap.forEach((layoutNode, node) => {
 		if (node === layout.rootElement || flatIsConnected(node)) {
-			continue;
+			return;
 		}
 
 		const parent = layoutNode.parent;
@@ -8377,7 +8379,7 @@ function pruneDisconnectedNodes(layout: Layout): void {
 		forgetReads(layoutNode);
 		untrackNode(layout, node);
 		layout.invalidatedNodes.delete(node);
-	}
+	});
 }
 
 // Nothing here builds a box. A restyle says only that the boxes around
