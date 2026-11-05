@@ -7113,6 +7113,10 @@ interface RuleSummary {
 	keyPaintsOnly: Map<string, boolean>;
 	reachingIds: Set<string>;
 	reachingAttributes: Set<string>;
+	// For an attribute tested on a compound whose element its keys tell,
+	// in place of reachingAttributes: that element, and the subjects the
+	// rule can style under it, null when it can style any descendant.
+	attributeReaches: Map<string, AttributeReach[]>;
 
 	// Whether any of those keys is a STATE pseudo-class (`:checked ~`),
 	// which is driven by attributes not in the sets above. While this is
@@ -7169,6 +7173,7 @@ function createRuleSummary(): RuleSummary {
 		keyPaintsOnly: new Map(),
 		reachingIds: new Set(),
 		reachingAttributes: new Set(),
+		attributeReaches: new Map(),
 		reachingStates: false,
 		descendantPseudoClasses: new Map(),
 		classSubjects: new Map(),
@@ -8773,9 +8778,17 @@ function classChangeSubjects(
 	if (oldValue === null || cascade.summary.reachingAttributes.has("class")) {
 		return null;
 	}
+	const anchors: StateAnchor[] = [];
+	for (const reach of cascade.summary.attributeReaches.get("class") ?? []) {
+		if (couldAnchor(element, reach.anchor)) {
+			if (reach.subjects === null) {
+				return null;
+			}
+			anchors.push(reach.subjects);
+		}
+	}
 	const before = getValueTokens(oldValue);
 	const after = getClassTokens(element);
-	const anchors: StateAnchor[] = [];
 	for (const token of after) {
 		if (!before.has(token) && !addClassSubjects(cascade, token, anchors)) {
 			return null;
@@ -8868,7 +8881,7 @@ function attributeReachesDescendants(
 		);
 	}
 	if (name === "class") {
-		if (cascade.summary.reachingAttributes.has("class")) {
+		if (attributeReaches(cascade, element, "class")) {
 			return true;
 		}
 		if (cascade.summary.reachingClasses.size === 0) {
@@ -8894,7 +8907,7 @@ function attributeReachesDescendants(
 		return false;
 	}
 	if (name === "id") {
-		if (cascade.summary.reachingAttributes.has("id")) {
+		if (attributeReaches(cascade, element, "id")) {
 			return true;
 		}
 		if (oldValue !== null && cascade.summary.reachingIds.has(oldValue)) {
@@ -8903,7 +8916,7 @@ function attributeReachesDescendants(
 		const id = getAttributeValue(element, "id");
 		return id !== null && cascade.summary.reachingIds.has(id);
 	}
-	if (cascade.summary.reachingAttributes.has(name)) {
+	if (attributeReaches(cascade, element, name)) {
 		return true;
 	}
 	return cascade.summary.reachingStates && CSSValues.isStateAttribute(name);
@@ -12184,7 +12197,7 @@ function indexReachingKeys(
 				cascade.summary.reachingIds.add(name);
 			}
 			for (const name of compound.attributes) {
-				cascade.summary.reachingAttributes.add(name);
+				addReachingAttribute(cascade, nested, name, reach);
 			}
 		}
 		if (
@@ -12193,6 +12206,65 @@ function indexReachingKeys(
 			cascade.summary.reachingStates = true;
 		}
 	}
+}
+
+interface AttributeReach {
+	anchor: StateAnchor;
+	subjects: StateAnchor | null;
+}
+
+// An attribute tested on the element a compound matches reaches only from
+// an element with the compound's tag, and with its classes and ids but for
+// the one the attribute is. Attributes the compound needs are left out,
+// since one batch can change them with this one. One tested through
+// :has() or a pseudo-element, or past a combinator, could be on any
+// element.
+function addReachingAttribute(
+	cascade: Cascade,
+	nested: CompiledCompound[],
+	name: string,
+	subjects: StateAnchor | null,
+): void {
+	const anchor = getStateAnchor(nested);
+	if (
+		anchor.anyElement ||
+		getPseudoClassNames(nested).includes("has") ||
+		nested.some((compound) =>
+			compound.origin !== null || compound.pseudoElement !== null)
+	) {
+		cascade.summary.reachingAttributes.add(name);
+		return;
+	}
+	const reach: AttributeReach = {
+		anchor: {
+			...anchor,
+			classes: name === "class" ? [] : anchor.classes,
+			ids: name === "id" ? [] : anchor.ids,
+			attributes: [],
+		},
+		subjects,
+	};
+	const reaches = cascade.summary.attributeReaches.get(name);
+	if (reaches === undefined) {
+		cascade.summary.attributeReaches.set(name, [reach]);
+	} else {
+		reaches.push(reach);
+	}
+}
+
+// Whether a change to the attribute on the element can reach its
+// descendants by a rule that tests it.
+function attributeReaches(
+	cascade: Cascade,
+	element: Element,
+	name: string,
+): boolean {
+	if (cascade.summary.reachingAttributes.has(name)) {
+		return true;
+	}
+	const reaches = cascade.summary.attributeReaches.get(name);
+	return reaches !== undefined &&
+		reaches.some(({anchor}) => couldAnchor(element, anchor));
 }
 
 // What a rule adds to the summary pseudoContentReached reads.
