@@ -21,10 +21,9 @@ import * as CSSValues from "./cssvalues.ts";
 import {
 	flatParentElement,
 	flowContent,
+	forEachHighlightedText,
 	getCanvasTextRuns,
 	getFocusedElement,
-	getHighlightedTextNodes,
-	getPaintedHighlights,
 	getScrollOffset,
 	getSelectionRecord,
 	getShadowRoot,
@@ -792,7 +791,7 @@ export function paint(painter: Painter, ctx: CellContext): void {
 		painter.selectedRange = null;
 		return;
 	}
-	painter.highlightedText = collectHighlightedText(painter.document);
+	collectHighlightedText(painter);
 	painter.rectsTaken = 0;
 	painter.fragmentsTaken = 0;
 	if (painter.rects.length > KEPT_RECORDS) {
@@ -2674,22 +2673,18 @@ function getHighlightSegments(
 // Every text node a registered highlight covers, in the order the
 // painter folds the styles in. Built once a frame: a text node with no
 // entry here has no highlight over it.
-function collectHighlightedText(document: Document): Map<Text, HighlightRun[]> {
-	const highlighted = new Map<Text, HighlightRun[]>();
-	for (const highlight of getPaintedHighlights(document)) {
-		for (const range of highlight.ranges) {
-			for (const {textNode, from, to} of getHighlightedTextNodes(range)) {
-				const run = {name: highlight.name, from, to};
-				const runs = highlighted.get(textNode);
-				if (runs === undefined) {
-					highlighted.set(textNode, [run]);
-				} else {
-					runs.push(run);
-				}
-			}
+function collectHighlightedText(painter: Painter): void {
+	const highlighted = painter.highlightedText;
+	clearMap(highlighted);
+	forEachHighlightedText(painter.document, (name, textNode, from, to) => {
+		const run = {name, from, to};
+		const runs = highlighted.get(textNode);
+		if (runs === undefined) {
+			highlighted.set(textNode, [run]);
+		} else {
+			runs.push(run);
 		}
-	}
-	return highlighted;
+	});
 }
 
 function getHighlightLayer(
