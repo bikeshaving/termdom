@@ -10511,11 +10511,24 @@ function invalidateChildren(
 	from: Element | null | undefined = null,
 ): void {
 	invalidateSibling(cascade, element);
-	let child =
-		getSiblingRuleIndex(cascade, element)?.countsFromEnd ||
-		from === null
-			? element.firstElementChild
-			: from;
+	const index = getSiblingRuleIndex(cascade, element);
+	let child = element.firstElementChild;
+	if (from !== null && index !== undefined) {
+		const fromEnd = index.fromEnd;
+		const counts =
+			fromEnd.universal ||
+			fromEnd.keys.size > 0 ||
+			(fromEnd.parentKeys.size > 0 &&
+				hasSiblingKey(fromEnd.parentKeys, element));
+		if (!counts) {
+			child = from ?? null;
+		}
+		for (; child && child !== from; child = child.nextElementSibling) {
+			if (namesSibling(fromEnd, child as Element)) {
+				invalidateSibling(cascade, child as Element);
+			}
+		}
+	}
 	for (; child; child = child.nextElementSibling) {
 		invalidateSibling(cascade, child as Element);
 	}
@@ -10568,10 +10581,10 @@ function invalidateLaterSiblings(cascade: Cascade, element: Element): void {
 
 function invalidateSibling(cascade: Cascade, element: Element): void {
 	const index = getSiblingRuleIndex(cascade, element);
-	if (index === undefined || !isSiblingTested(index, element)) {
+	if (index === undefined || !namesSibling(index.tested, element)) {
 		return;
 	}
-	if (index.reachesDescendants) {
+	if (namesSibling(index.descendants, element)) {
 		invalidateSubtree(cascade, element);
 		return;
 	}
@@ -10584,15 +10597,16 @@ interface SiblingRuleIndex {
 	// its following siblings. The string tests are deliberately loose. A
 	// false positive only widens the rebuild.
 	reachesSiblings: boolean;
-	reachesDescendants: boolean;
-	// Whether a sibling test counts from the end, as :last-child does, so
-	// a child added or removed changes what the children BEFORE it match.
-	countsFromEnd: boolean;
-	// The tag, class, id and attribute keys of every sibling-tested
-	// compound, so a change among an element's children restyles only the
-	// children such a compound could name.
-	keys: Set<string>;
-	universal: boolean;
+	// The elements a sibling-tested compound could name, so a change among
+	// an element's children restyles only the children such a compound
+	// could name. Of those, the ones whose subtree restyles with them: the
+	// compound is not the subject, or its rule sets a property descendants
+	// inherit. And the ones a rule counting from the end tests, as
+	// :last-child does, whose match changes when a child after them comes
+	// or goes.
+	tested: SiblingKeys;
+	descendants: SiblingKeys;
+	fromEnd: SiblingKeys;
 	// The class, id and attribute keys of every compound before a sibling
 	// combinator, the `.on` of `.on ~ .light`, whose change on one element
 	// changes what its later siblings match. Universal when that can't be
@@ -10623,18 +10637,41 @@ function getOrCreateSiblingRuleIndex(
 	let index = cascade.summary.siblingRuleIndexes.get(key);
 	if (index === undefined) {
 		const ua = cascade.summary.uaSiblingRuleIndex;
-		index = {
-			reachesSiblings: ua?.reachesSiblings ?? false,
-			reachesDescendants: ua?.reachesDescendants ?? false,
-			countsFromEnd: ua?.countsFromEnd ?? false,
-			keys: new Set(ua?.keys),
-			universal: ua?.universal ?? false,
-			anchorKeys: new Set(ua?.anchorKeys),
-			anchorsUniversal: ua?.anchorsUniversal ?? false,
-		};
+		index = copySiblingRuleIndex(ua);
 		cascade.summary.siblingRuleIndexes.set(key, index);
 	}
 	return index;
+}
+
+function copySiblingRuleIndex(
+	index: SiblingRuleIndex | undefined,
+): SiblingRuleIndex {
+	return {
+		reachesSiblings: index?.reachesSiblings ?? false,
+		tested: copySiblingKeys(index?.tested),
+		descendants: copySiblingKeys(index?.descendants),
+		fromEnd: copySiblingKeys(index?.fromEnd),
+		anchorKeys: new Set(index?.anchorKeys),
+		anchorsUniversal: index?.anchorsUniversal ?? false,
+	};
+}
+
+// The tag, class, id and attribute keys an element a compound names must
+// have one of, or that its parent must have one of, as `.list >
+// :not(:last-child)` names only children of `.list`. Universal when the
+// compound could name any element.
+interface SiblingKeys {
+	keys: Set<string>;
+	parentKeys: Set<string>;
+	universal: boolean;
+}
+
+function copySiblingKeys(keys: SiblingKeys | undefined): SiblingKeys {
+	return {
+		keys: new Set(keys?.keys),
+		parentKeys: new Set(keys?.parentKeys),
+		universal: keys?.universal ?? false,
+	};
 }
 
 // Whether an attribute change could change what a sibling-tested
@@ -10678,12 +10715,19 @@ function changeReachesLaterSiblings(
 	return keys.has(`[${attributeName.slice(attributeName.indexOf(":") + 1)}]`);
 }
 
-// Whether some sibling-tested compound could name the element.
-function isSiblingTested(index: SiblingRuleIndex, element: Element): boolean {
-	if (index.universal) {
+// Whether a compound the keys describe could name the element.
+function namesSibling(keys: SiblingKeys, element: Element): boolean {
+	if (keys.universal || hasSiblingKey(keys.keys, element)) {
 		return true;
 	}
-	const keys = index.keys;
+	const parent = keys.parentKeys.size > 0 ? element.parentElement : null;
+	return parent !== null && hasSiblingKey(keys.parentKeys, parent);
+}
+
+function hasSiblingKey(keys: Set<string>, element: Element): boolean {
+	if (keys.size === 0) {
+		return false;
+	}
 	if (keys.has(getLocalName(element))) {
 		return true;
 	}
@@ -10976,11 +11020,7 @@ function parseAllStylesheets(cascade: Cascade): void {
 	parseStyleSheet(cascade, getUAStyleSheet(), undefined, true);
 	const uaIndex = cascade.summary.siblingRuleIndexes.get(document);
 	if (uaIndex !== undefined) {
-		cascade.summary.uaSiblingRuleIndex = {
-			...uaIndex,
-			keys: new Set(uaIndex.keys),
-			anchorKeys: new Set(uaIndex.anchorKeys),
-		};
+		cascade.summary.uaSiblingRuleIndex = copySiblingRuleIndex(uaIndex);
 	}
 
 	cascade.documentSheets = getDocumentStyleSheets(document);
@@ -11963,6 +12003,65 @@ function couldAnchor(element: Element, anchor: StateAnchor): boolean {
 	);
 }
 
+// What sibling-tested compound `index` could name: the keys the element
+// must have, as `.day:not(:last-child)` must have `.day`, or the keys its
+// parent must have when it has none of its own, or failing those, the
+// keys it names anywhere, which describe it unless :not() or a combinator
+// inside an argument can turn them on another element.
+function addSiblingKeys(
+	target: SiblingKeys,
+	complex: CompiledComplex,
+	nested: CompiledCompound[],
+	index: number,
+): void {
+	const own = getSiblingRequiredKeys(complex.compounds[index]);
+	if (own.length > 0) {
+		for (const key of own) {
+			target.keys.add(key);
+		}
+		return;
+	}
+	const keys = getNamedKeys(nested);
+	const tags = nested.flatMap((compound) => compound.tag ?? []);
+	if (!describesAnyElement(nested) && (tags.length > 0 || keys.length > 0)) {
+		for (const key of [...tags, ...keys]) {
+			target.keys.add(key);
+		}
+		return;
+	}
+	const parent = index > 0 && complex.combinators[index - 1] === ">"
+		? getSiblingRequiredKeys(complex.compounds[index - 1])
+		: [];
+	if (parent.length > 0) {
+		for (const key of parent) {
+			target.parentKeys.add(key);
+		}
+		return;
+	}
+	target.universal = true;
+}
+
+// The keys getRequiredKeys finds, in the form namesSibling reads, for a
+// compound that describes the element it matches. One that selects
+// through a pseudo-element, or may match a featureless host, gives none.
+function getSiblingRequiredKeys(compound: CompiledCompound): string[] {
+	if (
+		compound.origin !== null ||
+		compound.pseudoElement !== null ||
+		compound.host ||
+		getPseudoClassNames([compound]).some((name) => name.startsWith("host"))
+	) {
+		return [];
+	}
+	const required = getRequiredKeys(compound);
+	return [
+		...(required.tag === null ? [] : [required.tag]),
+		...required.classes.map((name) => `.${name}`),
+		...required.ids.map((name) => `#${name}`),
+		...required.attributes.map((name) => `[${name}]`),
+	];
+}
+
 // A key reaches descendants two ways: tested on a NON-SUBJECT compound,
 // or on a rule declaring an INHERITED property. In neither position, it
 // changes nothing but the element's own box.
@@ -11995,16 +12094,10 @@ function indexReachingKeys(
 	if (siblingTested.includes(true)) {
 		const index = getOrCreateSiblingRuleIndex(cascade, scope);
 		index.reachesSiblings = true;
-		if (siblingTested.slice(0, -1).includes(true) || inherits) {
-			index.reachesDescendants = true;
-		}
 		if (compounds.flat().some((compound) =>
 			compound.pseudoClasses.some((pseudoClass) =>
 				pseudoClass.name.startsWith("nth-") && pseudoClass.args.length > 0))) {
 			index.anchorsUniversal = true;
-		}
-		if (names.some((name) => /^(?:last-|only-|nth-last-)/.test(name))) {
-			index.countsFromEnd = true;
 		}
 		for (const [i, nested] of compounds.entries()) {
 			if (!precedesSibling[i]) {
@@ -12020,20 +12113,19 @@ function indexReachingKeys(
 			}
 		}
 	}
+	const countsFromEnd = names.some((name) =>
+		/^(?:last-|only-|nth-last-)/.test(name));
 	for (const [i, nested] of compounds.entries()) {
 		if (!siblingTested[i]) {
 			continue;
 		}
 		const index = getOrCreateSiblingRuleIndex(cascade, scope);
-		const keys = getNamedKeys(nested);
-		const tags = nested.flatMap((compound) => compound.tag ?? []);
-		if (
-			describesAnyElement(nested) || (tags.length === 0 && keys.length === 0)
-		) {
-			index.universal = true;
+		addSiblingKeys(index.tested, complex, nested, i);
+		if (i < compounds.length - 1 || inherits) {
+			addSiblingKeys(index.descendants, complex, nested, i);
 		}
-		for (const key of [...tags, ...keys]) {
-			index.keys.add(key);
+		if (countsFromEnd) {
+			addSiblingKeys(index.fromEnd, complex, nested, i);
 		}
 	}
 	const paintsOnly = Object.keys(declarations).every((name) =>
