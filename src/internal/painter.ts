@@ -6,10 +6,12 @@ import {
 	getComputedValue,
 	getDeclaredDisplay,
 	getMarkerContent,
+	getPseudoStyleGroup,
 	getStyleGroup,
 	getTabSize,
 	getUsedOverflow,
 	getWhiteSpace,
+	type PseudoStyleGroup,
 	resolveBorderSides,
 	resolveLength,
 	type StyleGroup,
@@ -2453,6 +2455,77 @@ interface HighlightPaint {
 	strikethrough?: boolean;
 }
 
+// What one element's `::highlight()` rules declare, with its colors
+// parsed. A property a rule declares and this leaves undefined clears the
+// one it would inherit.
+interface HighlightDeclaration {
+	declared: boolean;
+	color: boolean;
+	fg: number | undefined;
+	background: boolean;
+	bg: number | undefined;
+	inverse: boolean | undefined;
+	decoration: boolean;
+	underline: boolean | undefined;
+	strikethrough: boolean | undefined;
+}
+
+const HIGHLIGHT_DECLARATION: PseudoStyleGroup<HighlightDeclaration> = {
+	name: "highlight",
+	read: readHighlightDeclaration,
+};
+
+function readHighlightDeclaration(
+	cascade: Cascade,
+	element: Element,
+	pseudo: string,
+): HighlightDeclaration {
+	const declared = declaredPseudoProperties(cascade, element, pseudo);
+	const result: HighlightDeclaration = {
+		declared: declared !== null,
+		color: false,
+		fg: undefined,
+		background: false,
+		bg: undefined,
+		inverse: undefined,
+		decoration: false,
+		underline: undefined,
+		strikethrough: undefined,
+	};
+	if (declared === null) {
+		return result;
+	}
+	if ("color" in declared) {
+		const color = getComputedValue(element, "color", pseudo);
+		result.color = true;
+		result.fg = color && !CSSValues.isHighlightColor(color)
+			? CSSValues.numberFromCSSColor(color)
+			: undefined;
+	}
+	if ("background-color" in declared) {
+		const background = getComputedValue(element, "background-color", pseudo);
+		result.background = true;
+		if (CSSValues.isHighlightColor(background)) {
+			result.inverse = true;
+		} else if (
+			background &&
+			!CSSValues.isTransparentColor(background) &&
+			!CSSValues.isCanvasColor(background)
+		) {
+			result.bg = CSSValues.numberFromCSSColor(background);
+		}
+	}
+	if ("text-decoration-line" in declared) {
+		const decoration = CSSValues.parseTextDecorationLine(
+			getComputedValue(element, "text-decoration-line", pseudo),
+		);
+		result.decoration = true;
+		result.underline = decoration.underline || undefined;
+		result.strikethrough = decoration.lineThrough || undefined;
+	}
+	return result;
+}
+
 /**
  * What `::highlight(name)` paints on this element, each property taken
  * from the nearest flat-tree ancestor whose rules declare it. Null when
@@ -2463,42 +2536,30 @@ function readHighlightStyle(
 	element: Element,
 	name: string,
 ): HighlightPaint | null {
-	const pseudo = `::highlight(${name})`;
-	const declared = declaredPseudoProperties(painter.cascade, element, pseudo);
+	const own = getPseudoStyleGroup(
+		painter.cascade,
+		element,
+		`::highlight(${name})`,
+		HIGHLIGHT_DECLARATION,
+	);
 	const parent = flatParentElement(element);
 	const inherited = parent === null
 		? null
 		: getHighlightStyle(painter, parent, name);
-	if (declared === null) {
+	if (!own.declared) {
 		return inherited;
 	}
 	const paint: HighlightPaint = {...inherited};
-	if ("color" in declared) {
-		const color = getComputedValue(element, "color", pseudo);
-		paint.fg = color && !CSSValues.isHighlightColor(color)
-			? CSSValues.numberFromCSSColor(color)
-			: undefined;
+	if (own.color) {
+		paint.fg = own.fg;
 	}
-	if ("background-color" in declared) {
-		const background = getComputedValue(element, "background-color", pseudo);
-		paint.bg = undefined;
-		paint.inverse = undefined;
-		if (CSSValues.isHighlightColor(background)) {
-			paint.inverse = true;
-		} else if (
-			background &&
-			!CSSValues.isTransparentColor(background) &&
-			!CSSValues.isCanvasColor(background)
-		) {
-			paint.bg = CSSValues.numberFromCSSColor(background);
-		}
+	if (own.background) {
+		paint.bg = own.bg;
+		paint.inverse = own.inverse;
 	}
-	if ("text-decoration-line" in declared) {
-		const decoration = CSSValues.parseTextDecorationLine(
-			getComputedValue(element, "text-decoration-line", pseudo),
-		);
-		paint.underline = decoration.underline || undefined;
-		paint.strikethrough = decoration.lineThrough || undefined;
+	if (own.decoration) {
+		paint.underline = own.underline;
+		paint.strikethrough = own.strikethrough;
 	}
 	return paint;
 }

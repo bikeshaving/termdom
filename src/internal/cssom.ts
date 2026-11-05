@@ -507,6 +507,52 @@ function readPseudoGroup<T extends object>(
 	return value;
 }
 
+/**
+ * Values an element's rules give a pseudo-element it has no node for,
+ * such as `::highlight(name)`, read together. The group is held with
+ * the element's declaration for that pseudo-element, and read again
+ * when its values are replaced.
+ */
+export interface PseudoStyleGroup<T extends object> {
+	readonly name: string;
+	read(cascade: Cascade, element: Element, pseudoElement: string): T;
+}
+
+export function getPseudoStyleGroup<T extends object>(
+	cascade: Cascade,
+	element: Element,
+	pseudoElement: string,
+	group: PseudoStyleGroup<T>,
+): T {
+	parseStylesheetsIfStale(cascade);
+	// Read under a recorder, each value is recorded as its own read.
+	if (readRecorder !== null || cascade.activeTransitions.size > 0) {
+		return group.read(cascade, element, pseudoElement);
+	}
+	const slots = _(getPseudoDeclaration(cascade, element, pseudoElement));
+	if (!cascade.currentDeclarations.has(slots)) {
+		slots._syncResolved();
+	}
+	let cache = groupCaches.get(slots.resolved);
+	if (cache === undefined) {
+		cache = new Map();
+		groupCaches.set(slots.resolved, cache);
+	}
+	const key = group as unknown as StyleGroup<object>;
+	let value = cache.get(key) as T | undefined;
+	if (value === undefined) {
+		value = internGroup(
+			key as unknown as StyleGroup<T>,
+			recordStyleReads(
+				() => {},
+				() => group.read(cascade, element, pseudoElement),
+			),
+		);
+		cache.set(key, value);
+	}
+	return value;
+}
+
 function readUnsharedGroup<T extends object>(
 	element: Element,
 	group: StyleGroup<T>,
