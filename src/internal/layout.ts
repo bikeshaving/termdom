@@ -8105,6 +8105,21 @@ export function snapToClusters(
 	let start = from;
 	let end = to;
 	for (const {fragment, text, offsets, clusters: clusterStarts} of prepared) {
+		if (offsets === null) {
+			const first = Math.max(0, from - fragment.startOffset);
+			const last = Math.min(text.length, to - fragment.startOffset);
+			if (first < last) {
+				start = Math.min(start, fragment.startOffset + clusterStarts.at(first));
+				const after = clusterStarts.after(last);
+				end = Math.max(
+					end,
+					after < text.length
+						? fragment.startOffset + after
+						: fragment.endOffset,
+				);
+			}
+			continue;
+		}
 		for (let i = 0; i < text.length; i++) {
 			const dataOffset = fragment.startOffset + getDataOffset(offsets, i);
 			if (dataOffset < from || dataOffset >= to) {
@@ -9306,6 +9321,20 @@ export function forEachSelectionSpan(
 		// A cell holds a whole cluster, so a run that starts or ends inside
 		// one takes the cluster whole. Measured off a cluster boundary, a run
 		// landed inside the span of the glyph before it.
+		if (offsets === null) {
+			const first = Math.max(0, from - fragment.startOffset);
+			const last = Math.min(text.length, to - fragment.startOffset);
+			if (first < last) {
+				visitSelectionRun(
+					fragment,
+					text,
+					clusterStarts.at(first),
+					clusterStarts.after(last),
+					visit,
+				);
+			}
+			continue;
+		}
 		let runStart = -1;
 		for (let i = 0; i <= text.length; i++) {
 			const dataOffset = i < text.length
@@ -9316,22 +9345,37 @@ export function forEachSelectionSpan(
 				runStart = clusterStarts.at(i);
 			} else if (!selected && runStart !== -1) {
 				i = clusterStarts.after(i);
-				const x =
-					Math.round(fragment.rect.x) + getStringWidth(text.slice(0, runStart));
-				const run = text.slice(runStart, i);
-				visit(
-					// Painted order. A selected run of a bidirectional line
-					// reverses just as the line it sits on did.
-					fragment.visualBase ? toVisualOrder(run, fragment.visualBase) : run,
-					x,
-					Math.round(fragment.rect.y),
-					getStringWidth(run),
-					fragment.rect.height,
-				);
+				visitSelectionRun(fragment, text, runStart, i, visit);
 				runStart = -1;
 			}
 		}
 	}
+}
+
+function visitSelectionRun(
+	fragment: LineFragment,
+	text: string,
+	start: number,
+	end: number,
+	visit: (
+		text: string,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+	) => void,
+): void {
+	const x = Math.round(fragment.rect.x) + getStringWidth(text.slice(0, start));
+	const run = text.slice(start, end);
+	visit(
+		// Painted order. A selected run of a bidirectional line reverses
+		// just as the line it sits on did.
+		fragment.visualBase ? toVisualOrder(run, fragment.visualBase) : run,
+		x,
+		Math.round(fragment.rect.y),
+		getStringWidth(run),
+		fragment.rect.height,
+	);
 }
 
 // Edges, not origin and size. An unclipped axis is +-Infinity, and an
