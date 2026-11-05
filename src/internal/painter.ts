@@ -2469,17 +2469,17 @@ function readHighlightStyle(
 	const inherited = parent === null
 		? null
 		: getHighlightStyle(painter, parent, name);
-	if (declared.size === 0) {
+	if (declared === null) {
 		return inherited;
 	}
 	const paint: HighlightPaint = {...inherited};
-	if (declared.has("color")) {
+	if ("color" in declared) {
 		const color = getComputedValue(element, "color", pseudo);
 		paint.fg = color && !CSSValues.isHighlightColor(color)
 			? CSSValues.numberFromCSSColor(color)
 			: undefined;
 	}
-	if (declared.has("background-color")) {
+	if ("background-color" in declared) {
 		const background = getComputedValue(element, "background-color", pseudo);
 		paint.bg = undefined;
 		paint.inverse = undefined;
@@ -2493,7 +2493,7 @@ function readHighlightStyle(
 			paint.bg = CSSValues.numberFromCSSColor(background);
 		}
 	}
-	if (declared.has("text-decoration-line")) {
+	if ("text-decoration-line" in declared) {
 		const decoration = CSSValues.parseTextDecorationLine(
 			getComputedValue(element, "text-decoration-line", pseudo),
 		);
