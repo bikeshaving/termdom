@@ -161,16 +161,145 @@ export interface Lexer {
 	): MatchResult;
 }
 
-export const lexer: Lexer = Runtime.lexer;
-
 /** The tokenizer's token type numbers, by name. */
 export const tokenTypes: Record<string, number> = Runtime.tokenTypes;
 
+// css-tree reads a style block's items as declarations, and one that
+// fails becomes a Raw node running to the next semicolon, so `.title {}`
+// nested in a rule vanished with everything after it. CSS Syntax reads an
+// item that is not a declaration as a nested rule (css-nesting-1 §2), and
+// so does this: a declaration is tried first, and an item that fails, or
+// that holds a {} block without being a custom property, is read again as
+// a rule.
+const {
+	AtKeyword,
+	Comment,
+	LeftCurlyBracket,
+	RightCurlyBracket,
+	Semicolon,
+	WhiteSpace,
+} = Runtime.tokenTypes;
+
+interface BlockParser {
+	eof: boolean;
+	tokenType: number;
+	tokenIndex: number;
+	tokenStart: number;
+	createList(): {push(node: unknown): void};
+	eat(type: number): void;
+	next(): void;
+	skip(count: number): void;
+	getTokenStart(index: number): number;
+	substrToCursor(start: number): string;
+	getLocation(start: number, end: number): unknown;
+	parseWithFallback(consumer: unknown, fallback: unknown): unknown;
+	consumeUntilSemicolonIncluded: unknown;
+	Raw(consumer: unknown, excludeWhiteSpace: boolean): unknown;
+	Rule(): unknown;
+	Declaration(): {property?: string};
+	Atrule(isStyleBlock: boolean): unknown;
+}
+
+function consumeBlockItem(this: BlockParser): unknown {
+	if (this.tokenType === Semicolon) {
+		return this.Raw(this.consumeUntilSemicolonIncluded, true);
+	}
+	const start = this.tokenIndex;
+	const startOffset = this.getTokenStart(start);
+	let declaration: {property?: string} | null;
+	try {
+		declaration = this.Declaration();
+	} catch (_err) {
+		declaration = null;
+	}
+	if (
+		declaration !== null &&
+		(String(declaration.property ?? "").startsWith("--") ||
+			!this.substrToCursor(startOffset).includes("{"))
+	) {
+		if (this.tokenType === Semicolon) {
+			this.next();
+		}
+		return declaration;
+	}
+	this.skip(start - this.tokenIndex);
+	return this.parseWithFallback(this.Rule, function (this: BlockParser) {
+		return this.Raw(this.consumeUntilSemicolonIncluded, true);
+	});
+}
+
 /**
- * A css-tree with an amended grammar dictionary. A syntax beginning with
- * `|` extends the entry the property index states rather than replacing it.
+ * The engine's one css-tree fork: style blocks read nested rules, and the
+ * grammar dictionary is amended. A syntax beginning with `|` extends the
+ * entry the property index states rather than replacing it. Each fork
+ * builds a lexer of its own, so the stylesheet parser and the value
+ * matcher share this one.
  */
-export const fork: (extension: {
-	properties?: Record<string, string>;
-	types?: Record<string, string>;
-}) => {lexer: Lexer} = Runtime.fork;
+export const syntax: {parse: typeof parse; lexer: Lexer} = (
+	Runtime.fork as (extension: object) => {parse: typeof parse; lexer: Lexer}
+)({
+	// The property index's grammars, with entries the index states from an
+	// older spec level brought up to date. The deprecated system colors
+	// still parse, per CSS Color 4.
+	properties: {
+		"alignment-baseline": "| text-bottom | text-top",
+		"text-align":
+			"| -webkit-left | -webkit-center | -webkit-right | -moz-left | -moz-center | -moz-right",
+		"baseline-shift": "| top | center | bottom",
+		display: "| [ block | inline ]? math",
+		"outline-color": "| invert",
+	},
+	types: {
+		color: "| <deprecated-system-color>",
+		"family-name":
+			"| generic( <custom-ident>+ ) | -webkit-generic( <custom-ident>+ )",
+	},
+	node: {
+		Block: {
+			parse(this: BlockParser, isStyleBlock: boolean) {
+				const start = this.tokenStart;
+				const children = this.createList();
+				this.eat(LeftCurlyBracket);
+				scan: while (!this.eof) {
+					switch (this.tokenType) {
+						case RightCurlyBracket:
+							break scan;
+						case WhiteSpace:
+						case Comment:
+							this.next();
+							break;
+						case AtKeyword:
+							children.push(
+								this.parseWithFallback(
+									() => this.Atrule(isStyleBlock),
+									function (this: BlockParser) {
+										return this.Raw(null, true);
+									},
+								),
+							);
+							break;
+						default:
+							children.push(
+								isStyleBlock
+									? consumeBlockItem.call(this)
+									: this.parseWithFallback(
+										this.Rule,
+										function (this: BlockParser) {
+											return this.Raw(null, true);
+										},
+									),
+							);
+					}
+				}
+				if (!this.eof) {
+					this.eat(RightCurlyBracket);
+				}
+				return {
+					type: "Block",
+					loc: this.getLocation(start, this.tokenStart),
+					children,
+				};
+			},
+		},
+	},
+});

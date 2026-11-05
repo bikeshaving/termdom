@@ -3522,121 +3522,6 @@ function checkRuleOrder(
 	}
 }
 
-// css-tree reads a style block's items as declarations, and one that
-// fails becomes a Raw node running to the next semicolon, so `.title {}`
-// nested in a rule vanished with everything after it. CSS Syntax reads an
-// item that is not a declaration as a nested rule (css-nesting-1 §2), and
-// so does this: a declaration is tried first, and an item that fails, or
-// that holds a {} block without being a custom property, is read again as
-// a rule.
-const {
-	AtKeyword,
-	Comment,
-	LeftCurlyBracket,
-	RightCurlyBracket,
-	Semicolon,
-	WhiteSpace,
-} = CSSTree.tokenTypes;
-
-interface BlockParser {
-	eof: boolean;
-	tokenType: number;
-	tokenIndex: number;
-	tokenStart: number;
-	createList(): {push(node: unknown): void};
-	eat(type: number): void;
-	next(): void;
-	skip(count: number): void;
-	getTokenStart(index: number): number;
-	substrToCursor(start: number): string;
-	getLocation(start: number, end: number): unknown;
-	parseWithFallback(consumer: unknown, fallback: unknown): unknown;
-	consumeUntilSemicolonIncluded: unknown;
-	Raw(consumer: unknown, excludeWhiteSpace: boolean): unknown;
-	Rule(): unknown;
-	Declaration(): {property?: string};
-	Atrule(isStyleBlock: boolean): unknown;
-}
-
-function consumeBlockItem(this: BlockParser): unknown {
-	if (this.tokenType === Semicolon) {
-		return this.Raw(this.consumeUntilSemicolonIncluded, true);
-	}
-	const start = this.tokenIndex;
-	const startOffset = this.getTokenStart(start);
-	let declaration: {property?: string} | null;
-	try {
-		declaration = this.Declaration();
-	} catch (_err) {
-		declaration = null;
-	}
-	if (
-		declaration !== null &&
-		(String(declaration.property ?? "").startsWith("--") ||
-			!this.substrToCursor(startOffset).includes("{"))
-	) {
-		if (this.tokenType === Semicolon) {
-			this.next();
-		}
-		return declaration;
-	}
-	this.skip(start - this.tokenIndex);
-	return this.parseWithFallback(this.Rule, function (this: BlockParser) {
-		return this.Raw(this.consumeUntilSemicolonIncluded, true);
-	});
-}
-
-const nestingSyntax = (CSSTree.fork as (extension: object) => typeof CSSTree)({
-	node: {
-		Block: {
-			parse(this: BlockParser, isStyleBlock: boolean) {
-				const start = this.tokenStart;
-				const children = this.createList();
-				this.eat(LeftCurlyBracket);
-				scan: while (!this.eof) {
-					switch (this.tokenType) {
-						case RightCurlyBracket:
-							break scan;
-						case WhiteSpace:
-						case Comment:
-							this.next();
-							break;
-						case AtKeyword:
-							children.push(
-								this.parseWithFallback(
-									() => this.Atrule(isStyleBlock),
-									function (this: BlockParser) {
-										return this.Raw(null, true);
-									},
-								),
-							);
-							break;
-						default:
-							children.push(
-								isStyleBlock
-									? consumeBlockItem.call(this)
-									: this.parseWithFallback(
-										this.Rule,
-										function (this: BlockParser) {
-											return this.Raw(null, true);
-										},
-									),
-							);
-					}
-				}
-				if (!this.eof) {
-					this.eat(RightCurlyBracket);
-				}
-				return {
-					type: "Block",
-					loc: this.getLocation(start, this.tokenStart),
-					children,
-				};
-			},
-		},
-	},
-});
-
 // While the cascade parses every sheet, the trees of the texts it has
 // read, which building rules only reads, so a page that links a sheet
 // more than once parses its text once. Dropped when the parse ends.
@@ -3658,7 +3543,7 @@ function parseRules(
 			// sheet keeps what a raw-text parse would keep. Positions are on
 			// because the value TEXT serializes from the authored source, not
 			// from the parsed spelling.
-			ast = nestingSyntax.parse(text, {
+			ast = CSSTree.syntax.parse(text, {
 				parseValue: true,
 				parseAtrulePrelude: false,
 				parseRulePrelude: false,
@@ -3683,7 +3568,7 @@ function parseRuleText(
 	const source = String(text ?? "");
 	let ast: {children: {toArray(): CSSTree.StyleSheetNode[]}};
 	try {
-		ast = nestingSyntax.parse(source, {
+		ast = CSSTree.syntax.parse(source, {
 			parseValue: false,
 			parseAtrulePrelude: false,
 			parseRulePrelude: false,

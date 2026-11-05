@@ -1034,25 +1034,6 @@ function perEnd(values: string[]): [string, string] {
 	return [a, b];
 }
 
-// The property index's grammars, with entries the index states from an
-// older spec level brought up to date. The deprecated system colors
-// still parse, per CSS Color 4.
-const grammarLexer = CSSTree.fork({
-	properties: {
-		"alignment-baseline": "| text-bottom | text-top",
-		"text-align":
-			"| -webkit-left | -webkit-center | -webkit-right | -moz-left | -moz-center | -moz-right",
-		"baseline-shift": "| top | center | bottom",
-		display: "| [ block | inline ]? math",
-		"outline-color": "| invert",
-	},
-	types: {
-		color: "| <deprecated-system-color>",
-		"family-name":
-			"| generic( <custom-ident>+ ) | -webkit-generic( <custom-ident>+ )",
-	},
-}).lexer;
-
 interface ValueTerm {
 	text: string;
 	terms: string[];
@@ -1074,7 +1055,7 @@ function getGrammarTerms(property: string, value: string): ValueTerm[] | null {
 		getTrace(node: unknown): Array<{type: string; name: string}> | null;
 	};
 	try {
-		match = grammarLexer.matchProperty(property, parsed.root) as never;
+		match = CSSTree.syntax.lexer.matchProperty(property, parsed.root) as never;
 	} catch (_err) {
 		return null;
 	}
@@ -1755,7 +1736,7 @@ const FONT_VARIANT_LONGHANDS = [
 ];
 
 function matchesProperty(property: string, text: string): boolean {
-	return grammarLexer.matchProperty(property, text).matched !== null;
+	return CSSTree.syntax.lexer.matchProperty(property, text).matched !== null;
 }
 
 /**
@@ -2017,7 +1998,11 @@ export function expandShorthands(
 				for (const component of values) {
 					const longhand = longhands.find(
 						(candidate) =>
-							grammarLexer.matchProperty(candidate, component).matched !== null,
+							CSSTree.syntax.lexer.matchProperty(
+								candidate,
+								component,
+							).matched !==
+							null,
 					);
 					if (longhand === undefined) {
 						valid = false;
@@ -2623,8 +2608,12 @@ function isValidByGrammar(
 	let valid: boolean;
 	try {
 		const match = atRule
-			? grammarLexer.matchAtruleDescriptor(atRule.slice(1), property, text)
-			: grammarLexer.matchProperty(property, text);
+			? CSSTree.syntax.lexer.matchAtruleDescriptor(
+				atRule.slice(1),
+				property,
+				text,
+			)
+			: CSSTree.syntax.lexer.matchProperty(property, text);
 		// A descriptor or property the grammars do not describe cannot be
 		// checked.
 		valid =
