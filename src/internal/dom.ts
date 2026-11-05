@@ -38552,19 +38552,39 @@ function handleMutationRecords(
 // as HTML's autofocus candidates do: only while nothing has it, so markup
 // that arrives later never takes it from what the user is typing in.
 function focusAutofocusedNodes(mutations: MutationRecord[]): void {
+	let checked: Document | null = null;
 	for (const record of mutations) {
 		for (const node of getAddedNodes(record)) {
 			if (getNodeType(node) !== node.ELEMENT_NODE) {
 				continue;
 			}
 			const element = node as Element;
-			const document = element.ownerDocument as unknown as
-				globalThis.Document;
-			const candidates = [
-				...((element as {autofocus?: boolean}).autofocus ? [element] : []),
-				...element.querySelectorAll("[autofocus]"),
-			];
-			if (candidates.length > 0 && focusFirst(document, candidates)) {
+			const document = getOwnerDocument(element);
+			if (document === null) {
+				continue;
+			}
+			if (document !== checked) {
+				const active = document.activeElement;
+				if (active !== null && active !== document.body) {
+					return;
+				}
+				checked = document;
+			}
+			const candidates: Element[] = [];
+			for (
+				let at: Node | null = element; at !== null; at = nextInTree(at, element)
+			) {
+				if (
+					getNodeType(at) === at.ELEMENT_NODE &&
+					getAttributeByName(at as Element, "autofocus") !== null
+				) {
+					candidates.push(at as Element);
+				}
+			}
+			if (
+				candidates.length > 0 &&
+				focusFirst(document as unknown as globalThis.Document, candidates)
+			) {
 				return;
 			}
 		}
