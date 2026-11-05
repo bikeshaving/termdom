@@ -1,0 +1,188 @@
+/**
+ * A child added or removed restyles the children whose sibling tests it
+ * changes, with their subtrees when a rule reaches below them, and leaves
+ * the rest. Each screen after a mutation must match a document drawn
+ * fresh from the same markup.
+ */
+import {expect, test} from "@b9g/libuild/test";
+
+import {TermDOM} from "../src/index.ts";
+import {getStyleKey} from "../src/internal/cssom.ts";
+import {MockProcess, nextFrame} from "./test-utils.js";
+
+const RED = "rgb(255, 0, 0)";
+const BLUE = "rgb(0, 0, 255)";
+
+async function freshScreen(document: Document): Promise<string> {
+	const terminal = new MockProcess({cols: 60, rows: 16});
+	const termdom = new TermDOM({transport: terminal.transport});
+	termdom.document.head.innerHTML = document.head.innerHTML;
+	termdom.document.body.innerHTML = document.body.innerHTML;
+	await nextFrame(termdom);
+	const screen = terminal.getScreenContents();
+	termdom.dispose();
+	return screen;
+}
+
+async function mount(
+	css: string,
+	html: string,
+): Promise<{termdom: TermDOM; terminal: MockProcess; document: Document}> {
+	const terminal = new MockProcess({cols: 60, rows: 16});
+	const termdom = new TermDOM({transport: terminal.transport});
+	const document = termdom.document as unknown as Document;
+	document.head.innerHTML = `<style>${css}</style>`;
+	document.body.innerHTML = html;
+	await nextFrame(termdom);
+	return {termdom, terminal, document};
+}
+
+// The elements under `root` whose style key changed across `change`.
+async function restyled(
+	termdom: TermDOM,
+	root: Element,
+	change: () => void,
+): Promise<Element[]> {
+	const elements = [...root.querySelectorAll("*")];
+	const keys = elements.map((element) => getStyleKey(element));
+	change();
+	await nextFrame(termdom);
+	return elements.filter((element, index) =>
+		element.isConnected && getStyleKey(element) !== keys[index]);
+}
+
+test("a :not(:last-child) under a keyed compound restyles the keyed child that stops being last", async () => {
+	const {termdom, terminal, document} = await mount(
+		".day:not(:last-child) { color: rgb(255, 0, 0); }",
+		"<div id=grid><span class=day id=a>a</span><span class=day id=b>b</span></div>",
+	);
+	const {window} = termdom;
+	const b = document.getElementById("b")!;
+	expect(window.getComputedStyle(b).color).not.toBe(RED);
+	const c = document.createElement("span");
+	c.className = "day";
+	c.textContent = "c";
+	document.getElementById("grid")!.append(c);
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(b).color).toBe(RED);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	c.remove();
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(b).color).not.toBe(RED);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});
+
+test("a keyless child test after > restyles the children of a parent with the key", async () => {
+	const {termdom, terminal, document} = await mount(
+		".stack > :not(:last-child) { color: rgb(255, 0, 0); }" +
+			" .list > :last-child b { color: rgb(0, 0, 255); }",
+		"<div class=stack id=stack><p id=one>1</p><p id=two>2</p></div>" +
+			"<div class=list id=list><p id=x><b id=xb>x</b></p></div>",
+	);
+	const {window} = termdom;
+	const two = document.getElementById("two")!;
+	const xb = document.getElementById("xb")!;
+	expect(window.getComputedStyle(two).color).not.toBe(RED);
+	expect(window.getComputedStyle(xb).color).toBe(BLUE);
+	document.getElementById("stack")!.append(document.createElement("p"));
+	document.getElementById("list")!.append(document.createElement("p"));
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(two).color).toBe(RED);
+	expect(window.getComputedStyle(xb).color).not.toBe(BLUE);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	document.getElementById("stack")!.lastElementChild!.remove();
+	document.getElementById("list")!.lastElementChild!.remove();
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(two).color).not.toBe(RED);
+	expect(window.getComputedStyle(xb).color).toBe(BLUE);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});
+
+test("a keyless child test whose parent has no key restyles any child", async () => {
+	const {termdom, terminal, document} = await mount(
+		"div > :not(:last-child) { color: rgb(255, 0, 0); }" +
+			" * > :first-child { background-color: rgb(0, 0, 255); }",
+		"<section id=s><p id=one>1</p></section>",
+	);
+	const {window} = termdom;
+	const one = document.getElementById("one")!;
+	const s = document.getElementById("s")!;
+	s.append(document.createElement("p"));
+	s.prepend(document.createElement("p"));
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(one).backgroundColor).not.toBe(BLUE);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});
+
+test("a sibling-tested subject restyles below it only when its rule sets an inherited property", async () => {
+	const {termdom, terminal, document} = await mount(
+		".a:first-child { color: rgb(255, 0, 0); }" +
+			" .b + .b { margin-left: 1px; }" +
+			" .c:first-child .inner { color: rgb(0, 0, 255); }",
+		"<div id=as><p class=a id=a><i id=ai>a</i></p></div>" +
+			"<div id=bs><p class=b><i>1</i></p><p class=b><i>2</i></p></div>" +
+			"<div id=cs><p class=c id=c><span><i class=inner id=inner>c</i></span></p></div>",
+	);
+	const {window} = termdom;
+	const ai = document.getElementById("ai")!;
+	const inner = document.getElementById("inner")!;
+	expect(window.getComputedStyle(ai).color).toBe(RED);
+	expect(window.getComputedStyle(inner).color).toBe(BLUE);
+	document.getElementById("as")!.prepend(document.createElement("p"));
+	document.getElementById("cs")!.prepend(document.createElement("p"));
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(ai).color).not.toBe(RED);
+	expect(window.getComputedStyle(inner).color).not.toBe(BLUE);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+
+	const bs = document.getElementById("bs")!;
+	const changed = await restyled(termdom, bs, () => {
+		const b = document.createElement("p");
+		b.className = "b";
+		bs.prepend(b);
+	});
+	expect(changed.map((element) => element.localName)).toEqual(["p", "p"]);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});
+
+test("the UA's summary:first-of-type rule restyles a summary that stops being first", async () => {
+	const {termdom, document} = await mount(
+		"",
+		"<details id=d><summary id=old><b>a</b></summary></details>",
+	);
+	const {window} = termdom;
+	const old = document.getElementById("old")!;
+	expect(window.getComputedStyle(old).display).toBe("list-item");
+	old.before(document.createElement("summary"));
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(old).display).toBe("block");
+	termdom.dispose();
+});
+
+test("a child added or removed leaves the subtrees no sibling test names", async () => {
+	const {termdom, terminal, document} = await mount(
+		".day:not(:last-child) { color: rgb(255, 0, 0); }" +
+			" .stack > :not(:last-child) { color: rgb(255, 0, 0); }" +
+			" .nav .item { color: rgb(0, 0, 255); }",
+		"<nav class=nav id=nav>" +
+			Array.from(
+				{length: 20},
+				(_, i) =>
+					`<div class=item><a>${i}</a><ul><li>x</li><li>y</li></ul></div>`,
+			).join("") +
+			"</nav>",
+	);
+	const nav = document.getElementById("nav")!;
+	const item = document.createElement("div");
+	item.className = "item";
+	item.textContent = "new";
+	expect(await restyled(termdom, nav, () => nav.append(item))).toEqual([]);
+	expect(await restyled(termdom, nav, () => item.remove())).toEqual([]);
+	expect(await restyled(termdom, nav, () => nav.prepend(item))).toEqual([]);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});
