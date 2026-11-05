@@ -7064,23 +7064,25 @@ function shouldCreatePseudoElement(
 // The pseudo-elements this engine gives a node of their own.
 const PSEUDO_ELEMENT_NAMES = ["::before", "::after", "::marker"];
 
+// If no pseudo rule names this element's type and it has no
+// pseudo-element to reconsider, attaching would find none, at the cost of
+// one matches() call per rule. Counters are built when a content value
+// first reads them.
+function mayHavePseudoElements(cascade: Cascade, element: Element): boolean {
+	const tags = getPseudoSubjects(cascade);
+	return tags === null ||
+		tags.has(toASCIILowercase(getLocalName(element))) ||
+		hasAttributeByName(element, "part") ||
+		pseudoElementCount(element) > 0 ||
+		isListItemBlock(readInlineBlock(element));
+}
+
 // The entry point for mutations.
 function attachPseudoElementsToElement(
 	cascade: Cascade,
 	element: Element,
 ): void {
-	// If no pseudo rule names this element's type and it has no
-	// pseudo-element to reconsider, everything below would return no, at
-	// the cost of one matches() call per rule. Counters are built when a
-	// content value first reads them.
-	const tags = getPseudoSubjects(cascade);
-	if (
-		tags !== null &&
-		!tags.has(toASCIILowercase(getLocalName(element))) &&
-		!hasAttributeByName(element, "part") &&
-		pseudoElementCount(element) === 0 &&
-		!isListItemBlock(readInlineBlock(element))
-	) {
+	if (!mayHavePseudoElements(cascade, element)) {
 		return;
 	}
 
@@ -7092,6 +7094,15 @@ function attachPseudoElementsToElement(
 			pseudoType,
 			candidates.get(pseudoType) ?? NO_RULES,
 		);
+	}
+}
+
+// The ::marker alone, which a restyle that leaves ::before and ::after
+// as they were still reconsiders, since the marker reads the
+// list-style-position its element inherits.
+function attachMarkerToElement(cascade: Cascade, element: Element): void {
+	if (mayHavePseudoElements(cascade, element)) {
+		attachPseudoElementToElementForType(cascade, element, "::marker");
 	}
 }
 
@@ -7188,6 +7199,21 @@ interface RuleSummary {
 	// Whether any rule is scoped, which is what adds proximity to the sort.
 	scopedRulesExist: boolean;
 
+	// The keys whose change on an element can give a DESCENDANT's ::before
+	// or ::after other content: those a rule that may give content tests
+	// anywhere but on its subject's own compound, as `.open .x::before`
+	// tests `.open`, each also folded to lowercase for a quirks-mode page.
+	// Null when any key can, as a scoped rule's roots are not read here.
+	pseudoContentKeys: Set<string> | null;
+	// The inherited values such a rule's content may read: the custom
+	// properties its var() names, `quotes` for a quote, and `content` for
+	// content that inherits. By each, the keys of the rules declaring it,
+	// null when those cannot be listed. And by each custom property, the
+	// custom properties its own values name.
+	pseudoContentInputs: Set<string>;
+	inputKeys: Map<string, Set<string> | null>;
+	customPropertyReads: Map<string, Set<string>>;
+
 	// What each tree's rules ask of the cascade, by the tree whose sheets
 	// declared them, as siblingRuleIndexes keeps it.
 	scopeRules: Map<Node, ScopeRules>;
@@ -7209,6 +7235,10 @@ function createRuleSummary(): RuleSummary {
 		listItemRulesExist: false,
 		insideMarkerRulesExist: false,
 		scopedRulesExist: false,
+		pseudoContentKeys: new Set(),
+		pseudoContentInputs: new Set(),
+		inputKeys: new Map(),
+		customPropertyReads: new Map(),
 		scopeRules: new Map(),
 	};
 }
@@ -7538,17 +7568,68 @@ interface MutationBatch {
 	// setting hundreds of custom properties on <html> one at a time sent
 	// a record for each.
 	invalidated: Map<Element, boolean>;
+	// The subtrees whose walk reconsidered each element's ::before and
+	// ::after too, as invalidated keeps them.
+	reattached: Map<Element, boolean>;
 }
 
+// With `reattach` false, the descendants' ::before and ::after are left
+// as they were, as invalidateSubtree leaves them.
 function invalidateOnce(
 	cascade: Cascade,
 	batch: MutationBatch,
 	element: Element,
 	notifyLayout = true,
+	reattach = true,
 ): void {
 	if (!isInvalidatedUnder(batch.invalidated, element, notifyLayout)) {
 		batch.invalidated.set(element, notifyLayout);
-		invalidateSubtree(cascade, element, notifyLayout);
+		if (notifyLayout && reattach) {
+			batch.reattached.set(element, true);
+		}
+		invalidateSubtree(cascade, element, notifyLayout, reattach);
+	} else if (notifyLayout) {
+		reattachUncovered(cascade, batch, element, reattach);
+	}
+}
+
+// An element restyled with a subtree the batch walked earlier, for a
+// change of its own. A walk that left ::before and ::after as they were
+// reconsidered them for its own change only, so they are reconsidered
+// here for this one: the element's, and with `descendants`, those of the
+// elements under it.
+function reattachUncovered(
+	cascade: Cascade,
+	batch: MutationBatch,
+	element: Element,
+	descendants: boolean,
+): void {
+	if (isInvalidatedUnder(batch.reattached, element, true)) {
+		return;
+	}
+	if (!descendants) {
+		attachPseudoElementsToElement(cascade, element);
+		return;
+	}
+	batch.reattached.set(element, true);
+	reattachSubtree(cascade, element);
+}
+
+function reattachSubtree(cascade: Cascade, element: Element): void {
+	for (
+		let node: Element | null = element;
+		node !== null;
+		node = nextElementUnder(node, element)
+	) {
+		attachPseudoElementsToElement(cascade, node);
+		const root = getShadowRoot(node);
+		for (
+			let child = root?.firstElementChild ?? null;
+			child !== null;
+			child = child.nextElementSibling
+		) {
+			reattachSubtree(cascade, child as Element);
+		}
 	}
 }
 
@@ -7603,6 +7684,7 @@ export function handleMutations(
 		removedElements: false,
 		changedParents: new Map(),
 		invalidated: new Map(),
+		reattached: new Map(),
 	};
 	invalidateHasAnchors(cascade, batch, mutations);
 	for (const mutation of mutations) {
@@ -7827,6 +7909,17 @@ function handleAttributeMutation(
 		: null;
 	if (covered) {
 		// Restyled with the subtree it is in.
+		reattachUncovered(
+			cascade,
+			batch,
+			element,
+			attributeReachesPseudoContent(
+				cascade,
+				element,
+				mutation.attributeName!,
+				mutation.oldValue,
+			),
+		);
 	} else if (subjects !== null) {
 		invalidateElementCaches(cascade, element, notifyLayout);
 		attachPseudoElementsToElement(cascade, element);
@@ -7859,7 +7952,18 @@ function handleAttributeMutation(
 			mutation.oldValue,
 		)
 	) {
-		invalidateOnce(cascade, batch, element, notifyLayout);
+		invalidateOnce(
+			cascade,
+			batch,
+			element,
+			notifyLayout,
+			attributeReachesPseudoContent(
+				cascade,
+				element,
+				mutation.attributeName!,
+				mutation.oldValue,
+			),
+		);
 	} else {
 		invalidateElementCaches(cascade, element, notifyLayout);
 		attachPseudoElementsToElement(cascade, element);
@@ -10306,11 +10410,15 @@ function isInvalidatedUnder(
 }
 
 // Descendants and the hosted shadow tree too, since inheritance crosses
-// that boundary.
+// that boundary. With `reattach` false, for a change pseudoContentReached
+// rules out, the descendants keep their ::before and ::after. Only each
+// ::marker, and the ::before and ::after of those whose content reads
+// counters, which the change may renumber, are reconsidered.
 function invalidateSubtree(
 	cascade: Cascade,
 	element: Element,
 	notifyLayout = true,
+	reattach = true,
 ): void {
 	// A paint-only change cannot create or remove a pseudo-element, since
 	// `content` is not a paint property, so the attachment pass is skipped
@@ -10322,7 +10430,11 @@ function invalidateSubtree(
 	) {
 		invalidateElementCaches(cascade, node, notifyLayout);
 		if (notifyLayout) {
-			attachPseudoElementsToElement(cascade, node);
+			if (reattach || node === element || cascade.counterUsers.has(node)) {
+				attachPseudoElementsToElement(cascade, node);
+			} else {
+				attachMarkerToElement(cascade, node);
+			}
 		}
 		// Closed and UA shadow trees inherit as an open one does.
 		const root = getShadowRoot(node);
@@ -10331,7 +10443,7 @@ function invalidateSubtree(
 			child !== null;
 			child = child.nextElementSibling
 		) {
-			invalidateSubtree(cascade, child as Element, notifyLayout);
+			invalidateSubtree(cascade, child as Element, notifyLayout, reattach);
 		}
 	}
 }
@@ -12018,6 +12130,184 @@ function indexReachingKeys(
 	}
 }
 
+// What a rule adds to the summary pseudoContentReached reads.
+function indexPseudoContentKeys(
+	cascade: Cascade,
+	complex: CompiledComplex,
+	declarations: Record<string, string>,
+	scoped: boolean,
+): void {
+	const summary = cascade.summary;
+	const compounds = complex.compounds.map((_, index) =>
+		getWrittenCompounds(complex, index));
+	let keys: string[] | undefined;
+	for (const property in declarations) {
+		const custom = property.startsWith("--");
+		const inputs = property === "all"
+			? ["quotes", "content"]
+			: custom || property === "quotes" || property === "content"
+			? [property]
+			: [];
+		for (const input of inputs) {
+			keys ??= getNamedKeys(compounds.flat());
+			addInputKeys(summary, input, scoped ? null : keys);
+		}
+		if (custom) {
+			const names = getVarNames(declarations[property]);
+			if (names === null) {
+				summary.pseudoContentKeys = null;
+			} else if (names.length > 0) {
+				let reads = summary.customPropertyReads.get(property);
+				if (reads === undefined) {
+					summary.customPropertyReads.set(property, (reads = new Set()));
+				}
+				for (const name of names) {
+					reads.add(name);
+				}
+			}
+		}
+	}
+	if (
+		complex.pseudoElement === null ||
+		(declarations.content === undefined && declarations.all === undefined)
+	) {
+		return;
+	}
+	const content = declarations.content ?? "";
+	if (declarations.all !== undefined) {
+		summary.pseudoContentInputs.add("quotes");
+		summary.pseudoContentInputs.add("content");
+	}
+	if (/^\s*inherit\s*$/i.test(content)) {
+		summary.pseudoContentInputs.add("content");
+	}
+	if (/(?:open|close)-quote/i.test(content)) {
+		summary.pseudoContentInputs.add("quotes");
+	}
+	const names = getVarNames(content);
+	if (names === null || scoped) {
+		summary.pseudoContentKeys = null;
+		return;
+	}
+	for (const name of names) {
+		summary.pseudoContentInputs.add(name);
+	}
+	if (summary.pseudoContentKeys === null) {
+		return;
+	}
+	// The subject's own compound tests the element whose pseudo-element it
+	// is, unless it selects through ::part() or ::slotted(), or is :host.
+	const last = compounds.length - 1;
+	const ownCompound =
+		complex.compounds[last].pseudoElement === null && !complex.host;
+	for (const [index, nested] of compounds.entries()) {
+		const tested = index === last && ownCompound ? nested.slice(1) : nested;
+		for (const key of getNamedKeys(tested)) {
+			summary.pseudoContentKeys.add(key);
+			summary.pseudoContentKeys.add(toASCIILowercase(key));
+		}
+	}
+}
+
+function addInputKeys(
+	summary: RuleSummary,
+	input: string,
+	keys: readonly string[] | null,
+): void {
+	let declaring = summary.inputKeys.get(input);
+	if (declaring === null) {
+		return;
+	}
+	if (keys === null) {
+		summary.inputKeys.set(input, null);
+		return;
+	}
+	if (declaring === undefined) {
+		summary.inputKeys.set(input, (declaring = new Set()));
+	}
+	for (const key of keys) {
+		declaring.add(key);
+		declaring.add(toASCIILowercase(key));
+	}
+}
+
+// The custom properties a value's var() calls name, or null when one is
+// written with an escape, whose name is not read here.
+function getVarNames(value: string): string[] | null {
+	const names: string[] = [];
+	for (const [, name] of value.matchAll(/var\(\s*([^\s,)]*)/gi)) {
+		if (name.includes("\\")) {
+			return null;
+		}
+		names.push(name);
+	}
+	return names;
+}
+
+// Whether a change to these keys on an element can give one of its
+// descendants' ::before or ::after other content, or take it away. A
+// key is `.name`, `#name` or `[name]`, folded to lowercase on a
+// quirks-mode page. Content is not inherited, so only a rule testing the
+// key above or beside its subject can, or one declaring an inherited
+// value the content reads, or a custom property such a value names.
+function pseudoContentReached(
+	cascade: Cascade,
+	keys: readonly string[],
+): boolean {
+	const summary = cascade.summary;
+	const tested = summary.pseudoContentKeys;
+	if (tested === null || keys.some((key) => tested.has(key))) {
+		return true;
+	}
+	const inputs = [...summary.pseudoContentInputs];
+	const seen = new Set(inputs);
+	for (let index = 0; index < inputs.length; index++) {
+		const declaring = summary.inputKeys.get(inputs[index]);
+		if (
+			declaring === null ||
+			(declaring !== undefined && keys.some((key) => declaring.has(key)))
+		) {
+			return true;
+		}
+		for (const name of summary.customPropertyReads.get(inputs[index]) ?? []) {
+			if (!seen.has(name)) {
+				seen.add(name);
+				inputs.push(name);
+			}
+		}
+	}
+	return false;
+}
+
+// Whether a change to the attribute can give the element's descendants'
+// ::before or ::after other content. Only a class change is told apart,
+// and only with its old value, which names the classes that left.
+function attributeReachesPseudoContent(
+	cascade: Cascade,
+	element: Element,
+	name: string,
+	oldValue: string | null,
+): boolean {
+	if (name !== "class" || oldValue === null) {
+		return true;
+	}
+	const quirks = getOwnerDocument(element)?.compatMode === "BackCompat";
+	const before = getValueTokens(oldValue);
+	const after = getClassTokens(element);
+	const keys = ["[class]"];
+	for (const token of after) {
+		if (!before.has(token)) {
+			keys.push(`.${quirks ? toASCIILowercase(token) : token}`);
+		}
+	}
+	for (const token of before) {
+		if (!after.has(token)) {
+			keys.push(`.${quirks ? toASCIILowercase(token) : token}`);
+		}
+	}
+	return pseudoContentReached(cascade, keys);
+}
+
 function parseSelector(
 	cascade: Cascade,
 	selector: string,
@@ -12068,6 +12358,12 @@ function parseSelector(
 		cascade.summary.scopedRulesExist = true;
 	}
 	indexReachingKeys(cascade, complex, block.declarations, scope);
+	indexPseudoContentKeys(
+		cascade,
+		complex,
+		block.declarations,
+		context.scopes.length > 0,
+	);
 	if (usesCounters(block)) {
 		cascade.summary.counterRulesExist = true;
 	}
@@ -13113,18 +13409,22 @@ function mayGiveContent(rule: ParsedCSSRule): boolean {
 }
 
 // The rules given are the element's candidates for the pseudo-element,
-// as getPseudoCandidates files them.
+// as getPseudoCandidates files them, found when not given.
 function attachPseudoElementToElementForType(
 	cascade: Cascade,
 	element: Element,
 	pseudoType: string,
-	rules: readonly ParsedCSSRule[] =
-		getPseudoCandidates(cascade, element).get(pseudoType) ?? NO_RULES,
+	rules?: readonly ParsedCSSRule[],
 ): void {
+	// The test below reads no candidates for a ::marker, so they are found
+	// past it.
+	if (pseudoType !== "::marker") {
+		rules ??= getPseudoCandidates(cascade, element).get(pseudoType) ?? NO_RULES;
+	}
 	// An attached pseudo-element still takes the full path, so a rule that
 	// STOPPED matching removes it.
 	if (
-		!pseudoRuleCouldMatch(cascade, element, pseudoType, rules) &&
+		!pseudoRuleCouldMatch(cascade, element, pseudoType, rules ?? NO_RULES) &&
 		!pseudoElement(element, pseudoType)
 	) {
 		return;
