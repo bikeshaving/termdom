@@ -361,8 +361,11 @@ const {ArabicShaper} = arabicPersianReshaper;
 const ARABIC =
 	/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 
+// The blocks whose code points default to R or AL, which hold each R
+// and AL character, and the right-to-left mark, embedding, override and
+// isolate.
 const RTL_SCRIPT =
-	/[\u0590-\u05FF\u0600-\u07BF\u07C0-\u085F\u08A0-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+	/[\u0590-\u08FF\u200F\u202B\u202E\u2067\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u;
 
 export function hasRTL(text: string): boolean {
 	return RTL_SCRIPT.test(text);

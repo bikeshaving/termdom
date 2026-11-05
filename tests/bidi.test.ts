@@ -81,6 +81,18 @@ test("paragraph direction is inferred from the first strong character", () => {
 	expect(hasRTL("plain ascii")).toBe(false);
 });
 
+test("a right-to-left mark alone makes the paragraph RTL", () => {
+	expect(hasRTL("‏hello")).toBe(true);
+	expect(getParagraphDirection("‏hello")).toBe("rtl");
+});
+
+test("Unicode 14 and later RTL letters and supplementary scripts count", () => {
+	// U+0870 is Arabic Extended-B; U+1E900 and U+1E901 are Adlam.
+	expect(getParagraphDirection("ࡰ hello")).toBe("rtl");
+	expect(getParagraphDirection("\u{1E900} hello")).toBe("rtl");
+	expect(toVisualOrder("\u{1E900}\u{1E901}", "rtl")).toBe("\u{1E901}\u{1E900}");
+});
+
 test("a supplementary character keeps its code units in order when reversed", () => {
 	// An emoji is ON, so between two Hebrew words it takes their direction.
 	expect(toVisualOrder("שלום 😀 עולם", "rtl")).toBe("םלוע 😀 םולש");

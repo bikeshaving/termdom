@@ -365,6 +365,16 @@ test(":dir reads the direction HTML computes, not the text it can see", () => {
 	expect(ids(html, "[id]:dir(ltr)")).toEqual(["ltr", "auto2", "auto3"]);
 });
 
+test("dir=auto finds strong characters outside the common RTL blocks", () => {
+	const html = `
+		<div id=mark dir=auto>&#x200F;hello</div>
+		<div id=extb dir=auto>&#x0870; hello</div>
+		<div id=adlam dir=auto>&#x1E900; hello</div>
+		<div id=plain dir=auto>hello</div>
+	`;
+	expect(ids(html, "[id]:dir(rtl)")).toEqual(["mark", "extb", "adlam"]);
+});
+
 test("a bdi reads its own text, and keeps it out of the scan above it", () => {
 	const html = `
 		<div id=holder><bdi id=b>שלום</bdi></div>
