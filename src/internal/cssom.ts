@@ -4534,37 +4534,6 @@ export function getFixedContainingBlock(element: Element): Element | null {
 	return null;
 }
 
-// Only declarations handed to an author materialize an item list. The
-// engine's own computed styles never do. Every computed declaration lists
-// the same longhands first, so their indices are accessors on the shared
-// prototype, and an instance holds only its custom properties' indices.
-function getIndexedDeclaration<T extends CSSStyleDeclaration>(
-	declaration: T,
-): T {
-	const indexed = indexedSlots(declaration);
-	if (
-		indexed.indexCount === undefined &&
-		(declaration instanceof ComputedStyleDeclaration ||
-			declaration instanceof PseudoStyleDeclaration)
-	) {
-		indexed.indexCount = CSS_LONGHANDS.length;
-	}
-	syncIndexed(declaration);
-	return declaration;
-}
-
-function defineLonghandIndices(prototype: object): void {
-	for (let index = 0; index < CSS_LONGHANDS.length; index++) {
-		Object.defineProperty(prototype, index, {
-			get(this: IndexedCollection): unknown {
-				return this.item(index);
-			},
-			enumerable: true,
-			configurable: true,
-		});
-	}
-}
-
 // Writing a computed style is an error, not a no-op. It throws the
 // document's own DOMException, since one from another global is not
 // what an author catches.
@@ -5173,9 +5142,6 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		);
 		slots.own = new Map();
 		dropUsedValues(slots.cascade, getOwner(this));
-		if ((this as IndexedSlots).indexCount !== undefined) {
-			syncIndexed(getOwner(this));
-		}
 		// The re-resolution is a style change event. Whatever changed against
 		// the last snapshot starts, retargets or cancels transitions.
 		processTransitionStyle(
@@ -6457,9 +6423,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		}
 		slots.resolved = new Map();
 		slots.nodeResolved.clear();
-		if ((this as IndexedSlots).indexCount !== undefined) {
-			syncIndexed(getOwner(this));
-		}
 		if (slots.cascade && slots.element && slots.pseudoElement) {
 			processTransitionStyle(
 				slots.cascade,
@@ -6550,9 +6513,6 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		return transitional ?? value;
 	}
 }
-
-defineLonghandIndices(ComputedStyleDeclaration.prototype);
-defineLonghandIndices(PseudoStyleDeclaration.prototype);
 
 // The same cascade with the pseudo-element's own node in place of the
 // element. One view per node: composition may drop a node and make
@@ -9809,13 +9769,15 @@ function getResolvedStyle(
 	}
 
 	if (pseudoElement) {
-		return getIndexedDeclaration(
-			getPseudoDeclaration(cascade, element, pseudoElement),
+		return getPseudoDeclaration(
+			cascade,
+			element,
+			pseudoElement,
 		) as unknown as globalThis.CSSStyleDeclaration;
 	}
 
-	return getIndexedDeclaration(
-		cascade.declarationFor(element),
+	return cascade.declarationFor(
+		element,
 	) as unknown as globalThis.CSSStyleDeclaration;
 }
 
