@@ -1071,10 +1071,29 @@ function inverseDCT(
 	scratch: Float32Array,
 ): void {
 	for (let row = 0; row < 8; row++) {
+		const base = at + row * 8;
+		let flat = true;
+		for (let u = 1; u < 8; u++) {
+			if (input[base + u] !== 0) {
+				flat = false;
+				break;
+			}
+		}
+		if (flat) {
+			// With only a DC term, the row is that term repeated.
+			const coefficient = input[base];
+			const sum = coefficient === 0
+				? 0
+				: IDCT_COS[0] * coefficient * quant[row * 8];
+			for (let x = 0; x < 8; x++) {
+				scratch[row * 8 + x] = sum;
+			}
+			continue;
+		}
 		for (let x = 0; x < 8; x++) {
 			let sum = 0;
 			for (let u = 0; u < 8; u++) {
-				const coefficient = input[at + row * 8 + u];
+				const coefficient = input[base + u];
 				if (coefficient !== 0) {
 					sum += IDCT_COS[x * 8 + u] * coefficient * quant[row * 8 + u];
 				}
@@ -1083,6 +1102,20 @@ function inverseDCT(
 		}
 	}
 	for (let x = 0; x < 8; x++) {
+		let flat = true;
+		for (let v = 1; v < 8; v++) {
+			if (scratch[v * 8 + x] !== 0) {
+				flat = false;
+				break;
+			}
+		}
+		if (flat) {
+			const value = IDCT_COS[0] * scratch[x] + 128;
+			for (let y = 0; y < 8; y++) {
+				out[y * 8 + x] = value;
+			}
+			continue;
+		}
 		for (let y = 0; y < 8; y++) {
 			let sum = 0;
 			for (let v = 0; v < 8; v++) {
@@ -1429,11 +1462,39 @@ async function buildJPEGBitmap(
 			components[2].id === 0x42)
 		);
 	const sample = new Float32Array(4);
+	// Per component, the columns a subsampled pixel interpolates between and
+	// the weight of the second, which depend on x alone.
+	const columns = planes.map(({planeWidth, scaleX}) => {
+		const first = new Int32Array(width);
+		const second = new Int32Array(width);
+		const weight = new Float64Array(width);
+		for (let x = 0; x < width; x++) {
+			const fx = Math.max(0, (x + 0.5) * scaleX - 0.5);
+			const x0 = Math.floor(fx);
+			first[x] = x0;
+			second[x] = Math.min(x0 + 1, planeWidth - 1);
+			weight[x] = fx - x0;
+		}
+		return {first, second, weight};
+	});
 	for (let y = 0; y < height; y++) {
 		await pause();
+		// Per component, the rows a subsampled pixel interpolates between.
+		const rowStart: number[] = [];
+		const rowNext: number[] = [];
+		const rowWeight: number[] = [];
+		for (let c = 0; c < count; c++) {
+			const {planeWidth, planeHeight, scaleY} = planes[c];
+			const fy = Math.max(0, (y + 0.5) * scaleY - 0.5);
+			const y0 = Math.floor(fy);
+			const y1 = Math.min(y0 + 1, planeHeight - 1);
+			rowStart.push(y0 * planeWidth);
+			rowNext.push(y1 * planeWidth);
+			rowWeight.push(fy - y0);
+		}
 		for (let x = 0; x < width; x++) {
 			for (let c = 0; c < count; c++) {
-				const {plane, planeWidth, planeHeight, scaleX, scaleY} = planes[c];
+				const {plane, planeWidth, scaleX, scaleY} = planes[c];
 				if (scaleX === 1 && scaleY === 1) {
 					sample[c] = plane[y * planeWidth + x];
 					continue;
@@ -1441,20 +1502,16 @@ async function buildJPEGBitmap(
 				// A subsampled component is interpolated between the samples
 				// around the pixel's center, as libjpeg's fancy upsampling
 				// does, rather than repeated in blocks.
-				const fx = Math.max(0, (x + 0.5) * scaleX - 0.5);
-				const fy = Math.max(0, (y + 0.5) * scaleY - 0.5);
-				const x0 = Math.floor(fx);
-				const y0 = Math.floor(fy);
-				const x1 = Math.min(x0 + 1, planeWidth - 1);
-				const y1 = Math.min(y0 + 1, planeHeight - 1);
-				const tx = fx - x0;
-				const ty = fy - y0;
-				const top =
-					plane[y0 * planeWidth + x0] * (1 - tx) +
-					plane[y0 * planeWidth + x1] * tx;
+				const {first, second, weight} = columns[c];
+				const x0 = first[x];
+				const x1 = second[x];
+				const tx = weight[x];
+				const ty = rowWeight[c];
+				const top0 = rowStart[c];
+				const bottom0 = rowNext[c];
+				const top = plane[top0 + x0] * (1 - tx) + plane[top0 + x1] * tx;
 				const bottom =
-					plane[y1 * planeWidth + x0] * (1 - tx) +
-					plane[y1 * planeWidth + x1] * tx;
+					plane[bottom0 + x0] * (1 - tx) + plane[bottom0 + x1] * tx;
 				sample[c] = top * (1 - ty) + bottom * ty;
 			}
 			const out = (y * width + x) * 4;
@@ -1466,7 +1523,9 @@ async function buildJPEGBitmap(
 					data[out + 1] = sample[1];
 					data[out + 2] = sample[2];
 				} else {
-					const [Y, Cb, Cr] = sample;
+					const Y = sample[0];
+					const Cb = sample[1];
+					const Cr = sample[2];
 					data[out] = Y + 1.402 * (Cr - 128);
 					data[out + 1] = Y - 0.344136 * (Cb - 128) - 0.714136 * (Cr - 128);
 					data[out + 2] = Y + 1.772 * (Cb - 128);
