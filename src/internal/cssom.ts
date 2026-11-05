@@ -1057,11 +1057,6 @@ function getDeclarationBlock(
 	const importantValues: Record<string, string> = Object.create(null);
 	let undecomposed = false;
 	styleSlots.declarations.forEach((entry, index) => {
-		// An invalid declaration never enters the cascade. Dropping it lets a
-		// lower-priority rule keep winning, as in a browser.
-		if (!CSSValues.isValidDeclaration(entry.name, entry.value)) {
-			return;
-		}
 		declarations[entry.name] = entry.value;
 		order[entry.name] = index;
 		if (entry.important) {
