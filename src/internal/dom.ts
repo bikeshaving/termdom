@@ -7386,16 +7386,53 @@ function *descendants(node: Node): Generator<Node> {
 
 /** Whether node1 precedes node2 in tree order. Both must share a root. */
 function isPrecedingInTree(node1: Node, node2: Node): boolean {
-	const root = getRoot(node1);
-	for (const node of inclusiveDescendants(root)) {
-		if (node === node1) {
-			return true;
-		}
-		if (node === node2) {
+	let first = getSlots(node1);
+	let second = getSlots(node2);
+	if (first === second) {
+		return true;
+	}
+	let firstDepth = 0;
+	for (let at = first.parent; at !== null; at = at.parent) {
+		firstDepth++;
+	}
+	let secondDepth = 0;
+	for (let at = second.parent; at !== null; at = at.parent) {
+		secondDepth++;
+	}
+	for (; firstDepth > secondDepth; firstDepth--) {
+		first = first.parent as Slots<Node>;
+		if (first === second) {
 			return false;
 		}
 	}
-	return false;
+	for (; secondDepth > firstDepth; secondDepth--) {
+		second = second.parent as Slots<Node>;
+		if (second === first) {
+			return true;
+		}
+	}
+	while (first.parent !== second.parent) {
+		if (first.parent === null || second.parent === null) {
+			return false;
+		}
+		first = first.parent;
+		second = second.parent;
+	}
+	// Siblings under one parent. Both walk forward together. The earlier
+	// node's walk meets the later node, and the later node's walk ends.
+	let forward: Slots<Node> | null = first.next;
+	let other: Slots<Node> | null = second.next;
+	while (forward !== null && other !== null) {
+		if (forward === second) {
+			return true;
+		}
+		if (other === first) {
+			return false;
+		}
+		forward = forward.next;
+		other = other.next;
+	}
+	return other === null;
 }
 
 function isExclusiveText(node: Node): boolean {
