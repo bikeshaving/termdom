@@ -2647,11 +2647,6 @@ interface HighlightLayer {
 function getHighlightSegments(
 	layers: HighlightLayer[],
 ): Array<[number, number]> {
-	if (layers.length === 1) {
-		return layers[0].from < layers[0].to
-			? [[layers[0].from, layers[0].to]]
-			: [];
-	}
 	const edges: number[] = [];
 	for (const layer of layers) {
 		edges.push(layer.from, layer.to);
@@ -2714,6 +2709,10 @@ function getHighlightLayer(
 	return {from, to, paint};
 }
 
+// Past this many layers on one text node, the scan in
+// renderTextHighlights costs more than sorting the edges.
+const SWEPT_HIGHLIGHT_LAYERS = 32;
+
 // Redraws the highlighted runs over the base pass, one draw per run of
 // cells the same layers cover, the selection included.
 function renderTextHighlights(
@@ -2752,20 +2751,75 @@ function renderTextHighlights(
 	if (layers.length === 0) {
 		return;
 	}
-	const segments = getHighlightSegments(layers);
-	for (let i = 0; i < segments.length; i++) {
-		const [from, to] = segments[i];
-		let style = textStyle;
-		for (const layer of layers) {
-			if (layer.from <= from && layer.to >= to) {
-				style = foldHighlight(style, layer.paint);
+	if (layers.length > SWEPT_HIGHLIGHT_LAYERS) {
+		const segments = getHighlightSegments(layers);
+		for (let i = 0; i < segments.length; i++) {
+			const [from, to] = segments[i];
+			drawHighlightSegment(
+				layers,
+				from,
+				to,
+				textStyle,
+				textTransform,
+				prepared!,
+				ctx,
+			);
+		}
+		return;
+	}
+	// Few layers: the next edge past each one is found by a scan of the
+	// layers, which builds and sorts no list of edges.
+	let from = layers[0].from;
+	for (let i = 1; i < layers.length; i++) {
+		from = Math.min(from, layers[i].from);
+	}
+	for (;;) {
+		let to = Infinity;
+		for (let i = 0; i < layers.length; i++) {
+			const layer = layers[i];
+			if (layer.from > from && layer.from < to) {
+				to = layer.from;
+			}
+			if (layer.to > from && layer.to < to) {
+				to = layer.to;
 			}
 		}
-		if (style === textStyle) {
-			continue;
+		if (to === Infinity) {
+			return;
 		}
-		forEachSelectionSpan(from, to, prepared!, (text, x, y) => {
-			drawText(ctx, applyTextTransform(text, textTransform), x, y, style);
-		});
+		drawHighlightSegment(
+			layers,
+			from,
+			to,
+			textStyle,
+			textTransform,
+			prepared!,
+			ctx,
+		);
+		from = to;
 	}
+}
+
+function drawHighlightSegment(
+	layers: HighlightLayer[],
+	from: number,
+	to: number,
+	textStyle: CellStyle,
+	textTransform: string,
+	prepared: PreparedFragment[],
+	ctx: CellContext,
+): void {
+	let style = textStyle;
+	for (let i = 0; i < layers.length; i++) {
+		const layer = layers[i];
+		if (layer.from <= from && layer.to >= to) {
+			style = foldHighlight(style, layer.paint);
+		}
+	}
+	if (style === textStyle) {
+		return;
+	}
+	forEachSelectionSpan(from, to, prepared, (text, x, y) => {
+		drawText(ctx, applyTextTransform(text, textTransform), x, y, style);
+	});
 }
