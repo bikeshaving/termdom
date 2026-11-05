@@ -11951,6 +11951,12 @@ function writesNestedCombinator(nested: CompiledCompound[]): boolean {
 			pseudoClass.args.some(writesCombinator)));
 }
 
+function writesCombinatorOutsideHas(nested: CompiledCompound[]): boolean {
+	return nested.some((compound) =>
+		compound.pseudoClasses.some((pseudoClass) =>
+			pseudoClass.name !== "has" && pseudoClass.args.some(writesCombinator)));
+}
+
 // Whether the keys the compounds name can fail to name the element: some
 // of them sit inside :not(), or inside an argument with combinators of its
 // own, where they describe another element. `:not(.b ~ *)` matches
@@ -12043,16 +12049,19 @@ function couldAnchor(element: Element, anchor: StateAnchor): boolean {
 // must have, as `.day:not(:last-child)` must have `.day`, or the keys its
 // parent must have when it has none of its own, or failing those, the
 // keys it names anywhere, which describe it unless :not() can turn them
-// on another element. A combinator inside an argument tests the siblings
-// of other elements, as `:is(.p + .c .e)` tests those of `.c`, so such a
-// compound could name any element.
+// on another element. A combinator inside an argument other than :has()'s
+// tests the siblings of other elements, as `:is(.p + .c .e)` tests those
+// of `.c`, so such a compound could name any element. A :has() argument's
+// combinators start from the element itself: the siblings `.a:has(+ .b)`
+// reads are those of an `.a`, and what lies under or above it is the
+// :has() anchors' to restyle.
 function addSiblingKeys(
 	target: SiblingKeys,
 	complex: CompiledComplex,
 	nested: CompiledCompound[],
 	index: number,
 ): void {
-	if (writesNestedCombinator(nested)) {
+	if (writesCombinatorOutsideHas(nested)) {
 		target.universal = true;
 		return;
 	}
