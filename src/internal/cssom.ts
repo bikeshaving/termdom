@@ -304,23 +304,17 @@ export function getCellPadding(
 	"top" | "right" | "bottom" | "left",
 	ReturnType<typeof toCellLength>
 > {
-	const side = (edge: string, vertical: boolean) =>
-		toCellLength(
-			CSSValues.parseUnitValue(getComputedValue(element, `padding-${edge}`)),
-			vertical,
-			element,
-		);
 	const padding = {
-		top: side("top", true),
-		right: side("right", false),
-		bottom: side("bottom", true),
-		left: side("left", false),
+		top: cellPaddingSide(element, "padding-top", true),
+		right: cellPaddingSide(element, "padding-right", false),
+		bottom: cellPaddingSide(element, "padding-bottom", true),
+		left: cellPaddingSide(element, "padding-left", false),
 	};
-	for (const [start, end] of [["top", "bottom"], ["left", "right"]] as const) {
-		const length = padding[start];
-		if (typeof length === "number" && length === padding[end]) {
-			padding[start] = padding[end] = toWholeCells(length);
-		}
+	if (typeof padding.top === "number" && padding.top === padding.bottom) {
+		padding.top = padding.bottom = toWholeCells(padding.top);
+	}
+	if (typeof padding.left === "number" && padding.left === padding.right) {
+		padding.left = padding.right = toWholeCells(padding.left);
 	}
 	return padding;
 }
@@ -329,31 +323,59 @@ export function getCellPadding(
 export function getCellBorderWidths(
 	element: Element,
 ): Record<"top" | "right" | "bottom" | "left", number> {
-	// The used width is 0 when the side's style is none or hidden
-	// (css-backgrounds §3.3). `border-style: none` must release the space.
-	const borderWidthFor = (side: string) => {
-		const style = getComputedValue(element, `border-${side}-style`);
-		if (!style || style === "none" || style === "hidden") {
-			return null;
-		}
-		return toCellBorder(
-			CSSValues.parseBorderWidthValue(
-				getComputedValue(element, `border-${side}-width`),
-			),
-			side === "top" || side === "bottom",
-			element,
-		);
-	};
-	const width = (side: string): number => {
-		const value = borderWidthFor(side);
-		return typeof value === "number" ? value : 0;
-	};
 	return {
-		top: width("top"),
-		right: width("right"),
-		bottom: width("bottom"),
-		left: width("left"),
+		top: cellBorderSide(element, "border-top-style", "border-top-width", true),
+		right: cellBorderSide(
+			element,
+			"border-right-style",
+			"border-right-width",
+			false,
+		),
+		bottom: cellBorderSide(
+			element,
+			"border-bottom-style",
+			"border-bottom-width",
+			true,
+		),
+		left: cellBorderSide(
+			element,
+			"border-left-style",
+			"border-left-width",
+			false,
+		),
 	};
+}
+
+function cellPaddingSide(
+	element: Element,
+	property: string,
+	vertical: boolean,
+): ReturnType<typeof toCellLength> {
+	return toCellLength(
+		CSSValues.parseUnitValue(getComputedValue(element, property)),
+		vertical,
+		element,
+	);
+}
+
+// The used width is 0 when the side's style is none or hidden
+// (css-backgrounds §3.3). `border-style: none` must release the space.
+function cellBorderSide(
+	element: Element,
+	styleProperty: string,
+	widthProperty: string,
+	vertical: boolean,
+): number {
+	const style = getComputedValue(element, styleProperty);
+	if (!style || style === "none" || style === "hidden") {
+		return 0;
+	}
+	const width = toCellBorder(
+		CSSValues.parseBorderWidthValue(getComputedValue(element, widthProperty)),
+		vertical,
+		element,
+	);
+	return typeof width === "number" ? width : 0;
 }
 
 // The entry point for every read of the cascade from a node, including
