@@ -35220,9 +35220,9 @@ export function forEachHighlightedText(
 		}
 		priority = _(highlight).highlightPriority;
 	}
-	for (const [name, highlight] of byName) {
+	byName.forEach((highlight, name) => {
 		visitHighlightRanges(name, highlight, visit);
-	}
+	});
 }
 
 function visitHighlightRanges(
@@ -35230,9 +35230,9 @@ function visitHighlightRanges(
 	highlight: Highlight,
 	visit: HighlightedTextVisitor,
 ): void {
-	for (const range of _(highlight).highlightRanges) {
+	_(highlight).highlightRanges.forEach((range) => {
 		forEachCoveredText(range, name, visit);
-	}
+	});
 }
 
 /** Whether anything at all highlights this document. */
