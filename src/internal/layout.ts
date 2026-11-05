@@ -8459,16 +8459,47 @@ function measureRecordingReads(
 	if (!placing && contextLayouts !== contextLayoutsBefore) {
 		node.hasCachedLayout = false;
 	}
-	forgetReads(node);
-	if (node.measureSubject !== null) {
+	if (node.measureSubject === null) {
+		forgetReads(node);
+		return size;
+	}
+	const previous = measureReads.get(node);
+	if (previous === undefined || !isSameReaders(previous, reads)) {
+		forgetReads(node);
 		for (let i = 0; i < reads.length; i += 3) {
 			if (reads[i] !== reads[i - 3]) {
 				addMeasureReader(reads[i] as Element, node);
 			}
 		}
-		measureReads.set(node, fitToLength(reads));
 	}
+	measureReads.set(node, fitToLength(reads));
 	return size;
+}
+
+// Whether two lists of reads name their elements in one order, so the
+// readers registered for the first serve the second.
+function isSameReaders(
+	before: Array<Element | string>,
+	after: Array<Element | string>,
+): boolean {
+	let i = 0;
+	let j = 0;
+	for (;;) {
+		while (i < before.length && before[i] === before[i - 3]) {
+			i += 3;
+		}
+		while (j < after.length && after[j] === after[j - 3]) {
+			j += 3;
+		}
+		if (i >= before.length || j >= after.length) {
+			return i >= before.length && j >= after.length;
+		}
+		if (before[i] !== after[j]) {
+			return false;
+		}
+		i += 3;
+		j += 3;
+	}
 }
 
 // A box that leaves takes its reads with it, so no element it read keeps
