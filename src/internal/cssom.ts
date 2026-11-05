@@ -9377,6 +9377,7 @@ interface CounterStart {
 interface CounterEnd {
 	after: readonly CounterEntry[] | null;
 	end: readonly CounterEntry[];
+	unchanged: readonly CounterEntry[] | null;
 }
 
 interface CounterEffects {
@@ -9418,7 +9419,12 @@ function getCounters(
 ): readonly CounterEntry[] {
 	if (pseudoType === "::after") {
 		countCounters(cascade, element, "end");
-		return cascade.counterEnds.get(element)!.after ?? NO_COUNTERS;
+		const counted = cascade.counterEnds.get(element)!;
+		return counted.after ??
+			(counted.unchanged !== null &&
+					hasGeneratedContent(cascade, element, "::after")
+				? counted.unchanged
+				: NO_COUNTERS);
 	}
 	countCounters(cascade, element, "start");
 	const start = cascade.counterSets.get(element)!;
@@ -9578,6 +9584,16 @@ function countEnd(
 	const preceding = last === null
 		? start.inner
 		: cascade.counterEnds.get(last)!.end;
+	if (
+		!start.hidden && start.after === null && preceding.length === base.length
+	) {
+		cascade.counterEnds.set(element, {
+			after: null,
+			end: preceding,
+			unchanged: preceding,
+		});
+		return;
+	}
 	const after =
 		start.hidden ||
 			!hasGeneratedContent(cascade, element, "::after")
@@ -9588,7 +9604,11 @@ function countEnd(
 				{},
 				element,
 			);
-	cascade.counterEnds.set(element, {after, end: after ?? preceding});
+	cascade.counterEnds.set(element, {
+		after,
+		end: after ?? preceding,
+		unchanged: null,
+	});
 }
 
 function describeCounterEffects(effects: CounterEffects): string {
