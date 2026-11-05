@@ -51,46 +51,6 @@ declare module "webidl2" {
 	export function parse(text: string): Definition[];
 }
 
-declare module "bidi-js" {
-
-	/** UAX #9, the Unicode bidirectional algorithm. */
-	export interface EmbeddingLevels {
-		levels: Uint8Array;
-		paragraphs: Array<{start: number; end: number; level: number}>;
-	}
-
-	export interface Bidi {
-
-		/**
-		 * Resolve embedding levels for a string. `explicitDirection` forces the
-		 * paragraph direction; omitted, it is inferred per §P2 from the first
-		 * strong character.
-		 */
-		getEmbeddingLevels(
-			text: string,
-			explicitDirection?: "ltr" | "rtl" | "auto",
-		): EmbeddingLevels;
-
-		/**
-		 * The string in visual order, with mirrored characters substituted
-		 * (§L2 and §L4 together).
-		 *
-		 * Deliberately NOT declaring getMirroredCharactersMap: in 1.0.3 it tests
-		 * `embeddingLevels[i] & 1` on the result OBJECT rather than its `levels`
-		 * array, so it always returns an empty map. This function does the same
-		 * job correctly, so there is no reason to reach for the broken one.
-		 */
-		getReorderedString(
-			text: string,
-			embeddingLevels: EmbeddingLevels,
-			start?: number,
-			end?: number,
-		): string;
-	}
-
-	export default function bidiFactory(): Bidi;
-}
-
 declare module "arabic-persian-reshaper" {
 	interface Shaper {
 		convertArabic(text: string): string;

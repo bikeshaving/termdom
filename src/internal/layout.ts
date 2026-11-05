@@ -5334,7 +5334,7 @@ function measureText(
 	return content.getPrefixWidths[end] - content.getPrefixWidths[start];
 }
 
-// Both halves are needed. Each segment's characters reorder (bidi-js,
+// Both halves are needed. Each segment's characters reorder (bidi.ts,
 // through text.ts), and in an RTL paragraph the segments mirror across the
 // line.
 // Reordering stays within each leaf. Whole-line reordering would merge
