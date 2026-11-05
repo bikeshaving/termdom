@@ -186,3 +186,54 @@ test("a child added or removed leaves the subtrees no sibling test names", async
 	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
 	termdom.dispose();
 });
+
+test("a :has() that reads later siblings restyles its subject when one comes or goes after it", async () => {
+	const {termdom, terminal, document} = await mount(
+		".a:has(+ .b) { color: rgb(255, 0, 0); }" +
+			" .c:has(~ .d) .inner { color: rgb(0, 0, 255); }",
+		"<div id=ab><p class=a id=a>a</p></div>" +
+			"<div id=cd><p class=c><i class=inner id=inner>c</i></p></div>",
+	);
+	const {window} = termdom;
+	const a = document.getElementById("a")!;
+	const inner = document.getElementById("inner")!;
+	const b = document.createElement("p");
+	b.className = "b";
+	const d = document.createElement("p");
+	d.className = "d";
+	document.getElementById("ab")!.append(b);
+	document.getElementById("cd")!.append(d);
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(a).color).toBe(RED);
+	expect(window.getComputedStyle(inner).color).toBe(BLUE);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	b.remove();
+	d.remove();
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(a).color).not.toBe(RED);
+	expect(window.getComputedStyle(inner).color).not.toBe(BLUE);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});
+
+test("a sibling test inside an argument restyles below the elements whose siblings it reads", async () => {
+	const {termdom, terminal, document} = await mount(
+		".g:has(.e:is(.p + .c .e)) { color: rgb(255, 0, 0); }",
+		"<div id=outer><div id=c class=c><div class=g id=g><i class=e>e</i>" +
+			"</div></div></div>",
+	);
+	const {window} = termdom;
+	const g = document.getElementById("g")!;
+	expect(window.getComputedStyle(g).color).not.toBe(RED);
+	const p = document.createElement("div");
+	p.className = "p";
+	document.getElementById("c")!.before(p);
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(g).color).toBe(RED);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	p.remove();
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(g).color).not.toBe(RED);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});

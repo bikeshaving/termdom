@@ -12006,14 +12006,20 @@ function couldAnchor(element: Element, anchor: StateAnchor): boolean {
 // What sibling-tested compound `index` could name: the keys the element
 // must have, as `.day:not(:last-child)` must have `.day`, or the keys its
 // parent must have when it has none of its own, or failing those, the
-// keys it names anywhere, which describe it unless :not() or a combinator
-// inside an argument can turn them on another element.
+// keys it names anywhere, which describe it unless :not() can turn them
+// on another element. A combinator inside an argument tests the siblings
+// of other elements, as `:is(.p + .c .e)` tests those of `.c`, so such a
+// compound could name any element.
 function addSiblingKeys(
 	target: SiblingKeys,
 	complex: CompiledComplex,
 	nested: CompiledCompound[],
 	index: number,
 ): void {
+	if (writesNestedCombinator(nested)) {
+		target.universal = true;
+		return;
+	}
 	const own = getSiblingRequiredKeys(complex.compounds[index]);
 	if (own.length > 0) {
 		for (const key of own) {
@@ -12113,8 +12119,13 @@ function indexReachingKeys(
 			}
 		}
 	}
-	const countsFromEnd = names.some((name) =>
-		/^(?:last-|only-|nth-last-)/.test(name));
+	const countsFromEnd =
+		names.some((name) =>
+			/^(?:last-|only-|nth-last-)/.test(name)) ||
+		compounds.flat().some((compound) =>
+			compound.pseudoClasses.some((pseudoClass) =>
+				pseudoClass.name === "has" && pseudoClass.args.some((argument) =>
+					argument.combinators.some(isSiblingCombinator))));
 	for (const [i, nested] of compounds.entries()) {
 		if (!siblingTested[i]) {
 			continue;
