@@ -401,7 +401,7 @@ export function serializeCSSIdentifier(value: string): string {
 		const code = text.charCodeAt(i);
 		const character = text[i];
 		if (code === 0) {
-			out += "�";
+			out += "\uFFFD";
 		} else if (
 			(code >= 0x1 && code <= 0x1f) ||
 			code === 0x7f ||
