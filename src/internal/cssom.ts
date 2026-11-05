@@ -7027,6 +7027,23 @@ function isStyleElement(element: Element): boolean {
 // their ordinals. Only the NEAREST list is affected.
 // TODO(box-tree): the gutter is a layout question answered here in the
 // cascade. Computing it during block layout deletes this.
+// Whether the element is an <li> or holds one.
+function holdsListItem(element: Element): boolean {
+	for (
+		let next: DOMNode | null = element as unknown as DOMNode;
+		next !== null;
+		next = nextInTree(next, element as unknown as DOMNode)
+	) {
+		if (
+			getNodeType(next) === ELEMENT_NODE &&
+			getHTMLLocalName(next as unknown as Element) === "li"
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function mutationChangesListItems(mutation: MutationRecord): boolean {
 	const target = mutation.target;
 	if (
@@ -7039,11 +7056,7 @@ function mutationChangesListItems(mutation: MutationRecord): boolean {
 			if (getNodeType(node) !== ELEMENT_NODE) {
 				continue;
 			}
-			const element = node as Element;
-			if (
-				getHTMLLocalName(element) === "li" ||
-				element.querySelector("li") !== null
-			) {
+			if (holdsListItem(node as Element)) {
 				return true;
 			}
 		}
@@ -10937,7 +10950,7 @@ function couldChangeMarkers(list: Element, mutation: MutationRecord): boolean {
 			const element = node as Element;
 			if (
 				pseudoElement(element, "::marker") !== null ||
-				element.querySelector("li") !== null ||
+				holdsListItem(element) ||
 				(element.isConnected &&
 					getComputedValue(element, "display").includes("list-item"))
 			) {
