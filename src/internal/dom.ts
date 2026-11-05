@@ -1981,7 +1981,7 @@ export class ExtendableEvent extends Event {
 	}
 }
 
-// Service Workers §4.4.1: an event is active while it is dispatched, or
+// Service Workers section 4.4.1: an event is active while it is dispatched, or
 // while a promise it was given is pending.
 function addLifetimePromise(
 	event: ExtendableEvent,
@@ -3730,7 +3730,7 @@ interface SecurityPolicyViolationEvent {
 
 /**
  * Fired at an element whose load a Content Security Policy blocked, and
- * bubbling to its document (CSP3 §5.1).
+ * bubbling to its document (CSP3 section 5.1).
  */
 class SecurityPolicyViolationEvent extends Event {
 	constructor(
@@ -4319,7 +4319,7 @@ export interface TransitionEvent {
 	readonly [internals]: TransitionEventSlots;
 }
 
-/** Fired when a CSS transition changes phase (css-transitions-1 §6). */
+/** Fired when a CSS transition changes phase (css-transitions-1 section 6). */
 export class TransitionEvent extends Event {
 	constructor(type: string, eventInitDict: TransitionEventInit = {}) {
 		super(type, eventInitDict);
@@ -4363,7 +4363,7 @@ interface AnimationEventInit extends EventInit {
 	pseudoElement?: string;
 }
 
-// css-animations-1 §4. The engine does not run @keyframes animations
+// css-animations-1 section 4. The engine does not run @keyframes animations
 // yet. The interface exists because the platform defines it.
 interface AnimationEventSlots extends EventSlots {
 	animationName: string;
@@ -4963,7 +4963,7 @@ export interface SealedAbortSignal {
 	readonly [internals]: SealedAbortSignalSlots;
 }
 
-/** DOM §3.2: the signal an AbortController aborts. */
+/** DOM section 3.2: the signal an AbortController aborts. */
 export class SealedAbortSignal extends EventTarget {
 	declare onabort: ((this: SealedAbortSignal, event: Event) => unknown) | null;
 
@@ -5009,7 +5009,7 @@ export class SealedAbortSignal extends EventTarget {
 		return signal;
 	}
 
-	// DOM §3.2: a dependent signal follows its sources' own sources, so a
+	// DOM section 3.2: a dependent signal follows its sources' own sources, so a
 	// chain of any() calls never grows.
 	static any(signals: Iterable<SealedAbortSignal>): SealedAbortSignal {
 		const sources = [...signals];
@@ -5093,7 +5093,8 @@ function addAbortAlgorithm(
 	}
 }
 
-// DOM §3.2's signal abort: the signal and every signal that depends on it.
+// DOM section 3.2's signal abort: the signal and every signal that
+// depends on it.
 function signalAbort(signal: SealedAbortSignal, reason: unknown): void {
 	const slots = _(signal);
 	if (slots.aborted) {
@@ -5137,7 +5138,7 @@ export interface SealedAbortController {
 	readonly [internals]: SealedAbortControllerSlots;
 }
 
-/** DOM §3.1. */
+/** DOM section 3.1. */
 export class SealedAbortController {
 	constructor() {
 		seal(this, new.target, SealedAbortController);
@@ -7495,7 +7496,7 @@ function hasPreceding(child: Node | null, type: number): boolean {
 }
 
 // Steps 1-5 of both "ensure pre-insertion validity" and "replace" (DOM
-// §4.2.3), which the standard writes out twice. They diverge at step 6,
+// section 4.2.3), which the standard writes out twice. They diverge at step 6,
 // where a document's one-element rule counts the replaced child
 // differently. `absentChild` is the one error message the two do not
 // share.
@@ -16737,7 +16738,7 @@ class HTMLCanvasElement extends HTMLElement {
 			if (implementsInterface(context, CanvasRenderingContext2D)) {
 				clearCanvasText(context);
 				// A resize resets the context to its default state (HTML
-				// §4.12.5.1.1).
+				// section 4.12.5.1.1).
 				resetContextState(context);
 			}
 			slots.extra.canvasVersion++;
@@ -18224,7 +18225,7 @@ const LONE_SURROGATE = /\p{Surrogate}/gu;
 // The names and values a form sends are USVStrings, and a lone surrogate
 // is not a scalar value.
 function toScalarValueString(value: string): string {
-	return value.replace(LONE_SURROGATE, "�");
+	return value.replace(LONE_SURROGATE, "\uFFFD");
 }
 
 /** A File named exactly as asked: Bun reports an empty name as undefined. */
@@ -20749,7 +20750,7 @@ export class HTMLInputElement extends HTMLElement {
 		// the mask, and the value stays in .value alone. Offsets stay 1:1 with
 		// .value on the BMP, which keeps caret and scroll window aligned.
 		const shown = getOwner(this).type === "password"
-			? "•".repeat(value.length)
+			? "\u2022".repeat(value.length)
 			: value;
 		let changed = false;
 		if (slots.extra.valueText.data !== shown) {
@@ -21334,9 +21335,9 @@ function getRangeKeyValue(input: HTMLInputElement, key: string): string | null {
 
 // A run of heavy rule for the fill and of light rule for the groove past
 // the thumb, clipped as a gauge's are.
-const SLIDER_FILL_GLYPH = "━";
-const SLIDER_GROOVE_GLYPH = "─";
-const SLIDER_THUMB_GLYPH = "●";
+const SLIDER_FILL_GLYPH = "\u2501";
+const SLIDER_GROOVE_GLYPH = "\u2500";
+const SLIDER_THUMB_GLYPH = "\u25CF";
 
 function buildSlider(
 	input: HTMLInputElement,
@@ -22046,7 +22047,7 @@ class HTMLMetaElement extends HTMLElement {
 	declare httpEquiv: globalThis.HTMLMetaElement["httpEquiv"];
 	declare scheme: globalThis.HTMLMetaElement["scheme"];
 
-	// HTML §4.2.5.3: the Content-Security-Policy pragma runs when the
+	// HTML section 4.2.5.3: the Content-Security-Policy pragma runs when the
 	// element is inserted into a document as a child of its head.
 	override _insertionSteps(this: Slots<HTMLMetaElement>): void {
 		superStep(HTMLMetaElement, "_insertionSteps").call(this);
@@ -22931,10 +22932,10 @@ class HTMLScriptElement extends HTMLElement {
 // Selectedness lives on the options. The select's members read it, and
 // every read first runs the selectedness setting algorithm, which keeps a
 // single-selection select showing exactly one option. The element renders
-// a closed shadow tree it owns: the selected option's label, the ▾
-// indicator, and a picker popover of option rows. The tree is derived
-// from the selectedness and the highlight below. The keyboard and mouse
-// behavior is the control's own default action.
+// a closed shadow tree it owns: the selected option's label, the down
+// triangle indicator, and a picker popover of option rows. The tree is
+// derived from the selectedness and the highlight below. The keyboard and
+// mouse behavior is the control's own default action.
 export interface HTMLSelectElementExtra extends NodeExtra {
 	options: HTMLOptionsCollection | null;
 	selectedOptions: HTMLCollectionOf<HTMLOptionElement> | null;
@@ -23185,13 +23186,14 @@ export class HTMLSelectElement extends HTMLElement {
 		}
 		slots.extra.upgraded = true;
 		const document = getUADocument(getOwner(this));
-		// The tree: the selected option's label (part=value), the ▾ indicator
-		// (part=indicator), and the picker popover (part=picker, one row per
-		// option). Composition hides the light option list.
+		// The tree: the selected option's label (part=value), the down
+		// triangle indicator (part=indicator), and the picker popover
+		// (part=picker, one row per option). Composition hides the light
+		// option list.
 		const root = buildUAShadowTree(getOwner(this), attached);
 		slots.extra.valueText =
 			addPart(root, "value").firstChild as globalThis.Text;
-		(addPart(root, "indicator").firstChild as globalThis.Text).data = " ▾";
+		(addPart(root, "indicator").firstChild as globalThis.Text).data = " \u25BE";
 		const picker = document.createElement("div");
 		setAttributeByName(picker, "part", "picker");
 		appendChildNode(root, picker);
@@ -29265,7 +29267,7 @@ export class Document extends Node implements globalThis.Document {
 		return null;
 	}
 
-	// CSSOM View §7. Outside quirks mode the root element always scrolls
+	// CSSOM View section 7. Outside quirks mode the root element always scrolls
 	// the viewport. In quirks mode the body scrolls instead, unless the body
 	// is itself potentially scrollable, in which case nothing does, because
 	// the scrolling the caller means happens inside the body rather than to
@@ -36292,7 +36294,7 @@ export function isDefinedElement(element: Element): boolean {
 
 // An h1 to h6 is a heading, at its number plus the heading offset around
 // it: the headingoffset of it and each ancestor, summed until an element
-// with headingreset, and at most 9 (HTML §4.3.6). The ancestors are the
+// with headingreset, and at most 9 (HTML section 4.3.6). The ancestors are the
 // document's, not the flat tree's, so a heading slotted somewhere keeps
 // its level.
 export function getHeadingLevel(element: Element): number | null {
@@ -41340,7 +41342,7 @@ export interface PerformanceMark {
 	readonly [internals]: PerformanceMarkSlots;
 }
 
-/** User Timing §4.1: a named moment, which a page can make itself. */
+/** User Timing section 4.1: a named moment, which a page can make itself. */
 export class PerformanceMark extends PerformanceEntry {
 	constructor(markName: string, markOptions: PerformanceMarkOptions = {}) {
 		super();
@@ -41378,7 +41380,7 @@ export interface PerformanceMeasure {
 	readonly [internals]: PerformanceMeasureSlots;
 }
 
-/** User Timing §4.2: the time between two marks or moments. */
+/** User Timing section 4.2: the time between two marks or moments. */
 export class PerformanceMeasure extends PerformanceEntry {
 	constructor() {
 		super();
@@ -41436,7 +41438,7 @@ export class Performance extends EventTarget {
 		return mark;
 	}
 
-	// User Timing §3.1.3.
+	// User Timing section 3.1.3.
 	measure(
 		measureName: string,
 		startOrMeasureOptions?: string | PerformanceMeasureOptions,
@@ -43277,8 +43279,8 @@ export function getEditingHost(
 
 /**
  * A `<meta http-equiv="Content-Security-Policy">` inserted as a child of
- * a head (HTML §4.2.5.3): its policy holds for the document from then on,
- * whatever later becomes of the element.
+ * a head (HTML section 4.2.5.3): its policy holds for the document from
+ * then on, whatever later becomes of the element.
  */
 function addDocumentPolicy(document: Document, content: string): void {
 	(_(document).extra.metaPolicyTexts ??= []).push(content);
