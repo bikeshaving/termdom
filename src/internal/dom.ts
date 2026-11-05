@@ -35144,23 +35144,24 @@ function damageHighlightedText(
 		return false;
 	}
 	const restyled = layout.restyledForPaint;
-	for (const {textNode} of getHighlightedTextNodes(range)) {
+	let bounded = true;
+	forEachCoveredText(range, "", (_name, textNode) => {
 		if (!textNode.isConnected || _(textNode as Text).document !== attached) {
-			continue;
+			return true;
 		}
 		const element = getFlatTreeParent(textNode as Text);
-		if (element === null) {
+		// The cap a restyle keeps, past which a frame repaints whole.
+		if (
+			element === null ||
+			(restyled.get(element) !== null && restyled.size >= 256)
+		) {
+			bounded = false;
 			return false;
 		}
-		if (restyled.get(element) !== null) {
-			// The cap a restyle keeps, past which a frame repaints whole.
-			if (restyled.size >= 256) {
-				return false;
-			}
-			restyled.set(element, null);
-		}
-	}
-	return true;
+		restyled.set(element, null);
+		return true;
+	});
+	return bounded;
 }
 
 // Neither registering a highlight nor moving one is a DOM mutation, and
@@ -35174,33 +35175,53 @@ function invalidateHighlights(document: Document): void {
 	void _(attached).extra.render();
 }
 
-/** A registered highlight and what it covers, for the painter. */
-interface PaintedHighlight {
-	name: string;
-	ranges: globalThis.AbstractRange[];
-}
+type HighlightedTextVisitor = (
+	name: string,
+	textNode: globalThis.Text,
+	from: number,
+	to: number,
+) => boolean | void;
 
 /**
- * Every registered highlight that covers something, lowest priority
- * first, which is the order the painter folds their styles in.
+ * Visits each text node a registered highlight covers, with the
+ * highlight's name and the offsets it covers, lowest priority first,
+ * which is the order the painter folds their styles in.
  */
-export function getPaintedHighlights(
+export function forEachHighlightedText(
 	document: globalThis.Document,
-): PaintedHighlight[] {
+	visit: HighlightedTextVisitor,
+): void {
 	const registry = _((document as Document)).extra.highlights;
-	if (registry === null || _(registry).highlightsByName.size === 0) {
-		return [];
+	if (registry === null) {
+		return;
 	}
-	const painted: Array<PaintedHighlight & {priority: number}> = [];
-	for (const [name, highlight] of _(registry).highlightsByName) {
-		const ranges = [..._(highlight).highlightRanges].filter(
-			(range) => !range.collapsed,
-		);
-		if (ranges.length > 0) {
-			painted.push({name, ranges, priority: _(highlight).highlightPriority});
+	const byName = _(registry).highlightsByName;
+	let priority = -Infinity;
+	for (const highlight of byName.values()) {
+		if (_(highlight).highlightPriority < priority) {
+			const ordered = [...byName].sort(
+				(a, b) => _(a[1]).highlightPriority - _(b[1]).highlightPriority,
+			);
+			for (const [name, each] of ordered) {
+				visitHighlightRanges(name, each, visit);
+			}
+			return;
 		}
+		priority = _(highlight).highlightPriority;
 	}
-	return painted.sort((a, b) => a.priority - b.priority);
+	for (const [name, highlight] of byName) {
+		visitHighlightRanges(name, highlight, visit);
+	}
+}
+
+function visitHighlightRanges(
+	name: string,
+	highlight: Highlight,
+	visit: HighlightedTextVisitor,
+): void {
+	for (const range of _(highlight).highlightRanges) {
+		forEachCoveredText(range, name, visit);
+	}
 }
 
 /** Whether anything at all highlights this document. */
@@ -35220,22 +35241,35 @@ export function hasPaintedHighlights(document: globalThis.Document): boolean {
 }
 
 /**
- * The text nodes one of a highlight's ranges covers, with the offsets it
- * covers of each.
+ * Visits the text nodes one of a highlight's ranges covers, with the
+ * offsets it covers of each, until the visitor answers false.
  */
-export function getHighlightedTextNodes(
+function forEachCoveredText(
 	range: globalThis.AbstractRange,
-): Array<{textNode: globalThis.Text; from: number; to: number}> {
-	const start = _((range as AbstractRange)).startNode;
-	const end = _((range as AbstractRange)).endNode;
+	name: string,
+	visit: HighlightedTextVisitor,
+): void {
+	const slots = _((range as AbstractRange));
+	const start = slots.startNode;
+	const end = slots.endNode;
+	if (start === end) {
+		if (slots.startOffset === slots.endOffset) {
+			return;
+		}
+		if (getNodeType(start) === TEXT_NODE) {
+			if (slots.endOffset <= getNodeLength(start)) {
+				visit(name, start as Text, slots.startOffset, slots.endOffset);
+			}
+			return;
+		}
+	}
 	if (getRoot(start) !== getRoot(end)) {
-		return [];
+		return;
 	}
 	let container = start;
 	while (!isInclusiveAncestor(container, end)) {
 		container = getObject(_(container).parent) as Node;
 	}
-	const covered: Array<{textNode: Text; from: number; to: number}> = [];
 	for (
 		let node: Node | null = container;
 		node !== null;
@@ -35245,11 +35279,12 @@ export function getHighlightedTextNodes(
 			continue;
 		}
 		const offsets = getHighlightedOffsets(range, node);
-		if (offsets !== null) {
-			covered.push({textNode: node, from: offsets.from, to: offsets.to});
+		if (
+			offsets !== null && visit(name, node, offsets.from, offsets.to) === false
+		) {
+			return;
 		}
 	}
-	return covered;
 }
 
 /**
