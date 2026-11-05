@@ -3724,11 +3724,38 @@ interface BreakPoint {
 	required: boolean;
 }
 
+// A DOMRect's geometry as plain numbers, for the readers inside the
+// engine. getRects turns it into a DOMRect.
+interface LineRect {
+	readonly x: number;
+	readonly y: number;
+	readonly width: number;
+	readonly height: number;
+	readonly left: number;
+	readonly top: number;
+}
+
+function createLineRect(
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+): LineRect {
+	return {
+		x,
+		y,
+		width,
+		height,
+		left: Math.min(x, x + width),
+		top: Math.min(y, y + height),
+	};
+}
+
 // One laid-out line of a text node. The raw-data range begins and ends
 // on a rendered character, so renderTextFragment over it reproduces the
 // painted characters.
 interface LineFragment {
-	rect: DOMRect;
+	rect: LineRect;
 
 	// Cells from the start of the line box, where a preserved tab's stops
 	// count from.
@@ -3762,7 +3789,7 @@ interface TextFragmentEntry {
 // node it covers, so its offsets are a range of the run, not of one
 // node's data.
 interface RectText {
-	rect: DOMRect;
+	rect: LineRect;
 	column: number;
 	startOffset: number;
 	endOffset: number;
@@ -6878,7 +6905,9 @@ export class Layout {
 			return getSplitInlineRects(this, node as Element);
 		}
 		// One rect per text run per line it spans.
-		return getRectTexts(this, node).map((rectText) => rectText.rect);
+		return getRectTexts(this, node).map(({rect}) =>
+			new this.domRect(rect.x, rect.y, rect.width, rect.height),
+		);
 	}
 
 	// What Range.getClientRects reports, and what the painter reads for the
@@ -8280,7 +8309,7 @@ function isBlockifiedByLayout(element: Element): boolean {
 	return isInlineDisplay(getLayoutDisplay(element)) && isBlockified(element);
 }
 
-function unionRects(layout: Layout, rects: readonly DOMRect[]): DOMRect {
+function unionRects(layout: Layout, rects: readonly LineRect[]): DOMRect {
 	if (rects.length === 0) {
 		return new layout.domRect();
 	}
@@ -9751,7 +9780,7 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		);
 
 		rectTexts.push({
-			rect: new layout.domRect(
+			rect: createLineRect(
 				containerX + minX + alignOffset + indent,
 				containerY + line.y + line.textTop,
 				maxX - minX,
