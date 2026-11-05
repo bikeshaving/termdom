@@ -237,3 +237,70 @@ test("a sibling test inside an argument restyles below the elements whose siblin
 	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
 	termdom.dispose();
 });
+
+test("a :has(+ x) subject keys the children a child insert or remove restyles", async () => {
+	const {termdom, terminal, document} = await mount(
+		".resizing .event:has(+ .copy) { visibility: hidden; }",
+		"<div class=resizing><div id=day>" +
+			"<div class=event id=e1><b>1</b></div>" +
+			"<div class=other><b>x</b></div>" +
+			"<div class=event id=e2><b>2</b></div>" +
+			"</div></div>" +
+			"<nav id=nav>" +
+			Array.from({length: 10}, (_, i) => `<p><a>${i}</a></p>`).join("") +
+			"</nav>",
+	);
+	const nav = document.getElementById("nav")!;
+	const item = document.createElement("p");
+	expect(await restyled(termdom, nav, () => nav.append(item))).toEqual([]);
+	expect(await restyled(termdom, nav, () => item.remove())).toEqual([]);
+	expect(await restyled(termdom, nav, () => nav.prepend(item))).toEqual([]);
+
+	const day = document.getElementById("day")!;
+	const copy = document.createElement("div");
+	copy.className = "copy";
+	const changed = await restyled(termdom, day, () =>
+		document.getElementById("e1")!.after(copy));
+	expect(changed.map((element) => element.id || element.localName)).toEqual([
+		"e1",
+		"b",
+		"e2",
+		"b",
+	]);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});
+
+test("a :has(+ x) match follows the child after its subject coming and going", async () => {
+	const {termdom, terminal, document} = await mount(
+		".resizing .event:has(+ .copy) { visibility: hidden; }",
+		"<div class=resizing><div id=day>" +
+			"<div class=event id=e1><b id=b1>one</b></div>" +
+			"<div class=event id=e2><b id=b2>two</b></div>" +
+			"</div></div>",
+	);
+	const {window} = termdom;
+	const e1 = document.getElementById("e1")!;
+	const e2 = document.getElementById("e2")!;
+	const b1 = document.getElementById("b1")!;
+	const copy = document.createElement("div");
+	copy.className = "copy";
+	copy.textContent = "copy";
+	e1.after(copy);
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(e1).visibility).toBe("hidden");
+	expect(window.getComputedStyle(b1).visibility).toBe("hidden");
+	expect(window.getComputedStyle(e2).visibility).toBe("visible");
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	copy.remove();
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(e1).visibility).toBe("visible");
+	expect(window.getComputedStyle(b1).visibility).toBe("visible");
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	e2.after(copy);
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(e2).visibility).toBe("hidden");
+	expect(window.getComputedStyle(e1).visibility).toBe("visible");
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});
