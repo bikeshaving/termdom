@@ -9126,7 +9126,18 @@ interface ClusterStarts {
 	after(index: number): number;
 }
 
+// Printable ASCII and tabs, where each character is a cluster of its own.
+// A CR before an LF joins it in one cluster, so neither is here.
+const SINGLE_CHARACTER_CLUSTERS = /^[\x20-\x7e\t]*$/;
+
 function getClusterStarts(text: string): ClusterStarts {
+	if (SINGLE_CHARACTER_CLUSTERS.test(text)) {
+		const last = text.length - 1;
+		return {
+			at: (index) => Math.max(0, Math.min(index, last)),
+			after: (index) => Math.max(0, Math.min(index, text.length)),
+		};
+	}
 	const starts: number[] = [];
 	for (const {index} of graphemeSegmenter.segment(text)) {
 		starts.push(index);
