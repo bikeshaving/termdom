@@ -431,6 +431,10 @@ function readStyleGroup<T extends object>(
 	element: Element,
 	group: StyleGroup<T>,
 ): T {
+	const host = getPseudoHost(element);
+	if (host !== null) {
+		return readPseudoGroup(host, element, group);
+	}
 	const document = getOwnerDocument(element);
 	const cascade = document ? documentCascades.get(document) : undefined;
 	if (cascade === undefined || cascade.getStyleKey(element) === null) {
@@ -445,6 +449,37 @@ function readStyleGroup<T extends object>(
 	let value = cache.get(group as StyleGroup<object>) as T | undefined;
 	if (value === undefined) {
 		value = readSharedGroup(element, group);
+		cache.set(group as StyleGroup<object>, value);
+	}
+	return value;
+}
+
+// A pseudo-element node's groups are read from its host's declaration for
+// it, whose resolved values are replaced when they go stale.
+function readPseudoGroup<T extends object>(
+	host: Element,
+	element: Element,
+	group: StyleGroup<T>,
+): T {
+	const document = getOwnerDocument(host);
+	const cascade = document ? documentCascades.get(document) : undefined;
+	if (cascade === undefined || cascade.activeTransitions.size > 0) {
+		return readUnsharedGroup(element, group);
+	}
+	const slots = _(
+		getPseudoDeclaration(cascade, host, getPseudoName(element) as string),
+	);
+	if (!cascade.currentDeclarations.has(slots)) {
+		slots._syncResolved();
+	}
+	let cache = groupCaches.get(slots.resolved);
+	if (cache === undefined) {
+		cache = new Map();
+		groupCaches.set(slots.resolved, cache);
+	}
+	let value = cache.get(group as StyleGroup<object>) as T | undefined;
+	if (value === undefined) {
+		value = readUnsharedGroup(element, group);
 		cache.set(group as StyleGroup<object>, value);
 	}
 	return value;

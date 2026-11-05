@@ -240,3 +240,25 @@ test("a host's class tested by :host() in its shadow tree reaches the ::before o
 	expect(beforeText(inner)).toBe(null);
 	termdom.dispose();
 });
+
+test("a ::before lays out and paints its text under the styles a class change gives it", async () => {
+	const {termdom, terminal, document} = await mount(
+		".item::before { content: 'ab'; } .up { text-transform: uppercase; }" +
+			" .pad .item::before { padding-left: 3ch; }",
+		"<div id=app><p><span class=item>x</span> <span class=item>y</span></p></div>",
+	);
+	const app = document.getElementById("app")!;
+	expect(terminal.getScreenContents()).toContain("abx aby");
+	app.classList.add("up");
+	await nextFrame(termdom);
+	expect(terminal.getScreenContents()).toContain("ABX ABY");
+	app.classList.add("pad");
+	await nextFrame(termdom);
+	expect(terminal.getScreenContents()).toContain("   ABX    ABY");
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	app.classList.remove("up", "pad");
+	await nextFrame(termdom);
+	expect(terminal.getScreenContents()).toContain("abx aby");
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});
