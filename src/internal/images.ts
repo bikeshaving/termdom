@@ -1477,6 +1477,61 @@ async function buildJPEGBitmap(
 		}
 		return {first, second, weight};
 	});
+	if (
+		count === 3 &&
+		!rgb &&
+		planes[0].scaleX === 1 &&
+		planes[0].scaleY === 1 &&
+		planes[1].scaleX === 0.5 &&
+		planes[1].scaleY === 0.5 &&
+		planes[2].scaleX === 0.5 &&
+		planes[2].scaleY === 0.5
+	) {
+		const [luma, blue, red] = planes;
+		const blueColumns = columns[1];
+		const redColumns = columns[2];
+		for (let y = 0; y < height; y++) {
+			await pause();
+			const lumaRow = y * luma.planeWidth;
+			const fy = Math.max(0, (y + 0.5) * 0.5 - 0.5);
+			const y0 = Math.floor(fy);
+			const top = y0 * blue.planeWidth;
+			const bottom = Math.min(y0 + 1, blue.planeHeight - 1) * blue.planeWidth;
+			const ty = fy - y0;
+			const redTop = y0 * red.planeWidth;
+			const redBottom = Math.min(y0 + 1, red.planeHeight - 1) * red.planeWidth;
+			let out = y * width * 4;
+			for (let x = 0; x < width; x++) {
+				const x0 = blueColumns.first[x];
+				const x1 = blueColumns.second[x];
+				const tx = blueColumns.weight[x];
+				const Y = luma.plane[lumaRow + x];
+				const Cb = Math.fround(
+					(blue.plane[top + x0] * (1 - tx) + blue.plane[top + x1] * tx) *
+							(1 - ty) +
+						(blue.plane[bottom + x0] * (1 - tx) +
+							blue.plane[bottom + x1] * tx) *
+							ty,
+				);
+				const rx0 = redColumns.first[x];
+				const rx1 = redColumns.second[x];
+				const rtx = redColumns.weight[x];
+				const Cr = Math.fround(
+					(red.plane[redTop + rx0] * (1 - rtx) +
+						red.plane[redTop + rx1] * rtx) *
+							(1 - ty) +
+						(red.plane[redBottom + rx0] * (1 - rtx) +
+								red.plane[redBottom + rx1] * rtx) * ty,
+				);
+				data[out] = Y + 1.402 * (Cr - 128);
+				data[out + 1] = Y - 0.344136 * (Cb - 128) - 0.714136 * (Cr - 128);
+				data[out + 2] = Y + 1.772 * (Cb - 128);
+				data[out + 3] = 255;
+				out += 4;
+			}
+		}
+		return bitmap;
+	}
 	for (let y = 0; y < height; y++) {
 		await pause();
 		// Per component, the rows a subsampled pixel interpolates between.

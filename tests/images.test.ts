@@ -87,6 +87,29 @@ for (const name of [
 	});
 }
 
+const SUBSAMPLED_JPEGS: Record<string, string> = {
+	"jpeg-420-37x21.jpg":
+		"ca4109e50a947064e275ad821aa25b66afdbcbbd791d74db25132cf491a99538",
+	"jpeg-420-33x17.jpg":
+		"5dc86b54ec66fd07dd1183c2a738f281491993afb0a779bc9178fefd9428c87a",
+	"jpeg-420-18x35.jpg":
+		"6b77e90f765fe73339750514185ca25108c4c416ccef685d750c014ecc3d9c60",
+};
+
+for (const [name, digest] of Object.entries(SUBSAMPLED_JPEGS)) {
+	test(`${name}, 4:2:0 at odd sizes, decodes byte for byte as the general path did`, async () => {
+		const bitmap = await decodeImage(getImageBytes(name));
+		const hash = await crypto.subtle.digest(
+			"SHA-256",
+			new Uint8Array(bitmap.data),
+		);
+		const hex = Array.from(new Uint8Array(hash), (byte) =>
+			byte.toString(16).padStart(2, "0"),
+		).join("");
+		expect(hex).toBe(digest);
+	});
+}
+
 test("grayscale images decode to equal channels", async () => {
 	for (const name of ["png-gray.png", "jpeg-gray.jpg"]) {
 		const bitmap = await decodeImage(getImageBytes(name));
