@@ -3764,7 +3764,6 @@ interface TextFragmentEntry {
 interface RectText {
 	rect: DOMRect;
 	column: number;
-	text: string;
 	startOffset: number;
 	endOffset: number;
 	visualBase: "ltr" | "rtl" | null;
@@ -6986,16 +6985,7 @@ export class Layout {
 	// caret rests on both.
 	lineFragments(textNode: Text): LineFragment[] {
 		const data = textNode.data;
-		const lines: LineFragment[] = [];
-		for (const rectText of getRectTexts(this, textNode)) {
-			lines.push({
-				rect: rectText.rect,
-				column: rectText.column,
-				startOffset: rectText.startOffset,
-				endOffset: rectText.endOffset,
-				visualBase: rectText.visualBase,
-			});
-		}
+		const lines: LineFragment[] = getRectTexts(this, textNode);
 		// The caret's row after a final Enter: one line below the last, at the
 		// same left edge.
 		if (lines.length > 0 && data.endsWith("\n")) {
@@ -9579,55 +9569,58 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	// formatting context with its own alignment.
 	let alignContainer: Element | null = flatParentElement(runHead);
 
-	// Flat-tree parents, outermost first, since each nested breakResult is
+	// The flat-tree parents that establish an independent formatting
+	// context, taken outermost first, since each nested breakResult is
 	// found in the one its parent's hop descended into. A UA shadow tree's
 	// UA shadow text has no parentElement chain to its host, and the walk
 	// would stop at the shadow boundary.
-	const enclosing: Element[] = [];
+	let enclosing: Element[] | null = null;
 	for (
 		let current = node;
 		current !== runHead && flatParentElement(current);
 		current = flatParentElement(current)!
 	) {
-		enclosing.unshift(flatParentElement(current)!);
-	}
-	for (const parent of enclosing) {
+		const parent = flatParentElement(current)!;
 		if (establishesIndependentFormattingContext(parent)) {
-			// A text control's windowed value shifts its content by its own
-			// scroll, so the caret stays in view, independent of whether its
-			// segment is found below.
-			accumulatedOffsetX -= getScrollOffset(parent as Element, "left");
-			accumulatedOffsetY -= getScrollOffset(parent as Element, "top");
-			let found = false;
-			for (const line of currentBreakResult.lines) {
-				for (const segment of line.segments) {
-					if (
-						segment.leaf.type === "inline-block" && segment.leaf.node === parent
-					) {
-						// To the CONTENT edge. Border and padding occupy cells.
-						accumulatedOffsetX +=
-							(parent === runHead && headsOwnBox
-								? 0
-								: getLineStart(alignContainer, currentBreakResult, line) +
-									segment.x) +
-							segment.leaf.boxModel.paddingLeft +
-							segment.leaf.boxModel.borderLeftWidth;
-						accumulatedOffsetY +=
-							line.y +
-							segment.dy +
-							segment.leaf.boxModel.paddingTop +
-							segment.leaf.boxModel.borderTopWidth;
-						if (segment.leaf.breakResult) {
-							currentBreakResult = segment.leaf.breakResult;
-							alignContainer = parent;
-						}
-						found = true;
-						break;
+			(enclosing ??= []).push(parent);
+		}
+	}
+	for (let depth = (enclosing?.length ?? 0) - 1; depth >= 0; depth--) {
+		const parent = enclosing![depth];
+		// A text control's windowed value shifts its content by its own
+		// scroll, so the caret stays in view, independent of whether its
+		// segment is found below.
+		accumulatedOffsetX -= getScrollOffset(parent as Element, "left");
+		accumulatedOffsetY -= getScrollOffset(parent as Element, "top");
+		let found = false;
+		for (const line of currentBreakResult.lines) {
+			for (const segment of line.segments) {
+				if (
+					segment.leaf.type === "inline-block" && segment.leaf.node === parent
+				) {
+					// To the CONTENT edge. Border and padding occupy cells.
+					accumulatedOffsetX +=
+						(parent === runHead && headsOwnBox
+							? 0
+							: getLineStart(alignContainer, currentBreakResult, line) +
+								segment.x) +
+						segment.leaf.boxModel.paddingLeft +
+						segment.leaf.boxModel.borderLeftWidth;
+					accumulatedOffsetY +=
+						line.y +
+						segment.dy +
+						segment.leaf.boxModel.paddingTop +
+						segment.leaf.boxModel.borderTopWidth;
+					if (segment.leaf.breakResult) {
+						currentBreakResult = segment.leaf.breakResult;
+						alignContainer = parent;
 					}
-				}
-				if (found) {
+					found = true;
 					break;
 				}
+			}
+			if (found) {
+				break;
 			}
 		}
 	}
@@ -9665,13 +9658,28 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 		}
 	}
 
-	let targetTextNodes: Set<Node>;
+	// Without the index every text node's lookup scanned every segment of
+	// its run. Painting a run of N boxes cost O(N^2) segment visits per
+	// frame.
+	const index = getBreakResultTextIndex(layout, breakResult);
 
+	// The fragments in line order, and in run order on a line. A text
+	// node's own entries are usually in that order already.
+	let entries: TextFragmentEntry[];
 	if (getNodeType(node) === node.TEXT_NODE || isLineBreak(node)) {
-		targetTextNodes = new Set([node]);
+		const own = index.get(node);
+		if (own === undefined) {
+			return [];
+		}
+		entries = own;
+		for (let i = 1; i < own.length; i++) {
+			if (compareFragmentEntries(own[i - 1], own[i]) > 0) {
+				entries = own.slice().sort(compareFragmentEntries);
+				break;
+			}
+		}
 	} else {
-		targetTextNodes = new Set<Node>();
-
+		const targetTextNodes = new Set<Node>();
 		targetTextNodes.add(node);
 		for (
 			let found = flowNext(node, node, false);
@@ -9685,38 +9693,33 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 				targetTextNodes.add(found);
 			}
 		}
+		entries = [];
+		for (const textNode of targetTextNodes) {
+			const own = index.get(textNode);
+			if (own !== undefined) {
+				for (let i = 0; i < own.length; i++) {
+					entries.push(own[i]);
+				}
+			}
+		}
+		entries.sort(compareFragmentEntries);
 	}
 
 	const rectTexts: RectText[] = [];
-
-	// Without the index every text node's lookup scanned every segment of
-	// its run. Painting a run of N boxes cost O(N^2) segment visits per
-	// frame.
-	const index = getBreakResultTextIndex(layout, breakResult);
-
-	const byLine = new Map<number, TextFragmentEntry[]>();
-	for (const textNode of targetTextNodes) {
-		const entries = index.get(textNode);
-		if (!entries) {
-			continue;
+	for (let start = 0; start < entries.length;) {
+		const lineIndex = entries[start].line;
+		let end = start + 1;
+		while (end < entries.length && entries[end].line === lineIndex) {
+			end++;
 		}
-		for (const entry of entries) {
-			let bucket = byLine.get(entry.line);
-			if (!bucket) {
-				byLine.set(entry.line, (bucket = []));
-			}
-			bucket.push(entry);
-		}
-	}
-
-	for (const [lineIndex, bucket] of [...byLine].sort((a, b) => a[0] - b[0])) {
 		const line = breakResult.lines[lineIndex];
-		bucket.sort((a, b) => a.ord - b.ord);
 
 		let minX = Infinity;
 		let maxX = -Infinity;
-		let concatenatedText = "";
-		for (const targetText of bucket) {
+		let first: TextFragmentEntry | null = null;
+		let last: TextFragmentEntry | null = null;
+		for (let i = start; i < end; i++) {
+			const targetText = entries[i];
 			let {x, width} = targetText;
 			// The node's own margin is outside its box. A descendant's is
 			// inside it.
@@ -9728,11 +9731,13 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 			}
 			minX = Math.min(minX, x);
 			maxX = Math.max(maxX, x + width);
-			concatenatedText += targetText.text;
+			if (edge === undefined) {
+				first ??= targetText;
+				last = targetText;
+			}
 		}
-		const texts = bucket.filter((entry) => entry.edge === undefined);
-		const first = texts[0] ?? bucket[0];
-		const last = texts[texts.length - 1] ?? bucket[bucket.length - 1];
+		first ??= entries[start];
+		last ??= entries[end - 1];
 
 		const alignOffset = getLineAlignOffset(
 			alignContainer,
@@ -9745,23 +9750,29 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 			currentBreakResult.containerWidth,
 		);
 
-		const rect = new layout.domRect(
-			containerX + minX + alignOffset + indent,
-			containerY + line.y + line.textTop,
-			maxX - minX,
-			line.height - line.textTop,
-		);
 		rectTexts.push({
-			rect,
+			rect: new layout.domRect(
+				containerX + minX + alignOffset + indent,
+				containerY + line.y + line.textTop,
+				maxX - minX,
+				line.height - line.textTop,
+			),
 			column: first.column,
-			text: concatenatedText,
 			startOffset: first.startOffset,
 			endOffset: last.endOffset,
 			visualBase: first.visualBase,
 		});
+		start = end;
 	}
 
 	return rectTexts;
+}
+
+function compareFragmentEntries(
+	a: TextFragmentEntry,
+	b: TextFragmentEntry,
+): number {
+	return a.line - b.line || a.ord - b.ord;
 }
 
 function getDocumentContentHeight(engine: Layout): number {
