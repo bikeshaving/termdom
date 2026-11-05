@@ -35,6 +35,7 @@ import {
 	flowContent,
 	flowNext,
 	getAddedNodes,
+	getDocumentRange,
 	getPseudoHost,
 	getScrollOffset,
 	getShadowRoot,
@@ -7811,26 +7812,24 @@ function isInFixedBox(node: LayoutNode): boolean {
 // when an end has no caret position to measure.
 function getSelectionRows(layout: Layout): [number, number] | null {
 	const selection = layout.window.document.getSelection();
-	if (selection === null || selection.rangeCount === 0) {
+	const range = selection === null ? null : getDocumentRange(selection);
+	if (range === null) {
 		return null;
 	}
-	let top = Infinity;
-	let bottom = -Infinity;
-	for (let index = 0; index < selection.rangeCount; index++) {
-		const range = selection.getRangeAt(index);
-		for (const [node, offset] of [
-			[range.startContainer, range.startOffset],
-			[range.endContainer, range.endOffset],
-		] as const) {
-			const rect = layout.getCaretRect(node, offset);
-			if (rect === null) {
-				return null;
-			}
-			top = Math.min(top, Math.floor(rect.y));
-			bottom = Math.max(bottom, Math.ceil(rect.y + Math.max(rect.height, 1)));
-		}
+	const start = layout.getCaretRect(range.startContainer, range.startOffset);
+	const end = layout.getCaretRect(range.endContainer, range.endOffset);
+	if (start === null || end === null) {
+		return null;
 	}
-	return [top, bottom];
+	return [
+		Math.floor(Math.min(start.y, end.y)),
+		Math.ceil(
+			Math.max(
+				start.y + Math.max(start.height, 1),
+				end.y + Math.max(end.height, 1),
+			),
+		),
+	];
 }
 
 /**

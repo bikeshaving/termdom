@@ -33454,11 +33454,11 @@ class Selection implements globalThis.Selection {
 	}
 
 	get rangeCount(): number {
-		return getDocumentRange(this) === null ? 0 : 1;
+		return getSelectionDocumentRange(this) === null ? 0 : 1;
 	}
 
 	get type(): string {
-		const range = getDocumentRange(this);
+		const range = getSelectionDocumentRange(this);
 		if (range === null) {
 			return "None";
 		}
@@ -33483,7 +33483,7 @@ class Selection implements globalThis.Selection {
 		if (arguments.length < 1) {
 			throw new TypeError("getRangeAt needs an index");
 		}
-		const range = getDocumentRange(this);
+		const range = getSelectionDocumentRange(this);
 		if (toUnsignedLong(index) !== 0 || range === null) {
 			throw indexSizeError("The selection has no range at that index");
 		}
@@ -33760,7 +33760,7 @@ class Selection implements globalThis.Selection {
 	}
 
 	deleteFromDocument(): void {
-		const range = getDocumentRange(this);
+		const range = getSelectionDocumentRange(this);
 		if (range === null) {
 			return;
 		}
@@ -33829,7 +33829,7 @@ class Selection implements globalThis.Selection {
 		if (!forward && where !== "backward" && where !== "left") {
 			return;
 		}
-		const range = getDocumentRange(this);
+		const range = getSelectionDocumentRange(this);
 		if (range === null) {
 			return;
 		}
@@ -34526,10 +34526,21 @@ function isInDocument(selection: Selection, node: Node): boolean {
 	return getShadowIncludingRoot(node) === _(selection).document;
 }
 
+/**
+ * The selection's range while it is in the document, for the engine to
+ * read. Unlike getRangeAt(), it does not hand the range out, so the
+ * selection goes on moving it rather than making a new one.
+ */
+export function getDocumentRange(
+	selection: globalThis.Selection,
+): globalThis.Range | null {
+	return getSelectionDocumentRange(selection as Selection);
+}
+
 // The selection has a range while its range is in the document,
 // including a shadow tree of the document. A range that has left the
 // document is not returned.
-function getDocumentRange(selection: Selection): Range | null {
+function getSelectionDocumentRange(selection: Selection): Range | null {
 	const range = _(selection).range;
 	if (range === null) {
 		return null;
