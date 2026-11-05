@@ -1449,7 +1449,7 @@ function compilePseudoClass(
 // number however it is read. What its escapes spell is another matter,
 // and can be anything, so `a\.b` names "a.b".
 const CSS_IDENTIFIER =
-	/^(?:--|-?(?:[a-zA-Z_-￿]|\\[^\n]))(?:[\w-￿-]|\\[^\n])*$/;
+	/^(?:--|-?(?:[a-zA-Z_\u0080-\uFFFF]|\\[^\n]))(?:[\w\u0080-\uFFFF-]|\\[^\n])*$/;
 
 /** The name a `::part()`, `::highlight()` or `:state()` was written with. */
 function getIdentifierArgument(
