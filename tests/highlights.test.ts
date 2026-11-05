@@ -326,6 +326,53 @@ test("priority, then registration order, decides which layer wins", async () => 
 	dom.dispose();
 });
 
+test("a text node under many layers folds them as it folds a few", async () => {
+	const {terminal, dom, window} = highlightDOM({cols: 80});
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>" +
+		"::highlight(low) { background-color: yellow; color: red }" +
+		"::highlight(high) { background-color: blue }" +
+		"</style>";
+	document.body.innerHTML = `<p>${"ab".repeat(40)}</p>`;
+	const text = document.querySelector("p")!.firstChild!;
+	const low = new window.Highlight();
+	for (let i = 0; i < 80; i += 2) {
+		low.add(
+			new window.StaticRange({
+				startContainer: text,
+				startOffset: i,
+				endContainer: text,
+				endOffset: i + 1,
+			}),
+		);
+	}
+	const high = new window.Highlight(
+		new window.StaticRange({
+			startContainer: text,
+			startOffset: 40,
+			endContainer: text,
+			endOffset: 46,
+		}),
+	);
+	high.priority = 1;
+	window.CSS.highlights.set("low", low);
+	window.CSS.highlights.set("high", high);
+	await nextFrame(dom);
+
+	expect(yellowCells(terminal, 0)).toEqual(
+		Array.from({length: 40}, (_, i) => i * 2)
+			.filter((col) => col < 40 || col >= 46),
+	);
+	for (let col = 40; col < 46; col++) {
+		expect(cellAt(terminal, 0, col).getBgColor()).toBe(0x0000ff);
+	}
+	expect(cellAt(terminal, 0, 42).getFgColor()).toBe(0xff0000);
+	expect(cellAt(terminal, 0, 43).isFgDefault()).toBe(true);
+
+	dom.dispose();
+});
+
 test("a concrete background over a system-color layer is not inverted", async () => {
 	const {terminal, dom, window} = highlightDOM();
 	const {document} = dom;
