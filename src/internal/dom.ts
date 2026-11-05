@@ -31914,25 +31914,16 @@ function getNodeLength(node: Node): number {
 	return length;
 }
 
-function getAncestorChain(node: Node): Node[] {
-	const chain: Node[] = [];
-	for (
-		let currentSlots: Slots<Node> | null = getSlots(node);
-		currentSlots !== null;
-		currentSlots = currentSlots.parent
-	) {
-		const current = getObject(currentSlots);
-		chain.push(current);
+function getDepth(slots: Slots<Node>): number {
+	let depth = 0;
+	for (let parent = slots.parent; parent !== null; parent = parent.parent) {
+		depth++;
 	}
-	chain.reverse();
-	return chain;
+	return depth;
 }
 
-function isPrecedingSibling(node: Node, other: Node): boolean {
-	for (let nextSlots = _(node).next;
-		nextSlots !== null;
-		nextSlots = nextSlots.next) {
-		const next = getObject(nextSlots);
+function isPrecedingSibling(slots: Slots<Node>, other: Slots<Node>): boolean {
+	for (let next = slots.next; next !== null; next = next.next) {
 		if (next === other) {
 			return true;
 		}
@@ -31953,25 +31944,36 @@ function comparePoints(
 		}
 		return offsetA < offsetB ? BEFORE : AFTER;
 	}
-	const chainA = getAncestorChain(nodeA);
-	const chainB = getAncestorChain(nodeB);
-	let depth = 0;
-	while (
-		depth < chainA.length &&
-		depth < chainB.length &&
-		chainA[depth] === chainB[depth]
-	) {
-		depth++;
-	}
+	let slotsA = getSlots(nodeA);
+	let slotsB = getSlots(nodeB);
+	let depthA = getDepth(slotsA);
+	let depthB = getDepth(slotsB);
 	// One node is an ancestor of the other. Compare the ancestor's offset
 	// against the index of the child that contains the other node.
-	if (depth === chainA.length) {
-		return getNodeIndex(chainB[depth]) < offsetA ? AFTER : BEFORE;
+	if (depthA < depthB) {
+		while (depthB > depthA + 1) {
+			slotsB = slotsB.parent!;
+			depthB--;
+		}
+		if (slotsB.parent === slotsA) {
+			return getNodeIndex(getObject(slotsB)) < offsetA ? AFTER : BEFORE;
+		}
+		slotsB = slotsB.parent!;
+	} else if (depthB < depthA) {
+		while (depthA > depthB + 1) {
+			slotsA = slotsA.parent!;
+			depthA--;
+		}
+		if (slotsA.parent === slotsB) {
+			return getNodeIndex(getObject(slotsA)) < offsetB ? BEFORE : AFTER;
+		}
+		slotsA = slotsA.parent!;
 	}
-	if (depth === chainB.length) {
-		return getNodeIndex(chainA[depth]) < offsetB ? BEFORE : AFTER;
+	while (slotsA.parent !== slotsB.parent) {
+		slotsA = slotsA.parent!;
+		slotsB = slotsB.parent!;
 	}
-	return isPrecedingSibling(chainA[depth], chainB[depth]) ? BEFORE : AFTER;
+	return isPrecedingSibling(slotsA, slotsB) ? BEFORE : AFTER;
 }
 
 function registerNodeIterator(treeRoot: Node, iterator: NodeIterator): void {
