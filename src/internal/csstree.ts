@@ -228,78 +228,116 @@ function consumeBlockItem(this: BlockParser): unknown {
 	});
 }
 
+function parseBlock(this: BlockParser, isStyleBlock: boolean): unknown {
+	const start = this.tokenStart;
+	const children = this.createList();
+	this.eat(LeftCurlyBracket);
+	scan: while (!this.eof) {
+		switch (this.tokenType) {
+			case RightCurlyBracket:
+				break scan;
+			case WhiteSpace:
+			case Comment:
+				this.next();
+				break;
+			case AtKeyword:
+				children.push(
+					this.parseWithFallback(
+						() => this.Atrule(isStyleBlock),
+						function (this: BlockParser) {
+							return this.Raw(null, true);
+						},
+					),
+				);
+				break;
+			default:
+				children.push(
+					isStyleBlock
+						? consumeBlockItem.call(this)
+						: this.parseWithFallback(this.Rule, function (this: BlockParser) {
+							return this.Raw(null, true);
+						}),
+				);
+		}
+	}
+	if (!this.eof) {
+		this.eat(RightCurlyBracket);
+	}
+	return {
+		type: "Block",
+		loc: this.getLocation(start, this.tokenStart),
+		children,
+	};
+}
+
+interface GrammarLexer extends Lexer {
+	properties: Record<string, {syntax: unknown}>;
+	types: Record<string, {syntax: unknown}>;
+	addProperty_(name: string, syntax: string): void;
+	addType_(name: string, syntax: string): void;
+}
+
+interface SyntaxConfig {
+	node: Record<string, object>;
+	[key: string]: unknown;
+}
+
+// The property index's grammars, with entries the index states from an
+// older spec level brought up to date. The deprecated system colors still
+// parse, per CSS Color 4. Each entry extends the grammar the index states.
+const PROPERTY_GRAMMARS: Record<string, string> = {
+	"alignment-baseline": "| text-bottom | text-top",
+	"text-align":
+		"| -webkit-left | -webkit-center | -webkit-right | -moz-left | -moz-center | -moz-right",
+	"baseline-shift": "| top | center | bottom",
+	display: "| [ block | inline ]? math",
+	"outline-color": "| invert",
+};
+
+const TYPE_GRAMMARS: Record<string, string> = {
+	color: "| <deprecated-system-color>",
+	"family-name":
+		"| generic( <custom-ident>+ ) | -webkit-generic( <custom-ident>+ )",
+};
+
+// css-tree builds its default syntax, lexer included, when it loads, and a
+// fork builds a second lexer of over a thousand grammar entries. The
+// default lexer takes the amended grammars, and the fork holds the parser
+// that reads nested rules, with an empty dictionary.
+const lexer = Runtime.lexer as GrammarLexer;
+const generateGrammar: (ast: unknown) => string =
+	Runtime.definitionSyntax.generate;
+for (const [name, extension] of Object.entries(PROPERTY_GRAMMARS)) {
+	lexer.addProperty_(
+		name,
+		generateGrammar(lexer.properties[name].syntax) + " " + extension,
+	);
+}
+for (const [name, extension] of Object.entries(TYPE_GRAMMARS)) {
+	lexer.addType_(
+		name,
+		generateGrammar(lexer.types[name].syntax) + " " + extension,
+	);
+}
+
+const parser = (
+	Runtime.fork as (
+		extend: (base: SyntaxConfig) => SyntaxConfig,
+	) => {parse: typeof parse}
+)((base) => ({
+	...base,
+	generic: false,
+	types: null,
+	properties: null,
+	atrules: null,
+	node: {...base.node, Block: {...base.node.Block, parse: parseBlock}},
+}));
+
 /**
- * The engine's one css-tree fork: style blocks read nested rules, and the
- * grammar dictionary is amended. A syntax beginning with `|` extends the
- * entry the property index states rather than replacing it. Each fork
- * builds a lexer of its own, so the stylesheet parser and the value
- * matcher share this one.
+ * The engine's syntax: style blocks read nested rules, and the value
+ * matcher reads the amended grammar dictionary.
  */
-export const syntax: {parse: typeof parse; lexer: Lexer} = (
-	Runtime.fork as (extension: object) => {parse: typeof parse; lexer: Lexer}
-)({
-	// The property index's grammars, with entries the index states from an
-	// older spec level brought up to date. The deprecated system colors
-	// still parse, per CSS Color 4.
-	properties: {
-		"alignment-baseline": "| text-bottom | text-top",
-		"text-align":
-			"| -webkit-left | -webkit-center | -webkit-right | -moz-left | -moz-center | -moz-right",
-		"baseline-shift": "| top | center | bottom",
-		display: "| [ block | inline ]? math",
-		"outline-color": "| invert",
-	},
-	types: {
-		color: "| <deprecated-system-color>",
-		"family-name":
-			"| generic( <custom-ident>+ ) | -webkit-generic( <custom-ident>+ )",
-	},
-	node: {
-		Block: {
-			parse(this: BlockParser, isStyleBlock: boolean) {
-				const start = this.tokenStart;
-				const children = this.createList();
-				this.eat(LeftCurlyBracket);
-				scan: while (!this.eof) {
-					switch (this.tokenType) {
-						case RightCurlyBracket:
-							break scan;
-						case WhiteSpace:
-						case Comment:
-							this.next();
-							break;
-						case AtKeyword:
-							children.push(
-								this.parseWithFallback(
-									() => this.Atrule(isStyleBlock),
-									function (this: BlockParser) {
-										return this.Raw(null, true);
-									},
-								),
-							);
-							break;
-						default:
-							children.push(
-								isStyleBlock
-									? consumeBlockItem.call(this)
-									: this.parseWithFallback(
-										this.Rule,
-										function (this: BlockParser) {
-											return this.Raw(null, true);
-										},
-									),
-							);
-					}
-				}
-				if (!this.eof) {
-					this.eat(RightCurlyBracket);
-				}
-				return {
-					type: "Block",
-					loc: this.getLocation(start, this.tokenStart),
-					children,
-				};
-			},
-		},
-	},
-});
+export const syntax: {parse: typeof parse; lexer: Lexer} = {
+	parse: parser.parse,
+	lexer,
+};
