@@ -34679,7 +34679,7 @@ class Highlight {
 		}
 		_(this).highlightRanges.add(range);
 		joinHighlight(range, this);
-		highlightChanged(this);
+		highlightRangeChanged(this, range);
 		return this;
 	}
 
@@ -34690,7 +34690,7 @@ class Highlight {
 		const deleted = _(this).highlightRanges.delete(range);
 		if (deleted) {
 			leaveHighlight(range, this);
-			highlightChanged(this);
+			highlightRangeChanged(this, range);
 		}
 		return deleted;
 	}
@@ -34966,6 +34966,71 @@ function highlightChanged(highlight: Highlight): void {
 	for (const registry of _(highlight).highlightRegistries) {
 		invalidateHighlights(_(registry).registryDocument);
 	}
+}
+
+// A range added to a highlight or taken from one changes the text it
+// covers and nothing else, so only that text's rows repaint, when they
+// can be found.
+function highlightRangeChanged(
+	highlight: Highlight,
+	range: AbstractRange,
+): void {
+	for (const registry of _(highlight).highlightRegistries) {
+		const attached = getAttachedDocument(_(registry).registryDocument);
+		if (attached === undefined) {
+			continue;
+		}
+		const framebuffer = _(attached).extra.framebuffer;
+		if (damageHighlightedText(attached, range)) {
+			requestFrame(framebuffer);
+		} else {
+			invalidate(framebuffer);
+		}
+		void _(attached).extra.render();
+	}
+}
+
+// Marks the boxes of the text a range covers to repaint at the next
+// frame, as a restyle marks its element, or answers false when its rows
+// cannot be bounded. For a live range, whose points follow the tree, and
+// for a static range inside one text node, the text covered now differs
+// from the text covered at the last frame only by text a mutation moved
+// or changed, and that mutation repaints its rows. A static range across
+// nodes can come to cover text no mutation touched.
+function damageHighlightedText(
+	attached: AttachedDocument,
+	range: AbstractRange,
+): boolean {
+	const layout = _(attached).extra.layout;
+	if (_(attached).extra.framebuffer.wholeDamage || layout.wholeDamage) {
+		return false;
+	}
+	const slots = _(range);
+	if (
+		!implementsInterface(range, Range) &&
+		(slots.startNode !== slots.endNode ||
+			getNodeType(slots.startNode) !== TEXT_NODE)
+	) {
+		return false;
+	}
+	const restyled = layout.restyledForPaint;
+	for (const {textNode} of getHighlightedTextNodes(range)) {
+		if (!textNode.isConnected || _(textNode as Text).document !== attached) {
+			continue;
+		}
+		const element = getFlatTreeParent(textNode as Text);
+		if (element === null) {
+			return false;
+		}
+		if (restyled.get(element) !== null) {
+			// The cap a restyle keeps, past which a frame repaints whole.
+			if (restyled.size >= 256) {
+				return false;
+			}
+			restyled.set(element, null);
+		}
+	}
+	return true;
 }
 
 // Neither registering a highlight nor moving one is a DOM mutation, and
