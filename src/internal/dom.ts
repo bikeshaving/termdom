@@ -36884,7 +36884,7 @@ const PARSERERROR_NAMESPACE =
 // two permanent non-characters, and a surrogate half without its
 // partner.
 const XML_FORBIDDEN_CHAR =
-	/[\0-\x08\x0B\x0C\x0E-\x1F￾￿]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+	/[\0-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 const PREDEFINED_ENTITIES = new Map([
 	["amp", "&"],

@@ -388,7 +388,7 @@ export function serializeKeyframesName(name: string): string {
 }
 
 const PLAIN_IDENTIFIER =
-	/^(?:[A-Za-z_\u0080-￿]|-[A-Za-z_\u0080-￿-])[\w\u0080-￿-]*$/;
+	/^(?:[A-Za-z_\u0080-\uFFFF]|-[A-Za-z_\u0080-\uFFFF-])[\w\u0080-\uFFFF-]*$/;
 
 // The same result CSS.escape produces.
 export function serializeCSSIdentifier(value: string): string {
@@ -2943,9 +2943,9 @@ function getUnitFactor(unit: string, context: LengthContext): number | null {
 		// down. CSS takes ch across on both; a cell grid does not.
 		case "ch":
 			return context.cellAlong;
-		// The advance of 水, which a terminal draws two cells wide and one
-		// row tall whatever the font size, as it draws every character in
-		// whole cells.
+		// The advance of a CJK ideograph such as U+6C34, which a terminal
+		// draws two cells wide and one row tall whatever the font size, as it
+		// draws every character in whole cells.
 		case "ic":
 			return context.vertical ? context.cellAlong : context.cellWidth * 2;
 		case "lh":
@@ -4680,7 +4680,8 @@ function serializeSelectorArgument(
 			// An argument that is one identifier (`::highlight(name)`,
 			// `:lang(ja)`) serializes as the identifier its escapes spell.
 			// Anything else the parser passed through whole stays as written.
-			return /^-?(?:[-\w-￿]|\\[^\n])+$/.test(text) && !/^-?\d/.test(text)
+			return /^-?(?:[-\w\u0080-\uFFFF]|\\[^\n])+$/.test(text) &&
+				!/^-?\d/.test(text)
 				? serializeIdentifierSource(text)
 				: text;
 		}
