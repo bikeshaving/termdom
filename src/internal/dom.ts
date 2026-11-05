@@ -114,6 +114,7 @@ import {
 	getAttributeByName,
 	getAttributeValue,
 	getElementChildren,
+	getHTMLLocalName,
 	getLocalName,
 	getNamespace,
 	getNodeType,
@@ -199,13 +200,13 @@ function ensureUAShadowTree(element: globalThis.Element): void {
 
 // Built-in tags that get a UA shadow tree when they connect.
 const UA_SHADOW_HOSTS = new Set([
-	"DETAILS",
-	"IMG",
-	"INPUT",
-	"METER",
-	"PROGRESS",
-	"SELECT",
-	"TEXTAREA",
+	"details",
+	"img",
+	"input",
+	"meter",
+	"progress",
+	"select",
+	"textarea",
 ]);
 
 // Walks the child links directly instead of running a selector query.
@@ -215,7 +216,7 @@ function ensureUAShadowTrees(root: globalThis.Node): void {
 	const stack: Element[] = [root as Element];
 	while (stack.length > 0) {
 		const element = stack.pop()!;
-		if (UA_SHADOW_HOSTS.has(element.tagName)) {
+		if (UA_SHADOW_HOSTS.has(getHTMLLocalName(element) as string)) {
 			ensureUAShadowTree(element);
 		}
 		for (let nodeSlots = _(element).firstChild;
