@@ -1487,3 +1487,31 @@ describe("custom property substitution", () => {
 		dom.dispose();
 	});
 });
+
+test("a class selector matches the element's classes, ignoring case in quirks mode only", () => {
+	const css =
+		"<style>.Box { padding-top: 3px } .a.B { padding-left: 2px }</style>";
+	const quirks = domFor(`${css}<div class="x box"></div><p class="A b"></p>`);
+	const div = quirks.document.querySelector("div")!;
+	const p = quirks.document.querySelector("p")!;
+	expect(quirks.window.getComputedStyle(div).paddingTop).toBe("3px");
+	expect(quirks.window.getComputedStyle(p).paddingLeft).toBe("2px");
+	div.className = "x";
+	p.setAttribute("class", "a");
+	expect(quirks.window.getComputedStyle(div).paddingTop).toBe("0px");
+	expect(quirks.window.getComputedStyle(p).paddingLeft).toBe("0px");
+	quirks.dispose();
+
+	const standards = domFor(
+		`<!DOCTYPE html>${css}<div class="x box"></div><p class="A b"></p>` +
+			"<i class=\"Box\"></i>",
+	);
+	const styles = (selector: string) =>
+		standards.window.getComputedStyle(
+			standards.document.querySelector(selector)!,
+		);
+	expect(styles("div").paddingTop).toBe("0px");
+	expect(styles("p").paddingLeft).toBe("0px");
+	expect(styles("i").paddingTop).toBe("3px");
+	standards.dispose();
+});

@@ -43109,6 +43109,7 @@ export function setRequestDestination(
 }
 
 setElementStates({
+	getClassTokens,
 	getHeadingLevel,
 	getMeterLevel,
 	getOpenAssignedSlot,
