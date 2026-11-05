@@ -81,6 +81,11 @@ test("paragraph direction is inferred from the first strong character", () => {
 	expect(hasRTL("plain ascii")).toBe(false);
 });
 
+test("a supplementary character keeps its code units in order when reversed", () => {
+	// An emoji is ON, so between two Hebrew words it takes their direction.
+	expect(toVisualOrder("שלום 😀 עולם", "rtl")).toBe("םלוע 😀 םולש");
+});
+
 test("undeclared RTL text still paints in visual order", async () => {
 	// The common way such a string arrives: no dir attribute, no CSS, just
 	// Hebrew dropped into a div. The content decides the direction.
