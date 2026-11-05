@@ -1,8 +1,11 @@
-import {getEmbeddingLevels} from "./bidi.ts";
 import * as CSSTree from "./csstree.ts";
 import type * as DOM from "./dom.ts";
 import type {Element, Node} from "./dom.ts";
-import {splitOnASCIIWhitespace, toASCIILowercase} from "./text.ts";
+import {
+	getParagraphDirection,
+	splitOnASCIIWhitespace,
+	toASCIILowercase,
+} from "./text.ts";
 import {
 	CDATA_SECTION_NODE,
 	DOCUMENT_NODE,
@@ -83,7 +86,8 @@ export function setElementStates(given: ElementStates): void {
 // document state around it: which element the pointer is over, which has
 // focus, what a shadow root's host is, whether a dialog is modal. A bug
 // in a pseudo-class is a bug in one function rather than in generated
-// source. bidi.ts finds the first strong character for `:dir(auto)`.
+// source. getParagraphDirection finds the first strong character for
+// `:dir(auto)`.
 // Matching runs right to left, from the subject compound outwards, which
 // makes a long descendant selector cheap: the first compound that fails
 // ends the walk.
@@ -2062,13 +2066,13 @@ function getAutoDirection(element: Element): "ltr" | "rtl" {
 			if (!AUTO_INPUT_TYPES.has(type)) {
 				return "ltr";
 			}
-			return getFirstStrong(getAttributeValue(element, "value") ?? "");
+			return getParagraphDirection(getAttributeValue(element, "value") ?? "");
 		}
 		if (name === "textarea") {
-			return getFirstStrong(getTextUnder(element, true));
+			return getParagraphDirection(getTextUnder(element, true));
 		}
 	}
-	return getFirstStrong(getTextUnder(element, false));
+	return getParagraphDirection(getTextUnder(element, false));
 }
 
 function getTextUnder(element: Element, all: boolean): string {
@@ -2099,15 +2103,6 @@ function getTextUnder(element: Element, all: boolean): string {
 		text += getTextUnder(child, false);
 	}
 	return text;
-}
-
-function getFirstStrong(text: string): "ltr" | "rtl" {
-	if (text === "") {
-		return "ltr";
-	}
-	const {paragraphs} = getEmbeddingLevels(text);
-	const paragraph = paragraphs[0];
-	return paragraph && (paragraph.level & 1) === 1 ? "rtl" : "ltr";
 }
 
 // Matches right to left.
