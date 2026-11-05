@@ -154,6 +154,15 @@ test("a ::after counts, as its element's last child", async () => {
 	).toEqual(["1. a", "b", "12. c"]);
 });
 
+test("a ::after with content and no counter properties reads the counters before it", async () => {
+	expect(
+		await render(
+			NUMBERED + " .n::after { content: \" (\" counter(n) \")\" }",
+			"<div class=n>a</div><div class=n>b<span>c</span></div>",
+		),
+	).toEqual(["1. a (1)", "2. bc (2)"]);
+});
+
 test("counters() joins every counter of the name in scope", async () => {
 	expect(
 		await render(
