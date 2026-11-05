@@ -9218,6 +9218,9 @@ function getSelectionSpans(
 ): Array<{rect: DOMRect; text: string}> {
 	const runs: Array<{rect: DOMRect; text: string}> = [];
 	for (const {fragment, shown} of prepared) {
+		if (fragment.endOffset <= from || fragment.startOffset >= to) {
+			continue;
+		}
 		const {text, offsets, clusters: clusterStarts} = shown;
 		// A cell holds a whole cluster, so a run that starts or ends inside
 		// one takes the cluster whole. Measured off a cluster boundary, a run
