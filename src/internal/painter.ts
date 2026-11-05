@@ -2693,20 +2693,13 @@ function collectHighlightedText(document: Document): Map<Text, HighlightRun[]> {
 }
 
 function getHighlightLayer(
-	painter: Painter,
-	textNode: Text,
 	range: {from: number; to: number},
 	paint: HighlightPaint,
 	prepared: PreparedFragment[],
 ): HighlightLayer {
-	const {from, to} = snapToClusters(
-		painter.layout,
-		textNode,
-		range.from,
-		range.to,
-		prepared,
-	);
-	return {from, to, paint};
+	const layer = {from: range.from, to: range.to, paint};
+	snapToClusters(prepared, layer);
+	return layer;
 }
 
 // Past this many layers on one text node, the scan in
@@ -2735,7 +2728,7 @@ function renderTextHighlights(
 			const paint = getHighlightStyle(painter, parent, run.name);
 			if (paint !== null) {
 				prepared ??= prepareTextFragments(painter.layout, textNode);
-				layers.push(getHighlightLayer(painter, textNode, run, paint, prepared));
+				layers.push(getHighlightLayer(run, paint, prepared));
 			}
 		}
 	}
@@ -2743,9 +2736,7 @@ function renderTextHighlights(
 		const paint = readSelectionStyle(selected.selectionParent);
 		if (paint !== null) {
 			prepared ??= prepareTextFragments(painter.layout, textNode);
-			layers.push(
-				getHighlightLayer(painter, textNode, selected, paint, prepared),
-			);
+			layers.push(getHighlightLayer(selected, paint, prepared));
 		}
 	}
 	if (layers.length === 0) {
