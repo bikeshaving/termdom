@@ -1315,7 +1315,8 @@ function computePaintExtents(
 	let rowOrdered = true;
 	let previousTop = -Infinity;
 	let previousBottom = -Infinity;
-	for (const child of node.children) {
+	for (let childIndex = 0; childIndex < node.children.length; childIndex++) {
+		const child = node.children[childIndex];
 		const childExtent = computePaintExtents(
 			layout,
 			child,
@@ -1395,8 +1396,11 @@ function getInlineBlockReaches(
 	from = 0,
 	reaches: Array<[number, number]> = [],
 ): Array<[number, number]> {
-	for (const line of lines.lines) {
-		for (const segment of line.segments) {
+	for (let lineIndex = 0; lineIndex < lines.lines.length; lineIndex++) {
+		const line = lines.lines[lineIndex];
+		const segments = line.segments;
+		for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
+			const segment = segments[segmentIndex];
 			const leaf = segment.leaf;
 			if (leaf.type !== "inline-block") {
 				continue;
@@ -2079,7 +2083,8 @@ function wrapStrayTableParts(
 	if (!hasItemChildren(display) && !isTableInternal(display)) {
 		let table: Box | null = null;
 		let between: Box[] = [];
-		for (const child of children) {
+		for (let childIndex = 0; childIndex < children.length; childIndex++) {
+			const child = children[childIndex];
 			if (child.kind === "node" && isTablePart(child.node!)) {
 				if (table === null) {
 					table = previous[count] ?? new Box("table", null, box);
@@ -2322,7 +2327,8 @@ function syncContainerRuns(layout: Layout, container: Element): void {
 	let index = 0;
 	let table: Box | null = null;
 	let partIndex = 0;
-	for (const entry of children) {
+	for (let entryIndex = 0; entryIndex < children.length; entryIndex++) {
+		const entry = children[entryIndex];
 		const wrapping = containerBox.tables?.get(entry) ?? null;
 		if (wrapping !== table) {
 			if (table !== null) {
@@ -3064,7 +3070,9 @@ function dropRunContent(layout: Layout, element: Element): void {
 // does, into every inline box, since one that held a block before this
 // derivation may hold none now.
 function dropSteppedOver(layout: Layout, parent: Element): void {
-	for (const child of flatChildren(parent)) {
+	const children = flatChildren(parent);
+	for (let childIndex = 0; childIndex < children.length; childIndex++) {
+		const child = children[childIndex];
 		if (getNodeType(child) !== child.ELEMENT_NODE) {
 			continue;
 		}
@@ -8741,7 +8749,8 @@ function isSameValue(a: unknown, b: unknown): boolean {
 	if (keysA.length !== keysB.length) {
 		return false;
 	}
-	for (const key of keysA) {
+	for (let keyIndex = 0; keyIndex < keysA.length; keyIndex++) {
+		const key = keysA[keyIndex];
 		if (
 			!isSameValue(
 				(a as Record<string, unknown>)[key],
@@ -9313,7 +9322,8 @@ export function forEachSelectionSpan(
 		height: number,
 	) => void,
 ): void {
-	for (const {fragment, shown} of prepared) {
+	for (let index = 0; index < prepared.length; index++) {
+		const {fragment, shown} = prepared[index];
 		if (fragment.endOffset <= from || fragment.startOffset >= to) {
 			continue;
 		}
