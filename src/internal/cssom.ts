@@ -8011,19 +8011,22 @@ function buildComputedSlots(
 }
 
 /**
- * The properties a pseudo-element's own rules set on this element, empty
- * when no rule reaches it. Unlike getComputedValue, this does not fill in
- * the originating element's inherited values.
+ * The declarations a pseudo-element's own rules set on this element, by
+ * property, or null when no rule reaching it declares one. Unlike
+ * getComputedValue, this does not fill in the originating element's
+ * inherited values.
  */
 export function declaredPseudoProperties(
 	cascade: Cascade,
 	element: Element,
 	pseudoElement: string,
-): Set<string> {
+): Readonly<Record<string, string>> | null {
 	parseStylesheetsIfStale(cascade);
-	return new Set(
-		Object.keys(computePseudoElementStyle(cascade, element, pseudoElement)),
-	);
+	const declared = computePseudoElementStyle(cascade, element, pseudoElement);
+	for (const _name in declared) {
+		return declared;
+	}
+	return null;
 }
 
 // Public because window.matchMedia uses the SAME evaluator @media
@@ -12715,20 +12718,32 @@ const NO_PSEUDO_DECLARATIONS: Readonly<Record<string, string>> = Object.freeze(
 	Object.create(null),
 );
 
+// Up to this many rules of one pseudo-element type cost less to match
+// than finding the element's candidates, and past it a sheet of keyed
+// rules, one per icon class, matches fewer through the candidates.
+const TYPED_PSEUDO_RULES = 16;
+
 function computePseudoElementStyle(
 	cascade: Cascade,
 	element: Element,
 	pseudoElement: string,
 ): Readonly<Record<string, string>> {
-	if (!cascade.pseudoRulesByType.has(pseudoElement)) {
+	const typed = cascade.pseudoRulesByType.get(pseudoElement);
+	if (typed === undefined) {
 		return NO_PSEUDO_DECLARATIONS;
 	}
 	const pseudoRoot = element.getRootNode() as unknown as Node;
-	const matchingRules = getCandidateRules(cascade, null, element).rules.filter(
-		(rule) =>
-			getPseudoElement(rule) === pseudoElement &&
-			isRuleMatch(element, rule, pseudoRoot),
-	);
+	// The rules filed under the type and the candidates are both in cascade
+	// order, and a rule of the type that is not a candidate cannot match,
+	// so either list finds the matching rules in one order. A few rules of
+	// the type are matched as they are, and many through the candidates.
+	const matchingRules = typed.length <= TYPED_PSEUDO_RULES
+		? typed.filter((rule) => isRuleMatch(element, rule, pseudoRoot))
+		: getCandidateRules(cascade, null, element).rules.filter(
+			(rule) =>
+				getPseudoElement(rule) === pseudoElement &&
+				isRuleMatch(element, rule, pseudoRoot),
+		);
 	if (matchingRules.length === 0) {
 		return NO_PSEUDO_DECLARATIONS;
 	}
