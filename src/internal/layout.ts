@@ -7835,12 +7835,14 @@ function getSelectionRows(layout: Layout): [number, number] | null {
 /**
  * The buffer rows the next frame must repaint, merged into bands, or
  * undefined when every row must. offset turns document rows into buffer
- * rows, as the frame's viewport offset does.
+ * rows, as the frame's viewport offset does, and beside is how many rows
+ * past each change a band reaches.
  */
 export function takeDamageBands(
 	layout: Layout,
 	offset: number,
 	paintsAsBefore: (element: Element, key: object) => boolean | "whole",
+	beside: number,
 ): Array<[number, number]> | undefined {
 	const selectionRows = getSelectionRows(layout);
 	const previousSelection = layout.selectionRows;
@@ -7906,14 +7908,14 @@ export function takeDamageBands(
 			addRows(rows, offset, top, bottom, true);
 		}
 	}
-	// A row beside a change can change too: a border there joins the
-	// changed one, and an outline reaches past its box. The rows become the
-	// bands in place.
+	// A scrolled frame shifts rows its damage does not name, and a row
+	// beside a change there can change too, so the bands take the rows
+	// beside each. The rows become the bands in place.
 	rows.sort(byTop);
 	let bands = 0;
 	for (let index = 0; index < rows.length; index++) {
-		const from = rows[index][0] - 1;
-		const to = rows[index][1] + 1;
+		const from = rows[index][0] - beside;
+		const to = rows[index][1] + beside;
 		if (bands > 0 && from <= rows[bands - 1][1]) {
 			rows[bands - 1][1] = Math.max(rows[bands - 1][1], to);
 		} else {

@@ -849,11 +849,11 @@ test("adding and deleting a range repaints the rows it covers", async () => {
 
 	const added = textRange(window, texts[6], 0, 4);
 	expect(await paintedRows(dom, terminal, () => highlight.add(added)))
-		.toEqual([4, 5, 6, 7, 8]);
+		.toEqual([5, 6, 7]);
 	expect(yellowCells(terminal, 6)).toEqual([0, 1, 2, 3]);
 
 	expect(await paintedRows(dom, terminal, () => highlight.delete(added)))
-		.toEqual([4, 5, 6, 7, 8]);
+		.toEqual([5, 6, 7]);
 	expect(yellowCells(terminal, 6)).toEqual([]);
 	expect(yellowCells(terminal, 1)).toEqual([0, 1, 2, 3]);
 
@@ -873,7 +873,7 @@ test("moving a range repaints the rows it left and the rows it reached", async (
 			range = textRange(window, texts[9], 5, 6);
 			highlight.add(range);
 		}),
-	).toEqual([0, 1, 2, 3, 4, 7, 8, 9, 10, 11]);
+	).toEqual([1, 2, 3, 8, 9, 10]);
 	expect(yellowCells(terminal, 2)).toEqual([]);
 	expect(yellowCells(terminal, 9)).toEqual([5]);
 
@@ -914,7 +914,7 @@ test("a live range across elements repaints the rows of each", async () => {
 	range.setEnd(texts[5], 1);
 
 	expect(await paintedRows(dom, terminal, () => highlight.add(range)))
-		.toEqual([1, 2, 3, 4, 5, 6, 7]);
+		.toEqual([2, 3, 4, 5, 6]);
 	expect(yellowCells(terminal, 4)).toEqual([0, 1, 2, 3, 4, 5]);
 
 	dom.dispose();

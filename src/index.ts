@@ -1951,6 +1951,7 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 		termDOMSlots.layout,
 		-termDOMSlots.framebuffer.scrollTop,
 		(element, key) => paintsAsBefore(termDOMSlots.painter, element, key),
+		journalled === null && clamped.frameScroll === 0 ? 0 : 1,
 	);
 	const context = beginFrame(termDOMSlots.framebuffer, {
 		offset: -termDOMSlots.framebuffer.scrollTop,
