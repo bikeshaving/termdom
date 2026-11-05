@@ -8093,18 +8093,17 @@ function getRangeSpans(
 	return runs;
 }
 
-// The offsets the cells above actually cover, since a cell holds a
-// whole cluster.
+// Widens the range to the offsets the cells above cover, since a cell
+// holds a whole cluster.
 export function snapToClusters(
-	layout: Layout,
-	textNode: Text,
-	from: number,
-	to: number,
-	prepared = prepareTextFragments(layout, textNode),
-): {from: number; to: number} {
+	prepared: PreparedFragment[],
+	range: {from: number; to: number},
+): void {
+	const {from, to} = range;
 	let start = from;
 	let end = to;
-	for (const {fragment, text, offsets, clusters: clusterStarts} of prepared) {
+	for (let index = 0; index < prepared.length; index++) {
+		const {fragment, text, offsets, clusters: clusterStarts} = prepared[index];
 		if (offsets === null) {
 			const first = Math.max(0, from - fragment.startOffset);
 			const last = Math.min(text.length, to - fragment.startOffset);
@@ -8139,7 +8138,8 @@ export function snapToClusters(
 			);
 		}
 	}
-	return {from: start, to: end};
+	range.from = start;
+	range.to = end;
 }
 
 // Positioned elements under their nearest stacking-context ancestor,
