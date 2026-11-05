@@ -23,6 +23,7 @@ import {
 	flowContent,
 	forEachHighlightedText,
 	getCanvasTextRuns,
+	getDocumentRange,
 	getFocusedElement,
 	getScrollOffset,
 	getSelectionRecord,
@@ -2396,9 +2397,9 @@ function getGlyphText(element: Element): Text | null {
 // document's, narrowed to this node's offsets.
 function getSelectedRange(window: Window): Range | null {
 	const selection = window.getSelection();
-	return !selection || selection.isCollapsed || selection.rangeCount === 0
+	return !selection || selection.isCollapsed
 		? null
-		: selection.getRangeAt(0);
+		: getDocumentRange(selection);
 }
 
 function getPaintSelectionRange(
