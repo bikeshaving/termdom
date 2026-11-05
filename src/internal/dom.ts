@@ -525,7 +525,11 @@ export function revealTextControlCaret(document: globalThis.Document): void {
 	}
 	const scrollLeft = getStringWidth(shown.slice(0, scrollOffset));
 	if (scrollLeft !== currentScroll) {
-		valueSpan.scrollLeft = pxFromCells(scrollLeft, false, valueSpan);
+		setScrollOffset(
+			valueSpan,
+			"left",
+			pxFromCells(scrollLeft, false, valueSpan),
+		);
 	}
 }
 
@@ -12136,13 +12140,14 @@ Object.defineProperties(Element.prototype, {
 			if (isDocumentScroller(this)) {
 				return 0;
 			}
-			const left = _(this).scrollOffsets?.left ?? 0;
-			return getAttachedDocument(this) === undefined
-				? left
-				: pxFromCells(left, false, this);
+			if (getAttachedDocument(this) === undefined) {
+				return _(this).scrollOffsets?.left ?? 0;
+			}
+			settleScrollOffset(this);
+			return pxFromCells(_(this).scrollOffsets?.left ?? 0, false, this);
 		},
 		set(this: Element, value: number) {
-			setScrollOffset(this, "left", value);
+			requestScrollOffset(this, "left", value);
 		},
 		configurable: true,
 		enumerable: true,
@@ -12155,13 +12160,14 @@ Object.defineProperties(Element.prototype, {
 			if (attached) {
 				return pxFromCells(_(attached).extra.framebuffer.scrollTop, true, this);
 			}
-			const top = _(this).scrollOffsets?.top ?? 0;
-			return getAttachedDocument(this) === undefined
-				? top
-				: pxFromCells(top, true, this);
+			if (getAttachedDocument(this) === undefined) {
+				return _(this).scrollOffsets?.top ?? 0;
+			}
+			settleScrollOffset(this);
+			return pxFromCells(_(this).scrollOffsets?.top ?? 0, true, this);
 		},
 		set(this: Element, value: number) {
-			setScrollOffset(this, "top", value);
+			requestScrollOffset(this, "top", value);
 		},
 		configurable: true,
 		enumerable: true,
@@ -28533,6 +28539,11 @@ export interface DocumentExtra extends NodeExtra {
 	// the last frame gets one "scroll" event, and the document one that
 	// bubbles to the window, before the frame's callbacks run.
 	pendingScrollTargets?: Set<Element>;
+	// The offsets scripts asked for since the last layout, in cells, by box
+	// and axis. The next layout clamps and commits them. Each axis keeps the
+	// last request and the lowest and highest of its requests, which decide
+	// whether the requests moved the box and so fire scroll.
+	scrollRequests?: Map<Element, ScrollRequests>;
 	reportedScrollTop?: number;
 	scrollEnd?: {
 		targets: Set<Document | Element>;
@@ -31288,6 +31299,15 @@ function isDocumentScroller(element: Element): boolean {
 	);
 }
 
+/** A write that clamps and moves the box now, for the engine's own scrolls. */
+export function setScrollOffset(
+	element: globalThis.Element,
+	axis: "left" | "top",
+	value: number,
+): void {
+	scrollBox(element as unknown as Element, axis, value);
+}
+
 // A write on an attached document rounds to whole cells (everything
 // paints on the cell grid, like the document scroll), clamps into the
 // range layout reports for the box, stores the value, and tells the
@@ -31296,7 +31316,7 @@ function isDocumentScroller(element: Element): boolean {
 // run) stores the write unclamped; the caret-reveal code owns those
 // offsets and keeps them sane. On a headless document the write is
 // stored and read back, and nothing moves.
-function setScrollOffset(
+function scrollBox(
 	element: Element,
 	axis: "left" | "top",
 	value: number,
@@ -31328,8 +31348,18 @@ function setScrollOffset(
 	if (previous === next) {
 		return;
 	}
+	moveScrollOffset(attached, element, axis, previous, next);
+}
+
+function moveScrollOffset(
+	attached: AttachedDocument,
+	element: Element,
+	axis: "left" | "top",
+	previous: number,
+	next: number,
+): void {
 	writeScrollOffset(element, axis, next);
-	const document = elementSlots.document;
+	const document = _(element).document;
 	const documentExtra = _(document).extra;
 	if (next !== 0) {
 		(documentExtra.scrolledElements ??= new Set()).add(element);
@@ -31343,6 +31373,93 @@ function setScrollOffset(
 	}
 	(documentExtra.pendingScrollTargets ??= new Set()).add(element);
 	void _(attached).extra.render();
+}
+
+interface ScrollRequest {
+	last: number;
+	low: number;
+	high: number;
+}
+
+type ScrollRequests = {left?: ScrollRequest; top?: ScrollRequest};
+
+// A script's write on a connected box waits for the next layout, so writes
+// between DOM changes do not each force one. Reads settle it first.
+function requestScrollOffset(
+	element: Element,
+	axis: "left" | "top",
+	value: number,
+): void {
+	const attached = getAttachedDocument(element);
+	if (
+		attached === undefined ||
+		isDocumentScroller(element) ||
+		!element.isConnected
+	) {
+		scrollBox(element, axis, value);
+		return;
+	}
+	const cell = getCellSize(element);
+	const numeric = Number(value) / (axis === "top" ? cell.height : cell.width);
+	const next = Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
+	const requests = (_(attached).extra.scrollRequests ??= new Map());
+	let held = requests.get(element);
+	if (held === undefined) {
+		held = {};
+		requests.set(element, held);
+	}
+	const request = held[axis];
+	if (request === undefined) {
+		held[axis] = {last: next, low: next, high: next};
+	} else {
+		request.last = next;
+		request.low = Math.min(request.low, next);
+		request.high = Math.max(request.high, next);
+	}
+	void _(attached).extra.render();
+}
+
+/** Lay out if a script asked to scroll the box since the last layout. */
+export function settleScrollOffset(element: globalThis.Element): void {
+	const attached = getAttachedDocument(element);
+	if (
+		attached !== undefined &&
+		_(attached).extra.scrollRequests?.has(element as unknown as Element)
+	) {
+		flushLayout(element);
+	}
+}
+
+// Clamped against the layout just solved. The requests move the box when
+// any of them clamps off its offset, and the last one is where it lands. A
+// box removed since its request has no box to scroll, and drops it.
+function commitScrollRequests(attached: AttachedDocument): void {
+	const requests = _(attached).extra.scrollRequests;
+	if (requests === undefined || requests.size === 0) {
+		return;
+	}
+	const layout = _(attached).extra.layout;
+	const held = [...requests];
+	requests.clear();
+	for (const [element, request] of held) {
+		if (!element.isConnected || getAttachedDocument(element) !== attached) {
+			continue;
+		}
+		for (const axis of ["left", "top"] as const) {
+			const asked = request[axis];
+			if (asked === undefined) {
+				continue;
+			}
+			const room = layout.scrollRange(element, axis);
+			const clamp = (value: number) =>
+				room === null ? value : Math.min(value, room);
+			const previous = _(element).scrollOffsets?.[axis] ?? 0;
+			if (clamp(asked.low) === previous && clamp(asked.high) === previous) {
+				continue;
+			}
+			moveScrollOffset(attached, element, axis, previous, clamp(asked.last));
+		}
+	}
 }
 
 export function runScrollSteps(document: globalThis.Document): void {
@@ -31421,18 +31538,32 @@ function awaitScrollEnd(document: Document, target: Document | Element): void {
  * store directly, because the accessor's own clamp would re-enter the
  * engine's flush. A change sets the dirty bit, drops any pending scroll shift,
  * and requests a repaint. A clamp is not a scroll shift: it moves offsets the
- * journal already priced, and can move several boxes at once.
+ * journal already priced, and can move several boxes at once. The scrolls
+ * scripts asked for since the last layout then clamp against it and land.
  */
 export function clampScrollOffsets(document: globalThis.Document): void {
 	const attached = getAttachedDocument(document);
-	const extra = _(document as Document).extra;
-	const held = extra.scrolledElements;
-	if (attached === undefined || held === undefined) {
+	if (attached === undefined) {
 		return;
 	}
-	const solves = _(attached).extra.layout.solves;
+	const changed = clampHeldOffsets(attached);
+	commitScrollRequests(attached);
+	if (changed) {
+		_(attached).extra.scrollShift = undefined;
+		invalidate(_(attached).extra.framebuffer);
+		void _(attached).extra.render();
+	}
+}
+
+function clampHeldOffsets(attached: AttachedDocument): boolean {
+	const extra = _(attached).extra;
+	const held = extra.scrolledElements;
+	if (held === undefined) {
+		return false;
+	}
+	const solves = extra.layout.solves;
 	if (extra.clampedAfterSolve === solves) {
-		return;
+		return false;
 	}
 	extra.clampedAfterSolve = solves;
 	let changed = false;
@@ -31466,11 +31597,7 @@ export function clampScrollOffsets(document: globalThis.Document): void {
 		writeScrollOffset(element, "top", Math.min(offsets.top, maxTop));
 		changed = true;
 	}
-	if (changed) {
-		extra.scrollShift = undefined;
-		invalidate(_(attached).extra.framebuffer);
-		void _(attached).extra.render();
-	}
+	return changed;
 }
 
 function recordScrollShift(
@@ -38286,7 +38413,7 @@ function revealCaretInTextArea(
 		? caret.y - top
 		: caret.y >= bottom ? caret.y + 1 - bottom : 0;
 	if (delta !== 0) {
-		setScrollOffset(
+		scrollBox(
 			area,
 			"top",
 			(getScrollOffset(area, "top") + delta) * getCellSize(area).height,

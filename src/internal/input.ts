@@ -49,7 +49,9 @@ import {
 	setDocumentFocusVisible,
 	setDocumentVisible,
 	setHoveredElement,
+	setScrollOffset,
 	setSystemFocus,
+	settleScrollOffset,
 	setUASelection,
 	takeFocusStartingPoint,
 	takesTextCursor,
@@ -358,6 +360,7 @@ function getWheelScroller(
 		if (overflow !== "auto" && overflow !== "scroll") {
 			continue;
 		}
+		settleScrollOffset(element);
 		if (delta < 0) {
 			if (getScrollOffset(element, axis) > 0) {
 				return element;
@@ -952,7 +955,11 @@ function deliverMouseReport(input: Input, {
 			? getWheelScroller(input, hit, wheelDeltaX, "left")
 			: null;
 		if (scroller !== null) {
-			scroller.scrollLeft += pxFromCells(wheelDeltaX, false, input.document);
+			setScrollOffset(
+				scroller,
+				"left",
+				scroller.scrollLeft + pxFromCells(wheelDeltaX, false, input.document),
+			);
 		}
 		return;
 	}
@@ -1344,7 +1351,11 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): void {
 	) {
 		const scroller = getWheelScroller(input, target, deltaY, "top");
 		if (scroller) {
-			scroller.scrollTop += pxFromCells(deltaY, true, target.ownerDocument);
+			setScrollOffset(
+				scroller,
+				"top",
+				scroller.scrollTop + pxFromCells(deltaY, true, target.ownerDocument),
+			);
 			return;
 		}
 		const framebuffer = _(getAttachedDocument(target)!).extra.framebuffer;
@@ -1359,7 +1370,11 @@ function scrollByWheel(input: Input, target: Element, deltaY: number): void {
 	}
 	const scroller = getWheelScroller(input, target, deltaY, "top");
 	if (scroller) {
-		scroller.scrollTop += pxFromCells(deltaY, true, input.document);
+		setScrollOffset(
+			scroller,
+			"top",
+			scroller.scrollTop + pxFromCells(deltaY, true, input.document),
+		);
 		return;
 	}
 	if (
@@ -1431,12 +1446,20 @@ function scrollByKey(input: Input, target: Element, key: string): void {
 	if (scroller) {
 		const rowPx = pxFromCells(1, true, document);
 		if (edge) {
-			scroller.scrollTop = direction < 0 ? 0 : scroller.scrollHeight;
+			setScrollOffset(
+				scroller,
+				"top",
+				direction < 0 ? 0 : scroller.scrollHeight,
+			);
 		} else {
 			const rows = page
 				? Math.max(1, Math.round(scroller.clientHeight / rowPx) - 1)
 				: 1;
-			scroller.scrollTop += direction * rows * rowPx;
+			setScrollOffset(
+				scroller,
+				"top",
+				scroller.scrollTop + direction * rows * rowPx,
+			);
 		}
 		requestRender(document);
 		return;
