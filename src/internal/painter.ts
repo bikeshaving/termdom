@@ -2585,10 +2585,23 @@ interface HighlightLayer {
 function getHighlightSegments(
 	layers: HighlightLayer[],
 ): Array<[number, number]> {
-	const edges =
-		[...new Set(layers.flatMap((layer) => [layer.from, layer.to]))].sort(
-			(a, b) => a - b,
-		);
+	if (layers.length === 1) {
+		return layers[0].from < layers[0].to
+			? [[layers[0].from, layers[0].to]]
+			: [];
+	}
+	const edges: number[] = [];
+	for (const layer of layers) {
+		edges.push(layer.from, layer.to);
+	}
+	edges.sort((a, b) => a - b);
+	let unique = 0;
+	for (let i = 0; i < edges.length; i++) {
+		if (i === 0 || edges[i] !== edges[unique - 1]) {
+			edges[unique++] = edges[i];
+		}
+	}
+	edges.length = unique;
 	const segments: Array<[number, number]> = [];
 	for (let i = 0; i + 1 < edges.length; i++) {
 		const covered = layers.some(
