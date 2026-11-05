@@ -7038,11 +7038,13 @@ function isSelectedBy(
 
 const NO_RULES: readonly ParsedCSSRule[] = Object.freeze([]);
 
+// The styles are the pseudo-element's, as computePseudoElementStyle
+// gives them.
 function shouldCreatePseudoElement(
 	cascade: Cascade,
 	element: Element,
 	pseudoType: string,
-	rules: readonly ParsedCSSRule[],
+	styles: Readonly<Record<string, string>>,
 ): boolean {
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(element);
@@ -7055,7 +7057,6 @@ function shouldCreatePseudoElement(
 		}
 	}
 
-	const styles = computePseudoElementStyle(cascade, element, pseudoType, rules);
 	const content = styles.content;
 	return !!(content && content !== "none" && content !== "normal");
 }
@@ -12787,18 +12788,14 @@ function computePseudoElementStyle(
 	return computedStyle;
 }
 
+// The styles are the pseudo-element's, as computePseudoElementStyle
+// gives them.
 function getPseudoContent(
 	cascade: Cascade,
 	hostElement: Element,
 	pseudoType: string,
-	rules: readonly ParsedCSSRule[],
+	styles: Readonly<Record<string, string>>,
 ): string | null {
-	const styles = computePseudoElementStyle(
-		cascade,
-		hostElement,
-		pseudoType,
-		rules,
-	);
 	let content = styles.content;
 
 	if (pseudoType === "::marker") {
@@ -13118,8 +13115,14 @@ function attachPseudoElementToElementForType(
 		}
 	}
 
-	const content = shouldCreatePseudoElement(cascade, element, pseudoType, rules)
-		? getPseudoContent(cascade, element, pseudoType, rules)
+	const styles = computePseudoElementStyle(cascade, element, pseudoType, rules);
+	const content = shouldCreatePseudoElement(
+		cascade,
+		element,
+		pseudoType,
+		styles,
+	)
+		? getPseudoContent(cascade, element, pseudoType, styles)
 		: null;
 	const existing = pseudoElement<Element>(element, pseudoType);
 
