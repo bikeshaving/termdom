@@ -7036,10 +7036,13 @@ function isSelectedBy(
 		: matchesCompound(subject, selector, options);
 }
 
+const NO_RULES: readonly ParsedCSSRule[] = Object.freeze([]);
+
 function shouldCreatePseudoElement(
 	cascade: Cascade,
 	element: Element,
 	pseudoType: string,
+	rules: readonly ParsedCSSRule[],
 ): boolean {
 	if (pseudoType === "::marker") {
 		const computedStyle = cascade.declarationFor(element);
@@ -7052,7 +7055,7 @@ function shouldCreatePseudoElement(
 		}
 	}
 
-	const styles = computePseudoElementStyle(cascade, element, pseudoType);
+	const styles = computePseudoElementStyle(cascade, element, pseudoType, rules);
 	const content = styles.content;
 	return !!(content && content !== "none" && content !== "normal");
 }
@@ -7080,8 +7083,14 @@ function attachPseudoElementsToElement(
 		return;
 	}
 
+	const candidates = getPseudoCandidates(cascade, element);
 	for (const pseudoType of PSEUDO_ELEMENT_NAMES) {
-		attachPseudoElementToElementForType(cascade, element, pseudoType);
+		attachPseudoElementToElementForType(
+			cascade,
+			element,
+			pseudoType,
+			candidates.get(pseudoType) ?? NO_RULES,
+		);
 	}
 }
 
@@ -9015,8 +9024,14 @@ function attachPseudoElementsToDocument(cascade: Cascade): void {
 			elements.push(...root.querySelectorAll("*"));
 		}
 		for (const element of elements) {
+			const candidates = getPseudoCandidates(cascade, element);
 			for (const pseudoType of pseudoRulesByType.keys()) {
-				attachPseudoElementToElementForType(cascade, element, pseudoType);
+				attachPseudoElementToElementForType(
+					cascade,
+					element,
+					pseudoType,
+					candidates.get(pseudoType) ?? NO_RULES,
+				);
 			}
 		}
 	} else {
@@ -12718,10 +12733,13 @@ const NO_PSEUDO_DECLARATIONS: Readonly<Record<string, string>> = Object.freeze(
 // rules, one per icon class, matches fewer through the candidates.
 const TYPED_PSEUDO_RULES = 16;
 
+// The rules given are the element's candidates for the pseudo-element,
+// as getPseudoCandidates files them.
 function computePseudoElementStyle(
 	cascade: Cascade,
 	element: Element,
 	pseudoElement: string,
+	rules?: readonly ParsedCSSRule[],
 ): Readonly<Record<string, string>> {
 	const typed = cascade.pseudoRulesByType.get(pseudoElement);
 	if (typed === undefined) {
@@ -12732,13 +12750,13 @@ function computePseudoElementStyle(
 	// order, and a rule of the type that is not a candidate cannot match,
 	// so either list finds the matching rules in one order. A few rules of
 	// the type are matched as they are, and many through the candidates.
-	const matchingRules = typed.length <= TYPED_PSEUDO_RULES
-		? typed.filter((rule) => isRuleMatch(element, rule, pseudoRoot))
-		: getCandidateRules(cascade, null, element).rules.filter(
-			(rule) =>
-				getPseudoElement(rule) === pseudoElement &&
-				isRuleMatch(element, rule, pseudoRoot),
-		);
+	const candidates =
+		rules ??
+		(typed.length <= TYPED_PSEUDO_RULES
+			? typed
+			: getPseudoCandidates(cascade, element).get(pseudoElement) ?? NO_RULES);
+	const matchingRules = candidates.filter((rule) =>
+		isRuleMatch(element, rule, pseudoRoot));
 	if (matchingRules.length === 0) {
 		return NO_PSEUDO_DECLARATIONS;
 	}
@@ -12773,8 +12791,14 @@ function getPseudoContent(
 	cascade: Cascade,
 	hostElement: Element,
 	pseudoType: string,
+	rules: readonly ParsedCSSRule[],
 ): string | null {
-	const styles = computePseudoElementStyle(cascade, hostElement, pseudoType);
+	const styles = computePseudoElementStyle(
+		cascade,
+		hostElement,
+		pseudoType,
+		rules,
+	);
 	let content = styles.content;
 
 	if (pseudoType === "::marker") {
@@ -12857,6 +12881,7 @@ function pseudoRuleCouldMatch(
 	cascade: Cascade,
 	element: Element,
 	pseudoType: string,
+	rules: readonly ParsedCSSRule[],
 ): boolean {
 	if (pseudoType === "::marker") {
 		// Markers exist only on display:list-item boxes, and only one inside
@@ -12877,11 +12902,7 @@ function pseudoRuleCouldMatch(
 	// Rules that repeat a selector share its matcher, and one that missed
 	// misses again.
 	const missed = new Set<CompiledSelector>();
-	const candidates = narrowCandidates(
-		getCandidateRules(cascade, null, element).rules,
-		pseudoType,
-		(rule) => getPseudoElement(rule) === pseudoType && mayGiveContent(rule),
-	);
+	const candidates = narrowCandidates(rules, "content", mayGiveContent);
 	for (const rule of candidates) {
 		if (
 			(!reachesHost(rule) && missed.has(rule.selector)) ||
@@ -12963,12 +12984,12 @@ function setsMarkerPosition(rule: ParsedCSSRule): boolean {
 // A candidate list keeps the same rules until they change, so the few that
 // a test named `name` keeps are found once per list, not once per element.
 const narrowedCandidates = new WeakMap<
-	ParsedCSSRule[],
+	readonly ParsedCSSRule[],
 	Map<string, ParsedCSSRule[]>
 >();
 
 function narrowCandidates(
-	candidates: ParsedCSSRule[],
+	candidates: readonly ParsedCSSRule[],
 	name: string,
 	keep: (rule: ParsedCSSRule) => boolean,
 ): ParsedCSSRule[] {
@@ -12981,6 +13002,34 @@ function narrowCandidates(
 		byName.set(name, (kept = candidates.filter(keep)));
 	}
 	return kept;
+}
+
+// The pseudo-element rules that could match through the host, by the
+// pseudo-element each styles, in cascade order. A candidate list is filed
+// in one pass the first time it is asked, under the names narrowCandidates
+// keeps by, with the whole list under "".
+function getPseudoCandidates(
+	cascade: Cascade,
+	host: Element,
+): ReadonlyMap<string, readonly ParsedCSSRule[]> {
+	const candidates = getCandidateRules(cascade, null, host).rules;
+	let byName = narrowedCandidates.get(candidates);
+	if (byName === undefined) {
+		narrowedCandidates.set(candidates, (byName = new Map()));
+	}
+	if (!byName.has("")) {
+		byName.set("", candidates);
+		for (const rule of candidates) {
+			const type = getPseudoElement(rule)!;
+			const kept = byName.get(type);
+			if (kept === undefined) {
+				byName.set(type, [rule]);
+			} else {
+				kept.push(rule);
+			}
+		}
+	}
+	return byName;
 }
 
 // Whether a rule for the element itself, not one of its pseudo-elements,
@@ -13035,15 +13084,19 @@ function mayGiveContent(rule: ParsedCSSRule): boolean {
 		rule.block.declarations.all !== undefined;
 }
 
+// The rules given are the element's candidates for the pseudo-element,
+// as getPseudoCandidates files them.
 function attachPseudoElementToElementForType(
 	cascade: Cascade,
 	element: Element,
 	pseudoType: string,
+	rules: readonly ParsedCSSRule[] =
+		getPseudoCandidates(cascade, element).get(pseudoType) ?? NO_RULES,
 ): void {
 	// An attached pseudo-element still takes the full path, so a rule that
 	// STOPPED matching removes it.
 	if (
-		!pseudoRuleCouldMatch(cascade, element, pseudoType) &&
+		!pseudoRuleCouldMatch(cascade, element, pseudoType, rules) &&
 		!pseudoElement(element, pseudoType)
 	) {
 		return;
@@ -13065,8 +13118,8 @@ function attachPseudoElementToElementForType(
 		}
 	}
 
-	const content = shouldCreatePseudoElement(cascade, element, pseudoType)
-		? getPseudoContent(cascade, element, pseudoType)
+	const content = shouldCreatePseudoElement(cascade, element, pseudoType, rules)
+		? getPseudoContent(cascade, element, pseudoType, rules)
 		: null;
 	const existing = pseudoElement<Element>(element, pseudoType);
 
