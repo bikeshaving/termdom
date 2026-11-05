@@ -2007,7 +2007,8 @@ function layoutFlexbox(
 	const crossGap = getAxisGap(node, cross);
 
 	const inFlow: LayoutNode[] = [];
-	for (const child of node.children) {
+	for (let childIndex = 0; childIndex < node.children.length; childIndex++) {
+		const child = node.children[childIndex];
 		if (child.style.displayType === "none") {
 			zeroLayout(child);
 			continue;
@@ -2052,7 +2053,8 @@ function layoutFlexbox(
 	let totalCrossDim = 0;
 	let maxMainDim = 0;
 
-	for (const line of lines) {
+	for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+		const line = lines[lineIndex];
 		const lineGap = mainGap * Math.max(0, line.items.length - 1);
 		const mainForItems = !Number.isNaN(innerMain)
 			? Math.max(0, innerMain - lineGap)
@@ -2067,7 +2069,8 @@ function layoutFlexbox(
 			itemOwnerHeight,
 		);
 
-		for (const child of line.items) {
+		for (let childIndex = 0; childIndex < line.items.length; childIndex++) {
+			const child = line.items[childIndex];
 			layoutFlexItem(
 				node,
 				child,
@@ -2092,7 +2095,8 @@ function layoutFlexbox(
 		);
 
 		let lineCross = 0;
-		for (const child of line.items) {
+		for (let childIndex = 0; childIndex < line.items.length; childIndex++) {
+			const child = line.items[childIndex];
 			const childCross =
 				(isRow(cross) ? child.result.width : child.result.height) +
 				getAxisMargin(child, cross, itemOwnerWidth);
@@ -2200,8 +2204,10 @@ function layoutFlexbox(
 	const innerWidthFinal = node.result.width - paddingBorderRow;
 	const innerHeightFinal = node.result.height - paddingBorderColumn;
 
-	for (const line of lines) {
-		for (const child of line.items) {
+	for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+		const line = lines[lineIndex];
+		for (let childIndex = 0; childIndex < line.items.length; childIndex++) {
+			const child = line.items[childIndex];
 			if (child.style.positionType !== "relative") {
 				continue;
 			}
@@ -2210,11 +2216,15 @@ function layoutFlexbox(
 		}
 	}
 
-	for (const child of getOutOfFlowDescendants(node, false)) {
+	const absolute = getOutOfFlowDescendants(node, false);
+	for (let childIndex = 0; childIndex < absolute.length; childIndex++) {
+		const child = absolute[childIndex];
 		layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
 	}
 	if (node.parent === null) {
-		for (const child of getOutOfFlowDescendants(node, true)) {
+		const fixed = getOutOfFlowDescendants(node, true);
+		for (let childIndex = 0; childIndex < fixed.length; childIndex++) {
+			const child = fixed[childIndex];
 			layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
 		}
 	}
@@ -2230,7 +2240,9 @@ function getOutOfFlowDescendants(
 ): LayoutNode[] {
 	const found: LayoutNode[] = [];
 	const enter = (parent: LayoutNode): void => {
-		for (const child of parent.children) {
+		const children = parent.children;
+		for (let childIndex = 0; childIndex < children.length; childIndex++) {
+			const child = children[childIndex];
 			if (child.style.displayType === "none" || !child.holdsOutOfFlow) {
 				continue;
 			}
@@ -2672,7 +2684,8 @@ function positionMainAxis(
 	const mainIsRow = isRow(mainAxis);
 
 	let contentMain = 0;
-	for (const child of line.items) {
+	for (let childIndex = 0; childIndex < line.items.length; childIndex++) {
+		const child = line.items[childIndex];
 		contentMain +=
 			(mainIsRow ? child.result.width : child.result.height) +
 			getAxisMargin(child, mainAxis, ownerWidth);
@@ -2682,7 +2695,8 @@ function positionMainAxis(
 
 	// Auto margins take the free space before justify-content does.
 	let autoMarginCount = 0;
-	for (const child of line.items) {
+	for (let childIndex = 0; childIndex < line.items.length; childIndex++) {
+		const child = line.items[childIndex];
 		if (child.style.margin[getLeadingEdge(mainAxis)].unit === "auto") {
 			autoMarginCount++;
 		}
@@ -2732,7 +2746,8 @@ function positionMainAxis(
 		: 0;
 
 	let cursor = leadingPaddingBorderMain + leading;
-	for (const child of line.items) {
+	for (let childIndex = 0; childIndex < line.items.length; childIndex++) {
+		const child = line.items[childIndex];
 		const leadingAuto =
 			child.style.margin[getLeadingEdge(mainAxis)].unit === "auto";
 		const trailingAuto =
@@ -2832,7 +2847,8 @@ function positionCrossAxis(
 
 	let cursor = leadingPaddingBorderCross + lineLeading;
 
-	for (const line of lines) {
+	for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+		const line = lines[lineIndex];
 		const lineCross = line.crossDim + stretchPerLine;
 
 		// The furthest baseline goes flush and the rest are pushed down to it.
@@ -2843,7 +2859,8 @@ function positionCrossAxis(
 			!crossIsRow &&
 			line.items.some((child) => getAlignSelf(node, child) === "baseline");
 		if (lineHasBaseline) {
-			for (const child of line.items) {
+			for (let childIndex = 0; childIndex < line.items.length; childIndex++) {
+				const child = line.items[childIndex];
 				if (getAlignSelf(node, child) !== "baseline") {
 					continue;
 				}
@@ -2854,7 +2871,8 @@ function positionCrossAxis(
 			}
 		}
 
-		for (const child of line.items) {
+		for (let childIndex = 0; childIndex < line.items.length; childIndex++) {
+			const child = line.items[childIndex];
 			const align = getAlignSelf(node, child);
 			const leadingMargin = resolveMargin(
 				child.style.margin[getLeadingEdge(cross)],
@@ -6308,7 +6326,8 @@ function layoutBlock(
 	const topPaddingBorder = getEdgePaddingAndBorder(node, "top", ownerWidth);
 
 	const inFlow: LayoutNode[] = [];
-	for (const child of node.children) {
+	for (let childIndex = 0; childIndex < node.children.length; childIndex++) {
+		const child = node.children[childIndex];
 		if (child.style.displayType === "none") {
 			zeroLayout(child);
 			continue;
@@ -6341,7 +6360,8 @@ function layoutBlock(
 		borderBoxWidth = availableWidth - marginRow;
 	} else {
 		let widest = 0;
-		for (const child of inFlow) {
+		for (let childIndex = 0; childIndex < inFlow.length; childIndex++) {
+			const child = inFlow[childIndex];
 			measureWidth(() =>
 				layoutBlockChild(child, innerWidth, false, NaN, innerHeight, false),
 			);
@@ -6492,7 +6512,8 @@ function layoutBlock(
 
 	const innerWidthFinal = node.result.width - paddingBorderRow;
 	const innerHeightFinal = node.result.height - paddingBorderColumn;
-	for (const child of inFlow) {
+	for (let childIndex = 0; childIndex < inFlow.length; childIndex++) {
+		const child = inFlow[childIndex];
 		if (child.style.positionType !== "relative") {
 			continue;
 		}
@@ -6500,11 +6521,15 @@ function layoutBlock(
 		child.result.top += getRelativeOffset(child, "column", innerHeightFinal);
 	}
 
-	for (const child of getOutOfFlowDescendants(node, false)) {
+	const absolute = getOutOfFlowDescendants(node, false);
+	for (let childIndex = 0; childIndex < absolute.length; childIndex++) {
+		const child = absolute[childIndex];
 		layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
 	}
 	if (node.parent === null) {
-		for (const child of getOutOfFlowDescendants(node, true)) {
+		const fixed = getOutOfFlowDescendants(node, true);
+		for (let childIndex = 0; childIndex < fixed.length; childIndex++) {
+			const child = fixed[childIndex];
 			layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
 		}
 	}
@@ -6820,7 +6845,8 @@ function layoutNode(
 	// Nothing lays out a child that generates no box, so its flags are
 	// cleared here, or it would hold its ancestors stale for good. A child
 	// that starts to generate one is invalidated by the change.
-	for (const child of node.children) {
+	for (let childIndex = 0; childIndex < node.children.length; childIndex++) {
+		const child = node.children[childIndex];
 		if (child.style.displayType === "none") {
 			child.stale = false;
 			child.selfStale = false;
@@ -7189,7 +7215,8 @@ function roundToGrid(
 	node.snapOriginTop = absTop;
 	// Only a child laid out again had its origin forgotten. The others are
 	// where they were and would round as they did, settled.
-	for (const child of node.children) {
+	for (let childIndex = 0; childIndex < node.children.length; childIndex++) {
+		const child = node.children[childIndex];
 		if (!kept || Number.isNaN(child.snapOriginLeft)) {
 			roundToGrid(child, absLeft, absTop, misplaced);
 		} else {
