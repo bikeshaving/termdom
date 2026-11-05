@@ -9117,12 +9117,15 @@ interface CounterInputs {
 }
 
 function readCounterInputs(cascade: Cascade, element: Element): CounterInputs {
+	const candidates = cascade.summary.counterRulesExist
+		? getPseudoCandidates(cascade, element)
+		: null;
 	return {
 		hidden:
 			_(cascade.declarationFor(element))._computedValue("display") === "none",
 		own: getElementCounterEffects(cascade, element),
-		before: getPseudoCounterEffects(cascade, element, "::before"),
-		after: getPseudoCounterEffects(cascade, element, "::after"),
+		before: getPseudoCounterEffects(cascade, element, "::before", candidates),
+		after: getPseudoCounterEffects(cascade, element, "::after", candidates),
 	};
 }
 
@@ -9519,23 +9522,40 @@ function getElementCounterEffects(
 }
 
 // A pseudo-element's counter properties, when it generates a box and
-// sets any: a ::before or ::after with no content is no box.
+// sets any: a ::before or ::after with no content is no box. They are
+// not inherited, so only a candidate rule declaring one can give it any.
+// The candidates are the element's, by pseudo-element, as
+// getPseudoCandidates files them, and null when no rule uses counters.
 function getPseudoCounterEffects(
 	cascade: Cascade,
 	element: Element,
 	type: string,
+	candidates: ReadonlyMap<string, readonly ParsedCSSRule[]> | null,
 ): CounterEffects | null {
+	const rules = candidates?.get(type) ?? NO_RULES;
 	if (
-		!cascade.summary.counterRulesExist ||
-		!hasGeneratedContent(cascade, element, type)
+		narrowCandidates(rules, "counters", declaresCounterProperties).length === 0
 	) {
 		return null;
 	}
-	const style = computePseudoElementStyle(cascade, element, type);
+	const style = computePseudoElementStyle(cascade, element, type, rules);
+	if (!showsGeneratedContent(style)) {
+		return null;
+	}
 	const effects = readCounterEffects((property) => style[property]);
 	return describeCounterEffects(effects) === "" ? null : effects;
 }
 
+function declaresCounterProperties(rule: ParsedCSSRule): boolean {
+	const {declarations} = rule.block;
+	return declarations["counter-reset"] !== undefined ||
+		declarations["counter-increment"] !== undefined ||
+		declarations["counter-set"] !== undefined ||
+		declarations.all !== undefined;
+}
+
+// Content is not inherited, so a pseudo-element no candidate rule may
+// give content to has none.
 function hasGeneratedContent(
 	cascade: Cascade,
 	element: Element,
@@ -9544,7 +9564,18 @@ function hasGeneratedContent(
 	if (!(cascade.pseudoRulesByType.get(type)?.length)) {
 		return false;
 	}
-	const style = computePseudoElementStyle(cascade, element, type);
+	const rules = getPseudoCandidates(cascade, element).get(type) ?? NO_RULES;
+	if (narrowCandidates(rules, "content", mayGiveContent).length === 0) {
+		return false;
+	}
+	return showsGeneratedContent(
+		computePseudoElementStyle(cascade, element, type, rules),
+	);
+}
+
+function showsGeneratedContent(
+	style: Readonly<Record<string, string>>,
+): boolean {
 	const content = style.content;
 	return content !== undefined &&
 		content !== "none" &&
