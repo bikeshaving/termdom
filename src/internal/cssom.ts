@@ -427,7 +427,7 @@ function getGroupRead(group: StyleGroup<object>): string {
 }
 
 const groupCaches = new WeakMap<
-	Map<string, string>,
+	ResolvedValues,
 	Map<StyleGroup<object>, object>
 >();
 const internedGroups = new Map<StyleGroup<object>, Map<string, object>>();
@@ -4648,10 +4648,10 @@ const KEYED_ATTRIBUTES = ["style", "type", "size", "value", "dir", "lang"];
 const ruleIds = new WeakMap<CascadedRule, number>();
 let nextRuleId = 0;
 const ruleIndexes = new WeakMap<Cascade, RuleIndex>();
-const childTables = new WeakMap<object, Map<string, Map<string, string>>>();
+const childTables = new WeakMap<object, Map<string, ResolvedValues>>();
 const treeTables = new WeakMap<
 	ShadowRoot,
-	Map<object, Map<string, Map<string, string>>>
+	Map<object, Map<string, ResolvedValues>>
 >();
 
 // Counters count elements in document order, so a block that sets them,
@@ -4736,12 +4736,87 @@ function isOwnProperty(property: string): boolean {
 	return OWN_PROPERTIES.has(property);
 }
 
+// Each supported property's place in a table of resolved values, given in
+// the order the engine first reads them, so the properties read most sit
+// at the front and a table need not reach the rest. An element's own
+// properties come first, as its own table holds only them.
+const propertyPlaces = new Map<string, number>();
+const placedProperties: string[] = [];
+
+function getPropertyPlace(property: string): number {
+	let place = propertyPlaces.get(property);
+	if (place === undefined) {
+		if (property.startsWith("--") || !CSSValues.isSupportedProperty(property)) {
+			return -1;
+		}
+		place = placedProperties.length;
+		placedProperties.push(property);
+		propertyPlaces.set(property, place);
+	}
+	return place;
+}
+
+for (const property of OWN_PROPERTIES) {
+	getPropertyPlace(property);
+}
+
+/**
+ * Resolved values by property: a supported property's value at its
+ * place, and a custom property's by its name.
+ */
+class ResolvedValues {
+	readonly values: Array<string | undefined>;
+	custom: Map<string, string> | null;
+	size: number;
+
+	// Sized for the properties placed so far, which most tables read.
+	constructor(sized = false) {
+		this.values = sized ? new Array(placedProperties.length) : [];
+		this.custom = null;
+		this.size = 0;
+	}
+
+	get(property: string): string | undefined {
+		const place = propertyPlaces.get(property);
+		return place === undefined
+			? this.custom?.get(property)
+			: this.values[place];
+	}
+
+	set(property: string, value: string): void {
+		const place = getPropertyPlace(property);
+		if (place === -1) {
+			this.custom ??= new Map();
+			const size = this.custom.size;
+			this.custom.set(property, value);
+			this.size += this.custom.size - size;
+		} else {
+			if (this.values[place] === undefined) {
+				this.size++;
+			}
+			this.values[place] = value;
+		}
+	}
+
+	*keys(): IterableIterator<string> {
+		const values = this.values;
+		for (let place = 0; place < values.length; place++) {
+			if (values[place] !== undefined) {
+				yield placedProperties[place];
+			}
+		}
+		if (this.custom !== null) {
+			yield *this.custom.keys();
+		}
+	}
+}
+
 // What an element passes down: its parent's values, with what its own
 // rules and inline style declare for inherited properties written over
 // them. Elements that pass down the same values get the same token, so
 // their children share whatever else about the elements differs, such as
 // a width or a background. Null for an element a transition is moving.
-const passedTokens = new WeakMap<Map<string, string>, PassedToken>();
+const passedTokens = new WeakMap<ResolvedValues, PassedToken>();
 
 interface PassedToken {
 	readonly id: number;
@@ -4752,7 +4827,7 @@ let nextPassedId = 0;
 function getPassedValues(
 	cascade: Cascade,
 	element: Element,
-	values: Map<string, string>,
+	values: ResolvedValues,
 ): PassedToken | null {
 	let token = passedTokens.get(values);
 	if (token !== undefined) {
@@ -4850,28 +4925,23 @@ function blockInheritsReset(
 // What a dropped style resolved, read through rather than copied: its own
 // values over the shared ones. Dropping a style happens on every restyle,
 // and a transition reads this only when one is declared.
-type ResolvedValues = Pick<ReadonlyMap<string, string>, "get" | "size">;
+type ResolvedReader = Pick<ResolvedValues, "get" | "size">;
 
 function getDroppedValues(
 	slots: Slots<ComputedStyleDeclaration>,
-): ResolvedValues {
+): ResolvedReader {
 	const {own, resolved} = slots;
 	if (own.size === 0) {
 		return resolved;
 	}
 	return {
 		size: own.size + resolved.size,
-		get: (property) =>
-			own.has(property) ? own.get(property) : resolved.get(property),
+		get: (property) => own.get(property) ?? resolved.get(property),
 	};
 }
 
-function getAllResolved(
-	slots: Slots<ComputedStyleDeclaration>,
-): Map<string, string> {
-	return slots.own.size === 0
-		? slots.resolved
-		: new Map([...slots.resolved, ...slots.own]);
+function getAllResolved(slots: Slots<ComputedStyleDeclaration>): Set<string> {
+	return new Set([...slots.resolved.keys(), ...slots.own.keys()]);
 }
 
 function isShareable(element: Element): boolean {
@@ -4889,7 +4959,7 @@ function isShareable(element: Element): boolean {
 function getResolvedValues(
 	cascade: Cascade,
 	element: Element,
-): Map<string, string> | null {
+): ResolvedValues | null {
 	if (cascade.getStyleKey(element) === null) {
 		return null;
 	}
@@ -4900,9 +4970,9 @@ function getSharedResolved(
 	cascade: Cascade,
 	element: Element,
 	rules: readonly CascadedRule[],
-): Map<string, string> {
+): ResolvedValues {
 	if (!isShareable(element)) {
-		return new Map();
+		return new ResolvedValues(true);
 	}
 	let key = getLocalName(element);
 	// Counted, as a frozen rule list's iterator leaves its optimized loop
@@ -4910,7 +4980,7 @@ function getSharedResolved(
 	for (let index = 0; index < rules.length; index++) {
 		const id = getRuleId(rules[index]);
 		if (id === -1) {
-			return new Map();
+			return new ResolvedValues(true);
 		}
 		key += `,${id}`;
 	}
@@ -4922,7 +4992,7 @@ function getSharedResolved(
 		}
 	}
 	const parent = flatParentElement(element);
-	let table: Map<string, Map<string, string>>;
+	let table: Map<string, ResolvedValues>;
 	if (parent === null) {
 		table = cascade.sharedRoot;
 		if (table.size > 256) {
@@ -4931,7 +5001,7 @@ function getSharedResolved(
 	} else {
 		const parentValues = getResolvedValues(cascade, parent);
 		if (parentValues === null) {
-			return new Map();
+			return new ResolvedValues(true);
 		}
 		// An element that inherits a property no element inherits by itself
 		// reads more of its parent than the parent passes down, so it keeps
@@ -4940,7 +5010,7 @@ function getSharedResolved(
 			? parentValues
 			: getPassedValues(cascade, parent, parentValues);
 		if (passed === null) {
-			return new Map();
+			return new ResolvedValues(true);
 		}
 		// The top of a shadow tree keeps its tables on the tree, so they go
 		// with it. The host's values outlive the tree.
@@ -4965,7 +5035,7 @@ function getSharedResolved(
 	}
 	let shared = table.get(key);
 	if (shared === undefined) {
-		shared = new Map();
+		shared = new ResolvedValues(true);
 		table.set(key, shared);
 	}
 	return shared;
@@ -4983,7 +5053,7 @@ interface ComputedStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	// would re-walk the whole ancestor chain, thousands of times per
 	// keystroke. The declaration is discarded wholesale on invalidation, so
 	// the memo needs no invalidation of its own.
-	resolved: Map<string, string>;
+	resolved: ResolvedValues;
 	// The values that read the parent for more than what it passes down,
 	// memoized for this element alone, so the shared ones follow from the
 	// parent's inherited values: display, blockified inside a flex or grid
@@ -4992,7 +5062,7 @@ interface ComputedStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	// what the painter keys its styles by: the resolved values may be
 	// shared, and a restyle that finds the same shared values still asks
 	// for the paint style to be derived again.
-	own: Map<string, string>;
+	own: ResolvedValues;
 	custom: string[] | null;
 	_usedValue: Step<ComputedStyleDeclaration["_usedValue"]>;
 	_baseValue: Step<ComputedStyleDeclaration["_baseValue"]>;
@@ -5002,7 +5072,7 @@ interface ComputedStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 
 // What a declaration the cascade resolves holds until it takes the values
 // it shares. Nothing reads or writes it.
-const UNRESOLVED = new Map<string, string>();
+const UNRESOLVED = new ResolvedValues();
 
 interface ComputedStyleDeclaration {
 	readonly [internals]: ComputedStyleDeclarationSlots;
@@ -5017,8 +5087,8 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		super();
 		const slots = _(this);
 		slots.cascade = null;
-		slots.resolved = cascade ? UNRESOLVED : new Map<string, string>();
-		slots.own = new Map<string, string>();
+		slots.resolved = cascade ? UNRESOLVED : new ResolvedValues(true);
+		slots.own = new ResolvedValues();
 		slots.custom = null;
 		slots.element = element;
 		slots.cssRules = cssRules;
@@ -5186,7 +5256,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			slots.element,
 			slots.cssRules,
 		);
-		slots.own = new Map();
+		slots.own = new ResolvedValues();
 		dropUsedValues(slots.cascade, getOwner(this));
 		// The re-resolution is a style change event. Whatever changed against
 		// the last snapshot starts, retargets or cancels transitions.
@@ -6340,7 +6410,7 @@ function getCustomNames(computed: ComputedStyleDeclaration): string[] {
 // same reason an element's declaration is.
 interface PseudoStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	pseudoDeclarations: Record<string, string>;
-	resolved: Map<string, string>;
+	resolved: ResolvedValues;
 	// Absent on the engine's own reads (the ::selection and ::marker
 	// painters), which want the cascade's declarations and never a used
 	// value. Their declarations are passed in whole and are not the
@@ -6348,7 +6418,7 @@ interface PseudoStyleDeclarationSlots extends CSSStyleDeclarationSlots {
 	element: Element | null;
 	pseudoElement: string;
 	cascade: Cascade | null;
-	nodeResolved: Map<string, string>;
+	nodeResolved: ResolvedValues;
 	boxView: MeasuredDeclaration | null;
 	_syncResolved: Step<PseudoStyleDeclaration["_syncResolved"]>;
 	_baseValue: Step<PseudoStyleDeclaration["_baseValue"]>;
@@ -6369,8 +6439,8 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 	) {
 		super();
 		const slots = _(this);
-		slots.resolved = new Map<string, string>();
-		slots.nodeResolved = new Map<string, string>();
+		slots.resolved = new ResolvedValues();
+		slots.nodeResolved = new ResolvedValues();
 		slots.boxView = null;
 		slots.pseudoDeclarations = declarations;
 		slots.element = element ?? null;
@@ -6467,8 +6537,8 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 				slots.resolved,
 			);
 		}
-		slots.resolved = new Map();
-		slots.nodeResolved.clear();
+		slots.resolved = new ResolvedValues();
+		slots.nodeResolved = new ResolvedValues();
 		if (slots.cascade && slots.element && slots.pseudoElement) {
 			processTransitionStyle(
 				slots.cascade,
@@ -7233,7 +7303,7 @@ export class Cascade {
 	// The root of the shared tables, emptied by a full parse: every key holds
 	// rule ids, which a parse renews, so nothing under the old root is reached
 	// again.
-	sharedRoot: Map<string, Map<string, string>>;
+	sharedRoot: Map<string, ResolvedValues>;
 	// The tokens of the values parents pass down, by what those values are,
 	// emptied with the root, and when a shadow tree's sheets change, so the
 	// tables under them go too.
@@ -7297,7 +7367,7 @@ export class Cascade {
 	// the case the snapshot cannot cover. These are the original maps, not
 	// copies. The declaration replacing its memo is what makes the old map
 	// safe to hold.
-	transitionFallback: WeakMap<Element, Map<string, ResolvedValues>>;
+	transitionFallback: WeakMap<Element, Map<string, ResolvedReader>>;
 
 	// The styles each whole-cascade drop let go of, newest first, which a
 	// rebuilt style takes its transitions' before-change values from. An
@@ -8784,7 +8854,7 @@ export function checkStylesFromScratch(cascade: Cascade): void {
 			continue;
 		}
 		const values = new Map<string, string>();
-		for (const property of [...getAllResolved(slots).keys()]) {
+		for (const property of getAllResolved(slots)) {
 			values.set(property, getComputedValue(element, property));
 		}
 		before.set(element, values);
@@ -9983,7 +10053,7 @@ function storeTransitionFallback(
 	cascade: Cascade,
 	element: Element,
 	pseudo: string,
-	resolved: ResolvedValues,
+	resolved: ResolvedReader,
 ): void {
 	if (resolved.size === 0) {
 		return;
