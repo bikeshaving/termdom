@@ -447,17 +447,20 @@ async function runFileIn(file: string, suite: Suite): Promise<Outcome> {
  * can.
  */
 function windowScope(realm: object, window: object): object {
+	// The target is an empty object, not the window: a Proxy may not deny
+	// a non-configurable property its target owns, and the window's
+	// unforgeable `location` is one, which the realm also owns.
 	// eslint-disable-next-line no-restricted-globals
-	return new Proxy(window, {
-		has(target, name): boolean {
+	return new Proxy(Object.create(null), {
+		has(_target, name): boolean {
 			return !Object.prototype.hasOwnProperty.call(realm, name) &&
-				name in target;
+				name in window;
 		},
-		get(target, name): unknown {
-			return Reflect.get(target, name, target);
+		get(_target, name): unknown {
+			return Reflect.get(window, name, window);
 		},
-		set(target, name, value): boolean {
-			return Reflect.set(target, name, value, target);
+		set(_target, name, value): boolean {
+			return Reflect.set(window, name, value, window);
 		},
 	});
 }
