@@ -36247,8 +36247,9 @@ export function getShadowHost(root: Node): Element | null {
 	return isShadowRoot(root) ? _((root as ShadowRoot)).extra.host : null;
 }
 
-export function getOpenAssignedSlot(element: Element): Element | null {
-	return (element.assignedSlot as Element | null) ?? null;
+// The stored assignment, so a closed tree's ::slotted() rules reach it.
+export function getSlotOf(element: Element): Element | null {
+	return getAssignedSlot(element) as Element | null;
 }
 
 export function isHTMLNode(node: Node): boolean {
@@ -43341,10 +43342,10 @@ setElementStates({
 	getClassTokens,
 	getHeadingLevel,
 	getMeterLevel,
-	getOpenAssignedSlot,
 	getPartNames,
 	getRangeMatch,
 	getShadowHost,
+	getSlotOf,
 	getUserValidityMatch,
 	getValidityMatch,
 	hasCustomState,

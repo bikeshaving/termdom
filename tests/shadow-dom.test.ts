@@ -413,6 +413,165 @@ test("slotted content inherits through the slot's shadow-tree chain", async () =
 	dom.dispose();
 });
 
+test("::slotted() styles the elements assigned to its tree's slots, and only them", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document, window} = dom;
+	const host = document.createElement("div");
+	host.innerHTML = "<span id=assigned>slotted</span><span id=unassigned slot=nowhere>x</span>";
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = "<style>::slotted(span) { text-transform: uppercase; color: rgb(1, 2, 3) }</style><slot></slot> <span id=inner>inner</span>";
+	const outside = document.createElement("span");
+	outside.textContent = "outside";
+	document.body.append(host, outside);
+	await nextFrame(dom);
+
+	const color = (element: Element) => window.getComputedStyle(element).color;
+	expect(color(document.getElementById("assigned")!)).toBe("rgb(1, 2, 3)");
+	expect(color(document.getElementById("unassigned")!)).not.toBe(
+		"rgb(1, 2, 3)",
+	);
+	expect(color(root.getElementById("inner")!)).not.toBe("rgb(1, 2, 3)");
+	expect(color(outside)).not.toBe("rgb(1, 2, 3)");
+	const output = terminal.getPlainText();
+	expect(output).toContain("SLOTTED inner");
+	expect(output).toContain("outside");
+
+	dom.dispose();
+});
+
+test("::slotted() reaches the slots of a closed shadow root", () => {
+	const dom = new TermDOM();
+	const {document, window} = dom;
+	const host = document.createElement("div");
+	host.innerHTML = "<b>bold</b>";
+	const root = host.attachShadow({mode: "closed"});
+	root.innerHTML = "<style>::slotted(b) { color: rgb(1, 2, 3) }</style><slot></slot>";
+	document.body.append(host);
+
+	expect(window.getComputedStyle(host.firstElementChild!).color).toBe(
+		"rgb(1, 2, 3)",
+	);
+
+	dom.dispose();
+});
+
+test("what comes before ::slotted() describes the slot", () => {
+	const dom = new TermDOM();
+	const {document, window} = dom;
+	const host = document.createElement("div");
+	host.innerHTML = "<i slot=a>a</i><i slot=b>b</i>";
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = "<style>.wrap > slot[name=a]::slotted(i) { color: rgb(1, 2, 3) }</style><div class=wrap><slot name=a></slot></div><slot name=b></slot>";
+	document.body.append(host);
+
+	const [a, b] = host.children;
+	expect(window.getComputedStyle(a).color).toBe("rgb(1, 2, 3)");
+	expect(window.getComputedStyle(b).color).not.toBe("rgb(1, 2, 3)");
+
+	dom.dispose();
+});
+
+test("an element restyles when it is assigned to a slot that ::slotted() styles, and when it leaves", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	const host = document.createElement("div");
+	host.innerHTML = "<span slot=other>word</span>";
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = "<style>slot[name=loud]::slotted(*) { text-transform: uppercase }</style><slot name=loud></slot><slot name=other></slot>";
+	document.body.append(host);
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("word");
+
+	host.firstElementChild!.setAttribute("slot", "loud");
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("WORD");
+
+	host.firstElementChild!.setAttribute("slot", "other");
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("word");
+
+	dom.dispose();
+});
+
+test("a change to the slot or to the slotted element restyles what ::slotted() selects", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	const host = document.createElement("div");
+	host.innerHTML = "<span>word</span>";
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = "<style>slot.loud::slotted(.on) { text-transform: uppercase }</style><slot></slot>";
+	document.body.append(host);
+	const span = host.firstElementChild!;
+	const slot = root.querySelector("slot")!;
+	await nextFrame(dom);
+
+	span.className = "on";
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("word");
+
+	slot.className = "loud";
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("WORD");
+
+	span.className = "";
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("word");
+
+	span.className = "on";
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("WORD");
+
+	slot.className = "";
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("word");
+
+	dom.dispose();
+});
+
+test("the page's own rules and hints win over ::slotted() and :host rules, whatever their specificity", () => {
+	const dom = new TermDOM();
+	const {document, window} = dom;
+	const style = document.createElement("style");
+	style.textContent = "span { color: rgb(9, 9, 9) } div { color: rgb(8, 8, 8) }";
+	document.head.append(style);
+	const host = document.createElement("div");
+	host.setAttribute("align", "right");
+	host.innerHTML = "<span class=x>slotted</span>";
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = "<style>:host(div) { color: rgb(1, 1, 1); text-align: left } ::slotted(span.x) { color: rgb(2, 2, 2); font-weight: bold }</style><slot></slot>";
+	document.body.append(host);
+
+	const span = host.firstElementChild!;
+	expect(window.getComputedStyle(host).color).toBe("rgb(8, 8, 8)");
+	expect(window.getComputedStyle(host).textAlign).toBe("-webkit-right");
+	expect(window.getComputedStyle(span).color).toBe("rgb(9, 9, 9)");
+	expect(window.getComputedStyle(span).fontWeight).toBe("700");
+
+	dom.dispose();
+});
+
+test("an important ::slotted() declaration wins over the page's important ones, inline ones too", () => {
+	const dom = new TermDOM();
+	const {document, window} = dom;
+	const style = document.createElement("style");
+	style.textContent = "#s { color: rgb(9, 9, 9) !important }";
+	document.head.append(style);
+	const host = document.createElement("div");
+	host.innerHTML = `<span id=s style="color: rgb(8, 8, 8) !important">slotted</span>`;
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = "<style>::slotted(span) { color: rgb(2, 2, 2) !important }</style><slot></slot>";
+	document.body.append(host);
+
+	expect(window.getComputedStyle(host.firstElementChild!).color).toBe(
+		"rgb(2, 2, 2)",
+	);
+
+	dom.dispose();
+});
+
 // Input internals as a UA shadow tree: the UA shadow tree painter's content model
 // is real (UA-hidden) DOM in the symbol slot, styled by a real scoped
 // stylesheet -- while staying exactly as closed as a browser input's own

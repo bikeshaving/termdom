@@ -42,10 +42,10 @@ type ElementStates = Pick<
 	"getClassTokens" |
 	"getHeadingLevel" |
 	"getMeterLevel" |
-	"getOpenAssignedSlot" |
 	"getPartNames" |
 	"getRangeMatch" |
 	"getShadowHost" |
+	"getSlotOf" |
 	"getUserValidityMatch" |
 	"getValidityMatch" |
 	"hasCustomState" |
@@ -408,6 +408,10 @@ export interface CompiledPseudoElement {
 	// The pseudo-classes written after it, which the pseudo-element itself
 	// must match: `::part(inner):dir(rtl)`.
 	after: CompiledCompound | null;
+
+	// What `::slotted()` selects among the elements assigned to the slot,
+	// or null.
+	selects: CompiledSelector | null;
 }
 
 export interface CompiledCompound {
@@ -1593,9 +1597,11 @@ function compilePseudoElement(
 		name,
 		argument: null,
 		after: null,
+		selects: null,
 	};
 	if (name === "slotted") {
 		const inner = compileArgumentList(args, compiling, false);
+		pseudoElement.selects = {list: inner};
 		if (!compiling.pseudoElements) {
 			compound.tests.push(matchNothing);
 			return pseudoElement;
@@ -1605,10 +1611,10 @@ function compilePseudoElement(
 		compound.originTests = compound.tests;
 		compound.tests = [];
 		compound.pseudoElement = pseudoElement;
-		compound.origin = (element) => states.getOpenAssignedSlot(element);
+		compound.origin = (element) => states.getSlotOf(element);
 		compound.tests.push(
 			(element, state) =>
-				states.getOpenAssignedSlot(element) !== null &&
+				states.getSlotOf(element) !== null &&
 				inner.some((complex) => matchComplex(complex, element, state, false)),
 		);
 		return pseudoElement;
