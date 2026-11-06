@@ -46,17 +46,18 @@ export function toASCIILowercase(value: string): string {
 	let upper = false;
 	for (let i = 0; i < value.length; i++) {
 		const code = value.charCodeAt(i);
+		if (code > 127) {
+			return upper || /[A-Z]/.test(value)
+				? value.replace(/[A-Z]/g, (character) =>
+					String.fromCharCode(character.charCodeAt(0) + 32))
+				: value;
+		}
 		if (code >= 65 && code <= 90) {
 			upper = true;
-			break;
 		}
 	}
-	if (!upper) {
-		return value;
-	}
-	return value.replace(/[A-Z]/g, (character) =>
-		String.fromCharCode(character.charCodeAt(0) + 32),
-	);
+	// On ASCII text, toLowerCase folds A-Z and nothing else.
+	return upper ? value.toLowerCase() : value;
 }
 
 // Constructing a segmenter is expensive; the whole engine shares this one.
