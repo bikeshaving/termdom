@@ -20,8 +20,7 @@ export interface ParseOptions {
 	onParseError?(error: Error): void;
 }
 
-export const parse: (text: string, options?: ParseOptions) => CSSTreeNode =
-	Runtime.parse;
+type Parse = (text: string, options?: ParseOptions) => CSSTreeNode;
 
 export interface Span {
 	start: {offset: number};
@@ -320,24 +319,60 @@ for (const [name, extension] of Object.entries(TYPE_GRAMMARS)) {
 	);
 }
 
+interface TokenBuffers {
+	offsetAndType: Uint32Array | null;
+	balance: Uint32Array | null;
+}
+
 const parser = (
 	Runtime.fork as (
 		extend: (base: SyntaxConfig) => SyntaxConfig,
-	) => {parse: typeof parse}
+	) => {parse: Parse}
 )((base) => ({
 	...base,
 	generic: false,
 	types: null,
 	properties: null,
 	atrules: null,
+	parseContext: {
+		...(base.parseContext as object),
+		tokenBuffers(this: TokenBuffers): TokenBuffers {
+			return this;
+		},
+	},
 	node: {...base.node, Block: {...base.node.Block, parse: parseBlock}},
 }));
+
+// The parser keeps its token buffers from one parse to the next, sized to
+// the longest text it has read, and clears the balance buffer whole before
+// each parse (css-tree issue #379). After a large sheet, a selector would
+// pay to clear megabytes. A buffer past css-tree's 16K-entry minimum is let
+// go, and the next parse allocates one its own size.
+const MIN_TOKEN_BUFFER = 16 * 1024;
+const tokenBuffers = (
+	parser.parse as unknown as (
+		text: string,
+		options: {context: string},
+	) => TokenBuffers
+)("", {context: "tokenBuffers"});
+
+/**
+ * Parses CSS text. Selectors, values and preludes never reach a block,
+ * so they read as css-tree's default syntax reads them.
+ */
+export function parse(text: string, options?: ParseOptions): CSSTreeNode {
+	try {
+		return parser.parse(text, options);
+	} finally {
+		if ((tokenBuffers.balance?.length ?? 0) > MIN_TOKEN_BUFFER) {
+			tokenBuffers.offsetAndType = null;
+			tokenBuffers.balance = null;
+		}
+	}
+}
 
 /**
  * The engine's syntax: style blocks read nested rules, and the value
  * matcher reads the amended grammar dictionary.
  */
-export const syntax: {parse: typeof parse; lexer: Lexer} = {
-	parse: parser.parse,
-	lexer,
-};
+export const syntax: {parse: Parse; lexer: Lexer} = {parse, lexer};

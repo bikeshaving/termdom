@@ -2,6 +2,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {getStyleKey} from "../src/internal/cssom.ts";
+import * as CSSTree from "../src/internal/csstree.ts";
 import {
 	getPseudoHost,
 	getPseudoName,
@@ -760,4 +761,32 @@ test("a class or id an ancestor gains or loses reaches the rules under it", asyn
 	expect(window.getComputedStyle(p).fontWeight).toBe("400");
 	expect(window.getComputedStyle(span).color).toBe("rgb(0, 0, 0)");
 	termdom.dispose();
+});
+
+test("a large sheet leaves the parser's token buffers small", () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+	const rules: string[] = [];
+	for (let i = 0; i < 4000; i++) {
+		rules.push(`.rule-${i} > a:hover { color: red; margin: ${i}px }`);
+	}
+	const style = document.createElement("style");
+	style.textContent = rules.join("\n");
+	document.head.appendChild(style);
+	expect(style.sheet!.cssRules.length).toBe(4000);
+	termdom.dispose();
+	// css-tree hands onToken the balance buffer it clears before each parse.
+	let bytes = 0;
+	CSSTree.syntax.parse(
+		"a",
+		{
+			context: "value",
+			onToken(this: {balance: Uint32Array}) {
+				bytes = this.balance.buffer.byteLength;
+			},
+		} as never,
+	);
+	expect(bytes).toBeGreaterThan(0);
+	expect(bytes).toBeLessThanOrEqual(64 * 1024);
 });
