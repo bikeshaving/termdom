@@ -35237,22 +35237,6 @@ function visitHighlightRanges(
 	});
 }
 
-/** Whether anything at all highlights this document. */
-export function hasPaintedHighlights(document: globalThis.Document): boolean {
-	const registry = _((document as Document)).extra.highlights;
-	if (registry === null) {
-		return false;
-	}
-	for (const highlight of _(registry).highlightsByName.values()) {
-		for (const range of _(highlight).highlightRanges) {
-			if (!range.collapsed) {
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
 /**
  * Visits the text nodes one of a highlight's ranges covers, with the
  * offsets it covers of each, until the visitor answers false.

@@ -735,7 +735,7 @@ test("an invalid static range is skipped, and a live range follows the tree", as
 	dom.dispose();
 });
 
-test("a non-empty highlight refuses the scroll transform", async () => {
+test("a non-empty highlight keeps the scroll transform", async () => {
 	const {terminal, dom, window} = highlightDOM({rows: 8, cols: 20});
 	const {document} = dom;
 	document.head.innerHTML =
@@ -763,7 +763,7 @@ test("a non-empty highlight refuses the scroll transform", async () => {
 	const rawAgain = captureRawOutput(terminal);
 	document.getElementById("pane")!.scrollTop = 4;
 	await nextFrame(dom);
-	expect(rawAgain()).not.toMatch(band);
+	expect(rawAgain()).toMatch(band);
 
 	dom.dispose();
 });
@@ -982,6 +982,94 @@ test("a change whose rows cannot be bounded repaints whole", async () => {
 		}),
 	).toBeNull();
 	expect(yellowCells(terminal, 7)).toEqual([]);
+
+	dom.dispose();
+});
+
+/** A full-width box of thirty one-line rows that scrolls, and their text. */
+function paneDOM(): {
+	terminal: MockProcess;
+	dom: TermDOM;
+	window: any;
+	pane: any;
+	texts: any[];
+} {
+	const {terminal, dom, window} = highlightDOM({rows: 12, cols: 20});
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>body { margin: 0 } #pane { height: 8lh; overflow: auto }" +
+		" ::highlight(hit) { background-color: yellow }</style>";
+	document.body.innerHTML =
+		"<div>title</div><div id=\"pane\">" +
+		Array.from({length: 30}, (_, i) => `<div>row ${i}</div>`).join("") +
+		"</div><div>status</div>";
+	const pane = document.getElementById("pane")!;
+	const texts = Array.from(pane.children, (row: any) => row.firstChild);
+	return {terminal, dom, window, pane, texts};
+}
+
+test("a box scrolled under highlights paints the row the shift exposed", async () => {
+	const {terminal, dom, window, pane, texts} = paneDOM();
+	const highlight = new window.Highlight();
+	for (let index = 0; index < texts.length; index += 3) {
+		highlight.add(textRange(window, texts[index], 0, 3));
+	}
+	window.CSS.highlights.set("hit", highlight);
+	const band = /\x1b\[\d+;\d+r/;
+	for (const step of [1, 1, 1, -1, 2]) {
+		const raw = captureRawOutput(terminal);
+		const rows = await paintedRows(dom, terminal, () => {
+			pane.scrollTop += step;
+		});
+		expect(raw()).toMatch(band);
+		expect(rows).not.toBeNull();
+		expect(rows!.length).toBeLessThanOrEqual(Math.abs(step) + 2);
+	}
+	expect(pane.scrollTop).toBe(4);
+	expect(yellowCells(terminal, 1)).toEqual([]);
+	expect(yellowCells(terminal, 3)).toEqual([0, 1, 2]);
+
+	dom.dispose();
+});
+
+test("a highlight moved in the frame its box scrolls repaints both places", async () => {
+	const {terminal, dom, window, pane, texts} = paneDOM();
+	let range = textRange(window, texts[2], 0, 3);
+	const highlight = new window.Highlight(range);
+	window.CSS.highlights.set("hit", highlight);
+	for (const to of [5, 9, 4]) {
+		const rows = await paintedRows(dom, terminal, () => {
+			pane.scrollTop += 1;
+			highlight.delete(range);
+			range = textRange(window, texts[to], 0, 3);
+			highlight.add(range);
+		});
+		expect(rows).not.toBeNull();
+	}
+	expect(yellowCells(terminal, 1 + 4 - pane.scrollTop)).toEqual([0, 1, 2]);
+
+	dom.dispose();
+});
+
+test("a live highlight across rows rides the shift of its box", async () => {
+	const {terminal, dom, window, pane, texts} = paneDOM();
+	const live = dom.document.createRange();
+	live.setStart(texts[3], 2);
+	live.setEnd(texts[12], 3);
+	window.CSS.highlights.set("hit", new window.Highlight(live));
+	for (let step = 0; step < 6; step++) {
+		expect(
+			await paintedRows(dom, terminal, () => {
+				pane.scrollTop += 1;
+			}),
+		).not.toBeNull();
+	}
+	expect(
+		await paintedRows(dom, terminal, () => {
+			pane.scrollTop += 1;
+			live.setEnd(texts[14], 1);
+		}),
+	).toBeNull();
 
 	dom.dispose();
 });
