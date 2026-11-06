@@ -1,5 +1,3 @@
-import LineBreaker from "linebreak";
-
 import {
 	establishesFixedContainingBlock,
 	getBoxModel,
@@ -81,6 +79,7 @@ import {
 	type Translation,
 	type Wrap,
 } from "./layoutsolver.ts";
+import {forEachLineBreak} from "./linebreak.ts";
 import {
 	findMathPosition,
 	getMathAlignOffset,
@@ -4982,31 +4981,10 @@ function findBreakPoints(
 		};
 	}
 
-	const breaker = new LineBreaker(text);
 	const breaks: BreakPoint[] = [];
-
-	let lastPos = 0;
-	let bk;
-	while ((bk = breaker.nextBreak())) {
-		let required = bk.required || false;
-
-		if (
-			whiteSpace === "pre" ||
-			whiteSpace === "pre-wrap" ||
-			whiteSpace === "pre-line"
-		) {
-			const segment = text.slice(lastPos, bk.position);
-			if (segment.includes("\n")) {
-				required = true;
-			}
-		}
-
-		breaks.push({
-			position: toContent === null ? bk.position : toContent(bk.position),
-			required,
-		});
-		lastPos = bk.position;
-	}
+	forEachLineBreak(text, (at, required) => {
+		breaks.push({position: toContent === null ? at : toContent(at), required});
+	});
 
 	return breaks;
 }
