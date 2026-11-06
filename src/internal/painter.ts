@@ -31,7 +31,6 @@ import {
 	getTextControlSelectionRange,
 	getTextControlValueText,
 	getTopLayer,
-	hasPaintedHighlights,
 	hasSystemFocus,
 	HTMLElement,
 	isDocumentElement,
@@ -698,7 +697,6 @@ export function resolveScrollShift(
 		// One scroll shift per frame. The document scroll's region already
 		// contains this box.
 		framebuffer.journal.frameScroll !== 0 ||
-		hasPaintedHighlights(painter.document) ||
 		!record.element.isConnected
 	) {
 		return null;
