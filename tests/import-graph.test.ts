@@ -76,3 +76,34 @@ test("no module of the engine imports one that imports it back", () => {
 	}
 	expect(cycles).toEqual([]);
 });
+
+// Modules that could stand as packages of their own: each reaches, at run
+// time, only the modules listed with it.
+const STANDALONE: Record<string, string[]> = {
+	"internal/bidi.ts": ["generated/biditables.ts"],
+	"internal/layoutsolver.ts": [],
+	"internal/text.ts": [
+		"generated/biditables.ts",
+		"generated/widthtables.ts",
+		"internal/bidi.ts",
+	],
+};
+
+test("the standalone modules reach no other module of the engine", () => {
+	const reached: Record<string, string[]> = {};
+	for (const module of Object.keys(STANDALONE)) {
+		const seen = new Set<string>();
+		const visit = (file: string): void => {
+			for (const next of runtimeImports(file)) {
+				if (!seen.has(next)) {
+					seen.add(next);
+					visit(next);
+				}
+			}
+		};
+		visit(join(src, module));
+		reached[module] = [...seen].map((path) => path.slice(src.length + 1))
+			.sort();
+	}
+	expect(reached).toEqual(STANDALONE);
+});
