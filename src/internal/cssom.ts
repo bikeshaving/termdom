@@ -7685,8 +7685,16 @@ function noteStyleText(batch: MutationBatch, style: Element): void {
 }
 
 // A sheet that joined a tree. Null for one whose tree is not known to
-// be a shadow tree.
+// be a shadow tree. A <style> whose text changed while it was out of
+// the document, where no record follows it, is parsed again.
 function noteSheetMoved(batch: MutationBatch, style: Element | null): void {
+	if (style !== null && getHTMLLocalName(style) === "style") {
+		const parsed = _(getSheet(style)).text;
+		if (parsed !== null && parsed !== (style.textContent ?? "")) {
+			noteStyleText(batch, style);
+			return;
+		}
+	}
 	const root = style?.getRootNode();
 	if (root !== undefined && isShadowRoot(root)) {
 		batch.rootsToSync.add(root);

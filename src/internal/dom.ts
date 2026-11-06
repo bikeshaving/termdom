@@ -8362,11 +8362,14 @@ function getRegisteredObserverList(node: Node): RegisteredObserver[] {
 
 // One transient entry per source is enough. Two with the same source
 // would report the same mutation to the same observer, and the record
-// queue collapses that anyway.
+// queue collapses that anyway. The document's own observer takes none: a
+// tree that has left the document holds no boxes or styles, and the
+// record that inserts it again has it derived whole.
 function addTransientObservers(node: Node, parent: Node): void {
 	if (registeredObserverCount === 0) {
 		return;
 	}
+	const engine = _(_(parent).document).extra.engineObserver;
 	for (
 		let ancestorSlots: Slots<Node> | null = getSlots(parent);
 		ancestorSlots !== null;
@@ -8377,7 +8380,9 @@ function addTransientObservers(node: Node, parent: Node): void {
 			continue;
 		}
 		for (const registered of list) {
-			if (registered.options.subtree !== true) {
+			if (
+				registered.options.subtree !== true || registered.observer === engine
+			) {
 				continue;
 			}
 			appendTransientObserver(node, registered);

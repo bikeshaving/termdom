@@ -206,3 +206,72 @@ test("a positioned cell in an inline-block paints on the rows it is on", async (
 		],
 	);
 });
+
+test("a subtree changed while out of the document shows its changes back in it", async () => {
+	await replay(
+		"<div id=r class=row><div id=a class=box>one <b id=b>two</b></div>" +
+			"<textarea id=t>area</textarea><div id=c>three</div></div>",
+		[
+			(document) => {
+				const a = document.getElementById("a");
+				const b = document.getElementById("b");
+				a.remove();
+				b.firstChild.data = "changed text";
+				b.className = "ib";
+				a.style.width = "87px";
+				a.append(document.createElement("p"), "more");
+				document.getElementById("r").append(a);
+			},
+			(document) => {
+				const t = document.getElementById("t");
+				const c = document.getElementById("c");
+				t.remove();
+				c.remove();
+				t.firstChild.data = "other area";
+				c.setAttribute("class", "abs");
+				c.firstChild.remove();
+				c.append("four five");
+				document.getElementById("r").prepend(c, t);
+			},
+			(document) => {
+				const r = document.getElementById("r");
+				const a = document.getElementById("a");
+				r.remove();
+				a.textContent = "fresh";
+				r.classList.add("col");
+				document.body.append(r);
+			},
+			(document) => {
+				const c = document.getElementById("c");
+				const text = c.firstChild;
+				text.remove();
+				text.data = "moved text";
+				c.append(text);
+			},
+			(document) => {
+				const c = document.getElementById("c");
+				c.className = "";
+				c.innerHTML = "<p>in a <span id=s>span</span> here</p>";
+			},
+			(document) => {
+				const s = document.getElementById("s");
+				const p = s.parentNode;
+				const after = s.nextSibling;
+				s.remove();
+				s.firstChild.data = "much longer span";
+				p.insertBefore(s, after);
+			},
+			(document) => {
+				const style = document.createElement("style");
+				style.textContent = "#c { color: red }";
+				document.body.append(style);
+			},
+			(document) => {
+				const style = document.querySelector("body style");
+				style.remove();
+				style.firstChild.data = "#c { color: blue; padding-left: 14px }";
+				document.body.prepend(style);
+			},
+		],
+	);
+});
