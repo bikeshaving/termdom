@@ -823,6 +823,12 @@ test("a box whose image would hold more than 64 MB of pixels draws in cells", as
 		images: "kitty",
 	});
 	await dom.attach();
+	const framebuffer = (_(dom as never) as {framebuffer: {cellPixels: {
+		width: number;
+		height: number;
+	};};}).framebuffer;
+	await until(() => framebuffer.cellPixels.width === 20);
+	expect(framebuffer.cellPixels).toEqual({width: 20, height: 40});
 	dom.document.body.innerHTML =
 		`<img src="${BANDS}" style="width: 150px; height: 150px">`;
 	await nextFrame(dom);
