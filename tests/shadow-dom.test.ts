@@ -550,6 +550,23 @@ test("the page's own rules and hints win over ::slotted() and :host rules, whate
 	dom.dispose();
 });
 
+test("getComputedStyle() for ::slotted() or ::part() is empty, as those name other elements", () => {
+	const dom = new TermDOM();
+	const {document, window} = dom;
+	const host = document.createElement("div");
+	host.innerHTML = "<span>slotted</span>";
+	host.attachShadow({
+		mode: "open",
+	}).innerHTML = "<style>::slotted(span) { color: rgb(1, 2, 3) }</style><slot></slot>";
+	document.body.append(host);
+
+	expect(window.getComputedStyle(host, "::slotted(span)").length).toBe(0);
+	expect(window.getComputedStyle(host, "::part(label)").length).toBe(0);
+	expect(window.getComputedStyle(host).length).toBeGreaterThan(0);
+
+	dom.dispose();
+});
+
 test("an important ::slotted() declaration wins over the page's important ones, inline ones too", () => {
 	const dom = new TermDOM();
 	const {document, window} = dom;

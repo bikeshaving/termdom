@@ -10028,7 +10028,13 @@ function getResolvedStyle(
 	let pseudoElement = "";
 	if (pseudoElt) {
 		const parsed = CSSValues.parsePseudoElementArgument(String(pseudoElt));
-		if (parsed === null) {
+		// ::part() and ::slotted() name other elements, which have styles of
+		// their own, so the element has no such pseudo-element to report.
+		if (
+			parsed === null ||
+			parsed.startsWith("::part(") ||
+			parsed.startsWith("::slotted(")
+		) {
 			return runInRealm(null, () =>
 				new EmptyStyleDeclaration(element),
 			) as unknown as globalThis.CSSStyleDeclaration;
