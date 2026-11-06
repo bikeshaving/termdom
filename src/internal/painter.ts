@@ -516,10 +516,15 @@ function unionRect(rects: Rect[]): Rect {
  * Each registered highlight's share of the text nodes it covers, for one
  * frame. A share is an index into the arrays, and a text node's shares
  * chain through next in paint order, from the first its entry in heads
- * names. last holds the end of the chain at the index of its first.
+ * names. last holds the end of the chain at the index of its first, and
+ * owners the text node of each share. The entries in heads are kept from
+ * frame to frame, so a text node highlighted in both is not added again,
+ * and an entry is this frame's while its share is below count and owned
+ * by its text node.
  */
 interface HighlightRuns {
 	heads: Map<Text, number>;
+	owners: Array<Text | null>;
 	names: string[];
 	from: Int32Array;
 	to: Int32Array;
@@ -531,6 +536,7 @@ interface HighlightRuns {
 function createHighlightRuns(capacity: number): HighlightRuns {
 	return {
 		heads: new Map(),
+		owners: [],
 		names: [],
 		from: new Int32Array(capacity),
 		to: new Int32Array(capacity),
@@ -563,28 +569,44 @@ function addHighlightRun(
 		growHighlightRuns(runs);
 	}
 	const index = runs.count++;
+	runs.owners[index] = textNode;
 	runs.names[index] = name;
 	runs.from[index] = from;
 	runs.to[index] = to;
 	runs.next[index] = -1;
 	const head = runs.heads.get(textNode);
-	if (head === undefined) {
+	if (head === undefined || head >= index || runs.owners[head] !== textNode) {
 		runs.heads.set(textNode, index);
+		runs.last[index] = index;
 	} else {
 		runs.next[runs.last[head]] = index;
+		runs.last[head] = index;
 	}
-	runs.last[head ?? index] = index;
 }
 
 // Arrays a frame with much highlighted text grew past the kept size go
 // back to it once a frame needs no more than that.
-function clearHighlightRuns(runs: HighlightRuns): void {
-	clearMap(runs.heads);
-	if (runs.from.length > KEPT_RECORDS && runs.count <= KEPT_RECORDS) {
+function clearHighlightRuns(runs: HighlightRuns): number {
+	const previous = runs.count;
+	if (runs.from.length > KEPT_RECORDS && previous <= KEPT_RECORDS) {
 		Object.assign(runs, createHighlightRuns(KEPT_RECORDS));
 	}
-	runs.names.length = 0;
 	runs.count = 0;
+	return previous;
+}
+
+// Drops the entries of text nodes this frame did not highlight, and the
+// last frame's text nodes past this frame's shares.
+function sweepHighlightRuns(runs: HighlightRuns, previous: number): void {
+	const {heads, owners, count} = runs;
+	heads.forEach((head, textNode) => {
+		if (head >= count || owners[head] !== textNode) {
+			heads.delete(textNode);
+		}
+	});
+	for (let index = count; index < previous && index < owners.length; index++) {
+		owners[index] = null;
+	}
 }
 
 export class Painter {
@@ -856,7 +878,10 @@ export function paint(painter: Painter, ctx: CellContext): void {
 	// A frame with no rows to paint, one asked for in case input changed
 	// something, lets go of the last frame's and does no more.
 	if (ctx.bands.length === 0) {
-		clearHighlightRuns(painter.highlightedText);
+		sweepHighlightRuns(
+			painter.highlightedText,
+			clearHighlightRuns(painter.highlightedText),
+		);
 		painter.selectedRange = null;
 		return;
 	}
@@ -2749,10 +2774,11 @@ function getHighlightSegments(
 // entry here has no highlight over it.
 function collectHighlightedText(painter: Painter): void {
 	const runs = painter.highlightedText;
-	clearHighlightRuns(runs);
+	const previous = clearHighlightRuns(runs);
 	forEachHighlightedText(painter.document, (name, textNode, from, to) => {
 		addHighlightRun(runs, textNode as Text, name, from, to);
 	});
+	sweepHighlightRuns(runs, previous);
 }
 
 function getHighlightLayer(
