@@ -2309,6 +2309,12 @@ function getMaxContentMainSize(
 	return isRow(mainAxis) ? child.result.width : child.result.height;
 }
 
+// Each line being flexed keeps its items' base sizes, targets, frozen
+// flags and clamp directions in four runs of one buffer, a buffer for each
+// depth of flex lines resolved inside one another's measuring.
+const flexScratch: Float64Array[] = [];
+let flexDepth = 0;
+
 // css-flexbox-1 §9.7.
 function resolveFlexibleLengths(
 	line: FlexLine,
@@ -2317,6 +2323,68 @@ function resolveFlexibleLengths(
 	mainSpace: AvailableSpace,
 	ownerWidth: number,
 	ownerHeight: number,
+): void {
+	const count = line.items.length;
+	let scratch = flexScratch[flexDepth];
+	if (scratch === undefined || scratch.length < count * 4) {
+		scratch = new Float64Array(Math.max(64, count * 8));
+		flexScratch[flexDepth] = scratch;
+	}
+	flexDepth++;
+	try {
+		flexLine(
+			line,
+			node,
+			innerMain,
+			mainSpace,
+			ownerWidth,
+			ownerHeight,
+			scratch,
+		);
+	} finally {
+		flexDepth--;
+	}
+}
+
+// The automatic minimum floors every clamp, not only the hypothetical
+// size.
+function clampFlexMain(
+	child: LayoutNode,
+	mainAxis: FlexDirection,
+	value: number,
+	mainOwnerSize: number,
+): number {
+	const bounded = boundAxisWithinMinMax(child, mainAxis, value, mainOwnerSize);
+	const floor = child.result.automaticMinimumSize;
+	return !Number.isNaN(floor) ? Math.max(bounded, floor) : bounded;
+}
+
+function commitFlexTargets(
+	items: LayoutNode[],
+	scratch: Float64Array,
+	target: number,
+): void {
+	for (let i = 0; i < items.length; i++) {
+		items[i].result.computedFlexBasis = scratch[target + i];
+	}
+}
+
+function getFlexFactor(
+	child: LayoutNode,
+	growing: boolean,
+	base: number,
+): number {
+	return growing ? resolveFlexGrow(child) : resolveFlexShrink(child) * base;
+}
+
+function flexLine(
+	line: FlexLine,
+	node: LayoutNode,
+	innerMain: number,
+	mainSpace: AvailableSpace,
+	ownerWidth: number,
+	ownerHeight: number,
+	scratch: Float64Array,
 ): void {
 	const mainAxis = node.style.flexDirection;
 	const mainOwnerSize = isRow(mainAxis) ? ownerWidth : ownerHeight;
@@ -2327,48 +2395,36 @@ function resolveFlexibleLengths(
 	// runs for every probe of it.
 	const items = line.items;
 	const count = items.length;
-	const base = new Float64Array(count);
-	const target = new Float64Array(count);
-	const frozen = new Uint8Array(count);
-
-	// The automatic minimum floors every clamp, not only the hypothetical
-	// size.
-	const clampMain = (child: LayoutNode, value: number): number => {
-		const bounded = boundAxisWithinMinMax(
-			child,
-			mainAxis,
-			value,
-			mainOwnerSize,
-		);
-		const floor = child.result.automaticMinimumSize;
-		return !Number.isNaN(floor) ? Math.max(bounded, floor) : bounded;
-	};
+	const base = 0;
+	const target = count;
+	const frozen = count * 2;
+	// Which way a pass's clamp moved each unfrozen item: 1 up to its
+	// minimum, -1 down to its maximum.
+	const clamped = count * 3;
 
 	for (let i = 0; i < count; i++) {
 		const flexBase = items[i].result.computedFlexBasis;
-		base[i] = flexBase;
-		target[i] = clampMain(items[i], flexBase);
+		scratch[base + i] = flexBase;
+		scratch[target + i] = clampFlexMain(
+			items[i],
+			mainAxis,
+			flexBase,
+			mainOwnerSize,
+		);
+		scratch[frozen + i] = 0;
 	}
-
-	const commit = () => {
-		for (let i = 0; i < count; i++) {
-			items[i].result.computedFlexBasis = target[i];
-		}
-	};
 
 	if (Number.isNaN(innerMain)) {
-		commit();
+		commitFlexTargets(items, scratch, target);
 		return;
 	}
-
-	const outerMargin = (child: LayoutNode) =>
-		getAxisMargin(child, mainAxis, ownerWidth);
 
 	// §9.7.3: grow or shrink is decided once, from the outer hypothetical
 	// sizes.
 	let hypotheticalTotal = 0;
 	for (let i = 0; i < count; i++) {
-		hypotheticalTotal += target[i] + outerMargin(items[i]);
+		hypotheticalTotal +=
+			scratch[target + i] + getAxisMargin(items[i], mainAxis, ownerWidth);
 	}
 	let growing = innerMain - hypotheticalTotal > 0;
 
@@ -2381,26 +2437,26 @@ function resolveFlexibleLengths(
 		let contentTotal = 0;
 		for (let i = 0; i < count; i++) {
 			if (resolveFlexGrow(items[i]) > 0) {
-				const content = clampMain(
+				const content = clampFlexMain(
 					items[i],
+					mainAxis,
 					getMaxContentMainSize(items[i], mainAxis, ownerWidth, ownerHeight),
+					mainOwnerSize,
 				);
-				if (content > target[i]) {
-					base[i] = content;
-					target[i] = content;
+				if (content > scratch[target + i]) {
+					scratch[base + i] = content;
+					scratch[target + i] = content;
 				}
 			}
-			contentTotal += target[i] + outerMargin(items[i]);
+			contentTotal +=
+				scratch[target + i] + getAxisMargin(items[i], mainAxis, ownerWidth);
 		}
 		if (contentTotal <= innerMain) {
-			commit();
+			commitFlexTargets(items, scratch, target);
 			return;
 		}
 		growing = false;
 	}
-
-	const getFactor = (i: number) =>
-		growing ? resolveFlexGrow(items[i]) : resolveFlexShrink(items[i]) * base[i];
 
 	// §9.7.4.a: an item whose base is already past its clamp in the flexing
 	// direction is inflexible.
@@ -2410,22 +2466,18 @@ function resolveFlexibleLengths(
 			: resolveFlexShrink(items[i]);
 		if (
 			factor === 0 ||
-			(growing && base[i] > target[i]) ||
-			(!growing && base[i] < target[i])
+			(growing && scratch[base + i] > scratch[target + i]) ||
+			(!growing && scratch[base + i] < scratch[target + i])
 		) {
-			frozen[i] = 1;
+			scratch[frozen + i] = 1;
 		}
 	}
-
-	// Which way this pass's clamp moved each unfrozen item: 1 up to its
-	// minimum, -1 down to its maximum.
-	const clamped = new Int8Array(count);
 
 	// §9.7.4: each pass freezes at least one item.
 	for (let guard = 0; guard <= count; guard++) {
 		let unfrozen = 0;
 		for (let i = 0; i < count; i++) {
-			unfrozen += frozen[i] === 0 ? 1 : 0;
+			unfrozen += scratch[frozen + i] === 0 ? 1 : 0;
 		}
 		if (unfrozen === 0) {
 			break;
@@ -2433,14 +2485,16 @@ function resolveFlexibleLengths(
 
 		let used = 0;
 		for (let i = 0; i < count; i++) {
-			used += (frozen[i] === 1 ? target[i] : base[i]) + outerMargin(items[i]);
+			used +=
+				(scratch[frozen + i] === 1 ? scratch[target + i] : scratch[base + i]) +
+				getAxisMargin(items[i], mainAxis, ownerWidth);
 		}
 		const remaining = innerMain - used;
 
 		let totalFactor = 0;
 		for (let i = 0; i < count; i++) {
-			if (frozen[i] === 0) {
-				totalFactor += getFactor(i);
+			if (scratch[frozen + i] === 0) {
+				totalFactor += getFlexFactor(items[i], growing, scratch[base + i]);
 			}
 		}
 		if (totalFactor === 0) {
@@ -2448,24 +2502,37 @@ function resolveFlexibleLengths(
 		}
 
 		let violation = 0;
-		clamped.fill(0);
 		for (let i = 0; i < count; i++) {
-			if (frozen[i] === 1) {
+			scratch[clamped + i] = 0;
+			if (scratch[frozen + i] === 1) {
 				continue;
 			}
-			const unclamped = base[i] + (remaining * getFactor(i)) / totalFactor;
-			const bounded = clampMain(items[i], unclamped);
-			target[i] = bounded;
+			const unclamped =
+				scratch[base + i] +
+				(remaining * getFlexFactor(items[i], growing, scratch[base + i])) /
+					totalFactor;
+			const bounded = clampFlexMain(
+				items[i],
+				mainAxis,
+				unclamped,
+				mainOwnerSize,
+			);
+			scratch[target + i] = bounded;
 			violation += bounded - unclamped;
-			clamped[i] = bounded > unclamped ? 1 : bounded < unclamped ? -1 : 0;
+			scratch[clamped + i] = bounded > unclamped
+				? 1
+				: bounded < unclamped ? -1 : 0;
 		}
 
 		// §9.7.4.e: freeze by the sign of the total violation. Freezing both
 		// directions strands the space an over-clamped item gave back.
 		const freezing = violation === 0 ? 0 : violation > 0 ? 1 : -1;
 		for (let i = 0; i < count; i++) {
-			if (frozen[i] === 0 && (freezing === 0 || clamped[i] === freezing)) {
-				frozen[i] = 1;
+			if (
+				scratch[frozen + i] === 0 &&
+				(freezing === 0 || scratch[clamped + i] === freezing)
+			) {
+				scratch[frozen + i] = 1;
 			}
 		}
 		if (freezing === 0) {
@@ -2473,7 +2540,7 @@ function resolveFlexibleLengths(
 		}
 	}
 
-	commit();
+	commitFlexTargets(items, scratch, target);
 }
 
 // css-flexbox-1 §4.5: min-width/height `auto` floors a flex item at
@@ -6898,22 +6965,54 @@ const SELF_COLLAPSING = 1;
 const WIDTH_DEPENDENT = 2;
 const OWNER_FREE = 4;
 
-function readSiblingState(child: LayoutNode, into: Float64Array): void {
-	const {result} = child;
-	into[0] = result.width;
-	into[1] = result.height;
-	into[2] = result.marginLeft;
-	into[3] = result.marginTop;
-	into[4] = result.marginRight;
-	into[5] = result.marginBottom;
-	into[6] = result.collapseTopPositive;
-	into[7] = result.collapseTopNegative;
-	into[8] = result.collapseBottomPositive;
-	into[9] = result.collapseBottomNegative;
-	into[10] =
-		(result.selfCollapsing ? SELF_COLLAPSING : 0) |
+// The states read before each stale child's layout, a block's at its depth
+// in the nesting of blocks laying out their stale children, so a child's
+// own pass keeps its block's state.
+let siblingStates = new Float64Array(SIBLING_STATE * 16);
+let siblingDepth = 0;
+
+function siblingFlags(child: LayoutNode): number {
+	return (child.result.selfCollapsing ? SELF_COLLAPSING : 0) |
 		(child.widthDependent ? WIDTH_DEPENDENT : 0) |
 		(child.ownerFree ? OWNER_FREE : 0);
+}
+
+function readSiblingState(
+	child: LayoutNode,
+	into: Float64Array,
+	at: number,
+): void {
+	const {result} = child;
+	into[at] = result.width;
+	into[at + 1] = result.height;
+	into[at + 2] = result.marginLeft;
+	into[at + 3] = result.marginTop;
+	into[at + 4] = result.marginRight;
+	into[at + 5] = result.marginBottom;
+	into[at + 6] = result.collapseTopPositive;
+	into[at + 7] = result.collapseTopNegative;
+	into[at + 8] = result.collapseBottomPositive;
+	into[at + 9] = result.collapseBottomNegative;
+	into[at + 10] = siblingFlags(child);
+}
+
+function matchesSiblingState(
+	child: LayoutNode,
+	state: Float64Array,
+	at: number,
+): boolean {
+	const {result} = child;
+	return Object.is(state[at], result.width) &&
+		Object.is(state[at + 1], result.height) &&
+		Object.is(state[at + 2], result.marginLeft) &&
+		Object.is(state[at + 3], result.marginTop) &&
+		Object.is(state[at + 4], result.marginRight) &&
+		Object.is(state[at + 5], result.marginBottom) &&
+		Object.is(state[at + 6], result.collapseTopPositive) &&
+		Object.is(state[at + 7], result.collapseTopNegative) &&
+		Object.is(state[at + 8], result.collapseBottomPositive) &&
+		Object.is(state[at + 9], result.collapseBottomNegative) &&
+		state[at + 10] === siblingFlags(child);
 }
 
 function getAvailableSpace(code: number): AvailableSpace {
@@ -6963,9 +7062,24 @@ function relayOutStaleChildren(
 	) {
 		return false;
 	}
-	const before = new Float64Array(SIBLING_STATE);
-	const after = new Float64Array(SIBLING_STATE);
-	for (const child of node.children) {
+	const at = siblingDepth * SIBLING_STATE;
+	if (at + SIBLING_STATE > siblingStates.length) {
+		const grown = new Float64Array(siblingStates.length * 2);
+		grown.set(siblingStates);
+		siblingStates = grown;
+	}
+	siblingDepth++;
+	try {
+		return relayOutStaleChildrenAt(node, at);
+	} finally {
+		siblingDepth--;
+	}
+}
+
+function relayOutStaleChildrenAt(node: LayoutNode, at: number): boolean {
+	const children = node.children;
+	for (let index = 0; index < children.length; index++) {
+		const child = children[index];
 		if (!child.stale) {
 			continue;
 		}
@@ -6973,28 +7087,25 @@ function relayOutStaleChildren(
 			return false;
 		}
 		const cache = child.pool.data;
-		const at = child.cacheAt * ENTRY;
+		const entry = child.cacheAt * ENTRY;
 		const {result} = child;
 		const left = result.left;
 		const top = result.top;
-		readSiblingState(child, before);
+		readSiblingState(child, siblingStates, at);
 		layoutNode(
 			child,
-			cache[at + AVAILABLE_WIDTH],
-			cache[at + AVAILABLE_HEIGHT],
-			getAvailableSpace(cache[at + WIDTH_SPACE]),
-			getAvailableSpace(cache[at + HEIGHT_SPACE]),
-			cache[at + OWNER_WIDTH],
-			cache[at + OWNER_HEIGHT],
+			cache[entry + AVAILABLE_WIDTH],
+			cache[entry + AVAILABLE_HEIGHT],
+			getAvailableSpace(cache[entry + WIDTH_SPACE]),
+			getAvailableSpace(cache[entry + HEIGHT_SPACE]),
+			cache[entry + OWNER_WIDTH],
+			cache[entry + OWNER_HEIGHT],
 			true,
 		);
 		result.left = left;
 		result.top = top;
-		readSiblingState(child, after);
-		for (let i = 0; i < SIBLING_STATE; i++) {
-			if (!Object.is(before[i], after[i])) {
-				return false;
-			}
+		if (!matchesSiblingState(child, siblingStates, at)) {
+			return false;
 		}
 	}
 	return true;
