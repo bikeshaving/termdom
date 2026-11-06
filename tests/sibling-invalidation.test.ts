@@ -332,3 +332,27 @@ test("a child added to a :has() anchor restyles the siblings a rule styles after
 	expect(window.getComputedStyle(after).color).toBe(RED);
 	termdom.dispose();
 });
+
+test("a class removed from a child inserted after a :has(+ x) anchor restyles what the anchor styled", async () => {
+	const {termdom, document} = await mount(
+		"div:has(+ .test) #subject { color: rgb(0, 0, 255); }",
+		"<main id=main><div id=anchor><p id=subject>s</p></div><div id=next></div></main>",
+	);
+	const {window} = termdom;
+	const main = document.getElementById("main")!;
+	const subject = document.getElementById("subject")!;
+	const next = document.getElementById("next")!;
+	next.className = "test";
+	await nextFrame(termdom);
+	next.className = "";
+	await nextFrame(termdom);
+	const inserted = document.createElement("div");
+	inserted.className = "test";
+	main.insertBefore(inserted, next);
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(subject).color).toBe(BLUE);
+	inserted.classList.remove("test");
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(subject).color).not.toBe(BLUE);
+	termdom.dispose();
+});
