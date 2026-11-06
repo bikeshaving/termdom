@@ -7721,6 +7721,10 @@ function invalidateHasAnchors(
 		cascade,
 		(rules) => rules.hasStylesSiblings,
 	);
+	const reachesAbove = someScopeRules(
+		cascade,
+		(rules) => rules.hasReachesAbove,
+	);
 	const anchors = new Set<Element>();
 	const visit = (element: Element): void => {
 		if (anchors.has(element) || !couldAnchorHas(cascade, element)) {
@@ -7742,6 +7746,12 @@ function invalidateHasAnchors(
 		const start = getNodeType(mutation.target) === ELEMENT_NODE
 			? (mutation.target as Element)
 			: mutation.target.parentElement;
+		// The anchors under the change are not checked one by one, so the
+		// answers they last gave are dropped with their styles.
+		if (reachesAbove && mutation.type === "attributes" && start !== null) {
+			cascade.hasAnswers = new WeakMap();
+			invalidateOnce(cascade, batch, start);
+		}
 		for (
 			let ancestor: Element | null = start;
 			ancestor;
@@ -8259,6 +8269,11 @@ interface ScopeRules {
 	// styles the anchor's later siblings and what they hold.
 	hasStylesSiblings: boolean;
 
+	// Whether a :has() argument holds a complex selector inside a
+	// pseudo-class, as :has(:is(.a .b)) does, which can test elements
+	// above the anchor. A change to one of those restyles its subtree.
+	hasReachesAbove: boolean;
+
 	// The pseudo-classes named anywhere inside a :has() argument. A change
 	// to one of those states can restyle an anchor's whole subtree, far
 	// from the element whose state changed.
@@ -8279,6 +8294,7 @@ function getScopeRules(cascade: Cascade, scope: Node | undefined): ScopeRules {
 			hasAnchors: new Set(),
 			hasSiblings: false,
 			hasStylesSiblings: false,
+			hasReachesAbove: false,
 			hasStates: new Set(),
 			hasCompounds: new Set(),
 			hasUntestable: false,
@@ -8355,6 +8371,9 @@ function noteHasRules(
 						rules.hasSiblings = true;
 					}
 					for (const inner of argument.compounds) {
+						if (holdsComplexArgument(inner)) {
+							rules.hasReachesAbove = true;
+						}
 						for (const state of getPseudoClassNames(
 							getNestedCompounds(inner),
 						)) {
@@ -8366,6 +8385,15 @@ function noteHasRules(
 			}
 		}
 	}
+}
+
+function holdsComplexArgument(compound: CompiledCompound): boolean {
+	return compound.pseudoClasses.some(({args}) =>
+		args.some(
+			(argument) =>
+				argument.compounds.length > 1 ||
+			argument.compounds.some(holdsComplexArgument),
+		));
 }
 
 function couldAnchorHas(cascade: Cascade, element: Element): boolean {

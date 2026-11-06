@@ -183,3 +183,23 @@ test("an attribute tested inside :has() or past a combinator in an argument rest
 	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
 	termdom.dispose();
 });
+
+test("a class removed above a :has() anchor restyles the anchor when a nested argument tests above it", async () => {
+	const {termdom, terminal, document} = await mount(
+		".ancestor .descendant { .anchor:has(&) { background-color: rgb(0, 0, 255); } }",
+		"<div><div id=grand><div id=parent><div id=anchor class=anchor><div><div class=descendant>d</div></div></div></div></div></div>",
+	);
+	const {window} = termdom;
+	const grand = document.getElementById("grand")!;
+	const parent = document.getElementById("parent")!;
+	const anchor = document.getElementById("anchor")!;
+	for (const element of [grand, parent]) {
+		element.classList.add("ancestor");
+		expect(window.getComputedStyle(anchor).backgroundColor).toBe(BLUE);
+		element.classList.remove("ancestor");
+		expect(window.getComputedStyle(anchor).backgroundColor).not.toBe(BLUE);
+	}
+	await nextFrame(termdom);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});
