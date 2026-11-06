@@ -40,6 +40,7 @@ import {
 } from "./images.ts";
 import {
 	type KittyImages,
+	MAX_KITTY_PIXELS,
 	MAX_PLACEHOLDER_CELLS,
 	placeKittyImage,
 } from "./kitty.ts";
@@ -393,6 +394,31 @@ interface CellCache {
 
 const bitmapCells = new WeakMap<Bitmap, CellCache>();
 
+// Where the bitmap sits in a content box `cols` by `rows`, and whether
+// it is scaled smoothly.
+function getPlacement(
+	element: Element,
+	content: Extract<ReplacedContent, {kind: "bitmap"}>,
+	cols: number,
+	rows: number,
+): {place: Placement; smooth: boolean} {
+	const {bitmap} = content;
+	const cell = getImageCellSize(element as unknown as Node);
+	const place = placeImage(
+		element,
+		cols,
+		rows,
+		getNaturalWidth(bitmap) / cell.width,
+		getNaturalHeight(bitmap) / cell.height,
+	);
+	const rendering = getComputedValue(element, "image-rendering")
+		.trim()
+		.toLowerCase();
+	const smooth =
+		content.smooth && rendering !== "pixelated" && rendering !== "crisp-edges";
+	return {place, smooth};
+}
+
 // The bitmap as cells over a content box `cols` by `rows`, kept until
 // the pixels, the box or the placement change.
 function getBitmapCells(
@@ -403,15 +429,7 @@ function getBitmapCells(
 	under: number | null,
 ): CellGrid {
 	const {bitmap} = content;
-	const cell = getImageCellSize(element as unknown as Node);
-	const naturalWidth = getNaturalWidth(bitmap) / cell.width;
-	const naturalHeight = getNaturalHeight(bitmap) / cell.height;
-	const place = placeImage(element, cols, rows, naturalWidth, naturalHeight);
-	const rendering = getComputedValue(element, "image-rendering")
-		.trim()
-		.toLowerCase();
-	const smooth =
-		content.smooth && rendering !== "pixelated" && rendering !== "crisp-edges";
+	const {place, smooth} = getPlacement(element, content, cols, rows);
 	const key = [
 		content.version,
 		cols,
@@ -499,8 +517,6 @@ function drawPlaced(
 const bitmapTokens = new WeakMap<Bitmap, number>();
 let nextBitmapToken = 0;
 
-const placeholderCells = new WeakMap<Bitmap, CellCache>();
-
 // Whether the element's pixels go to the terminal as an image, which
 // needs a box the placeholders can number and pixels an image may hold.
 function drawsKittyImage(
@@ -518,7 +534,7 @@ function drawsKittyImage(
 		return false;
 	}
 	const cell = graphics.cellPixels();
-	return cols * cell.width * rows * cell.height <= MAX_IMAGE_PIXELS;
+	return cols * cell.width * rows * cell.height <= MAX_KITTY_PIXELS;
 }
 
 // The bitmap as placeholder cells over a content box `cols` by `rows`,
@@ -534,19 +550,7 @@ function getPlaceholderCells(
 	graphics: KittyImages,
 ): CellGrid {
 	const {bitmap} = content;
-	const cell = getImageCellSize(element as unknown as Node);
-	const place = placeImage(
-		element,
-		cols,
-		rows,
-		getNaturalWidth(bitmap) / cell.width,
-		getNaturalHeight(bitmap) / cell.height,
-	);
-	const rendering = getComputedValue(element, "image-rendering")
-		.trim()
-		.toLowerCase();
-	const smooth =
-		content.smooth && rendering !== "pixelated" && rendering !== "crisp-edges";
+	const {place, smooth} = getPlacement(element, content, cols, rows);
 	const pixels = graphics.cellPixels();
 	let token = bitmapTokens.get(bitmap);
 	if (token === undefined) {
@@ -568,7 +572,7 @@ function getPlaceholderCells(
 	const width = cols * pixels.width;
 	const height = rows * pixels.height;
 	// Looked up every frame, so the image counts as shown.
-	const id = placeKittyImage(
+	const image = placeKittyImage(
 		graphics,
 		key,
 		content.version,
@@ -584,16 +588,14 @@ function getPlaceholderCells(
 				smooth,
 			),
 	);
-	const cacheKey = `${id},${under}`;
-	const cached = placeholderCells.get(bitmap);
-	if (cached !== undefined && cached.key === cacheKey) {
-		return cached.cells;
+	if (image.cells !== null && image.cells.under === under) {
+		return image.cells.grid;
 	}
 	const grid = new CellGrid(rows, cols);
 	// Transparent pixels show the cell's background, which is the
 	// element's own where it has one.
 	const style: CellStyle = {
-		fg: CSSValues.toCellColor(id),
+		fg: CSSValues.toCellColor(image.id),
 		bg: under ?? undefined,
 	};
 	for (let row = 0; row < rows; row++) {
@@ -601,7 +603,7 @@ function getPlaceholderCells(
 			grid.setPlaceholder(row * cols + col, row, col, style);
 		}
 	}
-	placeholderCells.set(bitmap, {key: cacheKey, cells: grid});
+	image.cells = {under, grid};
 	return grid;
 }
 

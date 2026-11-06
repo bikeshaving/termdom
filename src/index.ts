@@ -108,7 +108,9 @@ import {
 } from "./internal/images.ts";
 import {Input, resolvePendingHover} from "./internal/input.ts";
 import {
+	compressKittyUploads,
 	forgetKittyImages,
+	hasKittyUploads,
 	KittyImages,
 	takeKittyOutput,
 	takeKittyUploads,
@@ -314,9 +316,9 @@ export interface TermDOMOptions {
 	 *   without asking whether the terminal draws them. The terminal is
 	 *   asked only whether it is tmux, which passes the images on to the
 	 *   terminal it runs in when its allow-passthrough option is on. The
-	 *   page must be drawn in 24-bit
-	 *   color; in fewer colors, and in a box more than 297 cells across
-	 *   or down, images draw in cells.
+	 *   page must be drawn in 24-bit color. In fewer colors, in a box
+	 *   more than 297 cells across or down, and in a box whose image
+	 *   would hold more than 2^24 pixels (64 MB), images draw in cells.
 	 * - `"none"`: not at all. An <img> loads nothing and shows its alt
 	 *   text, as HTML renders one when images are disabled.
 	 */
@@ -1826,6 +1828,10 @@ function flushDocument(termDOM: TermDOM): void {
 	const graphics = termDOMSlots.framebuffer.colorDepth === "rgb"
 		? termDOMSlots.framebuffer.graphics
 		: null;
+	// A frame of its own, so forgetKittyImages keeps only what it paints.
+	if (graphics !== null) {
+		graphics.frame++;
+	}
 	const output = renderStatic(termDOM, "\r\n", graphics);
 	if (!output) {
 		return;
@@ -2068,19 +2074,28 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	framePainted(termDOMSlots.layout);
 	// The images the frame's cells name go first, so the terminal has
 	// them when it draws the cells.
-	// Encoding them can wait. A session that ended, was suspended or
-	// sealed its document in the wait has let go of the screen, so the
-	// frame is dropped and the next one starts whole.
+	// Compressing new ones can wait. A session that ended, was suspended
+	// or sealed its document in the wait has let go of the screen, and a
+	// resize in it moved the rows the frame was drawn for, so the frame
+	// is dropped and the next one starts whole.
 	const graphics = termDOMSlots.framebuffer.graphics;
 	if (graphics !== null) {
-		const images = await takeKittyOutput(
-			graphics,
-			termDOMSlots.framebuffer.prev,
-		);
-		if (!isAttached(termDOM) || termDOMSlots.suspended || termDOMSlots.sealed) {
-			repaintAll(termDOMSlots.framebuffer);
-			return;
+		if (hasKittyUploads(graphics)) {
+			const {rows, cols} = termDOMSlots.framebuffer;
+			await compressKittyUploads(graphics);
+			if (
+				!isAttached(termDOM) ||
+				termDOMSlots.suspended ||
+				termDOMSlots.sealed ||
+				termDOMSlots.exchange.resizing ||
+				termDOMSlots.framebuffer.rows !== rows ||
+				termDOMSlots.framebuffer.cols !== cols
+			) {
+				repaintAll(termDOMSlots.framebuffer);
+				return;
+			}
 		}
+		const images = takeKittyOutput(graphics, termDOMSlots.framebuffer.prev);
 		if (images) {
 			void termDOMSlots.exchange.write(images);
 		}
