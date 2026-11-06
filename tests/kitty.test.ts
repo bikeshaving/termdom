@@ -82,6 +82,29 @@ function unwrapTmux(raw: string): string {
 		.join("");
 }
 
+// A frame's output, which a flush to the scrollback is not.
+const FRAME_START = "\x1b[?2026h";
+
+// The foreground, which names the image, of the lowest cell anywhere in
+// the terminal's buffer that holds the placeholder at `row`, `col`, or
+// -1.
+function findPlaceholder(
+	terminal: MockProcess,
+	row: number,
+	col: number,
+): number {
+	const buffer = (terminal as any).terminal.buffer.active;
+	for (let line = buffer.length - 1; line >= 0; line--) {
+		for (let at = 0; at < 40; at++) {
+			const found = buffer.getLine(line).getCell(at);
+			if (found.getChars() === getPlaceholder(row, col)) {
+				return found.getFgColor() as number;
+			}
+		}
+	}
+	return -1;
+}
+
 function settle(ms = 50): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -275,12 +298,55 @@ test("the image is sent again on the screen fullscreen switches to", async () =>
 	dom.dispose();
 });
 
-test("dispose frees the images it sent", async () => {
-	const {dom, output} = await mount(`<img src="${BANDS}">`);
+test("an image stays in pixels in the scrollback after dispose", async () => {
+	const {dom, terminal, output} = await mount(`<p>a</p><img src="${BANDS}">`);
 	await loaded(dom);
 	const [upload] = readUploads(output());
+	const mark = output().length;
+	await dom.dispose();
+	const after = output().slice(mark);
+	expect(after).not.toContain(`a=d,d=I,i=${upload.control.i},`);
+	expect(after).toContain(getPlaceholder(1, 1));
+	expect(findPlaceholder(terminal, 1, 1)).toBe(Number(upload.control.i));
+});
+
+test("an image stays in pixels in the scrollback when the document seals", async () => {
+	const {dom, terminal, output} = await mount(`<img src="${BANDS}">`);
+	await loaded(dom);
+	const [upload] = readUploads(output());
+	const mark = output().length;
+	dom.document.close();
+	await settle();
+	const after = output().slice(mark);
+	expect(after).not.toContain(`a=d,d=I,i=${upload.control.i},`);
+	expect(after).toContain(getPlaceholder(1, 1));
+	expect(findPlaceholder(terminal, 1, 1)).toBe(Number(upload.control.i));
+	dom.dispose();
+});
+
+test("dispose frees the images the page no longer shows", async () => {
+	const {dom, output} = await mount(`<img id="i" src="${BANDS}"><p>a</p>`);
+	await loaded(dom);
+	const [upload] = readUploads(output());
+	dom.document.getElementById("i")!.remove();
+	await nextFrame(dom);
 	await dom.dispose();
 	expect(output()).toContain(`\x1b_Ga=d,d=I,i=${upload.control.i},q=2\x1b\\`);
+});
+
+test("an image that loads after the last frame is sent with what dispose writes, as it is", async () => {
+	const {dom, terminal, output} = await mount("<p>a</p>");
+	const image = dom.document.createElement("img");
+	image.src = BANDS;
+	dom.document.body.append(image);
+	await image.decode();
+	expect(readUploads(output())).toEqual([]);
+	await dom.dispose();
+	const [upload, ...rest] = readUploads(output());
+	expect(rest).toEqual([]);
+	expect(upload.control.o).toBe(undefined);
+	expect(upload.control).toMatchObject({c: "2", r: "2"});
+	expect(findPlaceholder(terminal, 1, 1)).toBe(Number(upload.control.i));
 });
 
 test("a resized box sends the image again at the new size", async () => {
@@ -526,10 +592,12 @@ test("a frame whose images are encoding when dispose runs is not written", async
 		held.release();
 		await disposed;
 		await settle();
+		// What dispose writes goes out, without the frame it cut short.
 		const after = output().slice(mark);
 		expect(after).toContain(`\x1b_Ga=d,d=I,i=${before.control.i},q=2\x1b\\`);
-		expect(readUploads(after)).toEqual([]);
-		expect(after).not.toContain(PLACEHOLDER);
+		expect(after).not.toContain(FRAME_START);
+		expect(readUploads(after).map((upload) => upload.control.o))
+			.toEqual([undefined]);
 	} finally {
 		held.restore();
 	}
@@ -547,8 +615,9 @@ test("a frame whose images are encoding when the document seals is not written",
 		held.release();
 		await settle();
 		const after = output().slice(mark);
-		expect(readUploads(after)).toEqual([]);
-		expect(after).not.toContain(PLACEHOLDER);
+		expect(after).not.toContain(FRAME_START);
+		expect(readUploads(after).map((upload) => upload.control.o))
+			.toEqual([undefined]);
 	} finally {
 		held.restore();
 		dom.dispose();
@@ -589,27 +658,21 @@ test("a frame whose images are encoding when the session suspends is drawn whole
 		held.release();
 		await settle();
 		const away = output().slice(mark);
-		expect(readUploads(away)).toEqual([]);
-		expect(away).not.toContain(PLACEHOLDER);
+		expect(away).not.toContain(FRAME_START);
+		expect(readUploads(away).map((upload) => upload.control.o))
+			.toEqual([undefined]);
 		held.restore();
 		resume();
-		await until(() => readUploads(output().slice(mark)).length > 0);
-		const [upload] = readUploads(output().slice(mark));
+		const resumed = () =>
+			readUploads(output().slice(mark)).filter((upload) => upload.control.o);
+		await until(() => resumed().length > 0);
+		const [upload] = resumed();
 		expect(upload.control).toMatchObject({c: "4", r: "4"});
 		// The suspend sealed the page above, so the page starts again below.
-		const last = () => {
-			const buffer = (terminal as any).terminal.buffer.active;
-			for (let row = buffer.length - 1; row >= 0; row--) {
-				if (
-					buffer.getLine(row).getCell(3).getChars() === getPlaceholder(3, 3)
-				) {
-					return buffer.getLine(row).getCell(3).getFgColor() as number;
-				}
-			}
-			return -1;
-		};
-		await until(() => last() !== -1);
-		expect(last()).toBe(Number(upload.control.i));
+		await until(() =>
+			findPlaceholder(terminal, 3, 3) === Number(upload.control.i),
+		);
+		expect(findPlaceholder(terminal, 3, 3)).toBe(Number(upload.control.i));
 	} finally {
 		held.restore();
 		await dom.dispose();

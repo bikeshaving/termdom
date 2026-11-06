@@ -111,6 +111,7 @@ import {
 	forgetKittyImages,
 	KittyImages,
 	takeKittyOutput,
+	takeKittyUploads,
 } from "./internal/kitty.ts";
 import {
 	checkLayoutFromScratch,
@@ -1821,7 +1822,11 @@ function flushDocument(termDOM: TermDOM): void {
 	}
 
 	const top = termDOMSlots.framebuffer.documentTop;
-	const output = renderStatic(termDOM, "\r\n");
+	// Images drawn in pixels stay in pixels in the scrollback.
+	const graphics = termDOMSlots.framebuffer.colorDepth === "rgb"
+		? termDOMSlots.framebuffer.graphics
+		: null;
+	const output = renderStatic(termDOM, "\r\n", graphics);
 	if (!output) {
 		return;
 	}
@@ -1831,18 +1836,37 @@ function flushDocument(termDOM: TermDOM): void {
 	// fully erased screen into the scrollback, which put the document there
 	// twice.
 	void cursorToRow(termDOMSlots.exchange, top + 1);
+	if (graphics !== null) {
+		const uploads = takeKittyUploads(graphics);
+		if (uploads) {
+			void termDOMSlots.exchange.write(uploads);
+		}
+	}
 	void writeLines(termDOMSlots.exchange, output);
 	void eraseBelow(termDOMSlots.exchange);
+	if (graphics !== null) {
+		const deletes = forgetKittyImages(graphics, graphics.frame);
+		if (deletes) {
+			void termDOMSlots.exchange.write(deletes);
+		}
+	}
 }
 
 /** The document as ANSI: colors and line breaks, no cursor controls, no modes. */
-function renderStatic(termDOM: TermDOM, lineEnding: "\n" | "\r\n"): string {
+function renderStatic(
+	termDOM: TermDOM,
+	lineEnding: "\n" | "\r\n",
+	graphics: KittyImages | null = null,
+): string {
 	flushLayout(termDOM.document);
 	const termDOMSlots = _(termDOM);
 	return termDOMSlots.framebuffer.renderStatic(
 		termDOMSlots.layout.documentPaintHeight(),
 		lineEnding,
-		(context) => paint(termDOMSlots.painter, context),
+		(context) => {
+			context.graphics = graphics;
+			paint(termDOMSlots.painter, context);
+		},
 	);
 }
 

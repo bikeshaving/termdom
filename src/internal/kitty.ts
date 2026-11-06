@@ -274,9 +274,12 @@ export async function takeKittyOutput(
 	for (const entry of images.byKey) {
 		const image = entry[1];
 		if (image.pixels !== null) {
+			// Kept until encoded, so a flush in the wait still sends them.
 			const pixels = image.pixels;
-			image.pixels = null;
-			out += await encodeImage(image, pixels);
+			out += await encodeCompressed(image, pixels);
+			if (image.pixels === pixels) {
+				image.pixels = null;
+			}
 		} else if (image.seen < frame) {
 			unshown.push(entry);
 			unshownBytes += image.width * image.height * 4;
@@ -311,30 +314,58 @@ export function wrapForTmux(escapes: string): string {
 }
 
 /**
+ * The images placed since the last frame, for output that cannot wait
+ * on a compressor: their pixels as they are.
+ */
+export function takeKittyUploads(images: KittyImages): string {
+	let out = "";
+	for (const image of images.byKey.values()) {
+		if (image.pixels !== null) {
+			out += encodeImage(image, image.pixels, false);
+			image.pixels = null;
+		}
+	}
+	return images.passthrough ? wrapForTmux(out) : out;
+}
+
+/**
  * The deletes of the images the terminal holds, which the next frame
  * that names them sends again. A terminal keeps a screen's images apart
- * from the other screen's.
+ * from the other screen's. The images painted at frame `kept` stay with
+ * the rows that show them, which were written to the scrollback, and are
+ * forgotten without a delete.
  */
-export function forgetKittyImages(images: KittyImages): string {
+export function forgetKittyImages(images: KittyImages, kept = -1): string {
 	let out = "";
-	for (const id of images.byId.keys()) {
-		out += `\x1b_Ga=d,d=I,i=${id},q=2\x1b\\`;
+	for (const image of images.byId.values()) {
+		if (image.seen !== kept) {
+			out += `\x1b_Ga=d,d=I,i=${image.id},q=2\x1b\\`;
+		}
 	}
 	images.byKey.clear();
 	images.byId.clear();
 	return images.passthrough ? wrapForTmux(out) : out;
 }
 
-// Transmit and place virtually, at once: zlib-compressed RGBA in base64,
-// chunked. q=2 keeps the terminal from answering.
-async function encodeImage(
+// A runtime with no CompressionStream, such as isolated-vm, sends the
+// pixels as they are.
+async function encodeCompressed(
 	image: KittyImage,
 	pixels: Uint8ClampedArray,
 ): Promise<string> {
-	// A runtime with no CompressionStream, such as isolated-vm, sends the
-	// pixels as they are.
-	const compressed = typeof CompressionStream === "function";
-	const payload = toBase64(compressed ? await deflate(pixels) : pixels);
+	return typeof CompressionStream === "function"
+		? encodeImage(image, await deflate(pixels), true)
+		: encodeImage(image, pixels, false);
+}
+
+// Transmit and place virtually, at once: RGBA in base64, zlib-compressed
+// when `compressed`, chunked. q=2 keeps the terminal from answering.
+function encodeImage(
+	image: KittyImage,
+	bytes: Uint8Array | Uint8ClampedArray,
+	compressed: boolean,
+): string {
+	const payload = toBase64(bytes);
 	const control =
 		`a=T,U=1,q=2,f=32,${compressed ? "o=z," : ""}` +
 		`s=${image.width},v=${image.height},` +
