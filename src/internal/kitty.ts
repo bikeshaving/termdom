@@ -163,7 +163,14 @@ const UNSHOWN_BUDGET = 32 << 20;
 // An escape's payload is sent in chunks of at most this many bytes.
 const CHUNK_SIZE = 4096;
 
-interface KittyImage {
+/**
+ * The most pixels an image sent to the terminal holds, 64 MB of RGBA. A
+ * box that needs more draws in half blocks instead.
+ */
+export const MAX_KITTY_PIXELS = 1 << 24;
+
+/** An image the terminal holds, or is about to be sent. */
+export interface KittyImage {
 	id: number;
 	width: number;
 	height: number;
@@ -173,8 +180,12 @@ interface KittyImage {
 	version: number;
 	// Until it is sent.
 	pixels: Uint8ClampedArray | null;
+	// Its transmission, compressed from `pixels` ahead of the frame.
+	encoded: {pixels: Uint8ClampedArray; escapes: string} | null;
 	// The frame that last painted it or found it on the screen.
 	seen: number;
+	// The placeholder cells that name it, over the background they had.
+	cells: {under: number | null; grid: CellGrid} | null;
 }
 
 /** The images one screen has sent, and which of its elements send them. */
@@ -201,13 +212,16 @@ export class KittyImages {
 		this.byKey = new Map();
 		this.byId = new Map();
 		this.retired = [];
-		this.nextId = 1;
+		// Another program, another tmux pane or an earlier run may have
+		// left images in the terminal, which it keeps by id, so the ids
+		// start at random.
+		this.nextId = 1 + Math.floor(Math.random() * MAX_ID);
 		this.frame = 0;
 	}
 }
 
 /**
- * The id of the image `key` names, `width` by `height` pixels shown over
+ * The image `key` names, `width` by `height` pixels shown over
  * `cols` by `rows` cells. A key not seen before takes a new id, and
  * `draw` makes its pixels, which go out before the next frame. A key
  * seen at another `version` takes a new id too: a terminal replacing an
@@ -221,12 +235,12 @@ export function placeKittyImage(
 	version: number,
 	size: {width: number; height: number; cols: number; rows: number},
 	draw: () => Uint8ClampedArray,
-): number {
+): KittyImage {
 	const existing = images.byKey.get(key);
 	if (existing !== undefined) {
 		existing.seen = images.frame;
 		if (existing.version === version) {
-			return existing.id;
+			return existing;
 		}
 		images.retired.push({image: existing, frame: images.frame});
 	}
@@ -240,11 +254,50 @@ export function placeKittyImage(
 		id,
 		version,
 		pixels: draw(),
+		encoded: null,
 		seen: images.frame,
+		cells: null,
 	};
 	images.byKey.set(key, image);
 	images.byId.set(id, image);
-	return id;
+	return image;
+}
+
+/** Whether images placed since the last frame are still to be sent. */
+export function hasKittyUploads(images: KittyImages): boolean {
+	for (const image of images.byKey.values()) {
+		if (image.pixels !== null) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Compresses the images placed since the last frame, side by side, for
+ * the frame to send. A runtime with no CompressionStream, such as
+ * isolated-vm, sends the pixels as they are.
+ */
+export async function compressKittyUploads(images: KittyImages): Promise<void> {
+	if (typeof CompressionStream !== "function") {
+		return;
+	}
+	const pending: KittyImage[] = [];
+	for (const image of images.byKey.values()) {
+		if (image.pixels !== null && image.encoded?.pixels !== image.pixels) {
+			pending.push(image);
+		}
+	}
+	await Promise.all(
+		pending.map(async (image) => {
+			const pixels = image.pixels!;
+			const escapes = encodeImage(image, await deflate(pixels), true);
+			// A flush in the wait may have sent them already.
+			if (image.pixels === pixels) {
+				image.encoded = {pixels, escapes};
+			}
+		}),
+	);
 }
 
 /**
@@ -252,10 +305,10 @@ export function placeKittyImage(
  * last one, and the deletes of those `screen`, the frame's cells, no
  * longer shows, past the budget, oldest first.
  */
-export async function takeKittyOutput(
+export function takeKittyOutput(
 	images: KittyImages,
 	screen: CellGrid | null,
-): Promise<string> {
+): string {
 	const frame = images.frame++;
 	if (images.byId.size === 0) {
 		return "";
@@ -271,19 +324,12 @@ export async function takeKittyOutput(
 			}
 		}
 	}
-	let out = "";
+	let out = uploadImages(images);
 	const unshown: Array<[string, KittyImage]> = [];
 	let unshownBytes = 0;
 	for (const entry of images.byKey) {
 		const image = entry[1];
-		if (image.pixels !== null) {
-			// Kept until encoded, so a flush in the wait still sends them.
-			const pixels = image.pixels;
-			out += await encodeCompressed(image, pixels);
-			if (image.pixels === pixels) {
-				image.pixels = null;
-			}
-		} else if (image.seen < frame) {
+		if (image.seen < frame) {
 			unshown.push(entry);
 			unshownBytes += image.width * image.height * 4;
 		}
@@ -329,17 +375,27 @@ export function wrapForTmux(escapes: string): string {
 
 /**
  * The images placed since the last frame, for output that cannot wait
- * on a compressor: their pixels as they are.
+ * on a compressor: as compressed ahead of it, or their pixels as they
+ * are.
  */
 export function takeKittyUploads(images: KittyImages): string {
+	const out = uploadImages(images);
+	return images.passthrough ? wrapForTmux(out) : out;
+}
+
+function uploadImages(images: KittyImages): string {
 	let out = "";
 	for (const image of images.byKey.values()) {
-		if (image.pixels !== null) {
-			out += encodeImage(image, image.pixels, false);
+		const pixels = image.pixels;
+		if (pixels !== null) {
+			out += image.encoded?.pixels === pixels
+				? image.encoded.escapes
+				: encodeImage(image, pixels, false);
 			image.pixels = null;
+			image.encoded = null;
 		}
 	}
-	return images.passthrough ? wrapForTmux(out) : out;
+	return out;
 }
 
 /**
@@ -360,17 +416,6 @@ export function forgetKittyImages(images: KittyImages, kept = -1): string {
 	images.byId.clear();
 	images.retired = [];
 	return images.passthrough ? wrapForTmux(out) : out;
-}
-
-// A runtime with no CompressionStream, such as isolated-vm, sends the
-// pixels as they are.
-async function encodeCompressed(
-	image: KittyImage,
-	pixels: Uint8ClampedArray,
-): Promise<string> {
-	return typeof CompressionStream === "function"
-		? encodeImage(image, await deflate(pixels), true)
-		: encodeImage(image, pixels, false);
 }
 
 // Transmit and place virtually, at once: RGBA in base64, zlib-compressed

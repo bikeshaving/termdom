@@ -112,6 +112,7 @@ function settle(ms = 50): Promise<void> {
 // end a session while a frame's images encode.
 function holdCompression(): {
 	started: Promise<void>;
+	count: () => number;
 	release: () => void;
 	restore: () => void;
 } {
@@ -121,6 +122,7 @@ function holdCompression(): {
 	const startedPromise = new Promise<void>((resolve) => (started = resolve));
 	let release!: () => void;
 	const gate = new Promise<void>((resolve) => (release = resolve));
+	let count = 0;
 	global.CompressionStream = class {
 		readable: ReadableStream<Uint8Array>;
 		writable: WritableStream<BufferSource>;
@@ -130,11 +132,13 @@ function holdCompression(): {
 			this.readable = real.readable.pipeThrough(
 				new TransformStream<Uint8Array, Uint8Array>({start: () => gate}),
 			);
+			count++;
 			started();
 		}
 	} as unknown as typeof CompressionStream;
 	return {
 		started: startedPromise,
+		count: () => count,
 		release,
 		restore: () => {
 			global.CompressionStream = Real;
@@ -331,21 +335,6 @@ test("dispose frees the images the page no longer shows", async () => {
 	await nextFrame(dom);
 	await dom.dispose();
 	expect(output()).toContain(`\x1b_Ga=d,d=I,i=${upload.control.i},q=2\x1b\\`);
-});
-
-test("an image that loads after the last frame is sent with what dispose writes, as it is", async () => {
-	const {dom, terminal, output} = await mount("<p>a</p>");
-	const image = dom.document.createElement("img");
-	image.src = BANDS;
-	dom.document.body.append(image);
-	await image.decode();
-	expect(readUploads(output())).toEqual([]);
-	await dom.dispose();
-	const [upload, ...rest] = readUploads(output());
-	expect(rest).toEqual([]);
-	expect(upload.control.o).toBe(undefined);
-	expect(upload.control).toMatchObject({c: "2", r: "2"});
-	expect(findPlaceholder(terminal, 1, 1)).toBe(Number(upload.control.i));
 });
 
 test("a resized box sends the image again at the new size", async () => {
@@ -593,7 +582,7 @@ test("\"kitty\" in tmux sends its images through tmux", async () => {
 });
 
 test("a frame whose images are encoding when dispose runs is not written", async () => {
-	const {dom, output} = await mount(`<img id="i" src="${BANDS}">`);
+	const {dom, terminal, output} = await mount(`<img id="i" src="${BANDS}">`);
 	await loaded(dom);
 	const [before] = readUploads(output());
 	const held = holdCompression();
@@ -609,8 +598,11 @@ test("a frame whose images are encoding when dispose runs is not written", async
 		const after = output().slice(mark);
 		expect(after).toContain(`\x1b_Ga=d,d=I,i=${before.control.i},q=2\x1b\\`);
 		expect(after).not.toContain(FRAME_START);
-		expect(readUploads(after).map((upload) => upload.control.o))
-			.toEqual([undefined]);
+		// The image the cut frame placed goes out as it is, and stays with
+		// the rows that show it.
+		const uploads = readUploads(after);
+		expect(uploads.map((upload) => upload.control.o)).toEqual([undefined]);
+		expect(findPlaceholder(terminal, 3, 3)).toBe(Number(uploads[0].control.i));
 	} finally {
 		held.restore();
 	}
@@ -631,6 +623,27 @@ test("a frame whose images are encoding when the document seals is not written",
 		expect(after).not.toContain(FRAME_START);
 		expect(readUploads(after).map((upload) => upload.control.o))
 			.toEqual([undefined]);
+	} finally {
+		held.restore();
+		dom.dispose();
+	}
+});
+
+test("a frame whose images are encoding when the terminal resizes is not written", async () => {
+	const {dom, terminal, output} = await mount(`<img id="i" src="${BANDS}">`);
+	await loaded(dom);
+	const held = holdCompression();
+	try {
+		dom.document.getElementById("i")!.style.width = "4px";
+		await held.started;
+		terminal.resize(30, 12);
+		(terminal as any).emit("SIGWINCH");
+		await until(() => dom.window.innerWidth === 30);
+		const mark = output().length;
+		held.release();
+		await settle(200);
+		// The resize draws its own frame, and that is the only one.
+		expect(output().slice(mark).split(FRAME_START).length - 1).toBe(1);
 	} finally {
 		held.restore();
 		dom.dispose();
@@ -697,13 +710,13 @@ test("text in the color of an image's id does not keep the image", async () => {
 	// 64 MB of pixels, past what the terminal may keep of unshown images.
 	const size = {width: 4096, height: 4096, cols: 1, rows: 1};
 	const draw = () => new Uint8ClampedArray(4);
-	const dropped = placeKittyImage(images, "dropped", 0, size, draw);
+	const dropped = placeKittyImage(images, "dropped", 0, size, draw).id;
 	await takeKittyOutput(images, null);
 	const screen = new CellGrid(1, 2);
 	screen.setCell(0, "a", {fg: toCellColor(dropped)});
 	expect(await takeKittyOutput(images, screen))
 		.toContain(`\x1b_Ga=d,d=I,i=${dropped},q=2\x1b\\`);
-	const kept = placeKittyImage(images, "kept", 0, size, draw);
+	const kept = placeKittyImage(images, "kept", 0, size, draw).id;
 	await takeKittyOutput(images, null);
 	screen.setPlaceholder(1, 0, 0, {fg: toCellColor(kept)});
 	expect(await takeKittyOutput(images, screen)).not.toContain(`i=${kept},`);
@@ -752,5 +765,69 @@ test("images and canvas each take their own setting and protocol", async () => {
 	await nextFrame(dom);
 	expect(readUploads(output()).length).toBe(1);
 	expect(output()).toContain("gone");
+	dom.dispose();
+});
+
+test("each session's image ids start somewhere else", () => {
+	const size = {width: 1, height: 1, cols: 1, rows: 1};
+	const ids = new Set(
+		Array.from({length: 4}, () =>
+			placeKittyImage(
+				new KittyImages(() => ({width: 8, height: 16})),
+				"a",
+				0,
+				size,
+				() => new Uint8ClampedArray(4),
+			).id,
+		),
+	);
+	expect(ids.size).toBeGreaterThan(1);
+});
+
+test("the images of one frame are compressed side by side", async () => {
+	const {dom, output} = await mount(
+		"<canvas id=\"a\" width=\"16\" height=\"32\"></canvas>" +
+			"<canvas id=\"b\" width=\"16\" height=\"32\"></canvas>",
+		{canvas: "kitty"},
+	);
+	const held = holdCompression();
+	try {
+		for (const id of ["a", "b"]) {
+			const canvas = dom.document.getElementById(id) as HTMLCanvasElement;
+			const context = canvas.getContext("2d")!;
+			context.fillStyle = "red";
+			context.fillRect(0, 0, 16, 32);
+		}
+		await until(() => held.count() === 2);
+		expect(held.count()).toBe(2);
+		held.release();
+		await nextFrame(dom);
+		await until(() => readUploads(output()).length === 2);
+		expect(readUploads(output()).length).toBe(2);
+	} finally {
+		held.restore();
+		dom.dispose();
+	}
+});
+
+test("a box whose image would hold more than 64 MB of pixels draws in cells", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	// 20 by 40 pixels a cell: 150 by 150 cells is 3000 by 6000 pixels.
+	scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;40;20t"}]);
+	const output = captureRawOutput(terminal);
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		csp: "img-src data:",
+		colorDepth: "rgb",
+		devicePixelRatio: 1,
+		images: "kitty",
+	});
+	await dom.attach();
+	dom.document.body.innerHTML =
+		`<img src="${BANDS}" style="width: 150px; height: 150px">`;
+	await nextFrame(dom);
+	await loaded(dom);
+	expect(readUploads(output())).toEqual([]);
+	expect(cell(terminal, 0, 0).char).not.toBe(getPlaceholder(0, 0));
 	dom.dispose();
 });

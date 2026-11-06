@@ -33,10 +33,11 @@ once, at the terminal's own pixel resolution, and its box is painted
 with kitty's Unicode placeholder characters. The placeholders are
 still cells, so an image clips, stacks under other boxes, and scrolls
 like one drawn in half blocks. The protocol needs 24-bit color, and
-it can't number a box more than 297 cells across or down. Those
-images, and every image in a terminal without the protocol, are drawn
-in cells. Each frame a canvas draws is sent again, replacing the
-last one.
+it can't number a box more than 297 cells across or down. TermDOM
+also sends no image larger than 2^24 pixels (64 MB). Those images,
+and every image in a terminal without the protocol, are drawn in
+cells. Each frame a canvas draws is sent as a new image, and the
+last one is deleted once the screen no longer shows it.
 
 Inside tmux, `"auto"` draws the first frame in cells, then asks the
 terminal tmux runs in, through tmux. If that terminal supports the
