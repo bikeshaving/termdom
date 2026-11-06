@@ -480,12 +480,17 @@ test("\"cells\" asks the terminal nothing", async () => {
 
 test("\"auto\" in a tmux that drops passthrough does not hold the first frame", async () => {
 	const started = performance.now();
+	// The questions asked through tmux go nowhere, and the wait for them
+	// is a second.
 	const {dom, terminal, output} = await mount(`<img src="${BANDS}">`, {
 		images: "auto",
-		replies: [{ask: VERSION_QUERY, reply: TMUX_VERSION}],
+		replies: [
+			{ask: wrapForTmux(KITTY_QUERY), reply: null},
+			{ask: wrapForTmux(VERSION_QUERY), reply: null},
+			{ask: wrapForTmux("\x1b[>c"), reply: null},
+			{ask: VERSION_QUERY, reply: TMUX_VERSION},
+		],
 	});
-	// The questions asked through tmux go unanswered until their wait,
-	// a second, runs out.
 	expect(performance.now() - started).toBeLessThan(1000);
 	expect(output()).toContain(wrapForTmux(KITTY_QUERY));
 	await loaded(dom);
@@ -527,6 +532,26 @@ test("a frame whose images are encoding when dispose runs is not written", async
 		expect(after).not.toContain(PLACEHOLDER);
 	} finally {
 		held.restore();
+	}
+});
+
+test("a frame whose images are encoding when the document seals is not written", async () => {
+	const {dom, output} = await mount(`<img id="i" src="${BANDS}">`);
+	await loaded(dom);
+	const held = holdCompression();
+	try {
+		dom.document.getElementById("i")!.style.width = "4px";
+		await held.started;
+		const mark = output().length;
+		dom.document.close();
+		held.release();
+		await settle();
+		const after = output().slice(mark);
+		expect(readUploads(after)).toEqual([]);
+		expect(after).not.toContain(PLACEHOLDER);
+	} finally {
+		held.restore();
+		dom.dispose();
 	}
 });
 
