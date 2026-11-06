@@ -676,6 +676,32 @@ test("a listener object's handleEvent is looked up at every dispatch", () => {
 
 /* ---------------------------------------------------------------- events */
 
+test("window.event is the event a listener is handling, outside shadow trees", () => {
+	const document = make();
+	const window = document.defaultView;
+	const outer = document.body.appendChild(document.createElement("div"));
+	const host = document.body.appendChild(document.createElement("div"));
+	const inner = host.attachShadow({mode: "open"})
+		.appendChild(document.createElement("span"));
+	const ping = new DOMEvent("ping");
+	const pong = new DOMEvent("pong", {composed: true, bubbles: true});
+	const seen: unknown[] = [];
+	outer.addEventListener("ping", () => {
+		seen.push(window.event === ping);
+		inner.dispatchEvent(pong);
+		seen.push(window.event === ping);
+	});
+	inner.addEventListener("pong", () => seen.push(window.event));
+	host.addEventListener("pong", () => seen.push(window.event === pong));
+	expect(window.event).toBe(undefined);
+	outer.dispatchEvent(ping);
+	expect(seen).toEqual([true, ping, true, true]);
+	expect(window.event).toBe(undefined);
+	window.event = "replaced";
+	outer.dispatchEvent(ping);
+	expect(window.event).toBe("replaced");
+});
+
 test("an event here is the runtime's too, and the runtime's dispatch as copies", () => {
 	const event = new DOMEvent("ping");
 	expect(event instanceof globalThis.Event).toBe(true);
