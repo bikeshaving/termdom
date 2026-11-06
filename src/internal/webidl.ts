@@ -148,9 +148,22 @@ function isInstance(value: unknown, check: Check): boolean {
 		!check.types.some((t) => value instanceof t);
 }
 
-function arity(context: string, required: number, count: number): TypeError {
+// What a failed call was doing, for its message: running `name` on the
+// interface `owner`, or constructing `name` when there is no owner.
+function describeCall(name: string, owner: string | null): string {
+	return owner === null
+		? `construct '${name}'`
+		: `execute '${name}' on '${owner}'`;
+}
+
+function arity(
+	name: string,
+	owner: string | null,
+	required: number,
+	count: number,
+): TypeError {
 	return new TypeError(
-		`Failed to ${context}: ${required} argument${
+		`Failed to ${describeCall(name, owner)}: ${required} argument${
 			required === 1 ? "" : "s"
 		} required, but only ${count} present.`,
 	);
@@ -166,7 +179,8 @@ function convertValue(
 	check: Check,
 	index: number,
 	required: number,
-	context: string,
+	name: string,
+	owner: string | null,
 ): unknown {
 	if (
 		(value === undefined && index >= required) ||
@@ -177,7 +191,7 @@ function convertValue(
 	if (check.callback) {
 		if (typeof value !== "function") {
 			throw new TypeError(
-				`Failed to ${context}: parameter ${index + 1} is not of type 'Function'.`,
+				`Failed to ${describeCall(name, owner)}: parameter ${index + 1} is not of type 'Function'.`,
 			);
 		}
 		return value;
@@ -192,7 +206,7 @@ function convertValue(
 			: value;
 	}
 	throw new TypeError(
-		`Failed to ${context}: parameter ${index + 1} is not of type '${check.label}'.`,
+		`Failed to ${describeCall(name, owner)}: parameter ${index + 1} is not of type '${check.label}'.`,
 	);
 }
 
@@ -201,7 +215,8 @@ function convertValue(
 function convertArguments(
 	args: ArrayLike<unknown>,
 	member: Member,
-	context: string,
+	name: string,
+	owner: string | null,
 ): unknown[] | null {
 	let converted: unknown[] | null = null;
 	const {checks} = member;
@@ -211,7 +226,7 @@ function convertArguments(
 		if (check == null) {
 			continue;
 		}
-		const value = convertValue(args[i], check, i, member.required, context);
+		const value = convertValue(args[i], check, i, member.required, name, owner);
 		if (value !== args[i]) {
 			converted ??= Array.from(args);
 			converted[i] = value;
@@ -255,6 +270,37 @@ interface Resolve {
 	leave(): void;
 }
 
+// An operation's call once its object is branded: its arguments
+// converted, then the definition the object's class runs.
+function runOperation(
+	object: unknown,
+	type: Constructor,
+	args: ArrayLike<unknown>,
+	member: Member,
+	name: string,
+	ownerName: string,
+	resolve: Resolve,
+): unknown {
+	const converted = convertArguments(args, member, name, ownerName) ?? args;
+	const fixed = resolve.fixed?.value as Operation | undefined;
+	if (fixed !== undefined) {
+		return Reflect.apply(fixed, object, converted);
+	}
+	if (resolve.direct !== undefined) {
+		return Reflect.apply(
+			resolve.direct(type)!.value as Operation,
+			object,
+			converted,
+		);
+	}
+	const implementation = resolve.enter(type, object)!.value as Operation;
+	try {
+		return Reflect.apply(implementation, object, converted);
+	} finally {
+		resolve.leave();
+	}
+}
+
 function wrapOperation(
 	owner: Constructor,
 	ownerName: string,
@@ -262,49 +308,32 @@ function wrapOperation(
 	member: Member,
 	resolve: Resolve,
 ): (...args: unknown[]) => unknown {
-	const context = `execute '${name}' on '${ownerName}'`;
 	const {required, checks} = member;
 	const fixed = resolve.fixed?.value as Operation | undefined;
 	const direct = resolve.direct;
 	const cache: ClassCache = {accepted: null, acceptedBefore: null};
 	listClassCache(cache);
-	const brand = (object: unknown): Constructor => {
-		const type = acceptClass(cache, owner, object);
-		if (type === null) {
-			throw new TypeError("Illegal invocation");
-		}
-		return type;
-	};
-	const run =
-		(object: unknown, type: Constructor, args: ArrayLike<unknown>) => {
-			const converted = convertArguments(args, member, context) ?? args;
-			if (fixed !== undefined) {
-				return Reflect.apply(fixed, object, converted);
-			}
-			if (direct !== undefined) {
-				return Reflect.apply(
-					direct(type)!.value as Operation,
-					object,
-					converted,
-				);
-			}
-			const implementation = resolve.enter(type, object)!.value as Operation;
-			try {
-				return Reflect.apply(implementation, object, converted);
-			} finally {
-				resolve.leave();
-			}
-		};
 	let wrapper: Operation;
 	if (member.variadic || checks.length > 3) {
 		wrapper = {
 			[name](this: unknown): unknown {
-				const type = brand(this);
-				if (arguments.length < required) {
-					throw arity(context, required, arguments.length);
+				const type = acceptClass(cache, owner, this);
+				if (type === null) {
+					throw new TypeError("Illegal invocation");
 				}
-				// eslint-disable-next-line prefer-rest-params
-				return run(this, type, arguments);
+				if (arguments.length < required) {
+					throw arity(name, ownerName, required, arguments.length);
+				}
+				return runOperation(
+					this,
+					type,
+					// eslint-disable-next-line prefer-rest-params
+					arguments,
+					member,
+					name,
+					ownerName,
+					resolve,
+				);
 			},
 		}[name];
 	} else {
@@ -312,19 +341,22 @@ function wrapOperation(
 		const [first, second, third] = checks;
 		wrapper = {
 			[name](this: unknown, a?: unknown, b?: unknown, c?: unknown): unknown {
-				const type = brand(this);
+				const type = acceptClass(cache, owner, this);
+				if (type === null) {
+					throw new TypeError("Illegal invocation");
+				}
 				const count = arguments.length;
 				if (count < required) {
-					throw arity(context, required, count);
+					throw arity(name, ownerName, required, count);
 				}
 				if (count > 0 && first != null) {
-					a = convertValue(a, first, 0, required, context);
+					a = convertValue(a, first, 0, required, name, ownerName);
 				}
 				if (count > 1 && second != null) {
-					b = convertValue(b, second, 1, required, context);
+					b = convertValue(b, second, 1, required, name, ownerName);
 				}
 				if (count > 2 && third != null) {
-					c = convertValue(c, third, 2, required, context);
+					c = convertValue(c, third, 2, required, name, ownerName);
 				}
 				let implementation = fixed;
 				if (implementation === undefined && direct !== undefined) {
@@ -337,7 +369,7 @@ function wrapOperation(
 						args.push(arguments[i]);
 					}
 					return implementation === undefined
-						? run(this, type, args)
+						? runOperation(this, type, args, member, name, ownerName, resolve)
 						: Reflect.apply(implementation, this, args);
 				}
 				switch (count) {
@@ -1297,16 +1329,15 @@ export function windowMember(
 			? implementation as (...args: unknown[]) => unknown
 			: bindToRealm(realm, implementation as (...args: unknown[]) => unknown);
 	}
-	const context = `execute '${name}' on 'Window'`;
 	const wrapper = {
 		[name](this: unknown, ...args: unknown[]): unknown {
 			if (this != null && this !== window) {
 				throw new TypeError("Illegal invocation");
 			}
 			if (args.length < member.required) {
-				throw arity(context, member.required, args.length);
+				throw arity(name, "Window", member.required, args.length);
 			}
-			const converted = convertArguments(args, member, context);
+			const converted = convertArguments(args, member, name, "Window");
 			return Reflect.apply(implementation, window, converted ?? args);
 		},
 	}[name];
@@ -1341,7 +1372,6 @@ function createInterfaceObject(
 ): Constructor {
 	const idl = DOM_INTERFACES[name];
 	const signature = parseMember(idl.constructorArguments ?? "o0", classes);
-	const context = `construct '${name}'`;
 	const object = function (this: unknown, ...args: unknown[]): unknown {
 		if (new.target === undefined) {
 			throw new TypeError(
@@ -1355,9 +1385,9 @@ function createInterfaceObject(
 			throw new TypeError(`Failed to construct '${name}': Illegal constructor`);
 		}
 		if (args.length < signature.required) {
-			throw arity(context, signature.required, args.length);
+			throw arity(name, null, signature.required, args.length);
 		}
-		const converted = convertArguments(args, signature, context) ?? args;
+		const converted = convertArguments(args, signature, name, null) ?? args;
 		const target = new.target;
 		return realm === null
 			? Reflect.construct(type, converted, target)
