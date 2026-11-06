@@ -6336,13 +6336,14 @@ function invokeListeners(
 		return;
 	}
 	const listeners = own.slice();
-	const found = innerInvoke(event, listeners, capturing);
+	const inShadowTree = struct.invocationTargetInShadowTree;
+	const found = innerInvoke(event, listeners, capturing, inShadowTree);
 	if (!found && state.trusted) {
 		const legacyType = LEGACY_EVENT_TYPES.get(event.type);
 		if (legacyType !== undefined) {
 			const originalType = event.type;
 			setEventType(event, legacyType);
-			innerInvoke(event, listeners, capturing);
+			innerInvoke(event, listeners, capturing, inShadowTree);
 			setEventType(event, originalType);
 		}
 	}
@@ -6355,6 +6356,7 @@ function innerInvoke(
 	event: Event,
 	listeners: Listener[],
 	capturing: boolean,
+	inShadowTree: boolean,
 ): boolean {
 	const state = _(event).state;
 	let found = false;
@@ -6380,6 +6382,14 @@ function innerInvoke(
 		if (listener.passive) {
 			state.inPassiveListener = true;
 		}
+		const global = getListenerWindow(
+			listener.callback,
+			state.currentTarget as EventTarget,
+		);
+		const currentEvent = global === null ? undefined : _(global).currentEvent;
+		if (global !== null && !inShadowTree) {
+			_(global).currentEvent = event;
+		}
 		try {
 			callListener(listener.callback, state.currentTarget, event);
 		} catch (error) {
@@ -6390,12 +6400,32 @@ function innerInvoke(
 					: getEventTargetDocument(state.currentTarget),
 			);
 		}
+		if (global !== null) {
+			_(global).currentEvent = currentEvent;
+		}
 		state.inPassiveListener = false;
 		if (state.stopImmediate) {
 			break;
 		}
 	}
 	return found;
+}
+
+// The window whose `event` a listener sees: its own realm's, or for a
+// listener made in the engine's realm, the window of the target's
+// document, or of the document bare constructors make nodes in when the
+// target has none.
+function getListenerWindow(
+	callback: unknown,
+	target: EventTarget,
+): Window | null {
+	const realm = getFunctionRealm(callback);
+	const document = realm === null
+		? getEventTargetDocument(target) ?? getAmbientDocument()
+		: realm.document as Document | null;
+	return document === null
+		? null
+		: _(document).extra.defaultView as Window | null;
 }
 
 function getSessionExchange(target: EventTarget): EventTarget | null {
@@ -6413,9 +6443,9 @@ function deliverToSession(exchange: EventTarget, event: Event): void {
 	const state = _(event).state;
 	state.currentTarget = exchange;
 	const listeners = _(exchange).listeners.slice();
-	innerInvoke(event, listeners, true);
+	innerInvoke(event, listeners, true, false);
 	state.stopImmediate = false;
-	innerInvoke(event, listeners, false);
+	innerInvoke(event, listeners, false, false);
 	state.stopImmediate = false;
 	state.currentTarget = null;
 }
@@ -41643,6 +41673,9 @@ export interface WindowSlots extends EventTargetSlots {
 	// "in error reporting mode" has it, rather than firing another without
 	// end.
 	reportingError?: boolean;
+	// The event a listener of this window's realm is handling now, which
+	// `window.event` answers.
+	currentEvent?: Event;
 	timers?: Map<number, ReturnType<typeof setTimeout>>;
 	processTimers?: Record<string, unknown>;
 	// The tasks the engine queued for the window, such as a message on its
@@ -42081,7 +42114,18 @@ export class Window extends EventTarget {
 	}
 
 	get event(): globalThis.Event | undefined {
-		return undefined;
+		return _(this).currentEvent;
+	}
+
+	// [Replaceable]: an assignment puts a data property on the window in
+	// the getter's place.
+	set event(value: unknown) {
+		Object.defineProperty(this, "event", {
+			value,
+			writable: true,
+			enumerable: true,
+			configurable: true,
+		});
 	}
 
 	get external(): globalThis.External {
