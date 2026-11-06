@@ -7722,6 +7722,22 @@ function invalidateHasAnchors(
 		(rules) => rules.hasStylesSiblings,
 	);
 	const anchors = new Set<Element>();
+	const visit = (element: Element): void => {
+		if (anchors.has(element) || !couldAnchorHas(cascade, element)) {
+			return;
+		}
+		anchors.add(element);
+		if (hasAnswersChanged(cascade, element)) {
+			invalidateOnce(cascade, batch, element);
+			for (
+				let later = stylesSiblings ? element.nextElementSibling : null;
+				later !== null;
+				later = later.nextElementSibling
+			) {
+				invalidateOnce(cascade, batch, later);
+			}
+		}
+	};
 	for (const mutation of mutations) {
 		const start = getNodeType(mutation.target) === ELEMENT_NODE
 			? (mutation.target as Element)
@@ -7736,19 +7752,22 @@ function invalidateHasAnchors(
 				element !== null;
 				element = siblings ? element.previousElementSibling : null
 			) {
-				if (!anchors.has(element) && couldAnchorHas(cascade, element)) {
-					anchors.add(element);
-					if (hasAnswersChanged(cascade, element)) {
-						invalidateOnce(cascade, batch, element);
-						for (
-							let later = stylesSiblings ? element.nextElementSibling : null;
-							later !== null;
-							later = later.nextElementSibling
-						) {
-							invalidateOnce(cascade, batch, later);
-						}
-					}
-				}
+				visit(element);
+			}
+		}
+		// A child that comes or goes changes what :has(+ x) and :has(~ x)
+		// answer on the children before it.
+		if (siblings && mutation.type === "childList") {
+			let before = mutation.previousSibling;
+			while (before !== null && getNodeType(before) !== ELEMENT_NODE) {
+				before = before.previousSibling;
+			}
+			for (
+				let element = before as Element | null;
+				element !== null;
+				element = element.previousElementSibling
+			) {
+				visit(element);
 			}
 		}
 	}
