@@ -322,6 +322,11 @@ for (const [name, extension] of Object.entries(TYPE_GRAMMARS)) {
 interface TokenBuffers {
 	offsetAndType: Uint32Array | null;
 	balance: Uint32Array | null;
+	tokenStart: number;
+	getFirstListNode(list: unknown): {loc: Span} | null;
+	getLastListNode(list: unknown): {loc: Span} | null;
+	getLocation(start: number, end: number): Span | null;
+	getLocationFromList(list: unknown): Span | null;
 }
 
 const parser = (
@@ -356,11 +361,33 @@ const tokenBuffers = (
 	) => TokenBuffers
 )("", {context: "tokenBuffers"});
 
+// A node's position is read for its offsets alone, so a parse with
+// positions records those and skips css-tree's line and column table,
+// which it builds over the whole text.
+let recordsOffsets = false;
+tokenBuffers.getLocation = (start, end) =>
+	recordsOffsets ? {start: {offset: start}, end: {offset: end}} : null;
+tokenBuffers.getLocationFromList = function (
+	this: TokenBuffers,
+	list: unknown,
+): Span | null {
+	if (!recordsOffsets) {
+		return null;
+	}
+	const head = this.getFirstListNode(list);
+	const tail = this.getLastListNode(list);
+	return {
+		start: {offset: head === null ? this.tokenStart : head.loc.start.offset},
+		end: {offset: tail === null ? this.tokenStart : tail.loc.end.offset},
+	};
+};
+
 /**
  * Parses CSS text. Selectors, values and preludes never reach a block,
  * so they read as css-tree's default syntax reads them.
  */
 export function parse(text: string, options?: ParseOptions): CSSTreeNode {
+	recordsOffsets = options?.positions === true;
 	try {
 		return parser.parse(text, options);
 	} finally {
