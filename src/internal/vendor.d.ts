@@ -6,15 +6,6 @@
  * widen the declaration here rather than casting at the call site.
  */
 
-declare module "linebreak" {
-
-	/** UAX #14 line breaking. */
-	export default class LineBreaker {
-		constructor(text: string);
-		nextBreak(): {position: number; required: boolean} | null;
-	}
-}
-
 declare module "css-tree/dist/csstree.esm";
 
 declare module "webidl2" {
