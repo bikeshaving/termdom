@@ -12012,18 +12012,31 @@ function getWrittenCompounds(
 }
 
 function getPseudoClassNames(nested: CompiledCompound[]): string[] {
-	return nested.flatMap((compound) =>
-		compound.pseudoClasses.map((pseudoClass) => pseudoClass.name));
+	const names: string[] = [];
+	for (const compound of nested) {
+		for (const pseudoClass of compound.pseudoClasses) {
+			names.push(pseudoClass.name);
+		}
+	}
+	return names;
 }
 
 // The class, id and attribute keys the compounds name, as `.name`,
 // `#name` and `[name]`.
 function getNamedKeys(nested: CompiledCompound[]): string[] {
-	return nested.flatMap((compound) => [
-		...compound.classes.map((name) => `.${name}`),
-		...compound.ids.map((name) => `#${name}`),
-		...compound.attributes.map((name) => `[${name}]`),
-	]);
+	const keys: string[] = [];
+	for (const compound of nested) {
+		for (const name of compound.classes) {
+			keys.push(`.${name}`);
+		}
+		for (const name of compound.ids) {
+			keys.push(`#${name}`);
+		}
+		for (const name of compound.attributes) {
+			keys.push(`[${name}]`);
+		}
+	}
+	return keys;
 }
 
 // Whether an argument holds a combinator, and so describes elements
@@ -12052,9 +12065,13 @@ function describesAnyElement(nested: CompiledCompound[]): boolean {
 // Whether matching compound `index` reads the element's siblings or
 // children: it follows a sibling combinator, or tests a tree-structural
 // pseudo-class or :empty, or holds an argument with a sibling combinator.
-function testsSiblings(complex: CompiledComplex, index: number): boolean {
+function testsSiblings(
+	complex: CompiledComplex,
+	index: number,
+	nested: CompiledCompound[],
+): boolean {
 	return isSiblingCombinator(complex.combinators[index - 1]) ||
-		getWrittenCompounds(complex, index).some((compound) =>
+		nested.some((compound) =>
 			compound.pseudoClasses.some((pseudoClass) =>
 				STRUCTURAL_PSEUDO_CLASS.test(pseudoClass.name) ||
 				pseudoClass.args.some((argument) =>
@@ -12202,33 +12219,44 @@ function getSiblingRequiredKeys(compound: CompiledCompound): string[] {
 function indexReachingKeys(
 	cascade: Cascade,
 	complex: CompiledComplex,
+	compounds: CompiledCompound[][],
+	written: CompiledCompound[],
+	names: string[],
 	declarations: Record<string, string>,
 	scope: Node | undefined,
 ): void {
 	let inherits = false;
 	let blockifies = false;
+	let paintsOnly = true;
 	for (const property in declarations) {
 		// `display` is not inherited but reaches descendants anyway. A flex
 		// container isBlockified its children (css-display-3 §2.7).
 		if (property === "display") {
 			blockifies = true;
-		} else if (property === "all" || CSSValues.isInheritedProperty(property)) {
+		} else if (
+			!inherits &&
+			(property === "all" || CSSValues.isInheritedProperty(property))
+		) {
 			inherits = true;
+		}
+		if (paintsOnly && !PAINT_ONLY_PROPERTIES.has(property)) {
+			paintsOnly = false;
 		}
 	}
 	const subjectInherits = inherits;
 	inherits ||= blockifies;
-	const compounds = complex.compounds.map((_, index) =>
-		getWrittenCompounds(complex, index));
-	const siblingTested = compounds.map((_, index) =>
-		testsSiblings(complex, index));
-	const precedesSibling = compounds.map((_, index) =>
-		isSiblingCombinator(complex.combinators[index]));
-	const names = getPseudoClassNames(compounds.flat());
-	if (siblingTested.includes(true)) {
+	const count = compounds.length;
+	const siblingTested: boolean[] = [];
+	let testsAnySiblings = false;
+	for (let i = 0; i < count; i++) {
+		const tested = testsSiblings(complex, i, compounds[i]);
+		siblingTested.push(tested);
+		testsAnySiblings ||= tested;
+	}
+	if (testsAnySiblings) {
 		const index = getOrCreateSiblingRuleIndex(cascade, scope);
 		index.reachesSiblings = true;
-		if (compounds.flat().some((compound) =>
+		if (written.some((compound) =>
 			compound.pseudoClasses.some((pseudoClass) =>
 				pseudoClass.name.startsWith("nth-") && pseudoClass.args.length > 0))) {
 			index.anchorsUniversal = true;
@@ -12238,10 +12266,11 @@ function indexReachingKeys(
 		if (complex.compounds.some(holdsSiblingArgument)) {
 			index.anchorsUniversal = true;
 		}
-		for (const [i, nested] of compounds.entries()) {
-			if (!precedesSibling[i]) {
+		for (let i = 0; i < count; i++) {
+			if (!isSiblingCombinator(complex.combinators[i])) {
 				continue;
 			}
+			const nested = compounds[i];
 			if (
 				describesAnyElement(nested) || getPseudoClassNames(nested).length > 0
 			) {
@@ -12251,61 +12280,73 @@ function indexReachingKeys(
 				index.anchorKeys.add(key);
 			}
 		}
+		const countsFromEnd =
+			names.some((name) =>
+				/^(?:last-|only-|nth-last-)/.test(name)) || written.some((compound) =>
+				compound.pseudoClasses.some((pseudoClass) =>
+					pseudoClass.name === "has" && pseudoClass.args.some((argument) =>
+						argument.combinators.some(isSiblingCombinator))));
+		for (let i = 0; i < count; i++) {
+			if (!siblingTested[i]) {
+				continue;
+			}
+			const nested = compounds[i];
+			addSiblingKeys(index.tested, complex, nested, i);
+			if (i < count - 1 || inherits) {
+				addSiblingKeys(index.descendants, complex, nested, i);
+			}
+			if (countsFromEnd) {
+				addSiblingKeys(index.fromEnd, complex, nested, i);
+			}
+		}
 	}
-	const countsFromEnd =
-		names.some((name) =>
-			/^(?:last-|only-|nth-last-)/.test(name)) ||
-		compounds.flat().some((compound) =>
-			compound.pseudoClasses.some((pseudoClass) =>
-				pseudoClass.name === "has" && pseudoClass.args.some((argument) =>
-					argument.combinators.some(isSiblingCombinator))));
-	for (const [i, nested] of compounds.entries()) {
-		if (!siblingTested[i]) {
+	// A key reads as paint-only until a rule testing it declares more.
+	if (!paintsOnly) {
+		for (const key of getNamedKeys(written)) {
+			cascade.summary.keyPaintsOnly.set(key, false);
+		}
+	}
+	const last = inherits ? count : count - 1;
+	const compoundNames: string[][] = [];
+	for (let i = 0; i < count; i++) {
+		const nested = compounds[i];
+		const nestedNames = names.length === 0
+			? names
+			: getPseudoClassNames(nested);
+		compoundNames.push(nestedNames);
+		if (nestedNames.length === 0) {
 			continue;
 		}
-		const index = getOrCreateSiblingRuleIndex(cascade, scope);
-		addSiblingKeys(index.tested, complex, nested, i);
-		if (i < compounds.length - 1 || inherits) {
-			addSiblingKeys(index.descendants, complex, nested, i);
-		}
-		if (countsFromEnd) {
-			addSiblingKeys(index.fromEnd, complex, nested, i);
-		}
-	}
-	const paintsOnly = Object.keys(declarations).every((name) =>
-		PAINT_ONLY_PROPERTIES.has(name));
-	for (const key of getNamedKeys(compounds.flat())) {
-		cascade.summary.keyPaintsOnly.set(
-			key,
-			paintsOnly && (cascade.summary.keyPaintsOnly.get(key) ?? true),
-		);
-	}
-	const last = inherits ? compounds.length : compounds.length - 1;
-	for (const [i, nested] of compounds.entries()) {
 		// A compound with a combinator inside an argument describes other
 		// elements too, so what it tests can reach anywhere, from anyone.
 		const inner = writesNestedCombinator(nested);
 		const anchor = getStateAnchor(nested);
-		for (const name of getPseudoClassNames(nested)) {
+		for (const name of nestedNames) {
 			if (i < last || inner) {
 				addStateAnchor(cascade.summary.descendantPseudoClasses, name, anchor);
 			}
-			if (precedesSibling[i] || inner) {
+			if (isSiblingCombinator(complex.combinators[i]) || inner) {
 				addStateAnchor(cascade.summary.siblingPseudoClasses, name, anchor);
 			}
 		}
 	}
-	const subject = getStateAnchor(compounds[compounds.length - 1]);
-	const reach = subjectInherits || subject.anyElement
-		? null
-		: {...subject, children: blockifies};
+	let reach: StateAnchor | null | undefined;
 	for (let i = 0; i < last; i++) {
 		const nested = compounds[i];
 		for (const compound of nested) {
+			if (
+				reach === undefined &&
+				(compound.classes.length > 0 || compound.attributes.length > 0)
+			) {
+				const subject = getStateAnchor(compounds[count - 1]);
+				reach = subjectInherits || subject.anyElement
+					? null
+					: {...subject, children: blockifies};
+			}
 			for (const name of compound.classes) {
 				cascade.summary.reachingClasses.add(name);
 				const subjects = cascade.summary.classSubjects.get(name);
-				if (reach === null || subjects === null) {
+				if (reach == null || subjects === null) {
 					cascade.summary.classSubjects.set(name, null);
 				} else if (subjects === undefined) {
 					cascade.summary.classSubjects.set(name, [reach]);
@@ -12317,12 +12358,10 @@ function indexReachingKeys(
 				cascade.summary.reachingIds.add(name);
 			}
 			for (const name of compound.attributes) {
-				addReachingAttribute(cascade, nested, name, reach);
+				addReachingAttribute(cascade, nested, name, reach ?? null);
 			}
 		}
-		if (
-			getPseudoClassNames(nested).some((name) => STATE_PSEUDO_CLASSES.has(name))
-		) {
+		if (compoundNames[i].some((name) => STATE_PSEUDO_CLASSES.has(name))) {
 			cascade.summary.reachingStates = true;
 		}
 	}
@@ -12391,12 +12430,12 @@ function attributeReaches(
 function indexPseudoContentKeys(
 	cascade: Cascade,
 	complex: CompiledComplex,
+	compounds: CompiledCompound[][],
+	written: CompiledCompound[],
 	declarations: Record<string, string>,
 	scoped: boolean,
 ): void {
 	const summary = cascade.summary;
-	const compounds = complex.compounds.map((_, index) =>
-		getWrittenCompounds(complex, index));
 	let keys: string[] | undefined;
 	for (const property in declarations) {
 		const custom = property.startsWith("--");
@@ -12406,7 +12445,7 @@ function indexPseudoContentKeys(
 			? [property]
 			: [];
 		for (const input of inputs) {
-			keys ??= getNamedKeys(compounds.flat());
+			keys ??= getNamedKeys(written);
 			addInputKeys(summary, input, scoped ? null : keys);
 		}
 		if (custom) {
@@ -12601,11 +12640,10 @@ function parseSelector(
 	// ancestor sweep only for documents that need it.
 	const rules = getScopeRules(cascade, scope);
 	noteHasRules(cascade, rules, complex);
-	const pseudoClasses = getPseudoClassNames(
-		complex.compounds.flatMap((_, index) =>
-			getWrittenCompounds(complex, index),
-		),
-	);
+	const compounds = complex.compounds.map((_, index) =>
+		getWrittenCompounds(complex, index));
+	const written = compounds.flat();
+	const pseudoClasses = getPseudoClassNames(written);
 	if (pseudoClasses.includes("hover")) {
 		rules.hover = true;
 	}
@@ -12614,10 +12652,20 @@ function parseSelector(
 		scopes = context.scopes;
 		cascade.summary.scopedRulesExist = true;
 	}
-	indexReachingKeys(cascade, complex, block.declarations, scope);
+	indexReachingKeys(
+		cascade,
+		complex,
+		compounds,
+		written,
+		pseudoClasses,
+		block.declarations,
+		scope,
+	);
 	indexPseudoContentKeys(
 		cascade,
 		complex,
+		compounds,
+		written,
 		block.declarations,
 		context.scopes.length > 0,
 	);
