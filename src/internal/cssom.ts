@@ -7125,11 +7125,12 @@ interface RuleSummary {
 	// rules declaring an inherited property. Collected loosely. A false
 	// positive only widens the invalidation.
 	reachingClasses: Set<string>;
-	// Whether every property the rules declare is paint, by each class, id
-	// and attribute their selectors test, as `.name`, `#name` and `[name]`.
-	// A change to a key whose properties are all paint decides nothing
+	// The classes, ids and attributes tested by a rule that declares more
+	// than paint. A change to a key none of these name decides nothing
 	// layout reads.
-	keyPaintsOnly: Map<string, boolean>;
+	classesBeyondPaint: Set<string>;
+	idsBeyondPaint: Set<string>;
+	attributesBeyondPaint: Set<string>;
 	reachingIds: Set<string>;
 	reachingAttributes: Set<string>;
 	// For an attribute tested on a compound whose element its keys tell,
@@ -7189,7 +7190,9 @@ function createRuleSummary(): RuleSummary {
 		siblingRuleIndexes: new Map(),
 		uaSiblingRuleIndex: undefined,
 		reachingClasses: new Set(),
-		keyPaintsOnly: new Map(),
+		classesBeyondPaint: new Set(),
+		idsBeyondPaint: new Set(),
+		attributesBeyondPaint: new Set(),
 		reachingIds: new Set(),
 		reachingAttributes: new Set(),
 		attributeReaches: new Map(),
@@ -8332,9 +8335,10 @@ function noteHasRules(
 	const compounds = after === null
 		? complex.compounds
 		: [...complex.compounds, after];
-	for (const [index, compound] of compounds.entries()) {
-		const names = getPseudoClassNames(getNestedCompounds(compound));
+	for (let index = 0; index < compounds.length; index++) {
+		const compound = compounds[index];
 		if (compound.pseudoClasses.some(({name}) => name === "has")) {
+			const names = getPseudoClassNames(getNestedCompounds(compound));
 			const next = complex.combinators[
 				complex.combinators.length === complex.compounds.length
 					? index + 1
@@ -10997,7 +11001,7 @@ function isPaintOnlyChange(
 	) {
 		return false;
 	}
-	if (!keyPaintsOnly(cascade, `[${name}]`)) {
+	if (cascade.summary.attributesBeyondPaint.has(name)) {
 		return false;
 	}
 	if (name === "class") {
@@ -11021,15 +11025,11 @@ function isPaintOnlyChange(
 }
 
 function classPaintsOnly(cascade: Cascade, token: string): boolean {
-	return token === "" || keyPaintsOnly(cascade, `.${token}`);
+	return token === "" || !cascade.summary.classesBeyondPaint.has(token);
 }
 
 function idPaintsOnly(cascade: Cascade, id: string | null): boolean {
-	return id === null || id === "" || keyPaintsOnly(cascade, `#${id}`);
-}
-
-function keyPaintsOnly(cascade: Cascade, key: string): boolean {
-	return cascade.summary.keyPaintsOnly.get(key) ?? true;
+	return id === null || id === "" || !cascade.summary.idsBeyondPaint.has(id);
 }
 
 // The list's padding-left is a function of its items' markers and
@@ -12300,10 +12300,18 @@ function indexReachingKeys(
 			}
 		}
 	}
-	// A key reads as paint-only until a rule testing it declares more.
 	if (!paintsOnly) {
-		for (const key of getNamedKeys(written)) {
-			cascade.summary.keyPaintsOnly.set(key, false);
+		const summary = cascade.summary;
+		for (const compound of written) {
+			for (const name of compound.classes) {
+				summary.classesBeyondPaint.add(name);
+			}
+			for (const name of compound.ids) {
+				summary.idsBeyondPaint.add(name);
+			}
+			for (const name of compound.attributes) {
+				summary.attributesBeyondPaint.add(name);
+			}
 		}
 	}
 	const last = inherits ? count : count - 1;
@@ -12640,9 +12648,13 @@ function parseSelector(
 	// ancestor sweep only for documents that need it.
 	const rules = getScopeRules(cascade, scope);
 	noteHasRules(cascade, rules, complex);
-	const compounds = complex.compounds.map((_, index) =>
-		getWrittenCompounds(complex, index));
-	const written = compounds.flat();
+	const compounds: CompiledCompound[][] = [];
+	const written: CompiledCompound[] = [];
+	for (let index = 0; index < complex.compounds.length; index++) {
+		const nested = getWrittenCompounds(complex, index);
+		compounds.push(nested);
+		written.push(...nested);
+	}
 	const pseudoClasses = getPseudoClassNames(written);
 	if (pseudoClasses.includes("hover")) {
 		rules.hover = true;
