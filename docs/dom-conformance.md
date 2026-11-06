@@ -17,14 +17,19 @@ uncaught errors to the window as error and unhandledrejection events.
 It supplies no behavior of its own, and no frame documents, so tests
 that need them fail.
 
+`window` and `self` are the engine window, the one event paths end at,
+but the runtime's global is a separate object. A global `var` is not a
+property of `window`, and a property set on `window` is not a bare name
+in a handler attribute's code, so the few tests that rely on either fail.
+
 - Test files in the suites: 1249
 - Reference tests (no testharness, scored by pixels): 59
 - Excluded, each with its reason below: 238
 - Optional-feature subtests reporting unsupported: 6
-- Files whose harness completed: 834
-- Files whose harness did not complete: 118
-- Subtests passed: 95796
-- Subtests failed: 1462
+- Files whose harness completed: 855
+- Files whose harness did not complete: 97
+- Subtests passed: 96387
+- Subtests failed: 1391
 
 ## Exclusions
 
@@ -444,7 +449,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/Node-cloneNode-XMLDocument.html | OK | 1 | 0 |
 | dom/nodes/Node-cloneNode-document-allow-declarative-shadow-roots.window.js | OK | 0 | 1 |
 | dom/nodes/Node-cloneNode-document-with-doctype.html | OK | 3 | 0 |
-| dom/nodes/Node-cloneNode-external-stylesheet-no-bc.sub.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/nodes/Node-cloneNode-external-stylesheet-no-bc.sub.html | OK | 1 | 0 |
 | dom/nodes/Node-cloneNode-parser-created-names.html | OK | 2 | 0 |
 | dom/nodes/Node-cloneNode-svg.html | OK | 4 | 0 |
 | dom/nodes/Node-cloneNode.html | OK | 135 | 0 |
@@ -465,7 +470,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/Node-parentElement.html | OK | 12 | 0 |
 | dom/nodes/Node-parentNode-iframe.html | REFTEST | 0 | 0 |
 | dom/nodes/Node-parentNode.html | EXCLUDED (requires-browsing-context: a frame's document element parentage) | 0 | 0 |
-| dom/nodes/Node-properties.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/nodes/Node-properties.html | OK | 726 | 0 |
 | dom/nodes/Node-removeChild.html | OK | 19 | 9 |
 | dom/nodes/Node-replaceChild.html | OK | 29 | 0 |
 | dom/nodes/Node-textContent.html | OK | 81 | 0 |
@@ -473,10 +478,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/NodeList-live-mutations.window.js | OK | 4 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-3.html | OK | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-3.html | ERROR (Illegal invocation) | 0 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-2.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | OK | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | ERROR (Illegal invocation) | 0 | 0 |
 | dom/nodes/NonDocumentTypeChildNode-sibling-element.html | OK | 6 | 0 |
 | dom/nodes/ParentNode-append.html | OK | 25 | 0 |
 | dom/nodes/ParentNode-children.html | OK | 1 | 0 |
@@ -568,7 +573,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/insertion-removing-steps/script-does-not-run-on-child-removal.window.js | EXCLUDED (requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies) | 0 | 0 |
 | dom/nodes/live-collections-batched-mutations.window.js | OK | 2 | 0 |
 | dom/nodes/moveBefore/Node-moveBefore.html | OK | 32 | 0 |
-| dom/nodes/moveBefore/child-style-preserve.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/nodes/moveBefore/child-style-preserve.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/continue-css-animation-left.html | TIMEOUT | 0 | 1 |
 | dom/nodes/moveBefore/continue-css-animation-transform.html | TIMEOUT | 0 | 1 |
 | dom/nodes/moveBefore/continue-css-transition-left-pseudo.html | OK | 1 | 0 |
@@ -595,14 +600,14 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/moveBefore/modal-dialog.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-as-flex-item.html | REFTEST | 0 | 0 |
 | dom/nodes/moveBefore/moveBefore-dir.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-from-light-to-shadow.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/nodes/moveBefore/moveBefore-from-light-to-shadow.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-id-map.html | OK | 3 | 1 |
 | dom/nodes/moveBefore/moveBefore-lang.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-name-map.html | OK | 2 | 1 |
 | dom/nodes/moveBefore/moveBefore-nodeiterator.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-option-recalc-style.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-selector-matching.html | OK | 1 | 0 |
-| dom/nodes/moveBefore/moveBefore-shadow-inside.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/nodes/moveBefore/moveBefore-shadow-inside.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-shadow-root.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/moveBefore-size-query.html | OK | 1 | 0 |
 | dom/nodes/moveBefore/mutation-observer.html | OK | 2 | 0 |
@@ -639,8 +644,8 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/nodes/querySelector-mixed-case.html | OK | 1 | 0 |
 | dom/nodes/remove-and-adopt-thcrash.html | EXCLUDED (requires-browsing-context: adoption into a frame's document) | 0 | 0 |
 | dom/nodes/remove-from-shadow-host-and-adopt-into-iframe.html | EXCLUDED (requires-browsing-context: the node is adopted into a frame's document) | 0 | 0 |
-| dom/nodes/remove-next-sibling-during-replace-with.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
-| dom/nodes/remove-unscopable.html | OK | 6 | 0 |
+| dom/nodes/remove-next-sibling-during-replace-with.html | OK | 0 | 1 |
+| dom/nodes/remove-unscopable.html | ERROR | 0 | 6 |
 | dom/nodes/rootNode.html | OK | 5 | 0 |
 | dom/nodes/svg-template-querySelector.html | OK | 3 | 0 |
 | dom/traversal/NodeFilter-constants.html | OK | 2 | 0 |
@@ -680,44 +685,44 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/events/AddEventListenerOptions-once.any.js | OK | 4 | 0 |
 | dom/events/AddEventListenerOptions-passive.any.js | OK | 5 | 0 |
 | dom/events/AddEventListenerOptions-signal.any.js | OK | 11 | 0 |
-| dom/events/Body-FrameSet-Event-Handlers.html | OK | 30 | 18 |
+| dom/events/Body-FrameSet-Event-Handlers.html | OK | 48 | 0 |
 | dom/events/CustomEvent.html | OK | 3 | 0 |
 | dom/events/Event-cancelBubble.html | OK | 7 | 1 |
 | dom/events/Event-constants.html | OK | 4 | 0 |
-| dom/events/Event-constructors.any.js | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/events/Event-constructors.any.js | OK | 14 | 0 |
 | dom/events/Event-defaultPrevented-after-dispatch.html | OK | 2 | 0 |
 | dom/events/Event-defaultPrevented.html | OK | 8 | 0 |
 | dom/events/Event-dispatch-bubble-canceled.html | OK | 1 | 0 |
-| dom/events/Event-dispatch-bubbles-false.html | OK | 4 | 1 |
-| dom/events/Event-dispatch-bubbles-true.html | OK | 4 | 1 |
+| dom/events/Event-dispatch-bubbles-false.html | OK | 5 | 0 |
+| dom/events/Event-dispatch-bubbles-true.html | OK | 5 | 0 |
 | dom/events/Event-dispatch-click.html | TIMEOUT | 28 | 5 |
 | dom/events/Event-dispatch-click.tentative.html | OK | 4 | 2 |
 | dom/events/Event-dispatch-detached-click.html | OK | 2 | 0 |
 | dom/events/Event-dispatch-detached-input-and-change.html | OK | 12 | 0 |
-| dom/events/Event-dispatch-handlers-changed.html | OK | 0 | 1 |
-| dom/events/Event-dispatch-listener-order.window.js | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
-| dom/events/Event-dispatch-multiple-cancelBubble.html | OK | 0 | 1 |
-| dom/events/Event-dispatch-multiple-stopPropagation.html | OK | 0 | 1 |
-| dom/events/Event-dispatch-omitted-capture.html | OK | 0 | 1 |
+| dom/events/Event-dispatch-handlers-changed.html | OK | 1 | 0 |
+| dom/events/Event-dispatch-listener-order.window.js | OK | 1 | 0 |
+| dom/events/Event-dispatch-multiple-cancelBubble.html | OK | 1 | 0 |
+| dom/events/Event-dispatch-multiple-stopPropagation.html | OK | 1 | 0 |
+| dom/events/Event-dispatch-omitted-capture.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-on-disabled-elements.html | TIMEOUT | 5 | 4 |
 | dom/events/Event-dispatch-order-at-target.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-order.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-other-document.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-propagation-stopped.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-redispatch.html | OK | 3 | 1 |
-| dom/events/Event-dispatch-reenter.html | OK | 0 | 1 |
-| dom/events/Event-dispatch-single-activation-behavior.html | OK | 102 | 30 |
-| dom/events/Event-dispatch-target-moved.html | OK | 0 | 1 |
-| dom/events/Event-dispatch-target-removed.html | OK | 0 | 1 |
+| dom/events/Event-dispatch-reenter.html | OK | 1 | 0 |
+| dom/events/Event-dispatch-single-activation-behavior.html | OK | 124 | 8 |
+| dom/events/Event-dispatch-target-moved.html | OK | 1 | 0 |
+| dom/events/Event-dispatch-target-removed.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-throwing-multiple-globals.html | EXCLUDED (requires-browsing-context: which global an error event is fired at, across frames) | 0 | 0 |
-| dom/events/Event-dispatch-throwing.html | OK | 0 | 2 |
-| dom/events/Event-init-while-dispatching.html | OK | 4 | 1 |
+| dom/events/Event-dispatch-throwing.html | OK | 2 | 0 |
+| dom/events/Event-init-while-dispatching.html | OK | 5 | 0 |
 | dom/events/Event-initEvent.html | OK | 11 | 1 |
-| dom/events/Event-isTrusted.any.js | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/events/Event-isTrusted.any.js | OK | 1 | 0 |
 | dom/events/Event-propagation.html | OK | 7 | 0 |
 | dom/events/Event-returnValue.html | OK | 7 | 0 |
 | dom/events/Event-stopImmediatePropagation.html | OK | 1 | 0 |
-| dom/events/Event-stopPropagation-cancel-bubbling.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/events/Event-stopPropagation-cancel-bubbling.html | OK | 1 | 0 |
 | dom/events/Event-subclasses-constructors.html | OK | 43 | 6 |
 | dom/events/Event-timestamp-cross-realm-getter.html | OK | 1 | 0 |
 | dom/events/Event-timestamp-high-resolution.html | OK | 4 | 0 |
@@ -748,17 +753,17 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/events/click-on-absolute-pseudo.html | OK | 0 | 1 |
 | dom/events/element-click.html | OK | 3 | 0 |
 | dom/events/event-disabled-dynamic.html | OK | 1 | 0 |
-| dom/events/event-global-event-targets.html | OK | 0 | 5 |
+| dom/events/event-global-event-targets.html | OK | 2 | 3 |
 | dom/events/event-global-extra.window.js | EXCLUDED (requires-browsing-context: window.event across frames) | 0 | 0 |
-| dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | TIMEOUT | 0 | 0 |
-| dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | TIMEOUT | 0 | 1 |
-| dom/events/event-global-replaceable.html | OK | 0 | 2 |
-| dom/events/event-global-set-before-handleEvent-lookup.window.js | OK | 0 | 1 |
-| dom/events/event-global.html | OK | 1 | 7 |
+| dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | OK | 0 | 1 |
+| dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | OK | 0 | 1 |
+| dom/events/event-global-replaceable.html | OK | 2 | 0 |
+| dom/events/event-global-set-before-handleEvent-lookup.window.js | OK | 1 | 0 |
+| dom/events/event-global.html | OK | 7 | 1 |
 | dom/events/event-handler-attribute-replace-preserves-passive.html | OK | 2 | 0 |
 | dom/events/event-src-element-nullable.html | OK | 1 | 0 |
-| dom/events/focus-event-document-move.html | ERROR | 1 | 0 |
-| dom/events/handler-count.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/events/focus-event-document-move.html | ERROR | 0 | 1 |
+| dom/events/handler-count.html | ERROR | 0 | 2 |
 | dom/events/label-default-action.html | OK | 1 | 0 |
 | dom/events/legacy-pre-activation-behavior.window.js | OK | 1 | 0 |
 | dom/events/mouse-event-retarget.html | OK | 1 | 0 |
@@ -813,7 +818,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/events/remove-all-listeners.html | OK | 2 | 0 |
 | dom/events/scrolling/iframe-chains.html | OK | 0 | 1 |
 | dom/events/scrolling/input-text-scroll-event-when-using-arrow-keys.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | TIMEOUT | 0 | 2 |
 | dom/events/scrolling/save-iframe-scroll-offset-when-display-none.sub.html | REFTEST | 0 | 0 |
 | dom/events/scrolling/scroll-cross-origin-iframes.html | TIMEOUT | 0 | 1 |
 | dom/events/scrolling/scroll-cross-origin-iframes.sub.html | REFTEST | 0 | 0 |
@@ -821,44 +826,44 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/events/scrolling/scroll-event-fired-to-iframe.html | OK | 2 | 2 |
 | dom/events/scrolling/scroll-event-not-fired-on-ancestor-style-change.html | OK | 1 | 0 |
 | dom/events/scrolling/scroll-events-fired-once-per-frame-across-display-none.html | OK | 1 | 1 |
-| dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html | TIMEOUT | 0 | 1 |
 | dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html | TIMEOUT | 0 | 1 |
 | dom/events/scrolling/scrollend-event-fired-after-sequence-of-scrolls.tentative.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-after-snap.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-for-mandatory-snap-point-after-load.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-to-document.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-to-element-with-overscroll-behavior.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fired-to-window.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fires-for-repeat-key-ending-after-scroll-container-end-is-reached.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-fires-on-visual-viewport.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-fires-on-visual-viewport.html | ERROR | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fires-to-iframe-inner-frame.html | REFTEST | 0 | 0 |
 | dom/events/scrolling/scrollend-event-fires-to-iframe-window.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-for-user-scroll.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-handler-content-attributes.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/scrollend-event-not-fired-after-removing-scroller.tentative.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html | TIMEOUT | 0 | 0 |
+| dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html | OK | 1 | 3 |
 | dom/events/scrolling/scrollend-fires-to-text-input.html | OK | 5 | 0 |
 | dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html | OK | 0 | 1 |
 | dom/events/scrolling/visibility-hidden-scrolls.html | OK | 0 | 2 |
 | dom/events/scrolling/wheel-event-composed.html | ERROR | 0 | 1 |
-| dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html | TIMEOUT | 0 | 0 |
-| dom/events/scrolling/wheel-event-transactions-basic.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html | OK | 0 | 1 |
+| dom/events/scrolling/wheel-event-transactions-basic.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html | TIMEOUT | 0 | 1 |
-| dom/events/scrolling/wheel-event-transactions-target-display-change.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/events/scrolling/wheel-event-transactions-target-display-change.html | TIMEOUT | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-elements.html | OK | 0 | 1 |
 | dom/events/scrolling/wheel-event-transactions-target-move.html | TIMEOUT | 0 | 1 |
 | dom/events/scrolling/wheel-event-transactions-target-removal.html | TIMEOUT | 0 | 1 |
-| dom/events/scrolling/wheel-event-transactions-target-resize.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| dom/events/scrolling/wheel-event-transactions-target-resize.html | TIMEOUT | 0 | 0 |
 | dom/events/shadow-relatedTarget.html | OK | 2 | 0 |
 | dom/events/webkit-animation-end-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-iteration-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-start-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
-| dom/events/webkit-transition-end-event.html | OK | 7 | 6 |
-| dom/events/window-composed-path.html | ERROR | 1 | 0 |
-| dom/events/window-event-restored-after-throwing-onerror.html | OK | 0 | 1 |
+| dom/events/webkit-transition-end-event.html | OK | 13 | 0 |
+| dom/events/window-composed-path.html | OK | 1 | 0 |
+| dom/events/window-event-restored-after-throwing-onerror.html | OK | 1 | 0 |
 | dom/ranges/Range-adopt-test.html | OK | 4 | 0 |
 | dom/ranges/Range-attribute-nodes.html | OK | 26 | 0 |
 | dom/ranges/Range-attributes.html | OK | 1 | 0 |
@@ -902,7 +907,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | dom/ranges/Range-mutations-replaceChild.html | OK | 60 | 0 |
 | dom/ranges/Range-mutations-replaceData.html | OK | 1146 | 0 |
 | dom/ranges/Range-mutations-splitText.html | OK | 116 | 0 |
-| dom/ranges/Range-selectNode.html | OK | 296 | 0 |
+| dom/ranges/Range-selectNode.html | ERROR (Cannot read properties of undefined (reading 'nodeType')) | 0 | 0 |
 | dom/ranges/Range-set.html | OK | 10920 | 0 |
 | dom/ranges/Range-stringifier.html | OK | 5 | 0 |
 | dom/ranges/Range-surroundContents.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
@@ -943,10 +948,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | selection/addRange-48.html | OK | 232 | 0 |
 | selection/addRange-52.html | OK | 232 | 0 |
 | selection/addRange-56.html | OK | 116 | 0 |
-| selection/addRange.tentative.html | TIMEOUT | 0 | 0 |
+| selection/addRange.tentative.html | OK | 1 | 0 |
 | selection/anchor-removal.html | OK | 2 | 0 |
 | selection/anonymous/details-ancestor.html | OK | 0 | 1 |
-| selection/anonymous/details-mutate.html | TIMEOUT | 0 | 0 |
+| selection/anonymous/details-mutate.html | OK | 0 | 1 |
 | selection/anonymous/setBaseAndExtent-start-or-end-in-anonymous-shadow-container.html | OK | 11 | 0 |
 | selection/bidi/modify-extend-by-character.html | OK | 0 | 28 |
 | selection/bidi/modify-move-by-character.html | OK | 0 | 28 |
@@ -976,9 +981,9 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 15 | 21 |
 | selection/contenteditable/modify-around-non-editable-span.html | OK | 0 | 16 |
 | selection/contenteditable/modify.tentative.html | OK | 15 | 0 |
-| selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | OK | 3 | 4 |
 | selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html | OK | 4 | 3 |
-| selection/contenteditable/selection-outside-focused-editing-host.tentative.html | ERROR | 0 | 0 |
+| selection/contenteditable/selection-outside-focused-editing-host.tentative.html | OK | 2 | 1 |
 | selection/deleteFromDocument-HTMLDetails.html | OK | 30 | 0 |
 | selection/deleteFromDocument.html | EXCLUDED (requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another) | 0 | 0 |
 | selection/document-selectionchange.html | OK | 1 | 4 |
@@ -1006,7 +1011,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | selection/modify-line-grid-basic.tentative.html | OK | 0 | 2 |
 | selection/modify.tentative.html | OK | 7 | 0 |
 | selection/move-by-word-korean.html | OK | 0 | 4 |
-| selection/move-by-word-with-symbol.html | OK | 2 | 4 |
+| selection/move-by-word-with-symbol.html | OK | 6 | 0 |
 | selection/move-paragraph-cross-editing-boundary.tentative.html | OK | 0 | 2 |
 | selection/move-paragraphboundary-cross-editing-boundary.tentative.html | OK | 0 | 2 |
 | selection/move-selection-range-into-different-root.tentative.html | OK | 16 | 0 |
@@ -1015,7 +1020,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | selection/onselectstart-on-key-in-contenteditable.html | OK | 30 | 0 |
 | selection/removeAllRanges.html | OK | 116 | 0 |
 | selection/removeRange.html | OK | 29 | 0 |
-| selection/script-and-style-elements.html | TIMEOUT | 0 | 0 |
+| selection/script-and-style-elements.html | OK | 0 | 1 |
 | selection/select-end-of-line-image.tentative.html | OK | 0 | 1 |
 | selection/selectAllChildren.html | OK | 2242 | 0 |
 | selection/selection-content-visibility-hidden.html | OK | 1 | 0 |
@@ -1053,12 +1058,12 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | selection/shadow-dom/tentative/Selection-getComposedRanges.html | OK | 12 | 0 |
 | selection/shadow-dom/tentative/Selection-isCollapsed.html | OK | 4 | 0 |
 | selection/shadow-dom/tentative/Selection-later-become-slotted-content.html | OK | 1 | 0 |
-| selection/stringifier.tentative.html | TIMEOUT | 0 | 0 |
-| selection/stringifier_editable_element.tentative.html | TIMEOUT | 0 | 0 |
+| selection/stringifier.tentative.html | OK | 1 | 0 |
+| selection/stringifier_editable_element.tentative.html | ERROR | 1 | 11 |
 | selection/test-iframe.html | REFTEST | 0 | 0 |
 | selection/textcontrols/click-input-after-iframe-focus.html | EXCLUDED (requires-browsing-context: the focus moves in from an iframe) | 0 | 0 |
 | selection/textcontrols/focus.html | OK | 0 | 1 |
-| selection/textcontrols/initial-selection-during-focus-event-propagation.html | ERROR ('has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable) | 0 | 0 |
+| selection/textcontrols/initial-selection-during-focus-event-propagation.html | OK | 3 | 0 |
 | selection/textcontrols/onselectionchange-content-attribute.html | OK | 2 | 0 |
 | selection/textcontrols/selectionchange-bubble.html | OK | 4 | 0 |
 | selection/textcontrols/selectionchange-on-shadow-dom.html | OK | 0 | 1 |
@@ -1067,7 +1072,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | selection/toString-user-select-none.html | OK | 0 | 3 |
 | selection/type.html | OK | 29 | 0 |
 | selection/user-select-on-input-and-contenteditable.html | OK | 0 | 5 |
-| shadow-dom/Document-caretPositionFromPoint.tentative.html | OK | 1 | 13 |
+| shadow-dom/Document-caretPositionFromPoint.tentative.html | OK | 11 | 3 |
 | shadow-dom/Document-prototype-adoptNode.html | OK | 2 | 0 |
 | shadow-dom/Document-prototype-currentScript.html | TIMEOUT | 2 | 6 |
 | shadow-dom/Document-prototype-importNode.html | OK | 2 | 0 |
@@ -1092,7 +1097,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | shadow-dom/declarative/declarative-after-attachshadow.html | EXCLUDED (requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one) | 0 | 0 |
 | shadow-dom/declarative/declarative-parser-interaction.html | EXCLUDED (requires-script-execution: the case is what a script sees while the parser is still inside the template) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-attachment.html | OK | 654 | 0 |
-| shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html | TIMEOUT | 0 | 0 |
+| shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html | OK | 0 | 1 |
 | shadow-dom/declarative/declarative-shadow-dom-basic.html | OK | 22 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-opt-in.html | EXCLUDED (requires-script-execution: the opt-in is read by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-repeats-2.html | EXCLUDED (requires-script-execution: the second template is judged by a script the parser runs between them) | 0 | 0 |
@@ -1158,7 +1163,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | shadow-dom/event-inside-slotted-node.html | OK | 20 | 0 |
 | shadow-dom/event-post-dispatch-listenerless.html | OK | 3 | 0 |
 | shadow-dom/event-post-dispatch-no-listeners.html | OK | 5 | 0 |
-| shadow-dom/event-post-dispatch.html | OK | 15 | 1 |
+| shadow-dom/event-post-dispatch.html | OK | 16 | 0 |
 | shadow-dom/event-with-related-target.html | OK | 18 | 0 |
 | shadow-dom/execcommand-insertList-in-shadow.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/delegatesFocus-highlight-sibling.html | OK | 1 | 0 |
@@ -1215,7 +1220,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html | OK | 0 | 1 |
 | shadow-dom/focus/click-focus-slot-ancestor.html | OK | 2 | 1 |
 | shadow-dom/focus/delegatesFocus-tabindex-change.html | OK | 1 | 0 |
-| shadow-dom/focus/focus-autofocus.html | OK | 4 | 1 |
+| shadow-dom/focus/focus-autofocus.html | OK | 5 | 0 |
 | shadow-dom/focus/focus-click-on-shadow-host.html | OK | 0 | 1 |
 | shadow-dom/focus/focus-method-delegatesFocus-nested-browsing-context.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-method-delegatesFocus.html | OK | 15 | 0 |
@@ -1244,9 +1249,9 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | shadow-dom/focus/focus-tabindex-order-shadow-zero-host-one.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tabindex-order-shadow-zero-host-scrollable.html | OK | 1 | 0 |
 | shadow-dom/focus/focus-tabindex-order-shadow-zero.html | OK | 1 | 0 |
-| shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | OK | 0 | 1 |
+| shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | OK | 1 | 0 |
 | shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html | OK | 0 | 1 |
-| shadow-dom/focus/text-selection-with-delegatesFocus.html | OK | 0 | 2 |
+| shadow-dom/focus/text-selection-with-delegatesFocus.html | OK | 1 | 1 |
 | shadow-dom/form-control-form-attribute.html | OK | 2 | 1 |
 | shadow-dom/getElementById-dynamic-001.html | OK | 1 | 0 |
 | shadow-dom/getElementById-dynamic-002.html | OK | 1 | 0 |
@@ -1337,7 +1342,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | shadow-dom/untriaged/events/test-001.html | OK | 1 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 3 | 0 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | TIMEOUT | 0 | 1 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | OK | 0 | 1 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | OK | 1 | 0 |
 | shadow-dom/untriaged/shadow-trees/nested-shadow-trees/nested_tree_reftest.html | REFTEST | 0 | 0 |
@@ -1373,7 +1378,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/CustomElementRegistry-getName.html | OK | 3 | 1 |
 | custom-elements/CustomElementRegistry.html | OK | 46 | 0 |
 | custom-elements/Document-createElement-customized-builtins.html | EXCLUDED (customized built-ins: createElement with an is option) | 0 | 0 |
-| custom-elements/Document-createElement.html | OK | 11 | 25 |
+| custom-elements/Document-createElement.html | OK | 33 | 3 |
 | custom-elements/Document-createElementNS-customized-builtins.html | EXCLUDED (customized built-ins: createElementNS with an is option) | 0 | 0 |
 | custom-elements/Document-createElementNS-prefix-timing.html | OK | 3 | 0 |
 | custom-elements/Document-createElementNS.html | OK | 4 | 0 |
@@ -1424,8 +1429,8 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/form-associated/form-disabled-callback.html | OK | 8 | 2 |
 | custom-elements/form-associated/form-disabled-legend.html | OK | 5 | 1 |
 | custom-elements/form-associated/form-elements-namedItem.html | OK | 1 | 2 |
-| custom-elements/form-associated/form-reset-callback.html | OK | 0 | 3 |
-| custom-elements/form-associated/label-delegatesFocus.html | TIMEOUT | 0 | 0 |
+| custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
+| custom-elements/form-associated/label-delegatesFocus.html | OK | 0 | 2 |
 | custom-elements/historical.html | OK | 3 | 0 |
 | custom-elements/htmlconstructor/newtarget-customized-builtins.html | OK | 0 | 10 |
 | custom-elements/htmlconstructor/newtarget.html | OK | 1 | 9 |
@@ -1442,9 +1447,9 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/parser/parser-uses-registry-of-owner-document.html | ERROR (This document is not a stream) | 0 | 0 |
 | custom-elements/parser/serializing-html-fragments-customized-builtins.html | EXCLUDED (customized built-ins: serializing an is attribute) | 0 | 0 |
 | custom-elements/perform-microtask-checkpoint-before-construction.html | OK | 0 | 2 |
-| custom-elements/pseudo-class-defined-customized-builtins.html | TIMEOUT | 0 | 0 |
+| custom-elements/pseudo-class-defined-customized-builtins.html | ERROR | 3 | 1 |
 | custom-elements/pseudo-class-defined-print.html | REFTEST | 0 | 0 |
-| custom-elements/pseudo-class-defined.html | ERROR | 0 | 1 |
+| custom-elements/pseudo-class-defined.html | ERROR | 21 | 3 |
 | custom-elements/range-and-constructors.html | OK | 2 | 0 |
 | custom-elements/reaction-timing.html | OK | 3 | 0 |
 | custom-elements/reactions/Animation.html | OK | 1 | 2 |
@@ -1545,7 +1550,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/registries/valid-custom-element-names.html | OK | 1975 | 0 |
 | custom-elements/shadow-descendant-lifecycle-order.html | OK | 2 | 0 |
 | custom-elements/state/ElementInternals-states.html | OK | 4 | 0 |
-| custom-elements/state/state-css-selector-nth-of.html | OK | 3 | 0 |
+| custom-elements/state/state-css-selector-nth-of.html | OK | 2 | 1 |
 | custom-elements/state/state-css-selector-shadow-dom.html | OK | 3 | 0 |
 | custom-elements/state/state-css-selector.html | OK | 10 | 0 |
 | custom-elements/state/state-pseudo-class.html | OK | 8 | 0 |
@@ -1555,7 +1560,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 | custom-elements/upgrading/Document-importNode-customized-builtins.html | EXCLUDED (customized built-ins: importing an element with an is value) | 0 | 0 |
 | custom-elements/upgrading/Document-importNode.html | OK | 2 | 0 |
 | custom-elements/upgrading/Node-cloneNode-customized-builtins.html | EXCLUDED (customized built-ins: cloning an element with an is value) | 0 | 0 |
-| custom-elements/upgrading/Node-cloneNode.html | OK | 5 | 4 |
+| custom-elements/upgrading/Node-cloneNode.html | OK | 7 | 2 |
 | custom-elements/upgrading/upgrade-custom-element-error-event.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
 | custom-elements/upgrading/upgrading-enqueue-reactions.html | OK | 0 | 5 |
 | custom-elements/upgrading/upgrading-parser-created-element.html | EXCLUDED (requires-script-execution: the element under test is one the parser created around a script it ran) | 0 | 0 |
@@ -2194,11 +2199,11 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### dom/nodes/moveBefore/moveBefore-id-map.html
 
-- moveBefore() correctly updates window map when moving id-mapped element into shadow root: assert_equals: expected (object) Element node <div id="target2"></div> but got (undefined) undefined
+- moveBefore() correctly updates window map when moving id-mapped element into shadow root: assert_equals: expected (undefined) undefined but got (object) Element node <div id="target2"></div>
 
 ### dom/nodes/moveBefore/moveBefore-name-map.html
 
-- moveBefore() correctly updates window map: assert_equals: expected (object) Element node <img name="target2" data-target2=""></img> but got (undefined) undefined
+- moveBefore() correctly updates window map: assert_equals: expected (undefined) undefined but got (object) Element node <img name="target2" data-target2=""></img>
 
 ### dom/nodes/moveBefore/nonce.html
 
@@ -2259,6 +2264,19 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Script post-connection steps run in a newly-connected shadow tree: assert_equals: script runs when its shadow-including tree becomes connected expected 1 but got 0
 
+### dom/nodes/remove-next-sibling-during-replace-with.html
+
+- remove-next-sibling-during-replace-with: assert_equals: expected "<span>New </span><span>content</span>" but got "<span>New </span><span>content</span><b></b>"
+
+### dom/nodes/remove-unscopable.html
+
+- before() should be unscopable: assert_equals: expected "string" but got "undefined"
+- after() should be unscopable: assert_equals: expected "string" but got "undefined"
+- replaceWith() should be unscopable: assert_equals: expected "string" but got "undefined"
+- remove() should be unscopable: assert_equals: expected "string" but got "undefined"
+- prepend() should be unscopable: assert_equals: expected "string" but got "undefined"
+- append() should be unscopable: assert_equals: expected "string" but got "undefined"
+
 ### dom/collections/HTMLCollection-as-prototype.html
 
 - HTMLCollection as a prototype and setting own properties: assert_equals: expected (string) "foo" but got (object) Element node <p id="named"></p>
@@ -2299,38 +2317,9 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - a.relList in http://www.w3.org/2000/svg namespace should be DOMTokenList.: assert_class_string: expected "[object DOMTokenList]" but got "[object Undefined]"
 - a.relList in http://www.w3.org/1998/Math/MathML namespace should be DOMTokenList.: assert_class_string: expected "[object DOMTokenList]" but got "[object Undefined]"
 
-### dom/events/Body-FrameSet-Event-Handlers.html
-
-- Forward HTMLBodyElement.onblur to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onblur: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
-- Forward HTMLFrameSetElement.onblur to Window: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onerror to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onerror: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
-- Forward HTMLFrameSetElement.onerror to Window: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onfocus to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onfocus: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
-- Forward HTMLFrameSetElement.onfocus to Window: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onload to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onload: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
-- Forward HTMLFrameSetElement.onload to Window: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onscroll to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onscroll: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
-- Forward HTMLFrameSetElement.onscroll to Window: assert_equals: Convert to function expected "function" but got "object"
-- Forward HTMLBodyElement.onresize to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onresize: assert_equals: Initially null expected (object) null but got (function) function "function anonymous(event
-- Forward HTMLFrameSetElement.onresize to Window: assert_equals: Convert to function expected "function" but got "object"
-
 ### dom/events/Event-cancelBubble.html
 
 - Initializing an event must set cancelBubble to false.: assert_false: initEvent() must set cancelBubble to false. [bubbles=true] expected false got true
-
-### dom/events/Event-dispatch-bubbles-false.html
-
-- In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
-
-### dom/events/Event-dispatch-bubbles-true.html
-
-- In window.document with click event: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-click.html
 
@@ -2345,22 +2334,6 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - checkbox morphed into another type should not mutate checked state: assert_false: expected false got true
 - radio morphed into another type should not steal the existing checked state: assert_false: expected false got true
 
-### dom/events/Event-dispatch-handlers-changed.html
-
--  Dispatch additional events inside an event listener : assert_array_equals: actual_targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
-
-### dom/events/Event-dispatch-multiple-cancelBubble.html
-
-- Multiple dispatchEvent() and cancelBubble: assert_array_equals: expected property 1 to be object "[object global]" but got object "[object Window]" (expected array [Document node with 2 children, object "[object global]"] got [Document node with 2 children, object "[object Window]"])
-
-### dom/events/Event-dispatch-multiple-stopPropagation.html
-
--  Multiple dispatchEvent() and stopPropagation() : assert_array_equals: expected property 1 to be object "[object global]" but got object "[object Window]" (expected array [Document node with 2 children, object "[object global]"] got [Document node with 2 children, object "[object Window]"])
-
-### dom/events/Event-dispatch-omitted-capture.html
-
-- EventTarget.addEventListener with the capture argument omitted: assert_array_equals: targets expected property 7 to be object "[object global]" but got object "[object Window]" (expected array [Element node <td id="target">Over the river, Charlie</td>, Element node <tr id="parent">
-
 ### dom/events/Event-dispatch-on-disabled-elements.html
 
 - CSS Transitions transitioncancel event fires on disabled form elements: Test timed out
@@ -2372,10 +2345,6 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Redispatching DOMContentLoaded event after being dispatched: assert_true: Received DOMContentLoaded event should be trusted before redispatching expected true got false
 
-### dom/events/Event-dispatch-reenter.html
-
--  Dispatch additional events inside an event listener : assert_array_equals: actual_targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
-
 ### dom/events/Event-dispatch-single-activation-behavior.html
 
 - When clicking child <FORM><INPUT type=submit></INPUT></FORM> of parent <FORM><INPUT type=image></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onsubmit="activated(this); return false" class="act...] length 1, got [Element node <form onsubmit="activated(this); return false" class="act..., Element node <form onsubmit="activated(this); return false" class="act...] length 2
@@ -2386,45 +2355,6 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - When clicking child <FORM><BUTTON type=submit></BUTTON></FORM> of parent <FORM><INPUT type=submit></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onsubmit="activated(this); return false" class="act...] length 1, got [Element node <form onsubmit="activated(this); return false" class="act..., Element node <form onsubmit="activated(this); return false" class="act...] length 2
 - When clicking child <FORM><BUTTON type=submit></BUTTON></FORM> of parent <FORM><INPUT type=image></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onsubmit="activated(this); return false" class="act...] length 1, got [Element node <form onsubmit="activated(this); return false" class="act..., Element node <form onsubmit="activated(this); return false" class="act...] length 2
 - When clicking child <FORM><BUTTON type=reset></BUTTON></FORM> of parent <FORM><INPUT type=reset></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array [Element node <form onreset="activated(this)" class="activates test70">...] length 1, got [Element node <form onreset="activated(this)" class="activates test70">..., Element node <form onreset="activated(this)" class="activates test70">...] length 2
-- When clicking child <A></A> of parent <INPUT type=checkbox></INPUT>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test77_link"] length 1, got [] length 0
-- When clicking child <A></A> of parent <INPUT type=radio></INPUT>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test78_link"] length 1, got [] length 0
-- When clicking child <A></A> of parent <FORM><INPUT type=submit></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test79_link"] length 1, got [] length 0
-- When clicking child <A></A> of parent <FORM><INPUT type=image></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test80_link"] length 1, got [] length 0
-- When clicking child <A></A> of parent <FORM><INPUT type=reset></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test81_link"] length 1, got [] length 0
-- When clicking child <A></A> of parent <FORM><BUTTON type=submit></BUTTON></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test82_link"] length 1, got [] length 0
-- When clicking child <A></A> of parent <FORM><BUTTON type=reset></BUTTON></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test83_link"] length 1, got [] length 0
-- When clicking child <A></A> of parent <AREA></AREA>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test84_link"] length 1, got [] length 0
-- When clicking child <A></A> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test85_link"] length 1, got [] length 0
-- When clicking child <A></A> of parent <LABEL><INPUT type=checkbox></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test86_link"] length 1, got [] length 0
-- When clicking child <A></A> of parent <LABEL><BUTTON type=button></BUTTON></LABEL>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test87_link"] length 1, got [] length 0
-- When clicking child <AREA></AREA> of parent <INPUT type=checkbox></INPUT>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test88_link"] length 1, got [] length 0
-- When clicking child <AREA></AREA> of parent <INPUT type=radio></INPUT>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test89_link"] length 1, got [] length 0
-- When clicking child <AREA></AREA> of parent <FORM><INPUT type=submit></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test90_link"] length 1, got [] length 0
-- When clicking child <AREA></AREA> of parent <FORM><INPUT type=image></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test91_link"] length 1, got [] length 0
-- When clicking child <AREA></AREA> of parent <FORM><INPUT type=reset></INPUT></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test92_link"] length 1, got [] length 0
-- When clicking child <AREA></AREA> of parent <FORM><BUTTON type=submit></BUTTON></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test93_link"] length 1, got [] length 0
-- When clicking child <AREA></AREA> of parent <FORM><BUTTON type=reset></BUTTON></FORM>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test94_link"] length 1, got [] length 0
-- When clicking child <AREA></AREA> of parent <A></A>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test95_link"] length 1, got [] length 0
-- When clicking child <AREA></AREA> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test96_link"] length 1, got [] length 0
-- When clicking child <AREA></AREA> of parent <LABEL><INPUT type=checkbox></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test97_link"] length 1, got [] length 0
-- When clicking child <AREA></AREA> of parent <LABEL><BUTTON type=button></BUTTON></LABEL>, only child should be activated.: assert_array_equals: lengths differ, expected array ["http://web-platform.test/dom/events/Event-dispatch-single-activation-behavior.html#test98_link"] length 1, got [] length 0
-
-### dom/events/Event-dispatch-target-moved.html
-
-- Event propagation path when an element in it is moved within the DOM: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
-
-### dom/events/Event-dispatch-target-removed.html
-
-- Event propagation path when an element in it is removed from the DOM: assert_array_equals: targets expected property 0 to be object "[object global]" but got object "[object Window]" (expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
-
-### dom/events/Event-dispatch-throwing.html
-
-- Throwing in event listener with a single listeners: assert_equals: expected 1 but got 0
-- Throwing in event listener with multiple listeners: assert_equals: expected 1 but got 0
-
-### dom/events/Event-init-while-dispatching.html
-
-- Calling initUIEvent while dispatching.: Failed to execute 'initUIEvent' on 'UIEvent': parameter 4 is not of type 'Window'.
 
 ### dom/events/Event-initEvent.html
 
@@ -2458,34 +2388,30 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### dom/events/event-global-event-targets.html
 
-- window.event is set when dispatching on EventTarget: assert_equals: window.event is set during dispatch expected (object) object "[object Event]" but got (undefined) undefined
 - window.event is set when dispatching on AbortSignal: assert_equals: window.event is set during dispatch expected (object) object "[object Event]" but got (undefined) undefined
 - window.event is set when dispatching on FileReader: FileReader is not defined
 - window.event is set when dispatching on Performance: assert_equals: window.event is set during dispatch expected (object) object "[object Event]" but got (undefined) undefined
-- An event target's _document property does not affect window.event: assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
+
+### dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html
+
+- window.event is still set when 'beforeunload' result is coerced to string: This DOM shows one document per window and cannot load another
 
 ### dom/events/event-global-is-still-set-when-reporting-exception-onerror.html
 
-- window.onerror handler restores window.event after it reports an exception: Test timed out
-
-### dom/events/event-global-replaceable.html
-
-- Setting window.event replaces it: Cannot set property event of #<object> which has only a getter
-- Dispatching does not affect window.event after it's been replaced: assert_equals: Still set before dispatch expected (string) "foo" but got (undefined) undefined
-
-### dom/events/event-global-set-before-handleEvent-lookup.window.js
-
-- window.event is set before 'handleEvent' lookup: assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
+- window.onerror handler restores window.event after it reports an exception: Cannot read properties of undefined (reading 'Function')
 
 ### dom/events/event-global.html
 
-- window.event is only defined during dispatch: assert_equals: window.event set to current event during dispatch expected (object) object "[object Event]" but got (undefined) undefined
-- window.event is undefined if the target is in a shadow tree (event dispatched outside shadow tree): assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
-- window.event is undefined if the target is in a shadow tree (event dispatched inside shadow tree): assert_equals: expected (object) object "[object Event]" but got (undefined) undefined
-- window.event is undefined inside window.onerror if the target is in a shadow tree (ErrorEvent dispatched inside shadow tree): assert_true: expected true got false
-- window.event is set to the current event during dispatch: Cannot read properties of undefined (reading 'type')
-- window.event is set to the current event, which is the event passed to dispatch: assert_equals: expected (undefined) undefined but got (object) object "[object Event]"
 - window.event is set to the current event, which is the event passed to dispatch (2): XMLHttpRequest is not defined
+
+### dom/events/focus-event-document-move.html
+
+- Moving a node during mousedown should not crash: Test timed out
+
+### dom/events/handler-count.html
+
+- Test addEventListener/removeEventListener on the window.: Test timed out
+- Test setting onanimationstart handler on the window.: 
 
 ### dom/events/no-focus-events-at-clicking-editable-content-in-link.html
 
@@ -2591,6 +2517,11 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Wheel scroll in iframe chains to containing element.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
 
+### dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html
+
+- Ensure that the scroll position is not lost when the local iframe is set to display:none and shown again.: Test timed out
+- Ensure that the scroll position is not lost when the remote iframe is set to display:none and shown again.: 
+
 ### dom/events/scrolling/scroll-cross-origin-iframes.html
 
 - Verify sibling cross-origin iframes can wheel-scroll.: Test timed out
@@ -2604,9 +2535,19 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Only one scrollend event fires when scrolling, toggling display: none, and scrolling again in the same frame: assert_equals: Should get exactly one scrollend event expected 1 but got 0
 
+### dom/events/scrolling/scrollIntoView-in-onscroll-to-sticky.html
+
+- scrollIntoView-in-onscroll-to-sticky: Test timed out
+
 ### dom/events/scrolling/scrollend-event-fired-after-instant-scroll-in-microtask.html
 
 - scrolling state is false at the end of the test: Test timed out
+
+### dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html
+
+- No scroll via wheel on div shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+- No scroll via wheel on document shouldn't fire scrollend.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
+- No scroll via keys on document shouldn't fire scrollend.: assert_unreached: no scroll, so no scrollend expected Reached unreachable code
 
 ### dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html
 
@@ -2620,6 +2561,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 ### dom/events/scrolling/wheel-event-composed.html
 
 - wheel event must be composed: Test timed out
+
+### dom/events/scrolling/wheel-event-no-scroll-after-prevent-default.html
+
+- When `preventDefault` is called on a WheelEvent, scrolling should be prevented.: promise_test: Unhandled rejection with value: object "Error: testdriver: wheel action sources are not sent"
 
 ### dom/events/scrolling/wheel-event-transactions-multiple-action-chains.html
 
@@ -2637,19 +2582,6 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Remove the initial wheel event target.: Test timed out
 
-### dom/events/webkit-transition-end-event.html
-
-- onwebkittransitionend event handler should not trigger if an unprefixed listener also exists: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
-- webkitTransitionEnd event listener should trigger for an animation: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
-- webkitTransitionEnd event listener should not trigger if an unprefixed listener also exists: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
-- webkitTransitionEnd event listener should not trigger if an unprefixed event handler also exists: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
-- event types for prefixed and unprefixed transitionend event listeners should be named appropriately: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
-- webkitTransitionEnd event listener is case sensitive: assert_equals: ontransitionend must be supported and not previously set expected (object) null but got (undefined) undefined
-
-### dom/events/window-event-restored-after-throwing-onerror.html
-
-- window.event is restored after a throwing window.onerror handler: assert_equals: window.event is the outer event before the nested dispatch expected (object) object "[object Event]" but got (undefined) undefined
-
 ### dom/ranges/Range-in-shadow-after-the-shadow-removed.html
 
 - Range in shadow should stay in the shadow after the host is removed: null is not a shadow root mode
@@ -2658,6 +2590,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 ### selection/anonymous/details-ancestor.html
 
 - Selecting the default summary of <details> should report a DOM-visible ancestor: promise_test: Unhandled rejection with value: object "Error: testdriver: the element has no box to point at"
+
+### selection/anonymous/details-mutate.html
+
+- Manipulating selection after clicking <details> shouldn't cause a crash: promise_test: Unhandled rejection with value: object "Error: testdriver: the element has no box to point at"
 
 ### selection/bidi/modify-extend-by-character.html
 
@@ -2831,11 +2767,22 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when " <span contenteditable=false>...</span>[]editable": assert_in_array: value "(#text \"non-editable\", 11)" not in array ["(<div contenteditable=\"\">, 1)", "(#text \" \", 1)", "(<div contenteditable=\"\">, 0)", "(#text \" \", 0)"]
 - getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": assert_in_array: value "(#text \" \", 0)" not in array ["(<div contenteditable=\"\">, 3)", "(#text \"editable\", 8)"]
 
+### selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html
+
+-  click should move caret in an editable element: assert_equals: Selection should be collapsed in the second <span> element which was clicked by  button expected Text node "second span." but got Text node "first span."
+- Shift +  click should extend the selection: assert_equals: Selection#focusNode should be in the second <span> element which was clicked by  button expected Text node "second span." but got Text node "first span."
+- Shift +  click in a link shouldn't extend the selection: assert_equals: Selection#focusNode should be in the <a href> element which was clicked by  button expected Text node "link." but got Text node "first span."
+-  mouse button down should move caret, but its button up shouldn't move caret: assert_equals: selection should be collapsed in the second <span> element which was clicked by  button before pointerup event expected Text node "second span." but got Text node "first span."
+
 ### selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html
 
 - Primary click shouldn't move caret in an editable element if the default of pointerdown event is prevented: assert_equals: Selection should keep collapsed selection in the first <span> element expected Text node "first span." but got Text node "second span."
 - Shift + Primary click should extend the selection: assert_equals: Selection#anchorNode should keep in the first <span> element expected Text node "first span." but got Text node "second span."
 - Shift + Primary click in a link shouldn't extend the selection: assert_equals: Selection#focusNode should be in the <a href> element which was clicked by primary button expected Text node "link." but got Text node "first span."
+
+### selection/contenteditable/selection-outside-focused-editing-host.tentative.html
+
+- Modifying selection should do nothing: assert_true: expected true got false
 
 ### selection/document-selectionchange.html
 
@@ -2893,15 +2840,8 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Korean/Latin transition should be considered a word boundary when moving forward: assert_equals: Caret should move after the Korean characters expected 2 but got 4
 - Korean/Latin transition should be considered a word boundary when moving backward: assert_equals: Caret should move before the Latin characters expected 2 but got 0
-- Latin/Korean transition should be considered a word boundary when moving forward: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
-- Latin/Korean transition should be considered a word boundary when moving backward: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
-
-### selection/move-by-word-with-symbol.html
-
-- Symbols should be included while moving backward by word in textarea element: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
-- Symbols should be included while moving forward by word in textarea element: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
-- Symbols should be included while moving backward by word in input element: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
-- Symbols should be included while moving forward by word in input element: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'Actions')"
+- Latin/Korean transition should be considered a word boundary when moving forward: assert_equals: Caret should move after the Latin characters expected 2 but got 4
+- Latin/Korean transition should be considered a word boundary when moving backward: assert_equals: Caret should move before the Korean characters expected 2 but got 0
 
 ### selection/move-paragraph-cross-editing-boundary.tentative.html
 
@@ -2912,6 +2852,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - cross editing boundary: assert_equals: expected "this " but got " after"
 - Selection.modify(): move by paragraphboundary cross editing boundary: assert_equals: expected "this " but got " after"
+
+### selection/script-and-style-elements.html
+
+- Selection: STYLE and SCRIPT elements should be included in Selection.toString() if they are display!=none: assert_equals: expected "\nstyle { display:block; color: green; } script { color: blue; }\nfunction test_block_script() { let pre = document.createElement(\"pre\"); pre.append(document.createTextNode(\"PASS\")); document.getElementById(\"p1\").append(pre); }\n\nPASS" but got ""
 
 ### selection/select-end-of-line-image.tentative.html
 
@@ -2958,6 +2902,20 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - If selection crosses shadow boundaries, getRangeAt(0) should throw an IndexSizeError because the end is not in the document tree.: assert_throws_dom: function "function () { selection.getRangeAt(0) }" did not throw
 
+### selection/stringifier_editable_element.tentative.html
+
+- select the entire input should result all the content: assert_equals: expected Element node <input id="textInput" value="This is a text"></input> but got Element node <input id="dummyInput"></input>
+- toString() works with selectionStart and selectionEnd for input: assert_equals: expected "s is" but got ""
+- select the entire textarea should result all the content: assert_equals: expected Element node <textarea id="textArea" rows="5" cols="40">
+- toString() works with selectionStart and selectionEnd for textarea: assert_equals: expected "Line one\n" but got ""
+- toString() works even if a click just occured on a button: assert_equals: expected "This is a text" but got ""
+- toString() works for programatically calling .click() on anchor (without href): Test timed out
+- toString() doesn't work for actual clicking the anchor (without href): 
+- toString() works for programatically calling .click() on anchor (with href): 
+- toString() also works for actual clicking the anchor (with href): 
+- Click on a text prior to toString() moves the seleciton: 
+- Click on a `user-select:none` text prior to toString() doesn't move the seleciton: 
+
 ### selection/textcontrols/focus.html
 
 - focus() should cancel selection extension by pointer device: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (50, 50) is outside the viewport"
@@ -3001,19 +2959,9 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### shadow-dom/Document-caretPositionFromPoint.tentative.html
 
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: caretPositionFromPoint is not implemented"
-- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "NotSupportedError: caretPositionFromPoint is not implemented"
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument: caretPositionFromPoint is not implemented
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument: caretPositionFromPoint is not implemented
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: assert_equals: expected 0 but got 1
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: assert_equals: expected 4 but got 10
+- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'offsetNode')"
 
 ### shadow-dom/Document-prototype-currentScript.html
 
@@ -3080,6 +3028,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - button element with accesskey in the shadow tree of open mode: Test timed out
 - button element with accesskey in the shadow tree of closed mode: 
 
+### shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html
+
+- Declarative Shadow DOM: shadow root should be available to element internals: assert_true: expected true got false
+
 ### shadow-dom/declarative/declarative-shadow-dom-repeats-slot-assignment.html
 
 - attachShadow() on declarative shadow root with manual slotAssignment: assert_equals: slotAssignment should be "manual" from declarative attribute expected "manual" but got "named"
@@ -3115,10 +3067,6 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: Test timed out
 
-### shadow-dom/event-post-dispatch.html
-
-- Event properties post dispatch when target get moved into the shadow tree by event listener: assert_equals: expected (object) object "[object MouseEvent]" but got (undefined) undefined
-
 ### shadow-dom/execcommand-insertList-in-shadow.html
 
 - Toggle off List for all the child nodes in the ShadowRoot: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (80, 3) is outside the viewport"
@@ -3146,10 +3094,6 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Clicking on non-focusable slot inside focusable div will make the flat-tree focusable ancestor get focused: assert_equals: expected Element node <div id="normalDiv" tabindex="0"><span id="normalSpan">Te... but got Element node <body><div id="normalDiv" tabindex="0"><span id="normalSp...
 
-### shadow-dom/focus/focus-autofocus.html
-
-- Focus should not be delegated to the slotted elements: assert_equals: expected Element node <div id="host"><div tabindex="0" autofocus="true"></div><... but got Element node <div tabindex="0" autofocus="true"></div>
-
 ### shadow-dom/focus/focus-click-on-shadow-host.html
 
 - :focus should be applied to the host and the child node when the focus is moved by mouse click: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (40, -476) is outside the viewport"
@@ -3167,17 +3111,12 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Order with different tabindex on host: assert_equals: expected Element node <div></div> but got Element node <div></div>
 
-### shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html
-
-- select slotted text in shadow root with delegatesFocus.: assert_greater_than: expected a number greater than 0 but got 0
-
 ### shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html
 
 - shadow root has selectable text when focus is delegated. Selection goes to text control if it is the delegated focusable area.: assert_equals: expected Element node <x-shadow id="xShadow"></x-shadow> but got Element node <body>
 
 ### shadow-dom/focus/text-selection-with-delegatesFocus.html
 
-- shadow root has selectable text when focus is not delegated: assert_greater_than: expected a number greater than 0 but got 0
 - shadow root has selectable text when focus is delegated: promise_test: Unhandled rejection with value: object "Error: testdriver: pointer position (100, 0) is outside the viewport"
 
 ### shadow-dom/form-control-form-attribute.html
@@ -3212,7 +3151,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html
 
-- A_08_02_03_T01: Test timed out
+- A_08_02_03_T01: Illegal invocation
 
 ### shadow-dom/wheel-event-related-target.html
 
@@ -3224,31 +3163,9 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/Document-createElement.html
 
-- document.createElement must report a TypeError when the result of Construct is not a DOM node: Cannot read properties of null (reading 'name')
-- document.createElement must report a TypeError when the result of Construct is a TextNode: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when attribute is added by setAttribute during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when attribute is added by attributes.setNamedItem during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when a Text child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when a Comment child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when an element child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when the element gets inserted into another element during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when the element is adopted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a the document of an iframe during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a the document of an iframe during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
 - document.createElement must report a NotSupportedError when the element is adopted into a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 - document.createElement must report a NotSupportedError when the element is inserted into a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
 - document.createElement must not report a NotSupportedError when the element is adopted back from a an HTML document fetched by XHR during construction: promise_test: Unhandled rejection with value: object "ReferenceError: XMLHttpRequest is not defined"
-- document.createElement must report a NotSupportedError when the local name of the element does not match that of the custom element: Cannot read properties of null (reading 'name')
-- document.createElement must report an exception thrown by a custom element constructor: Cannot read properties of null (reading 'name')
 
 ### custom-elements/ElementInternals-accessibility-values.html
 
@@ -3268,8 +3185,8 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 - Custom element constructor must throw TypeError when it does not extend HTMLElement: assert_throws_js: function "function () { new SomeCustomElement(); }" did not throw
 - Custom element constructor must throw TypeError when it does not extend the proper element interface: A customized built-in element is not implemented here
-- HTMLElement constructor must only get .prototype once, calling proxy constructor directly: assert_equals: Should have gotten .prototype once expected 1 but got 3
-- HTMLElement constructor must only get .prototype once, calling proxy constructor via Reflect: assert_equals: Should have gotten .prototype once expected 1 but got 3
+- HTMLElement constructor must only get .prototype once, calling proxy constructor directly: assert_equals: Should have gotten .prototype once expected 1 but got 2
+- HTMLElement constructor must only get .prototype once, calling proxy constructor via Reflect: assert_equals: Should have gotten .prototype once expected 1 but got 2
 - HTMLElement constructor must only get .prototype once, calling proxy constructor via Reflect with no inheritance: Cannot convert undefined or null to object
 - HTMLElement constructor must not get .prototype until it finishes its registration  sanity checks, calling via Reflect: assert_equals: Should never have gotten .prototype expected 0 but got 1
 
@@ -3425,9 +3342,12 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/form-associated/form-reset-callback.html
 
-- form.reset() should trigger formResetCallback: assert_true: expected true got false
-- form.reset(): formResetCallback is called synchronously at the end of form reset, with custom element reaction timing, *after* built-in form control reset algorithms run.: assert_true: formResetCallback is called synchronously after the form is reset expected true got false
-- Clicking a reset button invokes formResetCallback in a microtask: assert_true: expected true got false
+- Clicking a reset button invokes formResetCallback in a microtask: assert_false: expected false got true
+
+### custom-elements/form-associated/label-delegatesFocus.html
+
+- Clicking on a label for a form associated custom element with delegatesFocus should focus the custom element's focus delegate.: assert_true: should have received focus expected true got false
+- Clicking on a span in a label for a form associated custom element with delegatesFocus should focus the custom element's focus delegate.: assert_true: should have received focus expected true got false
 
 ### custom-elements/htmlconstructor/newtarget-customized-builtins.html
 
@@ -3459,9 +3379,15 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - HTML parser must perform a microtask checkpoint before constructing a custom element: assert_true: expected true got false
 - HTML parser must perform a microtask checkpoint before constructing a custom element during the adoption agency algorithm: assert_true: expected true got false
 
+### custom-elements/pseudo-class-defined-customized-builtins.html
+
+- <abbr is="my-abbr"> should not be :defined: assert_equals: matches(":defined") expected false but got true
+
 ### custom-elements/pseudo-class-defined.html
 
 - this.matches(:defined) should not match during an upgrade: assert_equals: expected 2 but got 0
+- Upgraded createElement("a-a") should be :defined: assert_equals: matches(":defined") expected true but got false
+- Upgraded createElementNS("http://www.w3.org/1999/xhtml", "a-a") should be :defined: assert_equals: matches(":defined") expected true but got false
 
 ### custom-elements/reactions/Animation.html
 
@@ -3650,7 +3576,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/registries/initial-about-blank.window.js
 
-- Each navigable document has its own registry: 'has' on proxy: trap returned falsish for property 'location' which exists in the proxy target as non-configurable
+- Each navigable document has its own registry: assert_equals: expected "http://web-platform.test/common/blank.html" but got "about:blank"
 
 ### custom-elements/registries/per-document.html
 
@@ -3740,6 +3666,10 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 - Serializing a null registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
 - Serializing a scoped registry ShadowRoot with a scoped registry host (document): assert_equals: expected "<template shadowrootmode=\"closed\" shadowrootserializable=\"\" shadowrootcustomelementregistry=\"\"></template>" but got "<template shadowrootmode=\"closed\" shadowrootserializable=\"\"></template>"
 
+### custom-elements/state/state-css-selector-nth-of.html
+
+- state selector has influence on nth-of when state is applied: assert_equals: expected "rgb(0, 0, 255)" but got "rgb(255, 0, 0)"
+
 ### custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html
 
 - document.open() must throw an InvalidStateError when synchronously constructing a custom element: promise_test: Unhandled rejection with value: object "InvalidStateError: This document is not a stream"
@@ -3770,10 +3700,8 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### custom-elements/upgrading/Node-cloneNode.html
 
-- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: Cannot read properties of undefined (reading 'name')
-- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: Cannot read properties of undefined (reading 'name')
-- Upgrading a custom element must throw TypeError when the custom element's constructor returns another element: Cannot read properties of undefined (reading 'name')
-- Inserting an element must not try to upgrade a custom element when it had already failed to upgrade once: assert_equals: expected (string) "bad" but got (undefined) undefined
+- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: assert_equals: expected "TypeError" but got "InvalidStateError"
+- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: assert_equals: expected "TypeError" but got "InvalidStateError"
 
 ### custom-elements/upgrading/upgrading-enqueue-reactions.html
 

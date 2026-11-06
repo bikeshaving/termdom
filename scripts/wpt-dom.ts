@@ -752,17 +752,20 @@ const {setTimeout: runtimeSetTimeout, setInterval: runtimeSetInterval} =
  * can.
  */
 function windowScope(realm: object, window: object): object {
+	// The target is an empty object, not the window: a Proxy may not deny
+	// a non-configurable property its target owns, and the window's
+	// unforgeable `location` is one, which the realm also owns.
 	// eslint-disable-next-line no-restricted-globals
-	return new Proxy(window, {
-		has(target, name): boolean {
+	return new Proxy(Object.create(null), {
+		has(_target, name): boolean {
 			return !Object.prototype.hasOwnProperty.call(realm, name) &&
-				name in target;
+				name in window;
 		},
-		get(target, name): unknown {
-			return Reflect.get(target, name, target);
+		get(_target, name): unknown {
+			return Reflect.get(window, name, window);
 		},
-		set(target, name, value): boolean {
-			return Reflect.set(target, name, value, target);
+		set(_target, name, value): boolean {
+			return Reflect.set(window, name, value, window);
 		},
 	});
 }
@@ -839,12 +842,16 @@ function installGlobals(
 	for (const [name, value] of Object.entries(values)) {
 		scope[name] = value;
 	}
+	// A script that reads `window` or `self` gets the engine window, the
+	// one an event path ends at, here and in code the window scope does not
+	// reach, such as a handler attribute's.
 	for (const name of ["self", "window", "parent", "top", "frames"]) {
-		scope[name] = scope;
+		scope[name] = engineWindow;
 	}
-	// `window.onerror = ...` and the other window handler attributes land on
-	// the engine window, whose dispatch is what fires them. The harness
-	// window is this realm's global, so each name is an accessor here.
+	// `onerror = ...` and the other window handler attributes land on the
+	// engine window, whose dispatch is what fires them. Each name is an
+	// accessor here, so a read or write through the realm's global reaches
+	// the engine window too.
 	const handlerNames: string[] = [];
 	for (
 		let level = Object.getPrototypeOf(engineWindow) as object | null;
@@ -872,10 +879,10 @@ function installGlobals(
 			configurable: true,
 		});
 	}
-	// The rest of the window's members the runtime's global lacks. The
-	// harness realm's global stands in for the window, so `window.innerWidth`
-	// and the like read the engine window's own, with methods bound to it, as
-	// a browser's global is the window. They are removed again afterwards.
+	// The rest of the window's members the runtime's global lacks, read off
+	// the engine window with methods bound to it, so the realm's global
+	// answers them as a browser's global does. They are removed again
+	// afterwards.
 	const mirrored = new Map<string, PropertyDescriptor | undefined>();
 	for (
 		let level: object | null = engineWindow as unknown as object;
@@ -1168,7 +1175,8 @@ async function runMountedFile(
 		}
 		let grace: ReturnType<typeof setTimeout> | null = null;
 		const timer = runtimeSetTimeout(() => {
-			const timeout = scope.timeout;
+			const timeout = (engine.window as unknown as Record<string, unknown>)
+				.timeout;
 			if (typeof timeout === "function") {
 				try {
 					timeout();
@@ -1342,6 +1350,11 @@ const lines: string[] = [
 	"uncaught errors to the window as error and unhandledrejection events.",
 	"It supplies no behavior of its own, and no frame documents, so tests",
 	"that need them fail.",
+	"",
+	"`window` and `self` are the engine window, the one event paths end at,",
+	"but the runtime's global is a separate object. A global `var` is not a",
+	"property of `window`, and a property set on `window` is not a bare name",
+	"in a handler attribute's code, so the few tests that rely on either fail.",
 	"",
 	`- Test files in the suites: ${outcomes.length}`,
 	`- Reference tests (no testharness, scored by pixels): ${reftests.length}`,
