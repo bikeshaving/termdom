@@ -8387,6 +8387,17 @@ function noteHasRules(
 	}
 }
 
+function holdsSiblingArgument(compound: CompiledCompound): boolean {
+	return compound.pseudoClasses.some(
+		({name, args}) =>
+			name !== "has" && args.some(
+				(argument) =>
+					argument.combinators.some(isSiblingCombinator) ||
+			argument.compounds.some(holdsSiblingArgument),
+			),
+	);
+}
+
 function holdsComplexArgument(compound: CompiledCompound): boolean {
 	return compound.pseudoClasses.some(({args}) =>
 		args.some(
@@ -12220,6 +12231,11 @@ function indexReachingKeys(
 		if (compounds.flat().some((compound) =>
 			compound.pseudoClasses.some((pseudoClass) =>
 				pseudoClass.name.startsWith("nth-") && pseudoClass.args.length > 0))) {
+			index.anchorsUniversal = true;
+		}
+		// The anchor of a sibling combinator inside :not() or :is(), the
+		// `.b` of `:not(.b ~ *)`, sits before no combinator of the rule's own.
+		if (complex.compounds.some(holdsSiblingArgument)) {
 			index.anchorsUniversal = true;
 		}
 		for (const [i, nested] of compounds.entries()) {

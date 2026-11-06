@@ -356,3 +356,18 @@ test("a class removed from a child inserted after a :has(+ x) anchor restyles wh
 	expect(window.getComputedStyle(subject).color).not.toBe(BLUE);
 	termdom.dispose();
 });
+
+test("a class that a sibling combinator inside :not() tests restyles the later siblings", async () => {
+	const {termdom, document} = await mount(
+		"div { color: rgb(255, 0, 0); } div:not(.b ~ *) { color: rgb(0, 0, 255); }",
+		"<div id=b>b</div><div id=c>c</div><div id=d>d</div>",
+	);
+	const {window} = termdom;
+	const c = document.getElementById("c")!;
+	const d = document.getElementById("d")!;
+	expect(window.getComputedStyle(c).color).toBe(BLUE);
+	document.getElementById("b")!.className = "b";
+	expect(window.getComputedStyle(c).color).toBe(RED);
+	expect(window.getComputedStyle(d).color).toBe(RED);
+	termdom.dispose();
+});
