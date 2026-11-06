@@ -10863,15 +10863,49 @@ function copySiblingRuleIndex(
 // :not(:last-child)` names only children of `.list`. Universal when the
 // compound could name any element.
 interface SiblingKeys {
-	keys: Set<string>;
-	parentKeys: Set<string>;
+	keys: KeySet;
+	parentKeys: KeySet;
 	universal: boolean;
+}
+
+// Keys written `tag`, `.class`, `#id` and `[attribute]`, held by kind
+// without the mark, so an element is looked up by its own names.
+interface KeySet {
+	tags: Set<string>;
+	classes: Set<string>;
+	ids: Set<string>;
+	attributes: Set<string>;
+	size: number;
+}
+
+function copyKeySet(keys: KeySet | undefined): KeySet {
+	return {
+		tags: new Set(keys?.tags),
+		classes: new Set(keys?.classes),
+		ids: new Set(keys?.ids),
+		attributes: new Set(keys?.attributes),
+		size: keys?.size ?? 0,
+	};
+}
+
+function addKey(keys: KeySet, key: string): void {
+	const kind = key[0];
+	const set = kind === "."
+		? keys.classes
+		: kind === "#" ? keys.ids : kind === "[" ? keys.attributes : keys.tags;
+	const name = set === keys.tags
+		? key
+		: set === keys.attributes ? key.slice(1, -1) : key.slice(1);
+	if (!set.has(name)) {
+		set.add(name);
+		keys.size++;
+	}
 }
 
 function copySiblingKeys(keys: SiblingKeys | undefined): SiblingKeys {
 	return {
-		keys: new Set(keys?.keys),
-		parentKeys: new Set(keys?.parentKeys),
+		keys: copyKeySet(keys?.keys),
+		parentKeys: copyKeySet(keys?.parentKeys),
 		universal: keys?.universal ?? false,
 	};
 }
@@ -10926,25 +10960,33 @@ function namesSibling(keys: SiblingKeys, element: Element): boolean {
 	return parent !== null && hasSiblingKey(keys.parentKeys, parent);
 }
 
-function hasSiblingKey(keys: Set<string>, element: Element): boolean {
+function hasSiblingKey(keys: KeySet, element: Element): boolean {
 	if (keys.size === 0) {
 		return false;
 	}
-	if (keys.has(getLocalName(element))) {
+	if (keys.tags.size > 0 && keys.tags.has(getLocalName(element))) {
 		return true;
 	}
-	for (const name of getClassTokens(element)) {
-		if (keys.has(`.${name}`)) {
+	if (keys.classes.size > 0) {
+		for (const name of getClassTokens(element)) {
+			if (keys.classes.has(name)) {
+				return true;
+			}
+		}
+	}
+	if (keys.ids.size > 0) {
+		const id = getAttributeValue(element, "id");
+		if (id !== null && keys.ids.has(id)) {
 			return true;
 		}
 	}
-	const id = getAttributeValue(element, "id");
-	if (id !== null && keys.has(`#${id}`)) {
-		return true;
-	}
-	for (const name of element.getAttributeNames()) {
-		if (keys.has(`[${name.slice(name.indexOf(":") + 1)}]`)) {
-			return true;
+	if (keys.attributes.size > 0) {
+		const attributes = getAttributeList(element);
+		for (let index = 0; index < attributes.length; index++) {
+			const name = attributes[index]._qualifiedName;
+			if (keys.attributes.has(name.slice(name.indexOf(":") + 1))) {
+				return true;
+			}
 		}
 	}
 	return false;
@@ -12247,7 +12289,7 @@ function addSiblingKeys(
 	const own = getSiblingRequiredKeys(complex.compounds[index]);
 	if (own.length > 0) {
 		for (const key of own) {
-			target.keys.add(key);
+			addKey(target.keys, key);
 		}
 		return;
 	}
@@ -12255,7 +12297,7 @@ function addSiblingKeys(
 	const tags = nested.flatMap((compound) => compound.tag ?? []);
 	if (!describesAnyElement(nested) && (tags.length > 0 || keys.length > 0)) {
 		for (const key of [...tags, ...keys]) {
-			target.keys.add(key);
+			addKey(target.keys, key);
 		}
 		return;
 	}
@@ -12264,7 +12306,7 @@ function addSiblingKeys(
 		: [];
 	if (parent.length > 0) {
 		for (const key of parent) {
-			target.parentKeys.add(key);
+			addKey(target.parentKeys, key);
 		}
 		return;
 	}

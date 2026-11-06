@@ -100,6 +100,49 @@ test("a keyless child test after > restyles the children of a parent with the ke
 	termdom.dispose();
 });
 
+test("a sibling test keyed by a tag, an id or an attribute restyles the children it names", async () => {
+	const {termdom, terminal, document} = await mount(
+		"em:last-child, #mid:last-child, [data-on]:last-child," +
+			" [href]:last-child { color: rgb(255, 0, 0); }" +
+			" .box > :first-child { background-color: rgb(0, 0, 255); }",
+		"<div id=row><em id=e>e</em><b id=mid>m</b><i data-on id=d>d</i>" +
+			"<s id=n>n</s><span id=x>x</span></div>" +
+			"<div class=box id=box><u id=u>u</u></div>",
+	);
+	const {window} = termdom;
+	const row = document.getElementById("row")!;
+	const changed = await restyled(termdom, row, () =>
+		document.getElementById("x")!.remove(),
+	);
+	expect(changed.map((element) => element.id)).toEqual(["e", "mid", "d"]);
+	document.getElementById("n")!.remove();
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(document.getElementById("d")!).color)
+		.toBe(RED);
+	for (const id of ["d", "mid"]) {
+		document.getElementById(id)!.remove();
+		await nextFrame(termdom);
+		expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	}
+	expect(window.getComputedStyle(document.getElementById("e")!).color)
+		.toBe(RED);
+	const link = document.createElement("a");
+	link.setAttribute("href", "#");
+	row.append(link);
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(link).color).toBe(RED);
+	expect(window.getComputedStyle(document.getElementById("e")!).color)
+		.not.toBe(RED);
+	document.getElementById("box")!.prepend(document.createElement("p"));
+	await nextFrame(termdom);
+	expect(
+		window.getComputedStyle(document.getElementById("u")!)
+			.backgroundColor,
+	).not.toBe(BLUE);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	termdom.dispose();
+});
+
 test("a keyless child test whose parent has no key restyles any child", async () => {
 	const {termdom, terminal, document} = await mount(
 		"div > :not(:last-child) { color: rgb(255, 0, 0); }" +
