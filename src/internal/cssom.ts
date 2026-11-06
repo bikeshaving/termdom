@@ -1873,15 +1873,21 @@ function parseMediaText(list: MediaList, text: string): void {
 }
 
 // Stored beside the rule so deleting one can cut the link. A removed
-// rule belongs to no stylesheet, and reports that.
+// rule belongs to no stylesheet, and reports that. The removed rule
+// itself has no parent rule either. The rules inside it keep theirs.
 const ruleSheets = new WeakMap<CSSRule, CSSStyleSheet | null>();
 
 function detachRule(rule: CSSRule): void {
+	_(rule).parentRule = null;
+	detachFromSheet(rule);
+}
+
+function detachFromSheet(rule: CSSRule): void {
 	ruleSheets.set(rule, null);
 	const group = rule as {cssRules?: CSSRuleList};
 	if (group.cssRules) {
 		for (const child of Array.from(group.cssRules)) {
-			detachRule(child);
+			detachFromSheet(child);
 		}
 	}
 }
@@ -3166,6 +3172,7 @@ class CSSKeyframesRule extends CSSRule {
 			if ((slots.rules[index] as CSSKeyframeRule).keyText !== key) {
 				continue;
 			}
+			detachRule(slots.rules[index]);
 			slots.rules.splice(index, 1);
 			syncIndexed(slots.ruleList);
 			syncIndexed(this, slots.rules);
@@ -3330,8 +3337,10 @@ class CSSStyleSheet {
 		return _(this).title;
 	}
 
+	// A <style> taken out of its tree takes its sheet with it.
 	get ownerNode(): Element | null {
-		return _(this).ownerNode;
+		const owner = _(this).ownerNode;
+		return owner !== null && owner.parentNode === null ? null : owner;
 	}
 
 	get ownerRule(): CSSRule | null {
@@ -3461,6 +3470,9 @@ class CSSStyleSheet {
 		}
 		// An adopted sheet cannot import another. `@import` is dropped rather
 		// than parsed, per the constructable-stylesheet rules.
+		for (const rule of slots.rules) {
+			detachRule(rule);
+		}
 		slots.rules.length = 0;
 		slots.rules.push(
 			...parseRules(String(text ?? ""), this, null).filter(
