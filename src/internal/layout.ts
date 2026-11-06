@@ -8796,9 +8796,12 @@ function invalidateForRecord(
 	}
 	// A member gaining or losing a descendant changes no box list (the
 	// member is still there, holding more or less), so the box measuring it
-	// is notified directly, above.
+	// is notified directly, above. A node inserted again may have changed
+	// while out of the document, where no record follows it, so the measure
+	// holding it is dropped too.
 	for (const node of getAddedNodes(record)) {
 		invalidateSubtreeDerivation(layout, node);
+		measured.add(node);
 	}
 }
 
