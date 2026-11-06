@@ -21,6 +21,7 @@ import {
 	endFrame,
 	Framebuffer,
 } from "../src/internal/framebuffer.ts";
+import {getPlaceholder} from "../src/internal/kitty.ts";
 import {getStringWidth, recordClusterAdvance} from "../src/internal/text.ts";
 import {
 	captureRawOutput,
@@ -143,6 +144,19 @@ function emit(
 	}
 	return endFrame(framebuffer);
 }
+
+test("an image placeholder is not asked about, and page text spelled like one is", () => {
+	const {probes, measurer} = recordingMeasurer();
+	const framebuffer = new Framebuffer(1, 20, "rgb");
+	framebuffer.measurer = measurer;
+	const context = beginFrame(framebuffer, {offset: 0});
+	context.grid.setPlaceholder(0, 0, 0, {fg: 0x1000001});
+	drawText(context, getPlaceholder(1, 1), 4, 0);
+	const output = endFrame(framebuffer);
+	expect(probes.map((probe) => probe.cluster)).toEqual([getPlaceholder(1, 1)]);
+	expect(output).toContain(getPlaceholder(0, 0));
+	expect(output).toContain(`${getPlaceholder(1, 1)}\x1b[6n`);
+});
 
 function settle(ms = 60): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));

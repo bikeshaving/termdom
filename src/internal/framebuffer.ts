@@ -1,6 +1,11 @@
 import {blendColor, getColorAlpha, TRANSPARENCY_UNIT} from "./cssvalues.ts";
 import type {ColorDepth, Exchange} from "./exchange.ts";
-import type {KittyImages} from "./kitty.ts";
+import {
+	decodePlaceholder,
+	encodePlaceholder,
+	isPlaceholderChar,
+	type KittyImages,
+} from "./kitty.ts";
 import {
 	getGraphemes,
 	getStringWidth,
@@ -416,7 +421,9 @@ function internGrapheme(grapheme: string): number {
 function decodeGrapheme(char: number): string {
 	return char >= CHAR_INTERNED
 		? internedGraphemes[char - CHAR_INTERNED]
-		: String.fromCodePoint(char);
+		: isPlaceholderChar(char)
+			? decodePlaceholder(char)
+			: String.fromCodePoint(char);
 }
 
 // A cluster terminals draw at different widths: an emoji with a variation
@@ -789,6 +796,20 @@ export class CellGrid {
 		if (width > 1) {
 			settleWide(this, index, width);
 		}
+	}
+
+	/** The kitty image placeholder for the cell at `row`, `col` of its image. */
+	setPlaceholder(
+		index: number,
+		row: number,
+		col: number,
+		style: CellStyle,
+	): void {
+		this.cluster[index] = encodePlaceholder(row, col);
+		this.fg[index] = (style.fg ?? 0) & COLOR_MASK;
+		this.bg[index] = (style.bg ?? 0) & COLOR_MASK;
+		this.attrs[index] = packAttrs(style) | (1 << ATTR.WidthShift);
+		this.border[index] = 0;
 	}
 
 	setBorderCell(index: number, border: number, style?: CellStyle): void {
@@ -2170,11 +2191,13 @@ function generateANSI(
 			const width = widthAt(grid, index);
 
 			// Only clusters terminals disagree about are probed. The char test
-			// keeps ASCII from reaching isWidthUncertain, and a border glyph is
-			// a character this engine chose.
+			// keeps ASCII and image placeholders, which a terminal that draws
+			// them draws in one cell, from reaching isWidthUncertain, and a
+			// border glyph is a character this engine chose.
 			if (measurer !== undefined && encoding === 0) {
 				if (
 					(code > 0x7e || code < 0x20) &&
+					!isPlaceholderChar(code) &&
 					isWidthUncertain(glyph) &&
 					measurer.wantsWidth(glyph)
 				) {

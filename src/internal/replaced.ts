@@ -39,7 +39,6 @@ import {
 	sampleBitmap,
 } from "./images.ts";
 import {
-	getPlaceholder,
 	type KittyImages,
 	MAX_PLACEHOLDER_CELLS,
 	placeKittyImage,
@@ -524,7 +523,9 @@ function drawsKittyImage(
 
 // The bitmap as placeholder cells over a content box `cols` by `rows`,
 // in the color that names the image the terminal holds for them. Pixels
-// at full resolution are drawn and sent once for each placement.
+// at full resolution are drawn and sent once for each placement and
+// content version, and a canvas's new frame replaces its old one under
+// the same id, so its cells stay as they were.
 function getPlaceholderCells(
 	element: Element,
 	content: Extract<ReplacedContent, {kind: "bitmap"}>,
@@ -555,7 +556,6 @@ function getPlaceholderCells(
 	}
 	const key = [
 		token,
-		content.version,
 		cols,
 		rows,
 		place.x,
@@ -572,6 +572,7 @@ function getPlaceholderCells(
 	const id = placeKittyImage(
 		graphics,
 		key,
+		content.version,
 		{width, height, cols, rows},
 		() =>
 			drawPlaced(
@@ -589,7 +590,7 @@ function getPlaceholderCells(
 	if (cached !== undefined && cached.key === cacheKey) {
 		return cached.cells;
 	}
-	const cells = new CellContext(new CellGrid(rows, cols), rows, cols, 0);
+	const grid = new CellGrid(rows, cols);
 	// Transparent pixels show the cell's background, which is the
 	// element's own where it has one.
 	const style: CellStyle = {
@@ -598,11 +599,11 @@ function getPlaceholderCells(
 	};
 	for (let row = 0; row < rows; row++) {
 		for (let col = 0; col < cols; col++) {
-			drawText(cells, getPlaceholder(row, col), col, row, style);
+			grid.setPlaceholder(row * cols + col, row, col, style);
 		}
 	}
-	placeholderCells.set(bitmap, {key: cacheKey, cells: cells.grid});
-	return cells.grid;
+	placeholderCells.set(bitmap, {key: cacheKey, cells: grid});
+	return grid;
 }
 
 const settledGrids = new WeakMap<CellGrid, {version: number; grid: CellGrid}>();

@@ -18,6 +18,7 @@
  * placeholders as unknown characters.
  */
 import type {CellGrid} from "./framebuffer.ts";
+import {deflate, toBase64} from "./images.ts";
 
 /** The character a placeholder cell holds before its diacritics. */
 export const PLACEHOLDER = "\u{10EEEE}";
@@ -129,6 +130,27 @@ export function getPlaceholder(row: number, col: number): string {
 	return PLACEHOLDER + DIACRITICS[row] + DIACRITICS[col];
 }
 
+// A placeholder in a cell grid's character plane: this bit over its row
+// and column, 12 bits each. Code points sit below it and interned
+// clusters above, so a placeholder is no cluster of its own and no text
+// a page holds reads as one.
+const PLACEHOLDER_CHAR = 0x4000_0000;
+
+/** The character-plane value of the placeholder at `row`, `col`. */
+export function encodePlaceholder(row: number, col: number): number {
+	return PLACEHOLDER_CHAR | (row << 12) | col;
+}
+
+/** Whether a character-plane value is a placeholder. */
+export function isPlaceholderChar(char: number): boolean {
+	return (char & 0xc000_0000) === PLACEHOLDER_CHAR;
+}
+
+/** The placeholder a character-plane value encodes. */
+export function decodePlaceholder(char: number): string {
+	return getPlaceholder((char >>> 12) & 0xfff, char & 0xfff);
+}
+
 // The largest id a 24-bit foreground color names. A third diacritic
 // could carry a fourth byte, which nothing here needs.
 const MAX_ID = 0xffffff;
@@ -147,6 +169,9 @@ interface KittyImage {
 	height: number;
 	cols: number;
 	rows: number;
+	// The content version its pixels were drawn from. A new one sends
+	// new pixels under the same id.
+	version: number;
 	// Until it is sent.
 	pixels: Uint8ClampedArray | null;
 	// The frame that last painted it or found it on the screen.
@@ -182,17 +207,24 @@ export class KittyImages {
 /**
  * The id of the image `key` names, `width` by `height` pixels shown over
  * `cols` by `rows` cells. A key not seen before takes a new id, and
- * `draw` makes its pixels, which go out before the next frame.
+ * `draw` makes its pixels, which go out before the next frame. A key
+ * seen at another `version` keeps its id, and its new pixels replace
+ * the old ones in the terminal.
  */
 export function placeKittyImage(
 	images: KittyImages,
 	key: string,
+	version: number,
 	size: {width: number; height: number; cols: number; rows: number},
 	draw: () => Uint8ClampedArray,
 ): number {
 	const existing = images.byKey.get(key);
 	if (existing !== undefined) {
 		existing.seen = images.frame;
+		if (existing.version !== version) {
+			existing.version = version;
+			existing.pixels = draw();
+		}
 		return existing.id;
 	}
 	let id = images.nextId;
@@ -200,7 +232,13 @@ export function placeKittyImage(
 		id = id >= MAX_ID ? 1 : id + 1;
 	}
 	images.nextId = id >= MAX_ID ? 1 : id + 1;
-	const image: KittyImage = {...size, id, pixels: draw(), seen: images.frame};
+	const image: KittyImage = {
+		...size,
+		id,
+		version,
+		pixels: draw(),
+		seen: images.frame,
+	};
 	images.byKey.set(key, image);
 	images.byId.set(id, image);
 	return id;
@@ -220,10 +258,13 @@ export async function takeKittyOutput(
 		return "";
 	}
 	if (screen !== null) {
-		for (const fg of screen.fg) {
-			const image = images.byId.get(fg & MAX_ID);
-			if (image !== undefined) {
-				image.seen = frame;
+		const {cluster, fg} = screen;
+		for (let index = 0; index < cluster.length; index++) {
+			if (isPlaceholderChar(cluster[index])) {
+				const image = images.byId.get(fg[index] & MAX_ID);
+				if (image !== undefined) {
+					image.seen = frame;
+				}
 			}
 		}
 	}
@@ -305,25 +346,6 @@ async function encodeImage(
 		out += at === 0
 			? `\x1b_G${control},m=${more};${chunk}\x1b\\`
 			: `\x1b_Gm=${more};${chunk}\x1b\\`;
-	}
-	return out;
-}
-
-// zlib, which is what CompressionStream calls "deflate".
-async function deflate(bytes: Uint8ClampedArray): Promise<Uint8Array> {
-	const stream = new Blob([bytes as Uint8ClampedArray<ArrayBuffer>])
-		.stream()
-		.pipeThrough(new CompressionStream("deflate"));
-	return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
-function toBase64(bytes: Uint8Array | Uint8ClampedArray): string {
-	let out = "";
-	// btoa takes a binary string, built a slice at a time so no call
-	// spreads more arguments than a stack holds. A slice a multiple of
-	// three bytes long encodes with no padding, so the pieces join.
-	for (let at = 0; at < bytes.length; at += 0x6000) {
-		out += btoa(String.fromCharCode(...bytes.subarray(at, at + 0x6000)));
 	}
 	return out;
 }

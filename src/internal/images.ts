@@ -237,6 +237,16 @@ async function inflate(data: Uint8Array, limit: number): Promise<Uint8Array> {
 	return out.subarray(0, length);
 }
 
+/** `bytes` compressed as a zlib stream. */
+export async function deflate(
+	bytes: Uint8Array | Uint8ClampedArray,
+): Promise<Uint8Array> {
+	const stream = new Blob([bytes as BlobPart])
+		.stream()
+		.pipeThrough(new CompressionStream("deflate"));
+	return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
 // Adam7: the start and step of each pass, columns then rows.
 const ADAM7 = [
 	[0, 0, 8, 8],
@@ -499,6 +509,18 @@ function crc32(bytes: Uint8Array, start: number, end: number): number {
 		crc = CRC_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
 	}
 	return (crc ^ 0xffffffff) >>> 0;
+}
+
+/** `bytes` in base64. */
+export function toBase64(bytes: Uint8Array | Uint8ClampedArray): string {
+	let out = "";
+	// btoa takes a binary string, built a slice at a time so no call
+	// spreads more arguments than a stack holds. A slice a multiple of
+	// three bytes long encodes with no padding, so the pieces join.
+	for (let at = 0; at < bytes.length; at += 0x6000) {
+		out += btoa(String.fromCharCode(...bytes.subarray(at, at + 0x6000)));
+	}
+	return out;
 }
 
 /**

@@ -72,6 +72,7 @@ import {
 	negotiateGraphemeClusters,
 	negotiateKeyboard,
 	negotiateKittyGraphics,
+	negotiateKittyGraphicsInTmux,
 	negotiateOverline,
 	queryCellPixels,
 	queryDeviceAttributes,
@@ -309,7 +310,10 @@ export interface TermDOMOptions {
 	 * - `"cells"`: in cells, two pixels to a cell in half blocks, which
 	 *   every terminal shows.
 	 * - `"kitty"`: in the kitty graphics protocol's Unicode placeholders,
-	 *   without asking the terminal. The page must be drawn in 24-bit
+	 *   without asking whether the terminal draws them. The terminal is
+	 *   asked only whether it is tmux, which passes the images on to the
+	 *   terminal it runs in when its allow-passthrough option is on. The
+	 *   page must be drawn in 24-bit
 	 *   color; in fewer colors, and in a box more than 297 cells across
 	 *   or down, images draw in cells.
 	 * - `"none"`: not at all. An <img> loads nothing and shows its alt
@@ -423,32 +427,25 @@ function toDocumentURL(option: string | undefined): string | undefined {
 	return option;
 }
 
-function toGraphicsSetting(
+type GraphicsProtocol = "auto" | "cells" | "kitty";
+
+// The document's setting for an images or canvas option, and whether
+// its pixels go out in the kitty graphics protocol: "kitty" as asked,
+// "auto" once the terminal says it draws it, "cells" never.
+function toGraphicsOption(
 	name: "images" | "canvas",
 	option: TermDOMOptions["images"],
-): GraphicsSetting {
-	if (
-		option === undefined ||
-		option === "auto" ||
-		option === "cells" ||
-		option === "kitty"
-	) {
-		return "cells";
+): {setting: GraphicsSetting; protocol: GraphicsProtocol} {
+	if (option === undefined || option === "auto") {
+		return {setting: "cells", protocol: "auto"};
+	}
+	if (option === "cells" || option === "kitty") {
+		return {setting: "cells", protocol: option};
 	}
 	if (option === "none") {
-		return "none";
+		return {setting: "none", protocol: "cells"};
 	}
 	throw new TypeError(`${name} must be "auto", "cells", "kitty" or "none"`);
-}
-
-// Whether pixels go out in the kitty graphics protocol: "kitty" as asked,
-// "auto" once the terminal says it draws it, "cells" never.
-function toGraphicsProtocol(
-	option: TermDOMOptions["images"],
-): "auto" | "cells" | "kitty" {
-	return option === undefined || option === "auto"
-		? "auto"
-		: option === "kitty" ? "kitty" : "cells";
 }
 
 function toScripting(option: TermDOMOptions["scripting"]): boolean {
@@ -632,10 +629,7 @@ interface TermDOMSlots extends EventTargetSlots {
 	// The colorDepth option, or undefined when the terminal is to be asked.
 	colorDepth: EmittedColorDepth | undefined;
 	// How the images and canvas options send pixels.
-	graphicsProtocols: {
-		images: "auto" | "cells" | "kitty";
-		canvas: "auto" | "cells" | "kitty";
-	};
+	graphicsProtocols: {images: GraphicsProtocol; canvas: GraphicsProtocol};
 	exchange: Exchange;
 	// Resolves once the session is established and the first frame written.
 	attachReady: Promise<void>;
@@ -679,14 +673,14 @@ export class TermDOM extends EventTarget {
 		super();
 		const cellSize = toCellSizeSetting(options.cellSize);
 		const devicePixelRatio = toPixelRatioSetting(options.devicePixelRatio);
-		const images = toGraphicsSetting("images", options.images);
-		const canvas = toGraphicsSetting("canvas", options.canvas);
+		const images = toGraphicsOption("images", options.images);
+		const canvas = toGraphicsOption("canvas", options.canvas);
 		const pty = toPTYSpawner(options.ptyEmbeds);
 		const slots = _(this);
 		slots.colorDepth = toColorDepth(options.colorDepth);
 		slots.graphicsProtocols = {
-			images: toGraphicsProtocol(options.images),
-			canvas: toGraphicsProtocol(options.canvas),
+			images: images.protocol,
+			canvas: canvas.protocol,
 		};
 		const url = toDocumentURL(options.url);
 		slots.sealed = false;
@@ -773,8 +767,8 @@ export class TermDOM extends EventTarget {
 			framebuffer: slots.framebuffer,
 			cellSize,
 			devicePixelRatio,
-			images,
-			canvas,
+			images: images.setting,
+			canvas: canvas.setting,
 			pty,
 			load: (request, context) =>
 				answerRequest(
@@ -1225,20 +1219,32 @@ function startSession(term: TermDOM): void {
 		abandonColorSchemeQuery(slots.exchange);
 		abandonColorDepthQuery(slots.exchange);
 	});
-	// Whether images draw in pixels, which the first frame waits for
-	// so it does not draw them in cells first.
-	const graphicsSettled =
-		slots.graphicsProtocols.images === "auto" ||
-			slots.graphicsProtocols.canvas === "auto"
-			? negotiateKittyGraphics(slots.exchange).then((route) => {
-				if (route !== null && isAttached(term)) {
-					enableKittyGraphics(term, "auto");
-					slots.framebuffer.graphics!.passthrough = route === "tmux";
-					invalidate(slots.framebuffer);
-					void render(term);
-				}
-			})
-			: Promise.resolve();
+	// Whether images draw in pixels, and through tmux, which the first
+	// frame waits for so it does not draw them in cells first, or send
+	// them where tmux drops them. Whether the terminal tmux runs in draws
+	// them is asked after, and the images repaint if it does.
+	const {images, canvas} = slots.graphicsProtocols;
+	const asks = images === "auto" || canvas === "auto";
+	const graphicsSettled = asks || images === "kitty" || canvas === "kitty"
+		? negotiateKittyGraphics(slots.exchange).then(({drawn, tmux}) => {
+			const graphics = slots.framebuffer.graphics;
+			if (tmux && graphics !== null) {
+					graphics.passthrough = true;
+			}
+			if (!asks || !isAttached(term)) {
+				return;
+			}
+			if (drawn) {
+				startKittyGraphics(term, false);
+			} else if (tmux) {
+				void negotiateKittyGraphicsInTmux(slots.exchange).then((found) => {
+					if (found && isAttached(term)) {
+						startKittyGraphics(term, true);
+					}
+				});
+			}
+		})
+		: Promise.resolve();
 	void negotiateBidi(slots.exchange);
 	void negotiateGraphemeClusters(slots.exchange);
 	void negotiateKeyboard(slots.exchange);
@@ -2038,14 +2044,21 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	framePainted(termDOMSlots.layout);
 	// The images the frame's cells name go first, so the terminal has
 	// them when it draws the cells.
+	// Encoding them can wait. A session that ended, was suspended or
+	// sealed its document in the wait has let go of the screen, so the
+	// frame is dropped and the next one starts whole.
 	const graphics = termDOMSlots.framebuffer.graphics;
 	if (graphics !== null) {
 		const images = await takeKittyOutput(
 			graphics,
 			termDOMSlots.framebuffer.prev,
 		);
+		if (!isAttached(termDOM) || termDOMSlots.suspended || termDOMSlots.sealed) {
+			repaintAll(termDOMSlots.framebuffer);
+			return;
+		}
 		if (images) {
-			await termDOMSlots.exchange.write(images);
+			void termDOMSlots.exchange.write(images);
 		}
 	}
 
@@ -2088,6 +2101,17 @@ function forgetGraphics(termDOM: TermDOM): void {
 			void slots.exchange.write(deletes);
 		}
 	}
+}
+
+// The images and the canvas left to "auto" send their pixels in the
+// kitty graphics protocol, through tmux when `passthrough`, from a frame
+// drawn now.
+function startKittyGraphics(termDOM: TermDOM, passthrough: boolean): void {
+	const slots = _(termDOM);
+	enableKittyGraphics(termDOM, "auto");
+	slots.framebuffer.graphics!.passthrough = passthrough;
+	invalidate(slots.framebuffer);
+	void render(termDOM);
 }
 
 // The images and the canvas whose option is `protocol` send their pixels

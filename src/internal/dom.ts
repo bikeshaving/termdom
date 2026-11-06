@@ -62,6 +62,7 @@ import {
 	readImageResponse,
 	registerReplacedContent,
 	resolveImageURL,
+	toBase64,
 	unregisterReplacedContent,
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
@@ -16736,12 +16737,7 @@ class HTMLCanvasElement extends HTMLElement {
 		if (bitmap.width === 0 || bitmap.height === 0) {
 			return "data:,";
 		}
-		const bytes = encodePNG(bitmap);
-		let binary = "";
-		for (let i = 0; i < bytes.length; i += 0x8000) {
-			binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-		}
-		return `data:image/png;base64,${btoa(binary)}`;
+		return `data:image/png;base64,${toBase64(encodePNG(bitmap))}`;
 	}
 
 	transferControlToOffscreen(): globalThis.OffscreenCanvas {
