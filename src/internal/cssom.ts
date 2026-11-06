@@ -426,10 +426,6 @@ function getGroupRead(group: StyleGroup<object>): string {
 	return read;
 }
 
-const groupCaches = new WeakMap<
-	ResolvedValues,
-	Map<StyleGroup<object>, object>
->();
 const internedGroups = new Map<StyleGroup<object>, Map<string, object>>();
 // How many values are being resolved, one inside another, at the moment.
 let valueDepth = 0;
@@ -463,15 +459,10 @@ function readStyleGroup<T extends object>(
 		return readUnsharedGroup(element, group);
 	}
 	const values = computedSlotsFor(cascade, element).resolved;
-	let cache = groupCaches.get(values);
-	if (cache === undefined) {
-		cache = new Map();
-		groupCaches.set(values, cache);
-	}
-	let value = cache.get(group as StyleGroup<object>) as T | undefined;
+	let value = values.getGroup(group);
 	if (value === undefined) {
 		value = readSharedGroup(element, group);
-		cache.set(group as StyleGroup<object>, value);
+		values.setGroup(group, value);
 	}
 	return value;
 }
@@ -494,15 +485,10 @@ function readPseudoGroup<T extends object>(
 	if (!cascade.currentDeclarations.has(slots)) {
 		slots._syncResolved();
 	}
-	let cache = groupCaches.get(slots.resolved);
-	if (cache === undefined) {
-		cache = new Map();
-		groupCaches.set(slots.resolved, cache);
-	}
-	let value = cache.get(group as StyleGroup<object>) as T | undefined;
+	let value = slots.resolved.getGroup(group);
 	if (value === undefined) {
 		value = readUnsharedGroup(element, group);
-		cache.set(group as StyleGroup<object>, value);
+		slots.resolved.setGroup(group, value);
 	}
 	return value;
 }
@@ -533,22 +519,16 @@ export function getPseudoStyleGroup<T extends object>(
 	if (!cascade.currentDeclarations.has(slots)) {
 		slots._syncResolved();
 	}
-	let cache = groupCaches.get(slots.resolved);
-	if (cache === undefined) {
-		cache = new Map();
-		groupCaches.set(slots.resolved, cache);
-	}
-	const key = group as unknown as StyleGroup<object>;
-	let value = cache.get(key) as T | undefined;
+	let value = slots.resolved.getGroup(group);
 	if (value === undefined) {
 		value = internGroup(
-			key as unknown as StyleGroup<T>,
+			group as unknown as StyleGroup<T>,
 			recordStyleReads(
 				() => {},
 				() => group.read(cascade, element, pseudoElement),
 			),
 		);
-		cache.set(key, value);
+		slots.resolved.setGroup(group, value);
 	}
 	return value;
 }
@@ -4762,18 +4742,39 @@ for (const property of OWN_PROPERTIES) {
 
 /**
  * Resolved values by property: a supported property's value at its
- * place, and a custom property's by its name.
+ * place, and a custom property's by its name. The style groups read from
+ * them are held with them, each group followed by its value.
  */
 class ResolvedValues {
 	readonly values: Array<string | undefined>;
 	custom: Map<string, string> | null;
 	size: number;
+	groups: object[] | null;
 
 	// Sized for the properties placed so far, which most tables read.
 	constructor(sized = false) {
 		this.values = sized ? new Array(placedProperties.length) : [];
 		this.custom = null;
 		this.size = 0;
+		this.groups = null;
+	}
+
+	getGroup<T extends object>(
+		group: StyleGroup<T> | PseudoStyleGroup<T>,
+	): T | undefined {
+		const groups = this.groups;
+		if (groups !== null) {
+			for (let index = 0; index < groups.length; index += 2) {
+				if (groups[index] === group) {
+					return groups[index + 1] as T;
+				}
+			}
+		}
+		return undefined;
+	}
+
+	setGroup(group: object, value: object): void {
+		(this.groups ??= []).push(group, value);
 	}
 
 	get(property: string): string | undefined {
