@@ -2,7 +2,7 @@ import {readFileSync} from "node:fs";
 
 import {describe, expect, test} from "@b9g/libuild/test";
 
-import {getStringWidth} from "../src/internal/text.ts";
+import {getStringWidth, toASCIILowercase} from "../src/internal/text.ts";
 import {ORACLE_CASES, randomMixedStrings} from "./width-oracle-domain.js";
 
 /**
@@ -110,4 +110,13 @@ test("combining marks take the grapheme-aware path, not Bun's", () => {
 	// And the fast path is still exact for everything without them.
 	expect(getStringWidth("hello")).toBe(5);
 	expect(getStringWidth("中文")).toBe(4);
+});
+
+test("ASCII lowercase folds A to Z and leaves other letters", () => {
+	expect(toASCIILowercase("Box-Row_A9")).toBe("box-row_a9");
+	expect(toASCIILowercase("already-lower")).toBe("already-lower");
+	expect(toASCIILowercase("KELVIN")).toBe("Kelvin");
+	expect(toASCIILowercase("ÉCOLE")).toBe("École");
+	expect(toASCIILowercase("XİSTANBUL")).toBe("xİstanbul");
+	expect(toASCIILowercase("café")).toBe("café");
 });
