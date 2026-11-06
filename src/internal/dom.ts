@@ -39364,16 +39364,17 @@ class Location {
 	}
 
 	// A new fragment on the same URL, which is a navigation to a fragment.
-	// Setting the fragment the URL already has changes nothing.
+	// Setting the fragment the URL already has changes nothing. An empty
+	// value is an empty fragment, a URL ending in "#", which URL's own hash
+	// setter would drop.
 	set hash(value: string) {
 		const url = getLocationURL(this);
 		if (url === null) {
 			return;
 		}
-		const previous = url.hash;
-		url.hash = String(value);
-		if (url.hash !== previous) {
-			navigateLocation(this, url, "auto");
+		const next = parseURL(`#${String(value).replace(/^#/, "")}`, url.href)!;
+		if (next.href !== url.href) {
+			navigateLocation(this, next, "auto");
 		}
 	}
 

@@ -118,6 +118,19 @@ test("pushState leaves :target where it was and fires no hashchange", async () =
 	dom.dispose();
 });
 
+test("an empty hash goes to the empty fragment of the same document", () => {
+	const dom = created("<p id=top>t</p>");
+	const {window} = dom;
+	window.location.hash = "top";
+	window.location.hash = "";
+	expect(window.location.href).toBe("https://example.com/a/b#");
+	expect(window.location.hash).toBe("");
+	expect(window.history.length).toBe(3);
+	window.location.hash = "#";
+	expect(window.history.length).toBe(3);
+	dom.dispose();
+});
+
 test("going to a fragment is a new entry with no state", () => {
 	const dom = created("<a href=#top>top</a><p id=top>t</p>");
 	const {window, document} = dom;
