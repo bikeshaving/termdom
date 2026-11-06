@@ -76,7 +76,8 @@ Options:
 - `images?: "auto" | "cells" | "kitty" | "none"`: how `<img>` draws.
   `"auto"` (default) uses the kitty graphics protocol where the
   terminal supports it and half blocks elsewhere, `"cells"` draws half
-  blocks, `"kitty"` uses the kitty graphics protocol without asking,
+  blocks, `"kitty"` uses the kitty graphics protocol without asking
+  whether the terminal supports it (TermDOM still checks for tmux),
   and `"none"` loads nothing and shows `alt` text.
 - `canvas?: "auto" | "cells" | "kitty" | "none"`: the same for the `"2d"`
   context. With `"none"`, `getContext("2d")` returns `null`. The

@@ -1691,28 +1691,39 @@ export async function negotiateColorScheme(
 
 /**
  * Whether the terminal draws kitty graphics through Unicode
- * placeholders, and whether through tmux. It answers the protocol's
- * query, and names itself in XTVERSION as one of the terminals known to
- * draw placeholders: others that answer the query, such as WezTerm and
- * Konsole, place images only at the cursor. tmux answers for itself, so
- * the terminal it runs in is asked again through it.
+ * placeholders, and whether it is tmux. It answers the protocol's query,
+ * and names itself in XTVERSION as one of the terminals known to draw
+ * placeholders: others that answer the query, such as WezTerm and
+ * Konsole, place images only at the cursor. tmux answers for itself, and
+ * negotiateKittyGraphicsInTmux asks the terminal it runs in.
  */
 export async function negotiateKittyGraphics(
 	exchange: Exchange,
-): Promise<"direct" | "tmux" | null> {
+): Promise<{drawn: boolean; tmux: boolean}> {
 	if (!_(exchange).interactive) {
-		return null;
+		return {drawn: false, tmux: false};
 	}
-	const direct = await askKittyGraphics(exchange, (escape) => escape, () =>
+	const {ok, name} = await askKittyGraphics(exchange, (escape) => escape, () =>
 		queryDeviceAttributes(exchange),
 	);
-	if (direct.ok && PLACEHOLDER_TERMINALS.test(direct.name)) {
-		return "direct";
+	return {
+		drawn: ok && PLACEHOLDER_TERMINALS.test(name),
+		tmux: /^tmux\b/.test(name),
+	};
+}
+
+/**
+ * Whether the terminal tmux runs in draws kitty graphics through
+ * placeholders, asked through tmux. A tmux whose allow-passthrough is
+ * off drops the questions, and the answer is no once the wait runs out.
+ */
+export async function negotiateKittyGraphicsInTmux(
+	exchange: Exchange,
+): Promise<boolean> {
+	if (!_(exchange).interactive || _(exchange).disposed) {
+		return false;
 	}
-	if (!/^tmux\b/.test(direct.name) || _(exchange).disposed) {
-		return null;
-	}
-	const inner = await askKittyGraphics(exchange, wrapForTmux, () =>
+	const {ok, name} = await askKittyGraphics(exchange, wrapForTmux, () =>
 		nextReply<"secondary-attributes", boolean>(
 			exchange,
 			"secondary-attributes",
@@ -1723,7 +1734,7 @@ export async function negotiateKittyGraphics(
 				read: () => true,
 			},
 		).then(() => {}));
-	return inner.ok && PLACEHOLDER_TERMINALS.test(inner.name) ? "tmux" : null;
+	return ok && PLACEHOLDER_TERMINALS.test(name);
 }
 
 // The graphics query and XTVERSION, each as `wrap` sends it, and then

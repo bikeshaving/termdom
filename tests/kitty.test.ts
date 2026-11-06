@@ -11,13 +11,25 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM, type TermDOMOptions} from "../src/index.ts";
-import {encodePNG} from "../src/internal/images.ts";
-import {getPlaceholder, MAX_PLACEHOLDER_CELLS} from "../src/internal/kitty.ts";
+import {toCellColor} from "../src/internal/cssvalues.ts";
+import {CellGrid} from "../src/internal/framebuffer.ts";
+import {encodePNG, toBase64} from "../src/internal/images.ts";
+import {
+	getPlaceholder,
+	isPlaceholderChar,
+	KittyImages,
+	MAX_PLACEHOLDER_CELLS,
+	PLACEHOLDER,
+	placeKittyImage,
+	takeKittyOutput,
+} from "../src/internal/kitty.ts";
+import {_} from "../src/internal/slots.ts";
 import {
 	captureRawOutput,
 	MockProcess,
 	nextFrame,
 	scriptReplies,
+	until,
 } from "./test-utils.ts";
 
 type RGBA = [number, number, number, number];
@@ -55,6 +67,58 @@ const BANDS = png(
 const KITTY_QUERY = "\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\";
 const KITTY_OK = "\x1b_Gi=31;OK\x1b\\";
 const VERSION_QUERY = "\x1b[>0q";
+const TMUX_VERSION = "\x1bP>|tmux 3.6b\x1b\\";
+
+function wrapForTmux(escape: string): string {
+	return `\x1bPtmux;${escape.replaceAll("\x1b", "\x1b\x1b")}\x1b\\`;
+}
+
+// The graphics escapes sent through tmux, unwrapped.
+function unwrapTmux(raw: string): string {
+	const wrapped =
+		raw.match(/\x1bPtmux;\x1b\x1b_G[^\x1b]*\x1b\x1b\\\x1b\\/g) ?? [];
+	return wrapped
+		.map((escape) => escape.slice(7, -2).replaceAll("\x1b\x1b", "\x1b"))
+		.join("");
+}
+
+function settle(ms = 50): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Swaps in a CompressionStream that holds its output until `release`, to
+// end a session while a frame's images encode.
+function holdCompression(): {
+	started: Promise<void>;
+	release: () => void;
+	restore: () => void;
+} {
+	const global = globalThis as {CompressionStream: typeof CompressionStream};
+	const Real = global.CompressionStream;
+	let started!: () => void;
+	const startedPromise = new Promise<void>((resolve) => (started = resolve));
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => (release = resolve));
+	global.CompressionStream = class {
+		readable: ReadableStream<Uint8Array>;
+		writable: WritableStream<BufferSource>;
+		constructor(format: CompressionFormat) {
+			const real = new Real(format);
+			this.writable = real.writable;
+			this.readable = real.readable.pipeThrough(
+				new TransformStream<Uint8Array, Uint8Array>({start: () => gate}),
+			);
+			started();
+		}
+	} as unknown as typeof CompressionStream;
+	return {
+		started: startedPromise,
+		release,
+		restore: () => {
+			global.CompressionStream = Real;
+		},
+	};
+}
 
 interface Upload {
 	control: Record<string, string>;
@@ -280,7 +344,7 @@ test("a canvas set to cells draws in cells while images send pixels", async () =
 	dom.dispose();
 });
 
-test("a canvas set to kitty sends each frame it draws", async () => {
+test("a canvas set to kitty sends each frame it draws under one id", async () => {
 	const {dom, terminal, output} = await mount(
 		"<canvas id=\"c\" width=\"16\" height=\"32\"></canvas>",
 		{canvas: "kitty"},
@@ -290,12 +354,16 @@ test("a canvas set to kitty sends each frame it draws", async () => {
 	context.fillStyle = "red";
 	context.fillRect(0, 0, 16, 32);
 	await nextFrame(dom);
+	const first = output().length;
 	context.fillStyle = "blue";
 	context.fillRect(0, 0, 16, 32);
 	await nextFrame(dom);
 	const uploads = readUploads(output());
 	expect(uploads.length).toBe(2);
+	expect(uploads[1].control.i).toBe(uploads[0].control.i);
 	expect(cell(terminal, 0, 0).fg).toBe(Number(uploads[1].control.i));
+	// The cells name the same image, so they are not written again.
+	expect(output().slice(first)).not.toContain(PLACEHOLDER);
 	const pixels = await readPixels(uploads[1]);
 	expect(Array.from(pixels.subarray(0, 4))).toEqual(BLUE);
 	dom.dispose();
@@ -370,26 +438,20 @@ test("a query answer split across reads is no keystrokes", async () => {
 });
 
 test("\"auto\" in tmux asks the terminal it runs in, through it", async () => {
-	const wrap = (escape: string) =>
-		`\x1bPtmux;${escape.replaceAll("\x1b", "\x1b\x1b")}\x1b\\`;
 	const {dom, terminal, output} = await mount(`<img src="${BANDS}">`, {
 		images: "auto",
 		replies: [
-			{ask: wrap(KITTY_QUERY), reply: KITTY_OK},
-			{ask: wrap(VERSION_QUERY), reply: "\x1bP>|ghostty 1.4.0\x1b\\"},
-			{ask: wrap("\x1b[>c"), reply: "\x1b[>1;10;0c"},
-			{ask: VERSION_QUERY, reply: "\x1bP>|tmux 3.6b\x1b\\"},
+			{ask: wrapForTmux(KITTY_QUERY), reply: KITTY_OK},
+			{ask: wrapForTmux(VERSION_QUERY), reply: "\x1bP>|ghostty 1.4.0\x1b\\"},
+			{ask: wrapForTmux("\x1b[>c"), reply: "\x1b[>1;10;0c"},
+			{ask: VERSION_QUERY, reply: TMUX_VERSION},
 		],
 	});
 	await loaded(dom);
+	await until(() => readUploads(unwrapTmux(output())).length > 0);
 	const text = output();
 	expect(readUploads(text)).toEqual([]);
-	const wrapped = text.match(/\x1bPtmux;\x1b\x1b_G[^\x1b]*\x1b\x1b\\\x1b\\/g)!;
-	expect(wrapped.length).toBeGreaterThan(0);
-	const inner = wrapped
-		.map((escape) => escape.slice(7, -2).replaceAll("\x1b\x1b", "\x1b"))
-		.join("");
-	const [upload] = readUploads(inner);
+	const [upload] = readUploads(unwrapTmux(text));
 	expect(cell(terminal, 0, 0)).toEqual({
 		char: getPlaceholder(0, 0),
 		fg: Number(upload.control.i),
@@ -413,5 +475,181 @@ test("\"cells\" asks the terminal nothing", async () => {
 		canvas: "cells",
 	});
 	expect(output()).not.toContain(KITTY_QUERY);
+	dom.dispose();
+});
+
+test("\"auto\" in a tmux that drops passthrough does not hold the first frame", async () => {
+	const started = performance.now();
+	const {dom, terminal, output} = await mount(`<img src="${BANDS}">`, {
+		images: "auto",
+		replies: [{ask: VERSION_QUERY, reply: TMUX_VERSION}],
+	});
+	// The questions asked through tmux go unanswered until their wait,
+	// a second, runs out.
+	expect(performance.now() - started).toBeLessThan(1000);
+	expect(output()).toContain(wrapForTmux(KITTY_QUERY));
+	await loaded(dom);
+	expect(cell(terminal, 0, 0).char).toBe("▄");
+	dom.dispose();
+});
+
+test("\"kitty\" in tmux sends its images through tmux", async () => {
+	const {dom, terminal, output} = await mount(`<img src="${BANDS}">`, {
+		replies: [{ask: VERSION_QUERY, reply: TMUX_VERSION}],
+	});
+	await loaded(dom);
+	const text = output();
+	expect(readUploads(text)).toEqual([]);
+	const [upload] = readUploads(unwrapTmux(text));
+	expect(cell(terminal, 0, 0)).toEqual({
+		char: getPlaceholder(0, 0),
+		fg: Number(upload.control.i),
+	});
+	dom.dispose();
+});
+
+test("a frame whose images are encoding when dispose runs is not written", async () => {
+	const {dom, output} = await mount(`<img id="i" src="${BANDS}">`);
+	await loaded(dom);
+	const [before] = readUploads(output());
+	const held = holdCompression();
+	try {
+		dom.document.getElementById("i")!.style.width = "4px";
+		await held.started;
+		const mark = output().length;
+		const disposed = dom.dispose();
+		held.release();
+		await disposed;
+		await settle();
+		const after = output().slice(mark);
+		expect(after).toContain(`\x1b_Ga=d,d=I,i=${before.control.i},q=2\x1b\\`);
+		expect(readUploads(after)).toEqual([]);
+		expect(after).not.toContain(PLACEHOLDER);
+	} finally {
+		held.restore();
+	}
+});
+
+test("a frame whose images are encoding when the session suspends is drawn whole on resume", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;16;8t"}]);
+	const output = captureRawOutput(terminal);
+	let suspended = false;
+	let resume!: () => void;
+	const dom = new TermDOM({
+		transport: {
+			...terminal.transport,
+			cols: terminal.transport.cols,
+			rows: terminal.transport.rows,
+			suspend: () => {
+				suspended = true;
+				return new Promise<void>((resolve) => (resume = resolve));
+			},
+		},
+		csp: "img-src data:",
+		colorDepth: "rgb",
+		images: "kitty",
+	});
+	dom.document.body.innerHTML = `<img id="i" src="${BANDS}">`;
+	dom.attach();
+	await nextFrame(dom);
+	await loaded(dom);
+	const held = holdCompression();
+	try {
+		dom.document.getElementById("i")!.style.width = "4px";
+		await held.started;
+		const mark = output().length;
+		terminal.stdin.simulateResponse("\x1a");
+		await until(() => suspended);
+		held.release();
+		await settle();
+		const away = output().slice(mark);
+		expect(readUploads(away)).toEqual([]);
+		expect(away).not.toContain(PLACEHOLDER);
+		held.restore();
+		resume();
+		await until(() => readUploads(output().slice(mark)).length > 0);
+		const [upload] = readUploads(output().slice(mark));
+		expect(upload.control).toMatchObject({c: "4", r: "4"});
+		// The suspend sealed the page above, so the page starts again below.
+		const last = () => {
+			const buffer = (terminal as any).terminal.buffer.active;
+			for (let row = buffer.length - 1; row >= 0; row--) {
+				if (
+					buffer.getLine(row).getCell(3).getChars() === getPlaceholder(3, 3)
+				) {
+					return buffer.getLine(row).getCell(3).getFgColor() as number;
+				}
+			}
+			return -1;
+		};
+		await until(() => last() !== -1);
+		expect(last()).toBe(Number(upload.control.i));
+	} finally {
+		held.restore();
+		await dom.dispose();
+	}
+});
+
+test("text in the color of an image's id does not keep the image", async () => {
+	const images = new KittyImages(() => ({width: 8, height: 16}));
+	// 64 MB of pixels, past what the terminal may keep of unshown images.
+	const size = {width: 4096, height: 4096, cols: 1, rows: 1};
+	const draw = () => new Uint8ClampedArray(4);
+	const dropped = placeKittyImage(images, "dropped", 0, size, draw);
+	await takeKittyOutput(images, null);
+	const screen = new CellGrid(1, 2);
+	screen.setCell(0, "a", {fg: toCellColor(dropped)});
+	expect(await takeKittyOutput(images, screen))
+		.toContain(`\x1b_Ga=d,d=I,i=${dropped},q=2\x1b\\`);
+	const kept = placeKittyImage(images, "kept", 0, size, draw);
+	await takeKittyOutput(images, null);
+	screen.setPlaceholder(1, 0, 0, {fg: toCellColor(kept)});
+	expect(await takeKittyOutput(images, screen)).not.toContain(`i=${kept},`);
+});
+
+test("an image's cells hold placeholder codes, not clusters", async () => {
+	const {dom} = await mount(`<img src="${BANDS}">`);
+	await loaded(dom);
+	const grid = (_(dom as never) as {framebuffer: {prev: CellGrid}})
+		.framebuffer.prev;
+	expect(
+		[0, 1, grid.cols, grid.cols + 1].map((index) =>
+			isPlaceholderChar(grid.cluster[index]),
+		),
+	).toEqual([true, true, true, true]);
+	expect(isPlaceholderChar("\u{10EEEE}".codePointAt(0)!)).toBe(false);
+	dom.dispose();
+});
+
+test("toBase64 encodes slice by slice into one string", () => {
+	const bytes = Uint8Array.from({length: 0x6000 * 2 + 5}, (_, index) => (index *
+		7) & 0xff);
+	let binary = "";
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte);
+	}
+	expect(toBase64(bytes)).toBe(btoa(binary));
+});
+
+test("images and canvas each take their own setting and protocol", async () => {
+	for (const name of ["images", "canvas"] as const) {
+		expect(() => new TermDOM({[name]: "pixels" as never})).toThrow(
+			`${name} must be "auto", "cells", "kitty" or "none"`,
+		);
+	}
+	const {dom, output} = await mount(
+		`<p><img alt="gone" src="${BANDS}"></p>` +
+			"<canvas id=\"c\" width=\"16\" height=\"32\"></canvas>",
+		{images: "none", canvas: "kitty"},
+	);
+	const canvas = dom.document.getElementById("c") as HTMLCanvasElement;
+	const context = canvas.getContext("2d")!;
+	context.fillStyle = "red";
+	context.fillRect(0, 0, 16, 32);
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(readUploads(output()).length).toBe(1);
+	expect(output()).toContain("gone");
 	dom.dispose();
 });

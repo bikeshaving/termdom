@@ -19,8 +19,10 @@ context:
   kitty graphics protocol in kitty and Ghostty, and cells everywhere
   else.
 - `"cells"` always draws cells.
-- `"kitty"` always uses the kitty graphics protocol, without asking the
-  terminal.
+- `"kitty"` always uses the kitty graphics protocol, without asking
+  whether the terminal supports it. TermDOM still asks whether it runs
+  in tmux, which passes images on only when its `allow-passthrough`
+  option is on.
 - `"none"` draws nothing. An `<img>` loads nothing and shows its `alt`
   text. `getContext("2d")` returns `null`, so a canvas shows its
   fallback content. A `"termdom-cellgrid"` context still works, but its
@@ -33,7 +35,12 @@ still cells, so an image clips, stacks under other boxes, and scrolls
 like one drawn in half blocks. The protocol needs 24-bit color, and
 it can't number a box more than 297 cells across or down. Those
 images, and every image in a terminal without the protocol, are drawn
-in cells. Each frame a canvas draws is sent again.
+in cells. Each frame a canvas draws is sent again, replacing the
+last one.
+
+Inside tmux, `"auto"` draws the first frame in cells, then asks the
+terminal tmux runs in, through tmux. If that terminal supports the
+protocol and `allow-passthrough` is on, images switch to it.
 
 Pages written for a browser often read better with `"none"`: half
 blocks blur logos and detail, and alt text says what they show.
