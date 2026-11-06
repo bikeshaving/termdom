@@ -7705,8 +7705,9 @@ export function handleMutations(
 
 // A :has() anchor sits above what changed it, or before it among its
 // siblings for :has(+ x) and :has(~ x), and the rule can style the
-// anchor's descendants too. So each such element a :has() could be
-// tested on restyles, with everything under it.
+// anchor's descendants too, and its later siblings when a + or ~ follows
+// the :has(). So each such element a :has() could be tested on restyles,
+// with everything under it.
 function invalidateHasAnchors(
 	cascade: Cascade,
 	batch: MutationBatch,
@@ -7716,6 +7717,10 @@ function invalidateHasAnchors(
 		return;
 	}
 	const siblings = someScopeRules(cascade, (rules) => rules.hasSiblings);
+	const stylesSiblings = someScopeRules(
+		cascade,
+		(rules) => rules.hasStylesSiblings,
+	);
 	const anchors = new Set<Element>();
 	for (const mutation of mutations) {
 		const start = getNodeType(mutation.target) === ELEMENT_NODE
@@ -7735,6 +7740,13 @@ function invalidateHasAnchors(
 					anchors.add(element);
 					if (hasAnswersChanged(cascade, element)) {
 						invalidateOnce(cascade, batch, element);
+						for (
+							let later = stylesSiblings ? element.nextElementSibling : null;
+							later !== null;
+							later = later.nextElementSibling
+						) {
+							invalidateOnce(cascade, batch, later);
+						}
 					}
 				}
 			}
@@ -8224,6 +8236,10 @@ interface ScopeRules {
 	// earlier siblings can match from, and not only its ancestors.
 	hasSiblings: boolean;
 
+	// Whether a compound with a :has() is followed by + or ~, so the rule
+	// styles the anchor's later siblings and what they hold.
+	hasStylesSiblings: boolean;
+
 	// The pseudo-classes named anywhere inside a :has() argument. A change
 	// to one of those states can restyle an anchor's whole subtree, far
 	// from the element whose state changed.
@@ -8243,6 +8259,7 @@ function getScopeRules(cascade: Cascade, scope: Node | undefined): ScopeRules {
 			hover: false,
 			hasAnchors: new Set(),
 			hasSiblings: false,
+			hasStylesSiblings: false,
 			hasStates: new Set(),
 			hasCompounds: new Set(),
 			hasUntestable: false,
@@ -8283,6 +8300,14 @@ function noteHasRules(
 	for (const [index, compound] of compounds.entries()) {
 		const names = getPseudoClassNames(getNestedCompounds(compound));
 		if (compound.pseudoClasses.some(({name}) => name === "has")) {
+			const next = complex.combinators[
+				complex.combinators.length === complex.compounds.length
+					? index + 1
+					: index
+			];
+			if (isSiblingCombinator(next)) {
+				rules.hasStylesSiblings = true;
+			}
 			const required = getRequiredKeys(compound);
 			rules.hasAnchors.add(
 				required.ids.length > 0

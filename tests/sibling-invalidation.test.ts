@@ -304,3 +304,31 @@ test("a :has(+ x) match follows the child after its subject coming and going", a
 	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
 	termdom.dispose();
 });
+
+test("a child added to a :has() anchor restyles the siblings a rule styles after it", async () => {
+	const {termdom, terminal, document} = await mount(
+		"#box:has(.item:only-of-type) ~ #after { color: rgb(255, 0, 0); } #box:has(.item:last-of-type) + #next { color: rgb(0, 0, 255); }",
+		"<div id=box></div><p id=next>next</p><p id=after>after</p>",
+	);
+	const {window} = termdom;
+	const box = document.getElementById("box")!;
+	const after = document.getElementById("after")!;
+	const next = document.getElementById("next")!;
+	const item = document.createElement("div");
+	item.className = "item";
+	box.append(item);
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(after).color).toBe(RED);
+	expect(window.getComputedStyle(next).color).toBe(BLUE);
+	expect(terminal.getScreenContents()).toBe(await freshScreen(document));
+	const second = document.createElement("div");
+	second.className = "item";
+	box.append(second);
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(after).color).not.toBe(RED);
+	expect(window.getComputedStyle(next).color).toBe(BLUE);
+	second.remove();
+	await nextFrame(termdom);
+	expect(window.getComputedStyle(after).color).toBe(RED);
+	termdom.dispose();
+});
