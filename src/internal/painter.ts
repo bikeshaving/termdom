@@ -512,11 +512,79 @@ function unionRect(rects: Rect[]): Rect {
 	return {left, top, width: right - left, height: bottom - top};
 }
 
-/** One registered highlight's share of one text node, in paint order. */
-interface HighlightRun {
-	name: string;
-	from: number;
-	to: number;
+/**
+ * Each registered highlight's share of the text nodes it covers, for one
+ * frame. A share is an index into the arrays, and a text node's shares
+ * chain through next in paint order, from the first its entry in heads
+ * names. last holds the end of the chain at the index of its first.
+ */
+interface HighlightRuns {
+	heads: Map<Text, number>;
+	names: string[];
+	from: Int32Array;
+	to: Int32Array;
+	next: Int32Array;
+	last: Int32Array;
+	count: number;
+}
+
+function createHighlightRuns(capacity: number): HighlightRuns {
+	return {
+		heads: new Map(),
+		names: [],
+		from: new Int32Array(capacity),
+		to: new Int32Array(capacity),
+		next: new Int32Array(capacity),
+		last: new Int32Array(capacity),
+		count: 0,
+	};
+}
+
+function growHighlightRuns(runs: HighlightRuns): void {
+	const grown = createHighlightRuns(runs.from.length * 2);
+	grown.from.set(runs.from);
+	grown.to.set(runs.to);
+	grown.next.set(runs.next);
+	grown.last.set(runs.last);
+	runs.from = grown.from;
+	runs.to = grown.to;
+	runs.next = grown.next;
+	runs.last = grown.last;
+}
+
+function addHighlightRun(
+	runs: HighlightRuns,
+	textNode: Text,
+	name: string,
+	from: number,
+	to: number,
+): void {
+	if (runs.count === runs.from.length) {
+		growHighlightRuns(runs);
+	}
+	const index = runs.count++;
+	runs.names[index] = name;
+	runs.from[index] = from;
+	runs.to[index] = to;
+	runs.next[index] = -1;
+	const head = runs.heads.get(textNode);
+	if (head === undefined) {
+		runs.heads.set(textNode, index);
+	} else {
+		runs.next[runs.last[head]] = index;
+	}
+	runs.last[head ?? index] = index;
+}
+
+// Arrays a frame with much highlighted text grew past the kept size go
+// back to it once a frame needs no more than that.
+function clearHighlightRuns(runs: HighlightRuns): void {
+	clearMap(runs.heads);
+	if (runs.from.length > KEPT_RECORDS && runs.count <= KEPT_RECORDS) {
+		Object.assign(runs, createHighlightRuns(KEPT_RECORDS));
+	}
+	runs.names.length = 0;
+	runs.count = 0;
 }
 
 export class Painter {
@@ -534,7 +602,7 @@ export class Painter {
 	// paints this many rows higher than it counts.
 	frame: LayoutNode;
 	scrolledRows: number;
-	highlightedText: Map<Text, HighlightRun[]>;
+	highlightedText: HighlightRuns;
 	highlightStyles: Map<Element, Map<string, HighlightPaint | null>>;
 	// Where this frame painted each text, for the overflow markers drawn
 	// after it, which would otherwise ask layout to place it again.
@@ -567,7 +635,7 @@ export class Painter {
 		this.renderedOutsideMarkers = new WeakSet<Element>();
 		this.frame = layout.initialBlock;
 		this.scrolledRows = 0;
-		this.highlightedText = new Map();
+		this.highlightedText = createHighlightRuns(64);
 		this.highlightStyles = new Map();
 		this.paintedText = new Map();
 		this.inTransparent = new Map();
@@ -788,7 +856,7 @@ export function paint(painter: Painter, ctx: CellContext): void {
 	// A frame with no rows to paint, one asked for in case input changed
 	// something, lets go of the last frame's and does no more.
 	if (ctx.bands.length === 0) {
-		clearMap(painter.highlightedText);
+		clearHighlightRuns(painter.highlightedText);
 		painter.selectedRange = null;
 		return;
 	}
@@ -2365,9 +2433,14 @@ function getMathCellStyle(
 	let style = cell.style;
 	const covers = (from: number, to: number): boolean =>
 		from <= source.offset && source.offset < to;
-	for (const run of painter.highlightedText.get(source.node) ?? []) {
-		if (covers(run.from, run.to)) {
-			const paint = getHighlightStyle(painter, parent, run.name);
+	const runs = painter.highlightedText;
+	for (
+		let run = runs.heads.get(source.node) ?? -1;
+		run !== -1;
+		run = runs.next[run]
+	) {
+		if (covers(runs.from[run], runs.to[run])) {
+			const paint = getHighlightStyle(painter, parent, runs.names[run]);
 			if (paint !== null) {
 				style = foldHighlight(style ?? {}, paint);
 			}
@@ -2675,25 +2748,20 @@ function getHighlightSegments(
 // painter folds the styles in. Built once a frame: a text node with no
 // entry here has no highlight over it.
 function collectHighlightedText(painter: Painter): void {
-	const highlighted = painter.highlightedText;
-	clearMap(highlighted);
+	const runs = painter.highlightedText;
+	clearHighlightRuns(runs);
 	forEachHighlightedText(painter.document, (name, textNode, from, to) => {
-		const run = {name, from, to};
-		const runs = highlighted.get(textNode);
-		if (runs === undefined) {
-			highlighted.set(textNode, [run]);
-		} else {
-			runs.push(run);
-		}
+		addHighlightRun(runs, textNode as Text, name, from, to);
 	});
 }
 
 function getHighlightLayer(
-	range: {from: number; to: number},
+	from: number,
+	to: number,
 	paint: HighlightPaint,
 	prepared: PreparedFragment[],
 ): HighlightLayer {
-	const layer = {from: range.from, to: range.to, paint};
+	const layer = {from, to, paint};
 	snapToClusters(prepared, layer);
 	return layer;
 }
@@ -2711,20 +2779,23 @@ function renderTextHighlights(
 	textTransform: string,
 	ctx: CellContext,
 ): void {
-	const runs = painter.highlightedText.get(textNode);
+	const runs = painter.highlightedText;
+	const head = runs.heads.get(textNode);
 	const selected = getPaintSelectionRange(painter, textNode);
-	if (runs === undefined && selected === null) {
+	if (head === undefined && selected === null) {
 		return;
 	}
 	const layers: HighlightLayer[] = [];
 	const parent = flatParentElement(textNode);
 	let prepared: PreparedFragment[] | null = null;
-	if (parent !== null && runs !== undefined) {
-		for (const run of runs) {
-			const paint = getHighlightStyle(painter, parent, run.name);
+	if (parent !== null && head !== undefined) {
+		for (let run = head; run !== -1; run = runs.next[run]) {
+			const paint = getHighlightStyle(painter, parent, runs.names[run]);
 			if (paint !== null) {
 				prepared ??= prepareTextFragments(painter.layout, textNode);
-				layers.push(getHighlightLayer(run, paint, prepared));
+				layers.push(
+					getHighlightLayer(runs.from[run], runs.to[run], paint, prepared),
+				);
 			}
 		}
 	}
@@ -2732,7 +2803,9 @@ function renderTextHighlights(
 		const paint = readSelectionStyle(selected.selectionParent);
 		if (paint !== null) {
 			prepared ??= prepareTextFragments(painter.layout, textNode);
-			layers.push(getHighlightLayer(selected, paint, prepared));
+			layers.push(
+				getHighlightLayer(selected.from, selected.to, paint, prepared),
+			);
 		}
 	}
 	if (layers.length === 0) {
