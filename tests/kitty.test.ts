@@ -19,7 +19,6 @@ import {
 	isPlaceholderChar,
 	KittyImages,
 	MAX_PLACEHOLDER_CELLS,
-	PLACEHOLDER,
 	placeKittyImage,
 	takeKittyOutput,
 } from "../src/internal/kitty.ts";
@@ -410,28 +409,42 @@ test("a canvas set to cells draws in cells while images send pixels", async () =
 	dom.dispose();
 });
 
-test("a canvas set to kitty sends each frame it draws under one id", async () => {
+test("a canvas set to kitty sends each frame under a new id, and frees the last one after", async () => {
 	const {dom, terminal, output} = await mount(
 		"<canvas id=\"c\" width=\"16\" height=\"32\"></canvas>",
 		{canvas: "kitty"},
 	);
 	const canvas = dom.document.getElementById("c") as HTMLCanvasElement;
 	const context = canvas.getContext("2d")!;
-	context.fillStyle = "red";
-	context.fillRect(0, 0, 16, 32);
-	await nextFrame(dom);
-	const first = output().length;
-	context.fillStyle = "blue";
-	context.fillRect(0, 0, 16, 32);
-	await nextFrame(dom);
+	const marks: number[] = [];
+	for (const color of ["red", "blue", "green"]) {
+		marks.push(output().length);
+		context.fillStyle = color;
+		context.fillRect(0, 0, 16, 32);
+		await nextFrame(dom);
+	}
 	const uploads = readUploads(output());
-	expect(uploads.length).toBe(2);
-	expect(uploads[1].control.i).toBe(uploads[0].control.i);
-	expect(cell(terminal, 0, 0).fg).toBe(Number(uploads[1].control.i));
-	// The cells name the same image, so they are not written again.
-	expect(output().slice(first)).not.toContain(PLACEHOLDER);
-	const pixels = await readPixels(uploads[1]);
-	expect(Array.from(pixels.subarray(0, 4))).toEqual(BLUE);
+	const [one, two, three] = uploads.map((upload) => Number(upload.control.i));
+	expect(uploads.length).toBe(3);
+	expect(new Set([one, two, three]).size).toBe(3);
+	expect(cell(terminal, 0, 0).fg).toBe(three);
+	const pixels = await readPixels(uploads[2]);
+	expect(Array.from(pixels.subarray(0, 4))).toEqual([0, 128, 0, 255]);
+	dom.document.body.append("x");
+	await nextFrame(dom);
+	// No frame's cells name an image the terminal no longer holds: the
+	// first image goes after the frame that moved the cells to the second.
+	const text = output();
+	const freed = (id: number) => text.indexOf(`\x1b_Ga=d,d=I,i=${id},q=2\x1b\\`);
+	const named = (id: number, from: number) =>
+		text.indexOf(
+			`\x1b[38;2;${(id >> 16) & 255};${(id >> 8) & 255};${id & 255}m`,
+			from,
+		);
+	expect(named(two, marks[1])).toBeGreaterThan(-1);
+	expect(freed(one)).toBeGreaterThan(named(two, marks[1]));
+	expect(freed(two)).toBeGreaterThan(named(three, marks[2]));
+	expect(freed(three)).toBe(-1);
 	dom.dispose();
 });
 

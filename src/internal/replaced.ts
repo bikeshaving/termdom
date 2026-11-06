@@ -524,8 +524,7 @@ function drawsKittyImage(
 // The bitmap as placeholder cells over a content box `cols` by `rows`,
 // in the color that names the image the terminal holds for them. Pixels
 // at full resolution are drawn and sent once for each placement and
-// content version, and a canvas's new frame replaces its old one under
-// the same id, so its cells stay as they were.
+// content version.
 function getPlaceholderCells(
 	element: Element,
 	content: Extract<ReplacedContent, {kind: "bitmap"}>,

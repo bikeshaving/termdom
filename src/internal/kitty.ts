@@ -169,8 +169,7 @@ interface KittyImage {
 	height: number;
 	cols: number;
 	rows: number;
-	// The content version its pixels were drawn from. A new one sends
-	// new pixels under the same id.
+	// The content version its pixels were drawn from.
 	version: number;
 	// Until it is sent.
 	pixels: Uint8ClampedArray | null;
@@ -189,6 +188,8 @@ export class KittyImages {
 	passthrough: boolean;
 	byKey: Map<string, KittyImage>;
 	byId: Map<number, KittyImage>;
+	// Images a new version replaced, with the frame that replaced them.
+	retired: Array<{image: KittyImage; frame: number}>;
 	nextId: number;
 	frame: number;
 
@@ -199,6 +200,7 @@ export class KittyImages {
 		this.passthrough = false;
 		this.byKey = new Map();
 		this.byId = new Map();
+		this.retired = [];
 		this.nextId = 1;
 		this.frame = 0;
 	}
@@ -208,8 +210,10 @@ export class KittyImages {
  * The id of the image `key` names, `width` by `height` pixels shown over
  * `cols` by `rows` cells. A key not seen before takes a new id, and
  * `draw` makes its pixels, which go out before the next frame. A key
- * seen at another `version` keeps its id, and its new pixels replace
- * the old ones in the terminal.
+ * seen at another `version` takes a new id too: a terminal replacing an
+ * image's pixels under its id can draw the cells that name it empty
+ * while the new ones arrive, so the frame's cells move to the new id,
+ * and the old image is deleted with the frame after.
  */
 export function placeKittyImage(
 	images: KittyImages,
@@ -221,11 +225,10 @@ export function placeKittyImage(
 	const existing = images.byKey.get(key);
 	if (existing !== undefined) {
 		existing.seen = images.frame;
-		if (existing.version !== version) {
-			existing.version = version;
-			existing.pixels = draw();
+		if (existing.version === version) {
+			return existing.id;
 		}
-		return existing.id;
+		images.retired.push({image: existing, frame: images.frame});
 	}
 	let id = images.nextId;
 	while (images.byId.has(id)) {
@@ -285,6 +288,17 @@ export async function takeKittyOutput(
 			unshownBytes += image.width * image.height * 4;
 		}
 	}
+	// A frame before this one moved its cells to the new id.
+	images.retired = images.retired.filter(({image, frame: retiredAt}) => {
+		if (retiredAt === frame) {
+			return true;
+		}
+		if (images.byId.get(image.id) === image) {
+			images.byId.delete(image.id);
+			out += `\x1b_Ga=d,d=I,i=${image.id},q=2\x1b\\`;
+		}
+		return false;
+	});
 	unshown.sort((a, b) => a[1].seen - b[1].seen);
 	for (const [key, image] of unshown) {
 		if (unshownBytes <= UNSHOWN_BUDGET) {
@@ -344,6 +358,7 @@ export function forgetKittyImages(images: KittyImages, kept = -1): string {
 	}
 	images.byKey.clear();
 	images.byId.clear();
+	images.retired = [];
 	return images.passthrough ? wrapForTmux(out) : out;
 }
 
