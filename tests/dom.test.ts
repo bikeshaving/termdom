@@ -977,6 +977,31 @@ test("a removed subtree is still observed until the callback runs", async () => 
 	observer.disconnect();
 });
 
+test("notifying one observer leaves another's transient registration", async () => {
+	const document = make();
+	const parent = document.createElement("div");
+	const child = document.createElement("span");
+	parent.appendChild(child);
+	document.body.appendChild(parent);
+	const lists = new MutationObserver(() => {});
+	lists.observe(parent, {childList: true, subtree: true});
+	lists.observe(child, {childList: true});
+	const names: string[] = [];
+	const attributes = new MutationObserver((records: any) => {
+		for (const record of records) {
+			names.push(`${record.attributeName}`);
+		}
+	});
+	attributes.observe(parent, {attributes: true, subtree: true});
+	parent.removeChild(child);
+	await nextMicrotask();
+	child.setAttribute("title", "removed");
+	await nextMicrotask();
+	expect(names).toEqual(["title"]);
+	lists.disconnect();
+	attributes.disconnect();
+});
+
 test("old values are recorded only where they were asked for", async () => {
 	const document = make();
 	const element = document.createElement("div");

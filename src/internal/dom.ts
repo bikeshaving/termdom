@@ -8730,8 +8730,9 @@ function notifyObserver(observer: MutationObserver): void {
 	observerSlots.records = [];
 	// A node the observer knew only through a transient registration is
 	// done with once that registration goes.
+	const own = (entry: RegisteredObserver) => entry.observer === observer;
 	for (const node of [...observerSlots.nodes]) {
-		removeTransientObservers(node, () => true);
+		removeTransientObservers(node, own);
 		if (!(_(node).registeredObservers ?? []).some((registered) =>
 			registered.observer === observer,
 		)) {
@@ -8739,7 +8740,7 @@ function notifyObserver(observer: MutationObserver): void {
 		}
 	}
 	for (const node of transientNodes) {
-		removeTransientObservers(node, (entry) => entry.observer === observer);
+		removeTransientObservers(node, own);
 	}
 	if (records.length === 0) {
 		return;
