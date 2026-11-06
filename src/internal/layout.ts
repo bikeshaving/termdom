@@ -1230,10 +1230,12 @@ function computePaintExtents(
 	}
 	fixed ||= node.style.positionType === "fixed";
 	let moved = false;
+	// The record is kept on a frame that repaints whole too, which paints
+	// these lines, so a later frame compares against what is on the screen.
+	const measured = node.measure === null
+		? undefined
+		: getMeasuredLines(layout, node);
 	if (layout.collecting) {
-		const lines = node.measure === null
-			? undefined
-			: getMeasuredLines(layout, node);
 		const shifted =
 			extent === undefined || extent.origin !== top || extent.left !== left;
 		const resized =
@@ -1249,10 +1251,10 @@ function computePaintExtents(
 				(shifted ||
 					(!settled &&
 						(!node.settled || node.movedSinceExtents) &&
-						!isSameLines(node, lineRecords.get(node), lines))));
-		if (lines !== undefined) {
-			lineRecords.set(node, lines);
-		}
+						!isSameLines(node, lineRecords.get(node), measured))));
+	}
+	if (measured !== undefined) {
+		lineRecords.set(node, measured);
 	}
 	node.lostChild = false;
 	if (moved && layout.collecting && extent !== undefined) {

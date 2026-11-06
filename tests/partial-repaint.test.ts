@@ -396,3 +396,28 @@ test("a change in what overflows an inline-block repaints its rows", async () =>
 	expect(partial).toBe(true);
 	dom.dispose();
 });
+
+test("a text that goes back to what a whole frame painted over repaints", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.head.innerHTML =
+		"<style>.row { white-space: pre; height: 1lh; overflow: hidden; }</style>";
+	dom.document.body.innerHTML = Array.from(
+		{length: 4},
+		(_, i) => `<div class=row>row ${i}</div>`,
+	).join("");
+	const text = dom.document.querySelectorAll(".row")[3].firstChild as any;
+	await nextFrame(dom);
+	await nextFrame(dom);
+	text.data = "";
+	await nextFrame(dom);
+	text.data = "shown";
+	(_(dom as any) as any).layout.invalidateFrame();
+	await nextFrame(dom);
+	expect(terminal.getScreenContents()).toContain("shown");
+	text.data = "";
+	await nextFrame(dom);
+	expect(takePartialFrame(dom)).toBe(true);
+	expect(terminal.getScreenContents()).not.toContain("shown");
+	dom.dispose();
+});
