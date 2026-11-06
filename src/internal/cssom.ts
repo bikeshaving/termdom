@@ -45,6 +45,7 @@ import {
 	getPseudoName,
 	getRemovedNodes,
 	getShadowRoot,
+	getSlotOf,
 	getTopLayer,
 	getValueTokens,
 	isButtonInput,
@@ -6274,6 +6275,7 @@ function resolvePropertyValueRaw(
 	// later rules only tie it within that same origin and layer.
 	let importantOrigin = false;
 	let importantLayer = 0;
+	let importantInner = false;
 	const rules = declarationSlots.cssRules;
 	const index = getRuleListIndex(rules);
 	let winner = -1;
@@ -6297,20 +6299,33 @@ function resolvePropertyValueRaw(
 			true,
 			mapsHere,
 		);
+		if (importantName === null) {
+			continue;
+		}
+		const inner =
+			rule.scope !== undefined &&
+			isFromInnerTree(rule, declarationSlots.element.getRootNode());
 		if (
-			importantName !== null &&
-			(importantRuleValue === "" ||
-				((rule.origin === "ua") === importantOrigin &&
-					rule.layerRank === importantLayer))
+			importantRuleValue === "" ||
+			((rule.origin === "ua") === importantOrigin &&
+				rule.layerRank === importantLayer &&
+				inner === importantInner)
 		) {
 			importantRuleValue = rule.block.declarations[importantName];
 			importantOrigin = (rule.origin === "ua");
 			importantLayer = rule.layerRank;
+			importantInner = inner;
 		}
 	}
 
+	// An important declaration from a tree the element hosts or is slotted
+	// into beats the element's own, inline ones included (css-cascade-5 §6.1).
 	const declared =
-		inlineImportantValue || importantRuleValue || inlineValue || ruleValue;
+		(importantInner ? importantRuleValue : "") ||
+		inlineImportantValue ||
+		importantRuleValue ||
+		inlineValue ||
+		ruleValue;
 	// A CSS-wide keyword on the winning declaration decides the value there:
 	// `inherit` takes the parent's whether or not the property inherits,
 	// `initial` takes the property's initial value, and the rest send
@@ -6959,8 +6974,14 @@ function isOfPart(rule: ParsedCSSRule): boolean {
 	return subject.pseudoElement?.name === "part";
 }
 
-// `:host` is the one thing that reaches outside the tree its stylesheet
-// belongs to.
+// A rule that selects through `::slotted()` styles the elements assigned
+// to a slot in its tree, which live outside it.
+function isOfSlotted(rule: ParsedCSSRule): boolean {
+	return getComplex(rule).pseudoElement?.name === "slotted";
+}
+
+// `:host` reaches outside the tree its stylesheet belongs to. So does
+// `::slotted()`, which isOfSlotted finds.
 function reachesHost(rule: ParsedCSSRule): boolean {
 	return rule.scope !== undefined && getComplex(rule).host;
 }
@@ -8079,6 +8100,23 @@ function handleAttributeMutation(
 			invalidateSibling(cascade, sibling);
 		}
 	}
+	invalidateSlotted(cascade, element);
+}
+
+// What a slot's ::slotted() rules select changes with the slot.
+function invalidateSlotted(cascade: Cascade, element: Element): void {
+	if (
+		!cascade.pseudoRulesByType.has("::slotted") ||
+		getNamespace(element) !== HTML_NAMESPACE ||
+		getLocalName(element) !== "slot"
+	) {
+		return;
+	}
+	for (const child of flatChildren(element)) {
+		if (getNodeType(child as unknown as Node) === ELEMENT_NODE) {
+			invalidateSubtree(cascade, child as unknown as Element);
+		}
+	}
 }
 
 // Focus is not a mutation, and nothing else invalidates. The cached
@@ -8783,10 +8821,14 @@ function getCascadeRules(cascade: Cascade, element: Element): CascadedRule[] {
 	if (hints === null) {
 		return shareRuleList(cascade, rules);
 	}
-	// Author level, zero specificity, ahead of every author rule and
-	// layer (HTML §15.1).
+	// Author level, zero specificity, ahead of the author rules and layers
+	// of the element's own tree (HTML §15.1).
+	const root = element.getRootNode() as unknown as Node;
 	let at = 0;
-	while (at < rules.length && rules[at].origin === "ua") {
+	while (
+		at < rules.length &&
+		(rules[at].origin === "ua" || isFromInnerTree(rules[at], root))
+	) {
 		at++;
 	}
 	return shareRuleList(cascade, [
@@ -8820,6 +8862,7 @@ function invalidateForState(
 	if (reachesSiblings(cascade, element, states)) {
 		invalidateLaterSiblings(cascade, element);
 	}
+	invalidateSlotted(cascade, element);
 }
 
 // Every author-facing style read goes through this flush, so a value
@@ -12923,6 +12966,12 @@ function getRuleIndex(cascade: Cascade, quirks: boolean): RuleIndex {
 				? undefined
 				: getAncestorBits(getComplex(rule)),
 		);
+		// A ::slotted() rule styles the element it is tried on, and its
+		// names describe the slot, so it is filed under no name.
+		if (isOfSlotted(rule)) {
+			index.unkeyedPositions.push(position);
+			continue;
+		}
 		// A :host rule matches through the tree's host, so it is not filed
 		// under the element.
 		if (host || isOfPart(rule)) {
@@ -13246,6 +13295,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	const rootNode = root as unknown as Node;
 	const shadowHost = isShadowRoot(root) ? root.host : null;
 	let partNames: string[] | null = null;
+	let crossing = false;
 	const filter = getAncestorFilter(cascade, element);
 	const {rules: candidates, ancestorBits} = getCandidateRules(
 		cascade,
@@ -13257,6 +13307,23 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 		const rule = candidates[index];
 		const pseudo = getComplex(rule).pseudoElement;
 		if (pseudo !== null) {
+			// The rule's compounds describe the slot, and its argument the
+			// element assigned to it.
+			if (pseudo.name === "slotted") {
+				const slot = getSlotOf(element as unknown as DOMElement) as
+					Element | null;
+				if (
+					slot !== null &&
+					pseudo.after === null &&
+					slot.getRootNode() === rule.scope &&
+					isSelectedBy(element, pseudo.selects!, element) &&
+					isRuleMatch(slot, rule)
+				) {
+					matched.push(rule);
+					crossing = true;
+				}
+				continue;
+			}
 			if (shadowHost === null) {
 				continue;
 			}
@@ -13294,6 +13361,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 			isRuleMatch(element, rule, rootNode)
 		) {
 			matched.push(rule);
+			crossing ||= isFromInnerTree(rule, rootNode);
 		}
 	}
 	// Scope proximity sorts between specificity and order of appearance
@@ -13301,7 +13369,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 	// The sort is stable, so a comparison that only compares proximity
 	// leaves every other tier as it was.
 	if (!cascade.summary.scopedRulesExist) {
-		return matched;
+		return crossing ? putInnerTreesFirst(matched, rootNode) : matched;
 	}
 	const proximity = new Map(
 		matched.map(
@@ -13312,7 +13380,7 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 				] as const,
 		),
 	);
-	return matched.sort((a, b) => {
+	matched.sort((a, b) => {
 		if ((a.origin === "ua") !== (b.origin === "ua")) {
 			return 0;
 		}
@@ -13324,6 +13392,35 @@ function getMatchingRules(cascade: Cascade, element: Element): ParsedCSSRule[] {
 		}
 		return proximity.get(b)! - proximity.get(a)!;
 	});
+	return crossing ? putInnerTreesFirst(matched, rootNode) : matched;
+}
+
+// An author rule from a shadow tree the element hosts or is slotted into,
+// which is inside the element's own tree, loses the normal cascade to the own
+// tree's author rules before layers or specificity are compared
+// (css-cascade-5 §6.1, Context), so it goes ahead of them. The UA's rules
+// come first and keep their order.
+function putInnerTreesFirst(
+	rules: ParsedCSSRule[],
+	root: Node,
+): ParsedCSSRule[] {
+	const inner: ParsedCSSRule[] = [];
+	const own: ParsedCSSRule[] = [];
+	let at = 0;
+	while (at < rules.length && rules[at].origin === "ua") {
+		at++;
+	}
+	for (let index = at; index < rules.length; index++) {
+		const rule = rules[index];
+		(isFromInnerTree(rule, root) ? inner : own).push(rule);
+	}
+	return [...rules.slice(0, at), ...inner, ...own];
+}
+
+function isFromInnerTree(rule: CascadedRule, root: Node): boolean {
+	return rule.origin !== "ua" &&
+		rule.scope !== undefined &&
+		rule.scope !== root;
 }
 
 function ruleSelectorMatches(
@@ -13444,7 +13541,8 @@ function getPartPseudos(element: Element, root: Node): string[] {
 }
 
 // A rule matches only elements of the tree its stylesheet belongs to,
-// plus the one deliberate crossing: :host.
+// plus the one deliberate crossing: :host. getMatchingRules tries a
+// ::slotted() rule on the slot.
 function isRuleMatch(
 	element: Element,
 	rule: ParsedCSSRule,
