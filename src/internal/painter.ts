@@ -524,7 +524,7 @@ function unionRect(rects: Rect[]): Rect {
 interface HighlightRuns {
 	heads: Map<Text, number>;
 	owners: Array<Text | null>;
-	names: string[];
+	pseudos: string[];
 	from: Int32Array;
 	to: Int32Array;
 	next: Int32Array;
@@ -536,7 +536,7 @@ function createHighlightRuns(capacity: number): HighlightRuns {
 	return {
 		heads: new Map(),
 		owners: [],
-		names: [],
+		pseudos: [],
 		from: new Int32Array(capacity),
 		to: new Int32Array(capacity),
 		next: new Int32Array(capacity),
@@ -560,7 +560,7 @@ function growHighlightRuns(runs: HighlightRuns): void {
 function addHighlightRun(
 	runs: HighlightRuns,
 	textNode: Text,
-	name: string,
+	pseudo: string,
 	from: number,
 	to: number,
 ): void {
@@ -569,7 +569,7 @@ function addHighlightRun(
 	}
 	const index = runs.count++;
 	runs.owners[index] = textNode;
-	runs.names[index] = name;
+	runs.pseudos[index] = pseudo;
 	runs.from[index] = from;
 	runs.to[index] = to;
 	runs.next[index] = -1;
@@ -2463,7 +2463,7 @@ function getMathCellStyle(
 		run = runs.next[run]
 	) {
 		if (covers(runs.from[run], runs.to[run])) {
-			const paint = getHighlightStyle(painter, parent, runs.names[run]);
+			const paint = getHighlightStyle(painter, parent, runs.pseudos[run]);
 			if (paint !== null) {
 				style = foldHighlight(style ?? {}, paint);
 			}
@@ -2631,18 +2631,18 @@ function readHighlightDeclaration(
 function readHighlightStyle(
 	painter: Painter,
 	element: Element,
-	name: string,
+	pseudo: string,
 ): HighlightPaint | null {
 	const own = getPseudoStyleGroup(
 		painter.cascade,
 		element,
-		`::highlight(${name})`,
+		pseudo,
 		HIGHLIGHT_DECLARATION,
 	);
 	const parent = flatParentElement(element);
 	const inherited = parent === null
 		? null
-		: getHighlightStyle(painter, parent, name);
+		: getHighlightStyle(painter, parent, pseudo);
 	if (!own.declared) {
 		return inherited;
 	}
@@ -2696,22 +2696,22 @@ function readSelectionStyle(element: Element): HighlightPaint | null {
 	return paint;
 }
 
-// Per element and name, for the frame. A highlight over many text nodes
-// resolves its style on the few elements they share.
+// Per element and highlight pseudo-element, for the frame. A highlight
+// over many text nodes resolves its style on the few elements they share.
 function getHighlightStyle(
 	painter: Painter,
 	element: Element,
-	name: string,
+	pseudo: string,
 ): HighlightPaint | null {
 	let byName = painter.highlightStyles.get(element);
 	if (byName === undefined) {
 		byName = new Map<string, HighlightPaint | null>();
 		painter.highlightStyles.set(element, byName);
 	}
-	let paint = byName.get(name);
+	let paint = byName.get(pseudo);
 	if (paint === undefined) {
-		paint = readHighlightStyle(painter, element, name);
-		byName.set(name, paint);
+		paint = readHighlightStyle(painter, element, pseudo);
+		byName.set(pseudo, paint);
 	}
 	return paint;
 }
@@ -2770,11 +2770,19 @@ function getHighlightSegments(
 // Every text node a registered highlight covers, in the order the
 // painter folds the styles in. Built once a frame: a text node with no
 // entry here has no highlight over it.
+// A run holds its highlight's pseudo-element, `::highlight(name)`, written
+// once for each highlight the frame visits.
 function collectHighlightedText(painter: Painter): void {
 	const runs = painter.highlightedText;
 	const previous = clearHighlightRuns(runs);
+	let lastName: string | null = null;
+	let pseudo = "";
 	forEachHighlightedText(painter.document, (name, textNode, from, to) => {
-		addHighlightRun(runs, textNode as Text, name, from, to);
+		if (name !== lastName) {
+			lastName = name;
+			pseudo = `::highlight(${name})`;
+		}
+		addHighlightRun(runs, textNode as Text, pseudo, from, to);
 	});
 	sweepHighlightRuns(runs, previous);
 }
@@ -2814,7 +2822,7 @@ function renderTextHighlights(
 	let prepared: PreparedFragment[] | null = null;
 	if (parent !== null && head !== undefined) {
 		for (let run = head; run !== -1; run = runs.next[run]) {
-			const paint = getHighlightStyle(painter, parent, runs.names[run]);
+			const paint = getHighlightStyle(painter, parent, runs.pseudos[run]);
 			if (paint !== null) {
 				prepared ??= prepareTextFragments(painter.layout, textNode);
 				layers.push(
