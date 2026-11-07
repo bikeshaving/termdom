@@ -1027,3 +1027,24 @@ test("a declarative shadow root takes its slot assignment from shadowrootslotass
 
 	dom.dispose();
 });
+
+test("a shadow root out of the document has no style sheets", () => {
+	const dom = new TermDOM();
+	const {document} = dom;
+	const host = document.createElement("div");
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = "<style>p { color: red }</style>";
+	const style = root.querySelector("style")!;
+	expect(root.styleSheets.length).toBe(0);
+	expect(style.sheet).toBe(null);
+	document.body.append(host);
+	expect(root.styleSheets.length).toBe(1);
+	const sheet = style.sheet!;
+	expect(sheet.ownerNode).toBe(style);
+	host.remove();
+	expect(sheet.ownerNode).toBe(null);
+	expect(document.implementation.createHTMLDocument("").getSelection())
+		.toBe(null);
+
+	dom.dispose();
+});

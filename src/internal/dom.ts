@@ -29904,8 +29904,12 @@ export class Document extends Node implements globalThis.Document {
 	// for a document with no browsing context. There is no browsing context
 	// here. The selection belongs to the document, a window's getSelection
 	// calls this one, and a headless document still has a selection.
+	// A document no window shows has no selection.
 	getSelection(): globalThis.Selection | null {
 		const slots = _(this);
+		if (slots.extra.defaultView === null) {
+			return null;
+		}
 		let selection = slots.extra.selection;
 		if (selection === null) {
 			selection = createSelection(this);

@@ -3348,10 +3348,10 @@ class CSSStyleSheet {
 		return _(this).title;
 	}
 
-	// A <style> taken out of its tree takes its sheet with it.
+	// A <style> taken out of the document takes its sheet with it.
 	get ownerNode(): Element | null {
 		const owner = _(this).ownerNode;
-		return owner !== null && owner.parentNode === null ? null : owner;
+		return owner !== null && !owner.isConnected ? null : owner;
 	}
 
 	get ownerRule(): CSSRule | null {
@@ -14150,10 +14150,14 @@ export function getInlineStyle(
 }
 
 /** The sheets a tree declares, as document.styleSheets lists them. */
+// A shadow root out of the document has no sheets, as its <style>s
+// have none.
 export function getStyleSheets(
 	tree: Document | ShadowRoot,
 ): globalThis.StyleSheetList {
-	const list = new StyleSheetList(getDeclaredStyleSheets(tree));
+	const list = new StyleSheetList(
+		isShadowRoot(tree) && !tree.isConnected ? [] : getDeclaredStyleSheets(tree),
+	);
 	syncIndexed(list);
 	return list as unknown as globalThis.StyleSheetList;
 }
@@ -14199,11 +14203,11 @@ function syncAdoptedSheets(tree: Node, rulesChanged: boolean): void {
 	}
 }
 
-/** A style element's sheet. Null outside a tree, as in a browser. */
+/** A style element's sheet. Null out of the document, as in a browser. */
 export function styleElementSheet(
 	element: Element,
 ): globalThis.CSSStyleSheet | null {
-	return element.parentNode
+	return element.isConnected
 		? (getSheet(element) as unknown as globalThis.CSSStyleSheet)
 		: null;
 }
