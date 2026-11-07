@@ -70,6 +70,12 @@ import {
 	type Justify,
 	LayoutNode,
 	NO_TRANSLATION,
+	NODE_HAS_CACHED_LAYOUT,
+	NODE_LOST_CHILD,
+	NODE_MEASURES_TEXT,
+	NODE_MOVED_SINCE_EXTENTS,
+	NODE_SETTLED,
+	NODE_STALE,
 	type PositionType,
 	releaseCache,
 	resolveValue,
@@ -77,8 +83,17 @@ import {
 	type Size,
 	type Sizing,
 	type Style,
+	STYLE_BLOCK_FORMATTING_CONTEXT,
+	STYLE_BORDER_COLLAPSE,
+	STYLE_CLIPS_OVERFLOW,
+	STYLE_CONTAINS_POSITIONED,
+	STYLE_GRID_AUTO_FLOW_COLUMN,
+	STYLE_GRID_AUTO_FLOW_DENSE,
+	STYLE_SCROLL_CONTAINER,
+	STYLE_TABLE_LAYOUT_FIXED,
 	toValue,
 	type Translation,
+	withFlag,
 	type Wrap,
 } from "./layoutsolver.ts";
 import {forEachLineBreak} from "./linebreak.ts";
@@ -264,10 +279,16 @@ function getMaskedEdges(element: Element): readonly Edge[] {
 
 function applyTableContainer(style: Style, element: Element): void {
 	style.displayType = "table";
-	style.borderCollapse =
-		getComputedValue(element, "border-collapse") === "collapse";
-	style.tableLayoutFixed =
-		getComputedValue(element, "table-layout") === "fixed";
+	style.flags = withFlag(
+		style.flags,
+		STYLE_BORDER_COLLAPSE,
+		getComputedValue(element, "border-collapse") === "collapse",
+	);
+	style.flags = withFlag(
+		style.flags,
+		STYLE_TABLE_LAYOUT_FIXED,
+		getComputedValue(element, "table-layout") === "fixed",
+	);
 }
 
 // A box that sits on a line whole, measured as one opaque unit.
@@ -1099,8 +1120,8 @@ function applyGridContainer(style: Style, element: Element): void {
 	const flow = CSSValues.parseGridAutoFlow(
 		getComputedValue(element, "grid-auto-flow"),
 	);
-	style.gridAutoFlowColumn = flow.column;
-	style.gridAutoFlowDense = flow.dense;
+	style.flags = withFlag(style.flags, STYLE_GRID_AUTO_FLOW_COLUMN, flow.column);
+	style.flags = withFlag(style.flags, STYLE_GRID_AUTO_FLOW_DENSE, flow.dense);
 
 	style.justifyContent = getJustifyContentConstant(
 		getComputedValue(element, "justify-content"),
@@ -1237,9 +1258,9 @@ function computePaintExtents(
 		extent.origin === top &&
 		extent.frame === frame &&
 		(settled ||
-			(node.settled &&
-				!node.movedSinceExtents &&
-				!node.lostChild &&
+			((node.flags & NODE_SETTLED) !== 0 &&
+				(node.flags & NODE_MOVED_SINCE_EXTENTS) === 0 &&
+				(node.flags & NODE_LOST_CHILD) === 0 &&
 				extent.left === left &&
 				extent.width === getComputedWidth(node) &&
 				extent.height === getComputedHeight(node)))
@@ -1261,20 +1282,21 @@ function computePaintExtents(
 			(extent.width !== getComputedWidth(node) ||
 				extent.height !== getComputedHeight(node));
 		moved =
-			node.lostChild ||
+			(node.flags & NODE_LOST_CHILD) !== 0 ||
 			((shifted || resized) &&
 				(layout.restyledForPaint.has(node.owner as Element) ||
 					paintsOwnBox(layout, node))) ||
 			(node.measure !== null &&
 				(shifted ||
 					(!settled &&
-						(!node.settled || node.movedSinceExtents) &&
+						((node.flags & NODE_SETTLED) === 0 ||
+							(node.flags & NODE_MOVED_SINCE_EXTENTS) !== 0) &&
 						!isSameLines(node, lineRecords.get(node), measured))));
 	}
 	if (measured !== undefined) {
 		lineRecords.set(node, measured);
 	}
-	node.lostChild = false;
+	node.flags &= ~NODE_LOST_CHILD;
 	if (moved && layout.collecting && extent !== undefined) {
 		addDamage(layout, node, extent.top, extent.bottom, fixed);
 	}
@@ -1301,9 +1323,11 @@ function computePaintExtents(
 	let unstacked = 0;
 	let right = getComputedWidth(node);
 	let bottom = getComputedHeight(node);
-	const lines = node.style.clipsOverflow || node.measure === null
-		? undefined
-		: getMeasuredLines(layout, node);
+	const lines =
+		(node.style.flags & STYLE_CLIPS_OVERFLOW) !== 0 ||
+		node.measure === null
+			? undefined
+			: getMeasuredLines(layout, node);
 	if (lines !== undefined) {
 		right = Math.max(
 			right,
@@ -1318,7 +1342,7 @@ function computePaintExtents(
 			bottom = Math.max(bottom, contentTop - top + overflow);
 		}
 	}
-	const clips = node.style.clipsOverflow;
+	const clips = (node.style.flags & STYLE_CLIPS_OVERFLOW) !== 0;
 	let scrollRight: number | null = 0;
 	let scrollBottom: number | null = 0;
 	if (clips && node.measure !== null) {
@@ -1342,7 +1366,9 @@ function computePaintExtents(
 			child,
 			left,
 			top,
-			settled || (node.settled && !node.movedSinceExtents),
+			settled ||
+			((node.flags & NODE_SETTLED) !== 0 &&
+				(node.flags & NODE_MOVED_SINCE_EXTENTS) === 0),
 			fixed,
 			frame,
 		);
@@ -1380,7 +1406,7 @@ function computePaintExtents(
 			lowest = childExtent.bottom;
 		}
 		if (
-			!node.style.clipsOverflow &&
+			(node.style.flags & STYLE_CLIPS_OVERFLOW) === 0 &&
 			child.style.displayType !== "none" &&
 			child.style.positionType !== "fixed"
 		) {
@@ -1388,7 +1414,7 @@ function computePaintExtents(
 			bottom = Math.max(bottom, child.snapped.top + childExtent.overflowBottom);
 		}
 	}
-	node.movedSinceExtents = false;
+	node.flags &= ~NODE_MOVED_SINCE_EXTENTS;
 	extent.frame = frame;
 	extent.origin = top;
 	extent.left = left;
@@ -1669,9 +1695,16 @@ function styleLayoutNodeProperties(
 	const display = getLayoutDisplay(element);
 	const overflowX = getUsedOverflow(element, "x");
 	const overflowY = getUsedOverflow(element, "y");
-	style.clipsOverflow = overflowX !== "visible" || overflowY !== "visible";
-	style.scrollContainer =
-		isScrollingOverflow(overflowX) || isScrollingOverflow(overflowY);
+	style.flags = withFlag(
+		style.flags,
+		STYLE_CLIPS_OVERFLOW,
+		overflowX !== "visible" || overflowY !== "visible",
+	);
+	style.flags = withFlag(
+		style.flags,
+		STYLE_SCROLL_CONTAINER,
+		isScrollingOverflow(overflowX) || isScrollingOverflow(overflowY),
+	);
 	// A blockified inline's width applies like any block's.
 	const parentIsFlex = hasItemParent(element);
 	const inlineBox = display === "inline" && !isBlockified(element);
@@ -1804,16 +1837,22 @@ function styleLayoutNodeProperties(
 	// document by, so margins stop there rather than escaping into the
 	// viewport. Layout and paint containment give a box its own context
 	// (css-contain-2 §3.2).
-	style.blockFormattingContext =
-		isDocumentElement(element) ||
+	style.flags =
+		(isDocumentElement(element) ||
 		getHTMLLocalName(element) === "body" ||
 		(display !== "block" && display !== "list-item") ||
 		getComputedValue(element, "overflow") !== "visible" ||
 		isOutOfFlow(element) ||
 		hasLayoutOrPaintContainment(element) ||
-		parentIsFlex;
+		parentIsFlex)
+			? style.flags | STYLE_BLOCK_FORMATTING_CONTEXT
+			: style.flags & ~STYLE_BLOCK_FORMATTING_CONTEXT;
 
-	style.containsPositioned = establishesFixedContainingBlock(element);
+	style.flags = withFlag(
+		style.flags,
+		STYLE_CONTAINS_POSITIONED,
+		establishesFixedContainingBlock(element),
+	);
 	style.translate = getTranslation(element);
 	// How the stacking-context painter finds positioned and isolated boxes
 	// without an O(document) sweep per frame.
@@ -2792,7 +2831,7 @@ function addElementNode(
 		}
 		return;
 	} else if (isReplacedBox(element)) {
-		layoutNode.measuresText = false;
+		layoutNode.flags &= ~NODE_MEASURES_TEXT;
 		setMeasure(layoutNode, {layout, kind: "replaced", element});
 		if (parentLayoutNode) {
 			placeChild(parentLayoutNode, layoutNode, flexIndex);
@@ -3007,7 +3046,7 @@ function syncIndependentFormattingContext(
 function styleContextRoot(element: Element, root: LayoutNode): void {
 	const display = getLayoutDisplay(element);
 	const style = createStyle();
-	style.blockFormattingContext = true;
+	style.flags |= STYLE_BLOCK_FORMATTING_CONTEXT;
 	style.displayType = "block";
 	if (display === "inline-table") {
 		applyTableContainer(style, element);
@@ -6409,7 +6448,7 @@ export class Layout {
 		const root = new LayoutNode(this.cachePool);
 		root.style = createStyle();
 		root.style.displayType = "block";
-		root.style.blockFormattingContext = true;
+		root.style.flags |= STYLE_BLOCK_FORMATTING_CONTEXT;
 		root.style.width = toValue(width);
 		root.style.height = toValue(height);
 		this.initialBlock = root;
@@ -6466,7 +6505,7 @@ export class Layout {
 		// cannot be hiding a disconnection, and even the pruning sweep below is
 		// not worth paying.
 		if (
-			!this.initialBlock.stale &&
+			(this.initialBlock.flags & NODE_STALE) === 0 &&
 			this.invalidatedNodes.size === 0 &&
 			this.dirtyRunContainers.size === 0
 		) {
@@ -6526,7 +6565,9 @@ export class Layout {
 			if (
 				host !== null &&
 				host.isConnected &&
-				this.boxes.get(host)!.independentFormattingContext!.stale
+				(this.boxes.get(host)!.independentFormattingContext!.flags &
+					NODE_STALE) !==
+				0
 			) {
 				invalidateEnclosingMeasure(this, host);
 			}
@@ -6539,7 +6580,7 @@ export class Layout {
 		// A clean root means the previous layout is still exact. Recomputing
 		// would be a full-tree relayout per frame for an animation repainting
 		// one span.
-		if (!this.initialBlock.stale) {
+		if ((this.initialBlock.flags & NODE_STALE) === 0) {
 			return;
 		}
 
@@ -6557,7 +6598,7 @@ export class Layout {
 			let again = false;
 			for (const host of hosts) {
 				const context = this.boxes.get(host)?.independentFormattingContext;
-				if (host.isConnected && context?.stale) {
+				if (host.isConnected && ((context?.flags ?? 0) & NODE_STALE) !== 0) {
 					invalidateHost(this, host);
 					again = true;
 				}
@@ -7640,7 +7681,7 @@ function paintsOwnBox(layout: Layout, node: LayoutNode): boolean {
 	const element = owner as Element;
 	const style = node.style;
 	if (
-		style.clipsOverflow ||
+		(style.flags & STYLE_CLIPS_OVERFLOW) !== 0 ||
 		style.border.top !== 0 ||
 		style.border.right !== 0 ||
 		style.border.bottom !== 0 ||
@@ -8525,7 +8566,7 @@ function measureRecordingReads(
 	}
 	const reads = log.reads!;
 	if (!placing && contextLayouts !== contextLayoutsBefore) {
-		node.hasCachedLayout = false;
+		node.flags &= ~NODE_HAS_CACHED_LAYOUT;
 	}
 	if (node.measureSubject === null) {
 		forgetReads(node);
@@ -8632,7 +8673,8 @@ function applyRestyles(layout: Layout): void {
 			const layoutNode = layout.nodeMap.get(element);
 			if (
 				layoutNode !== undefined &&
-				layoutNode.style.containsPositioned !==
+				(layoutNode.style.flags & STYLE_CONTAINS_POSITIONED) !==
+				0 !==
 					establishesFixedContainingBlock(element)
 			) {
 				invalidateOutOfFlowDescendants(layout, element);
@@ -9993,7 +10035,7 @@ function measureScrollExtent(
 	const result = layoutNode.result;
 	let right: number | null = 0;
 	let bottom = 0;
-	const extent = layoutNode.style.clipsOverflow
+	const extent = (layoutNode.style.flags & STYLE_CLIPS_OVERFLOW) !== 0
 		? getStoredExtent(layoutNode)
 		: undefined;
 	if (extent !== undefined) {
