@@ -920,7 +920,7 @@ interface PendingReply {
 	settle(item: WireItem): void;
 	// Called on silence: the deadline, a replacement question, or dispose.
 	giveUp(): void;
-	timer: ReturnType<typeof setTimeout>;
+	timer: ReturnType<typeof setTimeout> | undefined;
 	// Cursor questions only: DSR send order, shared with the width probes.
 	sequence?: number;
 	clipboard?: boolean;
@@ -974,6 +974,8 @@ function setPanicAltScreen(exchange: Exchange, on: boolean): void {
 // taken as unanswered. A terminal that answers DA1 asked after it ends the
 // wait sooner.
 const QUERY_TIMEOUT_MS = 1000;
+
+const REPLY_WAIT_SLICE_MS = 100;
 
 // Most terminals refuse clipboard reads by silence. This is what every
 // readText() waits before rejecting.
@@ -1568,10 +1570,8 @@ export function initializeCursorDetection(exchange: Exchange): void {
 	const slots = _(exchange);
 	slots.cursorDetectionPromise = null;
 	if (slots.anchorDetectionEnabled) {
-		slots.cursorDetectionPromise = Promise.race([
-			detectAnchor(exchange).then(() => {}),
-			new Promise<void>((resolve) => setTimeout(resolve, QUERY_TIMEOUT_MS)),
-		])
+		slots.cursorDetectionPromise = detectAnchor(exchange)
+			.then(() => {})
 			.catch(() => {
 				slots.hasDetectedAnchor = false;
 			})
@@ -2564,6 +2564,29 @@ type ReplyItem<K extends WireItem["kind"]> = Extract<WireItem, {kind: K}>;
 // in stream order. `absent` is the value silence produces. The cursor
 // questions have none and reject instead. A question whose answer has not
 // come by the time `until` settles is given up then.
+// A reply's wait counts in slices, each one a turn of the event loop. A
+// program that blocks, loading its modules say, holds its question in the
+// write queue and the answer unread, and a timer would come due with neither
+// having had a turn. Blocked for any length, it loses one slice.
+function startReplyTimer(
+	entry: PendingReply,
+	pending: PendingReply[],
+	ms: number,
+): void {
+	const slice = Math.min(ms, REPLY_WAIT_SLICE_MS);
+	entry.timer = setTimeout(() => {
+		if (ms > slice) {
+			startReplyTimer(entry, pending, ms - slice);
+			return;
+		}
+		const index = pending.indexOf(entry);
+		if (index !== -1) {
+			pending.splice(index, 1);
+		}
+		entry.giveUp();
+	}, slice);
+}
+
 function nextReply<K extends WireItem["kind"], T>(
 	session: Exchange,
 	kind: K,
@@ -2610,14 +2633,9 @@ function nextReply<K extends WireItem["kind"], T>(
 					reject(new Error("Timeout waiting for cursor position response"));
 				}
 			},
-			timer: setTimeout(() => {
-				const index = sessionSlots.pendingReplies.indexOf(entry);
-				if (index !== -1) {
-					sessionSlots.pendingReplies.splice(index, 1);
-				}
-				entry.giveUp();
-			}, options.timeoutMs),
+			timer: undefined,
 		};
+		startReplyTimer(entry, sessionSlots.pendingReplies, options.timeoutMs);
 		sessionSlots.pendingReplies.push(entry);
 		if (options.clipboard) {
 			sessionSlots.wireReader.expectClipboardReply(true);
