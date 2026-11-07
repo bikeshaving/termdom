@@ -3150,14 +3150,24 @@ class CSSKeyframesRule extends CSSRule {
 		return `@keyframes ${name} {${frames}\n}`;
 	}
 
+	// Text that is not one keyframe appends nothing, and throws nothing.
 	appendRule(text: string): void {
-		const rule = parseRuleText(
-			`@keyframes k { ${text} }`,
-			this.parentStyleSheet,
-			this,
-		);
+		let rule: CSSRule;
+		try {
+			rule = parseRuleText(
+				`@keyframes k { ${text} }`,
+				this.parentStyleSheet,
+				this,
+			);
+		} catch (_err) {
+			return;
+		}
 		const slots = _(this);
-		if (implementsInterface(rule, CSSKeyframesRule)) {
+		if (
+			implementsInterface(rule, CSSKeyframesRule) &&
+			rule.cssRules.length === 1 &&
+			isOneRule(String(text))
+		) {
 			slots.rules.push(...Array.from(rule.cssRules));
 			syncIndexed(slots.ruleList);
 			syncIndexed(this, slots.rules);
@@ -3599,6 +3609,27 @@ function parseRules(
 	);
 }
 
+// Whether the text is a single qualified rule, with no at-rule or stray
+// tokens beside it.
+function isOneRule(text: string): boolean {
+	let nodes: CSSTree.StyleSheetNode[];
+	try {
+		nodes = (CSSTree.syntax.parse(text, {
+			parseValue: false,
+			parseAtrulePrelude: false,
+			parseRulePrelude: false,
+			parseCustomProperty: false,
+			onParseError(error: Error) {
+				throw error;
+			},
+		}) as never as {children: {toArray(): CSSTree.StyleSheetNode[]}})
+			.children.toArray();
+	} catch (_err) {
+		return false;
+	}
+	return nodes.length === 1 && nodes[0].type === "Rule";
+}
+
 function parseRuleText(
 	text: string,
 	sheet: CSSStyleSheet | null,
@@ -3805,7 +3836,12 @@ function convertRule(
 		case "-webkit-keyframes":
 			return new CSSKeyframesRule(prelude, sheet, (rule) =>
 				CSSValues.getNodes(node.block ?? {})
-					.filter((frame) => frame.type === "Rule")
+					.filter(
+						(frame) =>
+							frame.type === "Rule" &&
+							CSSValues.serializeKeyText(CSSValues.getPreludeText(frame)) !==
+								"",
+					)
 					.map((frame) =>
 						new CSSKeyframeRule(
 							CSSValues.getPreludeText(frame),
