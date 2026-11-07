@@ -403,9 +403,13 @@ test("a shadow root's style blocks cost about what the document's do", () => {
 		dom.dispose();
 		return elapsed;
 	};
+	// The least of a few runs on each side: what else a runner does only
+	// adds to a run, and one run stretched by it read as the regression.
+	const least = (shadow: boolean): number =>
+		Math.min(...Array.from({length: 5}, () => time(shadow)));
 	time(false);
 	time(true);
-	expect(time(true)).toBeLessThan(3 * time(false));
+	expect(least(true)).toBeLessThan(3 * least(false));
 });
 
 test("a shadow root's sibling selectors restyle nothing outside it, attached or removed", () => {

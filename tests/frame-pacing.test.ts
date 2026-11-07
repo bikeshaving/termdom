@@ -35,18 +35,24 @@ test("a change after a quiet spell is drawn without waiting", async () => {
 	const written = captureRawOutput(terminal);
 	const dom = new TermDOM({transport: terminal.transport});
 	await dom.attach();
-	dom.document.body.textContent = "a";
-	await nextFrame(dom);
-	await new Promise((resolve) => setTimeout(resolve, 40));
-	const before = written().length;
 	// By the order of the timers, not the clock: a frame drawn without
-	// waiting comes from a task due at once, which runs before a timer due
-	// a frame interval later however busy the machine is. A clock reading
-	// would count the drawing itself, which a loaded runner can stretch.
-	const atInterval = new Promise<number>((resolve) => {
-		setTimeout(() => resolve(frames(written().slice(before))), 16);
-	});
-	dom.document.body.textContent = "b";
-	expect(await atInterval).toBeGreaterThan(0);
+	// waiting comes from a task due at once, and a frame that waited out an
+	// interval comes from a timer made after this one, so it never comes
+	// first. A busy runner can make the drawing itself outlast the interval,
+	// so one try that comes first is the answer.
+	let drawnFirst = false;
+	for (let attempt = 0; attempt < 5 && !drawnFirst; attempt++) {
+		dom.document.body.textContent = `a${attempt}`;
+		await nextFrame(dom);
+		await new Promise((resolve) => setTimeout(resolve, 40));
+		const before = written().length;
+		const atInterval = new Promise<number>((resolve) => {
+			setTimeout(() => resolve(frames(written().slice(before))), 16);
+		});
+		dom.document.body.textContent = `b${attempt}`;
+		drawnFirst = await atInterval > 0;
+		await nextFrame(dom);
+	}
+	expect(drawnFirst).toBe(true);
 	dom.dispose();
 });
