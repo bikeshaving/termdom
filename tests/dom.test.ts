@@ -2302,3 +2302,15 @@ test("a style or classList change runs an observed attribute's reaction before i
 	element.classList = "a b";
 	expect(seen.at(-1)).toEqual(["class", null, "a b", null]);
 });
+
+test("an id spelled as an array index names no property of a collection", () => {
+	const document = make();
+	document.body.innerHTML =
+		'<b id="7"></b><b id="2147483648"></b><b id="4294967295"></b><b id="x"></b>';
+	const collection = document.getElementsByTagName("b");
+	expect(collection[7]).toBe(undefined);
+	expect(collection[2147483648]).toBe(undefined);
+	expect(collection[4294967295]).toBe(document.getElementById("4294967295"));
+	expect(collection.x).toBe(document.getElementById("x"));
+	expect(collection.namedItem("7")).toBe(document.getElementById("7"));
+});
