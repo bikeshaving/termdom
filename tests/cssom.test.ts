@@ -479,13 +479,16 @@ test("text the CSS parsers cannot judge passes through as authored", () => {
 	const {dom} = makeDOM();
 	const sheet = new dom.window.CSSStyleSheet();
 
-	// A media list keeps queries this engine cannot judge, case-folded.
+	// A query that is not one becomes `not all`. A media list keeps the
+	// rest, case-folded, including the ones this engine cannot judge.
 	const mediaText = (query: string): string => {
 		sheet.replaceSync(`@media ${query} { a { color: red } }`);
 		return (sheet.cssRules[0] as CSSMediaRule).media.mediaText;
 	};
-	expect(mediaText("GARBAGE!!")).toBe("garbage!!");
-	expect(mediaText("screen and foo")).toBe("screen and foo");
+	expect(mediaText("GARBAGE!!")).toBe("not all");
+	expect(mediaText("screen and foo")).toBe("not all");
+	expect(mediaText("screen, bad$")).toBe("screen, not all");
+	expect(mediaText("not and")).toBe("not all");
 	expect(mediaText("not(color)")).toBe("not(color)");
 	expect(mediaText("not (a) and (b)")).toBe("not (a) and (b)");
 	expect(mediaText("SCREEN and (Min-Width: 5PX)")).toBe(

@@ -1815,12 +1815,14 @@ export class MediaList implements globalThis.MediaList {
 			throw typeError("appendMedium requires a medium");
 		}
 		const text = CSSValues.stripCSSComments(String(medium));
-		if (CSSValues.splitMediaQueryList(text).length !== 1) {
+		if (
+			text.trim() === "" || CSSValues.splitMediaQueryList(text).length !== 1
+		) {
 			return;
 		}
-		const query = CSSValues.serializeMediaQuery(text);
+		const query = CSSValues.readMediaQuery(text);
 		const slots = _(this);
-		if (!query || slots.media.includes(query)) {
+		if (slots.media.includes(query)) {
 			return;
 		}
 		slots.media.push(query);
@@ -1834,7 +1836,7 @@ export class MediaList implements globalThis.MediaList {
 		}
 		const text = CSSValues.stripCSSComments(String(medium));
 		const query = CSSValues.splitMediaQueryList(text).length === 1
-			? CSSValues.serializeMediaQuery(text)
+			? CSSValues.readMediaQuery(text)
 			: "";
 		const slots = _(this);
 		const kept = slots.media.filter((entry) => entry !== query);
@@ -1861,12 +1863,10 @@ declareSealedRoot(MediaList);
 function parseMediaText(list: MediaList, text: string): void {
 	const listSlots = _(list);
 	listSlots.media.length = 0;
-	for (const query of CSSValues.splitMediaQueryList(
-		CSSValues.stripCSSComments(String(text ?? "")),
-	)) {
-		const serialized = CSSValues.serializeMediaQuery(query);
-		if (serialized) {
-			listSlots.media.push(serialized);
+	const stripped = CSSValues.stripCSSComments(String(text ?? ""));
+	if (stripped.trim() !== "") {
+		for (const query of CSSValues.splitMediaQueryList(stripped)) {
+			listSlots.media.push(CSSValues.readMediaQuery(query));
 		}
 	}
 	syncIndexed(list);
