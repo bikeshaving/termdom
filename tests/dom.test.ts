@@ -2236,3 +2236,37 @@ test("document.all holds every element, by index, id and name", () => {
 	expect(document.all).toBe(all);
 	expect(document.forms).toBe(document.forms);
 });
+
+test("an attribute in a namespace is data, not the element's own attribute", () => {
+	const document = make();
+	const ns = "https://example.com/attributes";
+	const div = document.createElement("div");
+	div.setAttribute("style", "color: green");
+	div.setAttributeNS(ns, "style", "color: red");
+	expect(div.style.color).toBe("green");
+
+	const details = document.createElement("details");
+	details.setAttributeNS(ns, "open", "");
+	expect(details.open).toBe(false);
+
+	const input = document.createElement("input");
+	input.setAttributeNS(ns, "type", "file");
+	expect(input.type).toBe("text");
+
+	const host = document.createElement("div");
+	const slot = document.createElement("slot");
+	slot.name = "target";
+	host.attachShadow({mode: "open"}).append(slot);
+	const child = document.createElement("span");
+	child.setAttributeNS(ns, "slot", "target");
+	host.append(child);
+	expect(child.slot).toBe("");
+	expect(child.assignedSlot).toBe(null);
+
+	const form = document.createElement("form");
+	form.id = "owner";
+	form.setAttributeNS(ns, "id", "other");
+	document.body.append(form);
+	expect(document.getElementById("owner")).toBe(form);
+	expect(document.getElementById("other")).toBe(null);
+});
