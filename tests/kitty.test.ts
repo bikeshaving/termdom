@@ -301,6 +301,41 @@ test("the image is sent again on the screen fullscreen switches to", async () =>
 	dom.dispose();
 });
 
+test("an image no cell shows is freed at once on the alternate screen, and kept on the main one", async () => {
+	const {dom, output} = await mount(
+		`<div id="stage"><img id="a" src="${BANDS}"></div><img id="b" src="${BANDS}">`,
+	);
+	await loaded(dom);
+	const [flow] = readUploads(output());
+	let mark = output().length;
+	dom.document.getElementById("b")!.remove();
+	await nextFrame(dom);
+	expect(output().slice(mark)).not.toContain(`a=d,d=I,i=${flow.control.i},`);
+
+	await dom.document.getElementById("stage")!.requestFullscreen();
+	await nextFrame(dom);
+	const text = output();
+	const [shown] = readUploads(text.slice(text.indexOf("\x1b[?1049h")));
+	mark = output().length;
+	dom.document.getElementById("a")!.remove();
+	await nextFrame(dom);
+	expect(output().slice(mark))
+		.toContain(`\x1b_Ga=d,d=I,i=${shown.control.i},q=2\x1b\\`);
+	dom.dispose();
+});
+
+test("a screen with no scrollback keeps no image no cell shows", async () => {
+	const images = new KittyImages(() => ({width: 8, height: 16}));
+	const size = {width: 4, height: 4, cols: 1, rows: 1};
+	const draw = () => new Uint8ClampedArray(64);
+	const id = placeKittyImage(images, "small", 0, size, draw).id;
+	await takeKittyOutput(images, new CellGrid(1, 1), false);
+	const screen = new CellGrid(1, 1);
+	expect(await takeKittyOutput(images, screen, true)).toBe("");
+	expect(await takeKittyOutput(images, screen, false))
+		.toBe(`\x1b_Ga=d,d=I,i=${id},q=2\x1b\\`);
+});
+
 test("an image stays in pixels in the scrollback after dispose", async () => {
 	const {dom, terminal, output} = await mount(`<p>a</p><img src="${BANDS}">`);
 	await loaded(dom);
@@ -711,15 +746,17 @@ test("text in the color of an image's id does not keep the image", async () => {
 	const size = {width: 4096, height: 4096, cols: 1, rows: 1};
 	const draw = () => new Uint8ClampedArray(4);
 	const dropped = placeKittyImage(images, "dropped", 0, size, draw).id;
-	await takeKittyOutput(images, null);
+	await takeKittyOutput(images, null, true);
 	const screen = new CellGrid(1, 2);
 	screen.setCell(0, "a", {fg: toCellColor(dropped)});
-	expect(await takeKittyOutput(images, screen))
+	expect(await takeKittyOutput(images, screen, true))
 		.toContain(`\x1b_Ga=d,d=I,i=${dropped},q=2\x1b\\`);
 	const kept = placeKittyImage(images, "kept", 0, size, draw).id;
-	await takeKittyOutput(images, null);
+	await takeKittyOutput(images, null, true);
 	screen.setPlaceholder(1, 0, 0, {fg: toCellColor(kept)});
-	expect(await takeKittyOutput(images, screen)).not.toContain(`i=${kept},`);
+	expect(await takeKittyOutput(images, screen, true)).not.toContain(
+		`i=${kept},`,
+	);
 });
 
 test("an image's cells hold placeholder codes, not clusters", async () => {

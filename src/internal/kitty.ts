@@ -157,7 +157,7 @@ const MAX_ID = 0xffffff;
 
 // What the terminal may keep of images no cell shows, as RGBA bytes:
 // rows scrolled into the scrollback still name theirs, so they are not
-// freed at once.
+// freed at once. The alternate screen has no scrollback, and keeps none.
 const UNSHOWN_BUDGET = 32 << 20;
 
 // An escape's payload is sent in chunks of at most this many bytes.
@@ -303,11 +303,13 @@ export async function compressKittyUploads(images: KittyImages): Promise<void> {
 /**
  * What goes to the terminal before a frame: the images placed since the
  * last one, and the deletes of those `screen`, the frame's cells, no
- * longer shows, past the budget, oldest first.
+ * longer shows, oldest first. A screen with a scrollback keeps them up
+ * to the budget.
  */
 export function takeKittyOutput(
 	images: KittyImages,
 	screen: CellGrid | null,
+	scrollback: boolean,
 ): string {
 	const frame = images.frame++;
 	if (images.byId.size === 0) {
@@ -346,8 +348,9 @@ export function takeKittyOutput(
 		return false;
 	});
 	unshown.sort((a, b) => a[1].seen - b[1].seen);
+	const budget = scrollback || screen === null ? UNSHOWN_BUDGET : 0;
 	for (const [key, image] of unshown) {
-		if (unshownBytes <= UNSHOWN_BUDGET) {
+		if (unshownBytes <= budget) {
 			break;
 		}
 		unshownBytes -= image.width * image.height * 4;
