@@ -62,6 +62,7 @@ import {
 	takeStyleTrees,
 	TransitionEvent,
 	type Window,
+	withReactions,
 } from "./dom.ts";
 import {LINE_STYLES, type LineStyle} from "./framebuffer.ts";
 import {
@@ -1285,7 +1286,8 @@ function serializeDeclarations(block: CSSStyleDeclaration): string {
 function flushStyleAttribute(declaration: CSSStyleDeclaration): void {
 	invalidateDeclaration(declaration);
 	const declarationSlots = _(declaration);
-	if (declarationSlots.element) {
+	const element = declarationSlots.element;
+	if (element) {
 		const declarations = declarationSlots.declarations;
 		const last = declarations.at(-1);
 		declarationSlots.attributeText = appendsToSerialized(declaration)
@@ -1297,11 +1299,10 @@ function flushStyleAttribute(declaration: CSSStyleDeclaration): void {
 			: serializeDeclarations(declaration);
 		declarationSlots.serializedLength = declarations.length;
 		declarationSlots.serializedLast = last ?? null;
-		setAttributeByName(
-			declarationSlots.element,
-			"style",
-			declarationSlots.attributeText,
-		);
+		// The members that get here are [CEReactions], so an observed
+		// style attribute's callback runs before they return.
+		const text = declarationSlots.attributeText;
+		withReactions(() => setAttributeByName(element, "style", text));
 	}
 	declarationSlots.onChange?.();
 }
