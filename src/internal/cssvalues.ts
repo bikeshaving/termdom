@@ -277,6 +277,9 @@ const REPEAT_PAIRS: Record<string, string> = {
 
 function canonicalizeValue(property: string, value: string): string {
 	let out = value;
+	if (isColorProperty(property)) {
+		return canonicalizeColor(out);
+	}
 	if (property === "background-repeat" || property === "mask-repeat") {
 		out = splitCommaList(out)
 			.map((layer) => REPEAT_PAIRS[toASCIILowercase(layer)] ?? layer)
@@ -2836,6 +2839,32 @@ const VERBATIM_PROPERTIES = new Set([
 // One bare identifier computes case-folded.
 const IDENTIFIER_VALUE = /^[a-zA-Z][a-zA-Z0-9-]*$/;
 
+const SRGB_COLOR = /^(?:#|(?:rgba?|hsla?|hwb)\()/i;
+
+const OK_LIGHTNESS = /^(okl(?:ab|ch)\(\s*)([+-]?(?:\d+\.?\d*|\.\d+))%/i;
+
+// An oklab() or oklch() lightness as a number, as both values of a color
+// serialize it (css-color-4 §15.2).
+function serializeOkLightness(value: string): string {
+	return value.replace(OK_LIGHTNESS, (_whole, head: string, percent: string) =>
+		`${toASCIILowercase(head)}${serializeCSSNumber(String(Number(percent) / 100))}`,
+	);
+}
+
+// css-color-4 §15.1: a declared sRGB color serializes as rgb() or rgba(),
+// and a keyword in lowercase.
+function canonicalizeColor(value: string): string {
+	if (IDENTIFIER_VALUE.test(value)) {
+		return toASCIILowercase(value);
+	}
+	// Validity is judged on what this returns, so a color the grammar
+	// rejects as written, such as `rgb(0, 100%, 100%)`, stays as written.
+	if (SRGB_COLOR.test(value) && isValidDeclaration("color", value)) {
+		return serializeCSSColor(value) ?? value;
+	}
+	return serializeOkLightness(value);
+}
+
 // Drops the sign and trailing zeros, folds the unit, and gives a
 // unitless zero the px a length computes to.
 function getComputedNumber(token: string): string {
@@ -2906,7 +2935,7 @@ function normalizeValue(property: string, declared: string): string {
 		return value;
 	}
 	if (COLOR_PROPERTIES.has(property)) {
-		return serializeCSSColor(value) ?? value;
+		return serializeOkLightness(serializeCSSColor(value) ?? value);
 	}
 	if (
 		property === "background-position-x" || property === "background-position-y"

@@ -328,8 +328,8 @@ test("SelectedItem paints inverse video, like the Highlight pair", async () => {
 test("deprecated system colors resolve through their modern equivalents", async () => {
 	// CSS Color 4 keeps the desktop-era names as aliases: MenuText is
 	// CanvasText, ThreeDFace is ButtonFace, InactiveCaptionText is GrayText.
-	// The declarations are valid, keep their keyword spelling, and paint and
-	// read back as what they alias.
+	// The declarations are valid, read back as their keywords in lowercase,
+	// and paint and compute as what they alias.
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 	const {document} = dom;
@@ -339,8 +339,8 @@ test("deprecated system colors resolve through their modern equivalents", async 
 	div.style.color = "InactiveCaptionText";
 	div.style.backgroundColor = "ThreeDFace";
 	document.body.appendChild(div);
-	expect(div.style.color).toBe("InactiveCaptionText");
-	expect(div.style.backgroundColor).toBe("ThreeDFace");
+	expect(div.style.color).toBe("inactivecaptiontext");
+	expect(div.style.backgroundColor).toBe("threedface");
 	expect(dom.window.getComputedStyle(div).color).toBe("rgb(128, 128, 128)");
 
 	await nextFrame(dom);
