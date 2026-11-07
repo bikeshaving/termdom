@@ -2095,7 +2095,11 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 				return;
 			}
 		}
-		const images = takeKittyOutput(graphics, termDOMSlots.framebuffer.prev);
+		const images = takeKittyOutput(
+			graphics,
+			termDOMSlots.framebuffer.prev,
+			!termDOMSlots.onAlternateScreen,
+		);
 		if (images) {
 			void termDOMSlots.exchange.write(images);
 		}
