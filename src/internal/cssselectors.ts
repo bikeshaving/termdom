@@ -1642,7 +1642,8 @@ function compilePseudoElement(
 		compound.origin = (element) => states.getShadowHost(getRoot(element));
 		compound.tests.push((element) => {
 			const names = states.getPartNames(element);
-			for (const name of wanted) {
+			for (let index = 0; index < wanted.length; index++) {
+				const name = wanted[index];
 				if (!names.includes(name)) {
 					return false;
 				}
@@ -2307,7 +2308,8 @@ function findHasMatch(
 	const inside: MatchState = {...state, anchor: element};
 	const hostOfShadow =
 		state.shadow !== null && states.getShadowHost(state.shadow) === element;
-	for (const complex of inner) {
+	for (let index = 0; index < inner.length; index++) {
+		const complex = inner[index];
 		const leading = complex.combinators[0] ?? " ";
 		if (hostOfShadow) {
 			// The host is the shadow tree's root, which has no siblings.
