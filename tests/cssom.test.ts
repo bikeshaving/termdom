@@ -267,7 +267,7 @@ test("a declaration block stores longhands and serializes shorthands", () => {
 	expect(style.borderTopWidth).toBe("1px");
 	expect(style.borderTopColor).toBe("currentcolor");
 	expect(style.borderTop).toBe("1px solid");
-	expect(style.getPropertyValue("color")).toBe("RED");
+	expect(style.getPropertyValue("color")).toBe("red");
 
 	// A property outside the CSS property index is not stored at all.
 	style.setProperty("not-a-property", "1px");
@@ -714,4 +714,21 @@ test("background-position states each layer's horizontal part, then its vertical
 	expect(style.backgroundPosition).toBe("10px 20px");
 	style.backgroundRepeat = "repeat no-repeat, round round";
 	expect(style.backgroundRepeat).toBe("repeat-x, round");
+});
+
+test("a declared color reads back in the spelling CSS Color 4 gives it", () => {
+	const {dom} = makeDOM();
+	const style = dom.document.createElement("div").style;
+	const read = (color: string): string => {
+		style.color = "";
+		style.color = color;
+		return style.color;
+	};
+	expect(read("#008000")).toBe("rgb(0, 128, 0)");
+	expect(read("hsl(0, 100%, 50%)")).toBe("rgb(255, 0, 0)");
+	expect(read("rgb(0 128 0 / 0.5)")).toBe("rgba(0, 128, 0, 0.5)");
+	expect(read("RED")).toBe("red");
+	expect(read("CanvasText")).toBe("canvastext");
+	expect(read("oklch(76% 0.23 150)")).toBe("oklch(0.76 0.23 150)");
+	expect(read("rgb(0, 100%, 100%)")).toBe("");
 });
