@@ -9182,6 +9182,12 @@ function defineIndices(list: LiveList, length: number): void {
 	listSlots.defined = length;
 }
 
+// A name that is an array index, `0` to `4294967294` spelled as a
+// number, is an index of the list, so no member's id or name claims it.
+function isArrayIndex(name: string): boolean {
+	return /^(?:0|[1-9]\d{0,9})$/.test(name) && Number(name) < 4294967295;
+}
+
 function defineListProperties(list: LiveList): void {
 	const listSlots = _(list);
 	const items = listSlots.items;
@@ -9194,7 +9200,11 @@ function defineListProperties(list: LiveList): void {
 	const named = listSlots._listNames(items);
 	if (named !== null) {
 		for (const [name, node] of named) {
-			if (name === "" || Object.prototype.hasOwnProperty.call(list, name)) {
+			if (
+				name === "" ||
+				isArrayIndex(name) ||
+				Object.prototype.hasOwnProperty.call(list, name)
+			) {
 				continue;
 			}
 			if (name in (list.constructor as {prototype: object}).prototype) {
