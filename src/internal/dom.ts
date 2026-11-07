@@ -15822,6 +15822,15 @@ class HTMLTemplateElement extends HTMLElement {
 		toggleAttributeByName(this, "shadowrootserializable", Boolean(value));
 	}
 
+	// "named" when missing or invalid.
+	get shadowRootSlotAssignment(): "named" | "manual" {
+		return getDeclaredSlotAssignment(this);
+	}
+
+	set shadowRootSlotAssignment(value: string) {
+		setAttributeByName(this, "shadowrootslotassignment", String(value));
+	}
+
 	override _adoptingSteps(
 		this: Slots<HTMLTemplateElement>,
 		_oldDocument: Document,
@@ -36827,6 +36836,15 @@ function connectShadowRoot(root: ShadowRoot): void {
 	_(attached).extra.layout.invalidate();
 }
 
+function getDeclaredSlotAssignment(
+	template: HTMLTemplateElement,
+): "named" | "manual" {
+	const value = getAttributeValue(template, "shadowrootslotassignment");
+	return value !== null && toASCIILowercase(value) === "manual"
+		? "manual"
+		: "named";
+}
+
 function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 	const named = getAttributeValue(template, "shadowrootmode");
 	if (named === null) {
@@ -36848,7 +36866,7 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 			hasAttributeByName(template, "shadowrootclonable"),
 			hasAttributeByName(template, "shadowrootserializable"),
 			hasAttributeByName(template, "shadowrootdelegatesfocus"),
-			"named",
+			getDeclaredSlotAssignment(template),
 			// A declarative shadow root that names a registry attribute is
 			// scoped to a registry it has not been given yet, so it starts with
 			// none.
@@ -37782,6 +37800,9 @@ function serializeShadowRoot(
 	}
 	if (shadowSlots.extra.serializable) {
 		html += ' shadowrootserializable=""';
+	}
+	if (shadowSlots.extra.slotAssignment === "manual") {
+		html += ' shadowrootslotassignment="manual"';
 	}
 	if (shadowSlots.extra.clonable) {
 		html += ' shadowrootclonable=""';

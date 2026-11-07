@@ -997,3 +997,27 @@ test("a host added back keeps its shadow tree's styles", async () => {
 	expect(text).not.toContain("hidden");
 	dom.dispose();
 });
+
+test("a declarative shadow root takes its slot assignment from shadowrootslotassignment", () => {
+	const dom = new TermDOM();
+	const {document} = dom;
+	const div = document.createElement("div");
+	div.setHTMLUnsafe(
+		"<p id=a><template shadowrootmode=open shadowrootserializable shadowrootclonable shadowrootslotassignment=MANUAL></template></p>" +
+		"<p id=b><template shadowrootmode=open shadowrootslotassignment=bogus></template></p>",
+	);
+	const [a, b] = div.children;
+	expect(a.shadowRoot!.slotAssignment).toBe("manual");
+	expect(b.shadowRoot!.slotAssignment).toBe("named");
+	expect(a.getHTML({serializableShadowRoots: true})).toBe(
+		'<template shadowrootmode="open" shadowrootserializable="" shadowrootslotassignment="manual" shadowrootclonable=""></template>',
+	);
+	const template = document.createElement("template") as
+		HTMLTemplateElement & {shadowRootSlotAssignment: string};
+	expect(template.shadowRootSlotAssignment).toBe("named");
+	template.shadowRootSlotAssignment = "manual";
+	expect(template.getAttribute("shadowrootslotassignment")).toBe("manual");
+	expect(template.shadowRootSlotAssignment).toBe("manual");
+
+	dom.dispose();
+});
