@@ -595,7 +595,11 @@ export interface Realm {
 let activeRealm: Realm | null | undefined;
 
 interface RealmStorage {
-	run<T>(realm: Realm | null, run: () => T): T;
+	run<T>(
+		realm: Realm | null,
+		run: (...args: never[]) => T,
+		...args: unknown[]
+	): T;
 	getStore(): Realm | null | undefined;
 }
 
@@ -752,6 +756,34 @@ export function runInRealm<T>(realm: Realm | null, run: () => T): T {
 				(enteredRealms.getStore() ?? null) === realm
 			? run()
 			: enteredRealms.run(realm, run);
+	} finally {
+		activeRealm = outer;
+	}
+}
+
+/** Whether code already runs as runInRealm(realm) would run it. */
+export function isInRealm(realm: Realm | null): boolean {
+	return (activeRealm ?? null) === realm &&
+		(enteredRealms === null || (enteredRealms.getStore() ?? null) === realm);
+}
+
+/**
+ * `fn` called on `thisArg` with `args`, with `realm` active, as
+ * runInRealm runs a callback, without a function to wrap the call.
+ */
+export function applyInRealm(
+	realm: Realm | null,
+	fn: (...args: never[]) => unknown,
+	thisArg: unknown,
+	args: readonly unknown[],
+): unknown {
+	const outer = activeRealm;
+	activeRealm = realm;
+	try {
+		return enteredRealms === null ||
+				(enteredRealms.getStore() ?? null) === realm
+			? Reflect.apply(fn, thisArg, args)
+			: enteredRealms.run(realm, Reflect.apply, fn, thisArg, args);
 	} finally {
 		activeRealm = outer;
 	}

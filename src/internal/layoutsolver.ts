@@ -547,12 +547,17 @@ function usesPercent(style: Style): boolean {
 // An out-of-flow child resolves against a containing block that may be
 // above this node, so it counts as reading the owner.
 function isOwnerFree(node: LayoutNode): boolean {
-	return (
-		!usesPercent(node.style) &&
-		node.children.every(
-			(child) => child.ownerFree && !isOutOfFlowType(child.style.positionType),
-		)
-	);
+	if (usesPercent(node.style)) {
+		return false;
+	}
+	const children = node.children;
+	for (let index = 0; index < children.length; index++) {
+		const child = children[index];
+		if (!child.ownerFree || isOutOfFlowType(child.style.positionType)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 // The cache reuse rules, after Yoga. Beyond an identical request, a
@@ -638,12 +643,42 @@ let heightSkipped = false;
 
 // What a probe skips is what it was asked not to find, and the box that
 // asked reads only its width.
-function measureWidth(lay: () => void): void {
+function measureBlockChildWidth(
+	child: LayoutNode,
+	innerWidth: number,
+	innerHeight: number,
+): void {
 	const outer = widthOnly;
 	const skippedAbove = heightSkipped;
 	widthOnly = true;
 	try {
-		lay();
+		layoutBlockChild(child, innerWidth, false, NaN, innerHeight, false);
+	} finally {
+		widthOnly = outer;
+		heightSkipped = skippedAbove;
+	}
+}
+
+function measureCellWidth(
+	cell: LayoutNode,
+	minContent: boolean,
+	ownerWidth: number,
+	ownerHeight: number,
+): void {
+	const outer = widthOnly;
+	const skippedAbove = heightSkipped;
+	widthOnly = true;
+	try {
+		layoutNode(
+			cell,
+			minContent ? 0 : NaN,
+			NaN,
+			minContent ? "shrink-to-fit" : "indefinite",
+			"indefinite",
+			ownerWidth,
+			ownerHeight,
+			false,
+		);
 	} finally {
 		widthOnly = outer;
 		heightSkipped = skippedAbove;
@@ -2239,29 +2274,33 @@ function getOutOfFlowDescendants(
 	viewport: boolean,
 ): LayoutNode[] {
 	const found: LayoutNode[] = [];
-	const enter = (parent: LayoutNode): void => {
-		const children = parent.children;
-		for (let childIndex = 0; childIndex < children.length; childIndex++) {
-			const child = children[childIndex];
-			if (child.style.displayType === "none" || !child.holdsOutOfFlow) {
-				continue;
-			}
-			const type = child.style.positionType;
-			const wanted = viewport ? "fixed" : "absolute";
-			if (type === wanted) {
-				found.push(child);
-			}
-			// A fixed box belongs to the viewport however deep it is. An
-			// absolute one stops at the first containing block, itself
-			// included.
-			if (!viewport && isContainingBlock(child.style)) {
-				continue;
-			}
-			enter(child);
-		}
-	};
-	enter(node);
+	collectOutOfFlow(node, viewport, found);
 	return found;
+}
+
+function collectOutOfFlow(
+	parent: LayoutNode,
+	viewport: boolean,
+	found: LayoutNode[],
+): void {
+	const children = parent.children;
+	const wanted = viewport ? "fixed" : "absolute";
+	for (let childIndex = 0; childIndex < children.length; childIndex++) {
+		const child = children[childIndex];
+		if (child.style.displayType === "none" || !child.holdsOutOfFlow) {
+			continue;
+		}
+		if (child.style.positionType === wanted) {
+			found.push(child);
+		}
+		// A fixed box belongs to the viewport however deep it is. An
+		// absolute one stops at the first containing block, itself
+		// included.
+		if (!viewport && isContainingBlock(child.style)) {
+			continue;
+		}
+		collectOutOfFlow(child, viewport, found);
+	}
 }
 
 function getRelativeOffset(
@@ -3537,18 +3576,7 @@ function getIntrinsicCellWidth(
 	ownerWidth: number,
 	ownerHeight: number,
 ): number {
-	measureWidth(() =>
-		layoutNode(
-			cell,
-			minContent ? 0 : NaN,
-			NaN,
-			minContent ? "shrink-to-fit" : "indefinite",
-			"indefinite",
-			ownerWidth,
-			ownerHeight,
-			false,
-		),
-	);
+	measureCellWidth(cell, minContent, ownerWidth, ownerHeight);
 	return cell.result.width;
 }
 
@@ -4593,11 +4621,11 @@ function pairGridLines(
 	const start = startLine;
 	let end = endLine;
 
-	const isSpan = (line: ResolvedLine) =>
-		line.kind === "span" || line.kind === "spanName";
-
 	// Two spans: the end one is dropped.
-	if (isSpan(start) && isSpan(end)) {
+	if (
+		(start.kind === "span" || start.kind === "spanName") &&
+		(end.kind === "span" || end.kind === "spanName")
+	) {
 		end = {kind: "auto"};
 	}
 
@@ -6429,9 +6457,7 @@ function layoutBlock(
 		let widest = 0;
 		for (let childIndex = 0; childIndex < inFlow.length; childIndex++) {
 			const child = inFlow[childIndex];
-			measureWidth(() =>
-				layoutBlockChild(child, innerWidth, false, NaN, innerHeight, false),
-			);
+			measureBlockChildWidth(child, innerWidth, innerHeight);
 			widest = Math.max(
 				widest,
 				child.result.width + getAxisMargin(child, "row", NaN),

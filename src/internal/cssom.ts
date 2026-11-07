@@ -26,12 +26,14 @@ import * as CSSTree from "./csstree.ts";
 import * as CSSValues from "./cssvalues.ts";
 import {
 	appendChildNode,
+	beginReactions,
 	constructInternal,
 	dispatchAsUserAgent,
 	type Document as DOMDocument,
 	type Element as DOMElement,
 	type Node as DOMNode,
 	dropPseudoElement,
+	endReactions,
 	ensurePseudoElement,
 	flatChildren,
 	flatParentElement,
@@ -62,7 +64,6 @@ import {
 	takeStyleTrees,
 	TransitionEvent,
 	type Window,
-	withReactions,
 } from "./dom.ts";
 import {LINE_STYLES, type LineStyle} from "./framebuffer.ts";
 import {
@@ -113,7 +114,7 @@ import {
 	UA_DOCUMENT_STYLES,
 	UA_ELEMENT_STYLES,
 } from "./useragent.ts";
-import {getActiveRealm, runInRealm, windowMember} from "./webidl.ts";
+import {getActiveRealm, isInRealm, runInRealm, windowMember} from "./webidl.ts";
 
 // Per-element defaults that are STATE, not stylesheet: the fullscreen
 // element's viewport block, a select sized to its widest option label so
@@ -386,19 +387,6 @@ function cellBorderSide(
 const documentCascades = new WeakMap<object, Cascade>();
 
 /**
- * Called with every style value read while set: the element, what was
- * read, and the value. A computation that caches its result records what
- * it read, and is invalidated when any of it reads differently.
- */
-type StyleReadRecorder = (
-	element: Element,
-	read: string,
-	value: string,
-) => void;
-
-let readRecorder: StyleReadRecorder | null = null;
-
-/**
  * Computed values a reader takes together, typed as it uses them. A group
  * is read once for all the elements that share resolved values and held
  * once for all that come out alike, so two alike are one object, frozen.
@@ -434,12 +422,91 @@ let valueDepth = 0;
 const groupIds = new WeakMap<object, string>();
 let nextGroupId = 0;
 
+/**
+ * Every style value read while a log is active: the element, what was
+ * read, and the value, in turn. A computation that caches its result
+ * records what it read, and is invalidated when any of it reads
+ * differently. Reads come in runs on one element, so a read already in
+ * the element's run takes the new value.
+ */
+export interface StyleReadLog {
+	// Null for a log that records nothing.
+	reads: Array<Element | string> | null;
+	runStart: number;
+	// A shared group's element, whose own values the group may not read.
+	sharedElement: Element | null;
+	sharedDepth: number;
+	sharedGroup: string;
+}
+
+let readLog: StyleReadLog | null = null;
+
+const UNRECORDED_READS: StyleReadLog = {
+	reads: null,
+	runStart: 0,
+	sharedElement: null,
+	sharedDepth: 0,
+	sharedGroup: "",
+};
+
+export function createStyleReadLog(): StyleReadLog {
+	return {
+		reads: [],
+		runStart: 0,
+		sharedElement: null,
+		sharedDepth: 0,
+		sharedGroup: "",
+	};
+}
+
+/** Makes `log` the active one, and returns the one it replaces. */
+export function beginStyleReads(log: StyleReadLog): StyleReadLog | null {
+	const outer = readLog;
+	readLog = log;
+	return outer;
+}
+
+export function endStyleReads(outer: StyleReadLog | null): void {
+	readLog = outer;
+}
+
+function noteStyleRead(element: Element, read: string, value: string): void {
+	const log = readLog;
+	if (log === null) {
+		return;
+	}
+	// What resolving the element's values reads, of its parent or of its
+	// children, is theirs to read. The group's own reads are the element's.
+	if (
+		log.sharedElement === element &&
+		valueDepth === log.sharedDepth &&
+		!read.startsWith(GROUP_READ) &&
+		(read.includes("|") || isOwnProperty(read))
+	) {
+		throw new Error(`The ${log.sharedGroup} group read ${read}, not shared`);
+	}
+	const reads = log.reads;
+	if (reads === null) {
+		return;
+	}
+	if (reads[log.runStart] !== element) {
+		log.runStart = reads.length;
+	}
+	for (let index = log.runStart; index < reads.length; index += 3) {
+		if (reads[index + 1] === read) {
+			reads[index + 2] = value;
+			return;
+		}
+	}
+	reads.push(element, read, value);
+}
+
 export function getStyleGroup<T extends object>(
 	element: Element,
 	group: StyleGroup<T>,
 ): T {
 	const value = readStyleGroup(element, group);
-	readRecorder?.(
+	noteStyleRead(
 		element,
 		getGroupRead(group as StyleGroup<object>),
 		getGroupId(value),
@@ -514,7 +581,7 @@ export function getPseudoStyleGroup<T extends object>(
 ): T {
 	parseStylesheetsIfStale(cascade);
 	// Read under a recorder, each value is recorded as its own read.
-	if (readRecorder !== null || cascade.activeTransitions.size > 0) {
+	if (readLog !== null || cascade.activeTransitions.size > 0) {
 		return group.read(cascade, element, pseudoElement);
 	}
 	const slots = _(getPseudoDeclaration(cascade, element, pseudoElement));
@@ -523,13 +590,13 @@ export function getPseudoStyleGroup<T extends object>(
 	}
 	let value = slots.resolved.getGroup(group);
 	if (value === undefined) {
-		value = internGroup(
-			group as unknown as StyleGroup<T>,
-			recordStyleReads(
-				() => {},
-				() => group.read(cascade, element, pseudoElement),
-			),
-		);
+		const outer = beginStyleReads(UNRECORDED_READS);
+		try {
+			value = group.read(cascade, element, pseudoElement);
+		} finally {
+			endStyleReads(outer);
+		}
+		value = internGroup(group as unknown as StyleGroup<T>, value);
 		slots.resolved.setGroup(group, value);
 	}
 	return value;
@@ -539,45 +606,47 @@ function readUnsharedGroup<T extends object>(
 	element: Element,
 	group: StyleGroup<T>,
 ): T {
-	return internGroup(
-		group,
-		recordStyleReads(() => {}, () => group.read(element)),
-	);
+	const outer = beginStyleReads(UNRECORDED_READS);
+	let value: T;
+	try {
+		value = group.read(element);
+	} finally {
+		endStyleReads(outer);
+	}
+	return internGroup(group, value);
 }
 
-// Apart from readStyleGroup's lookups, which run for every group read: the
-// closures here would otherwise make each call allocate a scope for them.
 function readSharedGroup<T extends object>(
 	element: Element,
 	group: StyleGroup<T>,
 ): T {
-	const depth = valueDepth;
-	return internGroup(
-		group,
-		// What resolving the element's values reads, of its parent or of its
-		// children, is theirs to read. The group's own reads are the
-		// element's.
-		recordStyleReads((reader, read) => {
-			if (
-				valueDepth === depth &&
-				reader === element &&
-				!read.startsWith(GROUP_READ) &&
-				(read.includes("|") || isOwnProperty(read))
-			) {
-				throw new Error(`The ${group.name} group read ${read}, not shared`);
-			}
-		}, () => group.read(element)),
-	);
+	const outer = beginStyleReads({
+		reads: null,
+		runStart: 0,
+		sharedElement: element,
+		sharedDepth: valueDepth,
+		sharedGroup: group.name,
+	});
+	let value: T;
+	try {
+		value = group.read(element);
+	} finally {
+		endStyleReads(outer);
+	}
+	return internGroup(group, value);
 }
 
 // Fields alike when they serialize alike, with NaN, the infinities and
 // undefined spelled as no string can be.
 function getGroupKey(group: object): string {
-	return JSON.stringify(group, (_key, value: unknown) =>
-		value === undefined ||
-			(typeof value === "number" && !Number.isFinite(value))
-			? {"": String(value)}
-			: value);
+	return JSON.stringify(group, spellUnserializable);
+}
+
+function spellUnserializable(_key: string, value: unknown): unknown {
+	return value === undefined ||
+		(typeof value === "number" && !Number.isFinite(value))
+		? {"": String(value)}
+		: value;
 }
 
 function internGroup<T extends object>(group: StyleGroup<T>, value: T): T {
@@ -1308,8 +1377,12 @@ function flushStyleAttribute(declaration: CSSStyleDeclaration): void {
 		declarationSlots.serializedLast = last ?? null;
 		// The members that get here are [CEReactions], so an observed
 		// style attribute's callback runs before they return.
-		const text = declarationSlots.attributeText;
-		withReactions(() => setAttributeByName(element, "style", text));
+		beginReactions();
+		try {
+			setAttributeByName(element, "style", declarationSlots.attributeText);
+		} finally {
+			endReactions();
+		}
 	}
 	declarationSlots.onChange?.();
 }
@@ -4338,34 +4411,23 @@ export function getComputedValue(
 	pseudoElement = "",
 ): string {
 	const value = readComputedValue(element, property, pseudoElement);
-	readRecorder?.(
-		element,
-		pseudoElement === "" ? property : `${pseudoElement}|${property}`,
-		value,
-	);
-	return value;
-}
-
-export function recordStyleReads<T>(
-	recorder: StyleReadRecorder,
-	compute: () => T,
-): T {
-	const outer = readRecorder;
-	readRecorder = recorder;
-	try {
-		return compute();
-	} finally {
-		readRecorder = outer;
+	if (readLog !== null) {
+		noteStyleRead(
+			element,
+			pseudoElement === "" ? property : `${pseudoElement}|${property}`,
+			value,
+		);
 	}
+	return value;
 }
 
 /** Reads recorded earlier, as element, read and value in turn, read again. */
 export function replayStyleReads(reads: ReadonlyArray<Element | string>): void {
-	if (readRecorder === null) {
+	if (readLog === null) {
 		return;
 	}
 	for (let i = 0; i < reads.length; i += 3) {
-		readRecorder(
+		noteStyleRead(
 			reads[i] as Element,
 			reads[i + 1] as string,
 			reads[i + 2] as string,
@@ -4501,9 +4563,16 @@ function hasContainment(element: Element, kinds: Set<string>): boolean {
 	if (BOXLESS_DISPLAYS.has(display) || UNCONTAINED_DISPLAYS.has(display)) {
 		return false;
 	}
-	return getComputedValue(element, "contain")
-		.split(" ")
-		.some((keyword) => kinds.has(keyword));
+	const contain = getComputedValue(element, "contain");
+	if (contain === "none") {
+		return false;
+	}
+	for (const keyword of contain.split(" ")) {
+		if (kinds.has(keyword)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 export function hasLayoutOrPaintContainment(element: Element): boolean {
@@ -4599,11 +4668,16 @@ export function establishesFixedContainingBlock(element: Element): boolean {
 			return true;
 		}
 	}
-	return getComputedValue(element, "will-change")
-		.split(",")
-		.some((name) =>
-			FIXED_CONTAINING_WILL_CHANGE.has(toASCIILowercase(name.trim())),
-		);
+	const willChange = getComputedValue(element, "will-change");
+	if (willChange === "auto") {
+		return false;
+	}
+	for (const name of willChange.split(",")) {
+		if (FIXED_CONTAINING_WILL_CHANGE.has(toASCIILowercase(name.trim()))) {
+			return true;
+		}
+	}
+	return false;
 }
 
 // The flat-tree ancestor a fixed box is placed in, or null for the
@@ -4709,11 +4783,17 @@ function usesCounters(
 		declarations["counter-reset"] ||
 		declarations["counter-increment"] ||
 		declarations["counter-set"] ||
-		CSSValues.getCSSValueChildren(declarations.content ?? "")
-			?.some(
-				(node) => node.type === "Function" && /^counters?$/i.test(node.name!),
-			),
+		readsCounters(declarations.content ?? ""),
 	);
+}
+
+function readsCounters(content: string): boolean {
+	for (const node of CSSValues.getCSSValueChildren(content) ?? []) {
+		if (node.type === "Function" && /^counters?$/i.test(node.name!)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 // One rule per set of hints, so elements with the same attributes share
@@ -4986,23 +5066,20 @@ function blockInheritsReset(
 	return inherits;
 }
 
-// Every value a declaration has resolved, its own over the shared.
-// What a dropped style resolved, read through rather than copied: its own
-// values over the shared ones. Dropping a style happens on every restyle,
-// and a transition reads this only when one is declared.
-type ResolvedReader = Pick<ResolvedValues, "get" | "size">;
+// What a dropped style resolved, held rather than copied, and read with
+// readDroppedValue: its own values over the shared ones. Dropping a style
+// happens on every restyle, and a transition reads this only when one is
+// declared.
+interface DroppedValues {
+	own: ResolvedValues | null;
+	resolved: ResolvedValues;
+}
 
-function getDroppedValues(
-	slots: Slots<ComputedStyleDeclaration>,
-): ResolvedReader {
-	const {own, resolved} = slots;
-	if (own.size === 0) {
-		return resolved;
-	}
-	return {
-		size: own.size + resolved.size,
-		get: (property) => own.get(property) ?? resolved.get(property),
-	};
+function readDroppedValue(
+	dropped: DroppedValues,
+	property: string,
+): string | undefined {
+	return dropped.own?.get(property) ?? dropped.resolved.get(property);
 }
 
 function getAllResolved(slots: Slots<ComputedStyleDeclaration>): Set<string> {
@@ -5314,7 +5391,8 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			slots.cascade,
 			slots.element,
 			"",
-			getDroppedValues(slots),
+			slots.own,
+			slots.resolved,
 		);
 		slots.resolved = getSharedResolved(
 			slots.cascade,
@@ -5325,12 +5403,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		dropUsedValues(slots.cascade, getOwner(this));
 		// The re-resolution is a style change event. Whatever changed against
 		// the last snapshot starts, retargets or cancels transitions.
-		processTransitionStyle(
-			slots.cascade,
-			slots.element,
-			(property) => slots._baseValue(property),
-			"",
-		);
+		processTransitionStyle(slots.cascade, slots.element, slots, "");
 	}
 
 	_computedValue(
@@ -6278,23 +6351,50 @@ function getRuleListIndex(rules: readonly CascadedRule[]): RuleListIndex {
 	return index;
 }
 
-function mapsAlone(): boolean {
-	return true;
-}
-
-// Which of a slot's names a block's declaration fills the property
-// through, reading the direction only if a flow-relative name is declared.
-function getSlotMatcher(
+// Whether a declaration of `name` fills `property`'s slot, reading the
+// direction only for a flow-relative name.
+function fillsSlot(
 	declarationSlots: Slots<ComputedStyleDeclaration>,
 	property: string,
-): (name: string) => boolean {
-	let direction: string | null = null;
-	return (name) =>
-		name === property ||
+	name: string,
+): boolean {
+	return name === property ||
 		CSSValues.getPhysicalProperty(
 			name,
-			(direction ??= declarationSlots._computedValue("direction")),
+			declarationSlots._computedValue("direction"),
 		) === property;
+}
+
+// The name a block declares the property's slot under, with the given
+// importance, the last in the block's order when it declares several.
+function getDeclaredSlotName(
+	block: CSSValues.DeclarationBlock,
+	names: readonly string[],
+	important: boolean,
+	declarationSlots: Slots<ComputedStyleDeclaration>,
+	property: string,
+): string | null {
+	let winner: string | null = null;
+	let winningOrder = -1;
+	for (let index = 0; index < names.length; index++) {
+		const name = names[index];
+		if (block.declarations[name] === undefined) {
+			continue;
+		}
+		if (Boolean(block.important[name]) !== important) {
+			continue;
+		}
+		const order = block.order[name] ?? 0;
+		if (
+			order < winningOrder ||
+			(names.length > 1 && !fillsSlot(declarationSlots, property, name))
+		) {
+			continue;
+		}
+		winner = name;
+		winningOrder = order;
+	}
+	return winner;
 }
 
 function resolvePropertyValueRaw(
@@ -6306,20 +6406,24 @@ function resolvePropertyValueRaw(
 	// by `direction` only once a block actually declares one of them.
 	const names = CSSValues.getSlotCandidates(property);
 	const declarationSlots = _(declaration);
-	const mapsHere = names.length === 1
-		? mapsAlone
-		: getSlotMatcher(declarationSlots, property);
 
 	const inline = getInlineDeclarations(declaration);
-	const inlineName = CSSValues.getDeclaredName(inline, names, false, mapsHere);
+	const inlineName = getDeclaredSlotName(
+		inline,
+		names,
+		false,
+		declarationSlots,
+		property,
+	);
 	const inlineValue = inlineName !== null
 		? inline.declarations[inlineName].trim()
 		: "";
-	const inlineImportantName = CSSValues.getDeclaredName(
+	const inlineImportantName = getDeclaredSlotName(
 		inline,
 		names,
 		true,
-		mapsHere,
+		declarationSlots,
+		property,
 	);
 	const inlineImportantValue = inlineImportantName !== null
 		? inline.declarations[inlineImportantName].trim()
@@ -6344,23 +6448,28 @@ function resolvePropertyValueRaw(
 	let winner = -1;
 	for (const name of names) {
 		const at = index.lastNormal.get(name);
-		if (at !== undefined && at > winner && mapsHere(name)) {
+		if (
+			at !== undefined &&
+			at > winner &&
+			(names.length === 1 || fillsSlot(declarationSlots, property, name))
+		) {
 			winner = at;
 		}
 	}
 	if (winner !== -1) {
 		const rule = rules[winner];
 		ruleValue = rule.block.declarations[
-			CSSValues.getDeclaredName(rule.block, names, false, mapsHere)!
+			getDeclaredSlotName(rule.block, names, false, declarationSlots, property)!
 		];
 	}
 	for (const at of index.withImportant) {
 		const rule = rules[at];
-		const importantName = CSSValues.getDeclaredName(
+		const importantName = getDeclaredSlotName(
 			rule.block,
 			names,
 			true,
-			mapsHere,
+			declarationSlots,
+			property,
 		);
 		if (importantName === null) {
 			continue;
@@ -6613,6 +6722,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 				slots.cascade,
 				slots.element,
 				slots.pseudoElement,
+				null,
 				slots.resolved,
 			);
 		}
@@ -6622,7 +6732,7 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 			processTransitionStyle(
 				slots.cascade,
 				slots.element,
-				(property) => slots._baseValue(property),
+				slots,
 				slots.pseudoElement,
 			);
 		}
@@ -6819,51 +6929,56 @@ interface BorderSides {
 const LINE_KEYWORDS = new Set<string>(LINE_STYLES);
 
 export function resolveBorderSides(element: Element): BorderSides {
-	const getSide = (
-		width: string,
-		style: string,
-	): LineStyle["style"] | undefined => {
-		const parsed = CSSValues.parseBorderWidthValue(width);
-		const widthValue = typeof parsed === "number" ? parsed : NaN;
-		if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
-			return undefined;
-		}
-		// An unknown style keyword draws as solid rather than not at all.
-		return LINE_KEYWORDS.has(style) ? (style as LineStyle["style"]) : "solid";
-	};
-
-	// Rounded when the radius is nonzero on BOTH axes, as a browser squares
-	// off a collapsed ellipse. A cell grid has one size of curve.
-	const roundedCorner = (corner: string): "round" | undefined => {
-		const radii = getComputedValue(element, `border-${corner}-radius`)
-			.split(CSSValues.WHITESPACE_RUN)
-			.filter(Boolean);
-		if (radii.length === 0) {
-			return undefined;
-		}
-		return radii.every((radius) => parseFloat(radius) > 0)
-			? "round"
-			: undefined;
-	};
-
-	const of = (side: string): LineStyle["style"] | undefined =>
-		getSide(
-			getComputedValue(element, `border-${side}-width`) ||
-			getComputedValue(element, "border-width"),
-			getComputedValue(element, `border-${side}-style`) ||
-			getComputedValue(element, "border-style"),
-		);
-
 	return {
-		top: of("top"),
-		right: of("right"),
-		bottom: of("bottom"),
-		left: of("left"),
-		topLeft: roundedCorner("top-left"),
-		topRight: roundedCorner("top-right"),
-		bottomRight: roundedCorner("bottom-right"),
-		bottomLeft: roundedCorner("bottom-left"),
+		top: getBorderSide(element, "top"),
+		right: getBorderSide(element, "right"),
+		bottom: getBorderSide(element, "bottom"),
+		left: getBorderSide(element, "left"),
+		topLeft: getRoundedCorner(element, "top-left"),
+		topRight: getRoundedCorner(element, "top-right"),
+		bottomRight: getRoundedCorner(element, "bottom-right"),
+		bottomLeft: getRoundedCorner(element, "bottom-left"),
 	};
+}
+
+function getBorderSide(
+	element: Element,
+	side: string,
+): LineStyle["style"] | undefined {
+	const width =
+		getComputedValue(element, `border-${side}-width`) ||
+		getComputedValue(element, "border-width");
+	const style =
+		getComputedValue(element, `border-${side}-style`) ||
+		getComputedValue(element, "border-style");
+	const parsed = CSSValues.parseBorderWidthValue(width);
+	const widthValue = typeof parsed === "number" ? parsed : NaN;
+	if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
+		return undefined;
+	}
+	// An unknown style keyword draws as solid rather than not at all.
+	return LINE_KEYWORDS.has(style) ? (style as LineStyle["style"]) : "solid";
+}
+
+// Rounded when the radius is nonzero on BOTH axes, as a browser squares
+// off a collapsed ellipse. A cell grid has one size of curve.
+function getRoundedCorner(
+	element: Element,
+	corner: string,
+): "round" | undefined {
+	const radii = getComputedValue(element, `border-${corner}-radius`)
+		.split(CSSValues.WHITESPACE_RUN);
+	let any = false;
+	for (const radius of radii) {
+		if (radius === "") {
+			continue;
+		}
+		if (!(parseFloat(radius) > 0)) {
+			return undefined;
+		}
+		any = true;
+	}
+	return any ? "round" : undefined;
 }
 
 // Keyed by the COMPUTED list-style-type, not the parent's tag name. A
@@ -7452,7 +7567,7 @@ export class Cascade {
 	// the case the snapshot cannot cover. These are the original maps, not
 	// copies. The declaration replacing its memo is what makes the old map
 	// safe to hold.
-	transitionFallback: WeakMap<Element, Map<string, ResolvedReader>>;
+	transitionFallback: WeakMap<Element, Map<string, DroppedValues>>;
 
 	// The styles each whole-cascade drop let go of, newest first, which a
 	// rebuilt style takes its transitions' before-change values from. An
@@ -8273,14 +8388,12 @@ function buildComputedSlots(
 	element: Element,
 ): Slots<ComputedStyleDeclaration> {
 	parseStylesheetsIfStale(cascade);
+	const rules = getCascadeRules(cascade, element);
 	const fresh = _(
-		runInRealm(null, () =>
-			new ComputedStyleDeclaration(
-				element,
-				getCascadeRules(cascade, element),
-				cascade,
-			),
-		),
+		isInRealm(null)
+			? new ComputedStyleDeclaration(element, rules, cascade)
+			: runInRealm(null, () =>
+				new ComputedStyleDeclaration(element, rules, cascade)),
 	);
 	cascade.computedStyleCache.set(element, fresh);
 	for (const {styles} of cascade.droppedStyles) {
@@ -8292,7 +8405,8 @@ function buildComputedSlots(
 					cascade,
 					element,
 					"",
-					getDroppedValues(dropped),
+					dropped.own,
+					dropped.resolved,
 				);
 			}
 			break;
@@ -8300,12 +8414,7 @@ function buildComputedSlots(
 	}
 	// Building a fresh declaration is the other form of the style change
 	// event _syncResolved sees.
-	processTransitionStyle(
-		cascade,
-		element,
-		(property) => fresh._baseValue(property),
-		"",
-	);
+	processTransitionStyle(cascade, element, fresh, "");
 	return fresh;
 }
 
@@ -8503,6 +8612,18 @@ function hasStateRules(cascade: Cascade, state: string): boolean {
 	return someScopeRules(cascade, (rules) => rules.hasStates.has(state));
 }
 
+function hasPseudoClassNamed(
+	compound: CompiledCompound,
+	name: string,
+): boolean {
+	for (const pseudoClass of compound.pseudoClasses) {
+		if (pseudoClass.name === name) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // What the :has()es in a selector ask of the cascade, at any depth. A
 // compound holding a pseudo-element or :host, or a second :has(), only
 // means something in its tree, and is not tested on its own.
@@ -8517,7 +8638,7 @@ function noteHasRules(
 		: [...complex.compounds, after];
 	for (let index = 0; index < compounds.length; index++) {
 		const compound = compounds[index];
-		if (compound.pseudoClasses.some(({name}) => name === "has")) {
+		if (hasPseudoClassNamed(compound, "has")) {
 			const names = getPseudoClassNames(getNestedCompounds(compound));
 			const next = complex.combinators[
 				complex.combinators.length === complex.compounds.length
@@ -9250,9 +9371,11 @@ function getPseudoDeclaration(
 		return cached;
 	}
 	const declarations = pseudoDeclarationsFor(cascade, element, pseudoElement);
-	const declaration = runInRealm(null, () =>
-		new PseudoStyleDeclaration(declarations, element, cascade, pseudoElement),
-	);
+	const declaration = isInRealm(null)
+		? new PseudoStyleDeclaration(declarations, element, cascade, pseudoElement)
+		: runInRealm(null, () =>
+			new PseudoStyleDeclaration(declarations, element, cascade, pseudoElement),
+		);
 	// The cache is fetched HERE, not before the work. Resolving the host's
 	// style can reparse the stylesheets, which replaces every cache on this
 	// cascade, and a map fetched before that would be orphaned.
@@ -9270,17 +9393,13 @@ function getPseudoDeclaration(
 				cascade,
 				element,
 				pseudoElement,
+				null,
 				_(dropped).resolved,
 			);
 			break;
 		}
 	}
-	processTransitionStyle(
-		cascade,
-		element,
-		(property) => _(declaration)._baseValue(property),
-		pseudoElement,
-	);
+	processTransitionStyle(cascade, element, _(declaration), pseudoElement);
 	return declaration;
 }
 
@@ -10174,9 +10293,10 @@ function storeTransitionFallback(
 	cascade: Cascade,
 	element: Element,
 	pseudo: string,
-	resolved: ResolvedReader,
+	own: ResolvedValues | null,
+	resolved: ResolvedValues,
 ): void {
-	if (resolved.size === 0) {
+	if ((own === null || own.size === 0) && resolved.size === 0) {
 		return;
 	}
 	let byPseudo = cascade.transitionFallback.get(element);
@@ -10184,7 +10304,10 @@ function storeTransitionFallback(
 		byPseudo = new Map();
 		cascade.transitionFallback.set(element, byPseudo);
 	}
-	byPseudo.set(pseudo, resolved);
+	byPseudo.set(pseudo, {
+		own: own !== null && own.size > 0 ? own : null,
+		resolved,
+	});
 }
 
 // One style change event: compare the new base values against the last
@@ -10193,7 +10316,7 @@ function storeTransitionFallback(
 function processTransitionStyle(
 	cascade: Cascade,
 	element: Element,
-	read: (property: string) => string,
+	values: CSSValues.BaseValues,
 	pseudo: string,
 ): void {
 	const active = cascade.activeTransitions.get(element)?.get(pseudo);
@@ -10205,7 +10328,7 @@ function processTransitionStyle(
 		}
 		cascade.transitionsExist = true;
 	}
-	const candidates = CSSValues.getMatchedTransitions(read);
+	const candidates = CSSValues.getMatchedTransitions(values);
 	let snapshots = cascade.transitionSnapshots.get(element);
 	const previous = snapshots?.get(pseudo);
 	const fallbacks = cascade.transitionFallback.get(element);
@@ -10223,7 +10346,7 @@ function processTransitionStyle(
 	]);
 	const snapshot = new Map<string, string>();
 	for (const property of names) {
-		const after = CSSValues.getTransitionBase(read, property);
+		const after = CSSValues.getTransitionBase(values, property);
 		const timing = candidates?.get(property);
 		if (timing !== undefined) {
 			snapshot.set(property, after);
@@ -10271,7 +10394,11 @@ function processTransitionStyle(
 		// An element styled for the first time transitions nothing. The
 		// fallback's raw entries store "no declaration" as the empty string,
 		// and the snapshot stores the initial value explicitly.
-		const raw = previous?.get(property) ?? fallback?.get(property);
+		const raw =
+			previous?.get(property) ??
+			(fallback === undefined
+				? undefined
+				: readDroppedValue(fallback, property));
 		const before = raw === ""
 			? CSSValues.getComputedValueEntry(
 				property,
@@ -10745,7 +10872,13 @@ function invalidateElement(cascade: Cascade, element: Element): void {
 	const dropped = cascade.computedStyleCache.get(element);
 	if (dropped) {
 		cascade.currentDeclarations.delete(dropped);
-		storeTransitionFallback(cascade, element, "", getDroppedValues(dropped));
+		storeTransitionFallback(
+			cascade,
+			element,
+			"",
+			dropped.own,
+			dropped.resolved,
+		);
 	}
 	cascade.computedStyleCache.delete(element);
 	forgetLastRead(element);
@@ -10768,7 +10901,13 @@ function dropPseudoStyles(cascade: Cascade, element: Element): boolean {
 	}
 	for (const [name, declaration] of dropped) {
 		cascade.currentDeclarations.delete(_(declaration));
-		storeTransitionFallback(cascade, element, name, _(declaration).resolved);
+		storeTransitionFallback(
+			cascade,
+			element,
+			name,
+			null,
+			_(declaration).resolved,
+		);
 	}
 	cascade.pseudoElementStyleCache.delete(element);
 	return true;
@@ -11126,7 +11265,13 @@ function invalidateElementCaches(
 	);
 	if (dropped) {
 		cascade.currentDeclarations.delete(dropped);
-		storeTransitionFallback(cascade, element, "", getDroppedValues(dropped));
+		storeTransitionFallback(
+			cascade,
+			element,
+			"",
+			dropped.own,
+			dropped.resolved,
+		);
 	}
 	cascade.computedStyleCache.delete(element);
 	forgetLastRead(element);
@@ -12275,15 +12420,30 @@ function getNamedKeys(nested: CompiledCompound[]): string[] {
 // Whether an argument holds a combinator, and so describes elements
 // other than the one the compound matches.
 function writesNestedCombinator(nested: CompiledCompound[]): boolean {
-	return nested.some((compound) =>
-		compound.pseudoClasses.some((pseudoClass) =>
-			pseudoClass.args.some(writesCombinator)));
+	return writesArgumentCombinator(nested, true);
 }
 
 function writesCombinatorOutsideHas(nested: CompiledCompound[]): boolean {
-	return nested.some((compound) =>
-		compound.pseudoClasses.some((pseudoClass) =>
-			pseudoClass.name !== "has" && pseudoClass.args.some(writesCombinator)));
+	return writesArgumentCombinator(nested, false);
+}
+
+function writesArgumentCombinator(
+	nested: CompiledCompound[],
+	insideHas: boolean,
+): boolean {
+	for (const compound of nested) {
+		for (const pseudoClass of compound.pseudoClasses) {
+			if (!insideHas && pseudoClass.name === "has") {
+				continue;
+			}
+			for (const argument of pseudoClass.args) {
+				if (writesCombinator(argument)) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
 }
 
 // Whether the keys the compounds name can fail to name the element: some
@@ -12303,12 +12463,24 @@ function testsSiblings(
 	index: number,
 	nested: CompiledCompound[],
 ): boolean {
-	return isSiblingCombinator(complex.combinators[index - 1]) ||
-		nested.some((compound) =>
-			compound.pseudoClasses.some((pseudoClass) =>
-				STRUCTURAL_PSEUDO_CLASS.test(pseudoClass.name) ||
-				pseudoClass.args.some((argument) =>
-					argument.combinators.some(isSiblingCombinator))));
+	if (isSiblingCombinator(complex.combinators[index - 1])) {
+		return true;
+	}
+	for (const compound of nested) {
+		for (const pseudoClass of compound.pseudoClasses) {
+			if (STRUCTURAL_PSEUDO_CLASS.test(pseudoClass.name)) {
+				return true;
+			}
+			for (const argument of pseudoClass.args) {
+				for (const combinator of argument.combinators) {
+					if (isSiblingCombinator(combinator)) {
+						return true;
+					}
+				}
+			}
+		}
+	}
+	return false;
 }
 
 interface RequiredKeys {
@@ -13161,7 +13333,8 @@ function getCandidateKey(
 			key += ` ${token}`;
 		}
 	}
-	for (const token of getAttributeKeys(element)) {
+	for (const attribute of getAttributeList(element)) {
+		const token = getAttributeKey(attribute.extra.localName);
 		if (keyed.has(token)) {
 			key += ` ${token}`;
 		}
@@ -13172,9 +13345,8 @@ function getCandidateKey(
 	return key;
 }
 
-function getAttributeKeys(element: Element): string[] {
-	return getAttributeList(element).map((attribute) =>
-		`[${toASCIILowercase(attribute.extra.localName)}]`);
+function getAttributeKey(localName: string): string {
+	return `[${toASCIILowercase(localName)}]`;
 }
 
 function addCandidatePositions(
@@ -13210,8 +13382,11 @@ function addCandidatePositions(
 			positions.add(position);
 		}
 	}
-	for (const token of getAttributeKeys(element)) {
-		for (const position of keyed.get(token) ?? []) {
+	for (const attribute of getAttributeList(element)) {
+		for (
+			const position of keyed.get(getAttributeKey(attribute.extra.localName)) ??
+				[]
+		) {
 			positions.add(position);
 		}
 	}
@@ -13688,8 +13863,12 @@ function computePseudoElementStyle(
 		(typed.length <= TYPED_PSEUDO_RULES
 			? typed
 			: getPseudoCandidates(cascade, element).get(pseudoElement) ?? NO_RULES);
-	const matchingRules = candidates.filter((rule) =>
-		isRuleMatch(element, rule, pseudoRoot));
+	const matchingRules: ParsedCSSRule[] = [];
+	for (const rule of candidates) {
+		if (isRuleMatch(element, rule, pseudoRoot)) {
+			matchingRules.push(rule);
+		}
+	}
 	if (matchingRules.length === 0) {
 		return NO_PSEUDO_DECLARATIONS;
 	}
@@ -13701,9 +13880,7 @@ function computePseudoElementStyle(
 	const computedStyle: Record<string, string> = Object.create(null);
 	let direction: string | null = null;
 	for (const rule of matchingRules) {
-		const names = Object.keys(rule.block.declarations)
-			.sort((a, b) => (rule.block.order[a] ?? 0) - (rule.block.order[b] ?? 0));
-		for (const name of names) {
+		for (const name of getNamesInOrder(rule.block)) {
 			const value = rule.block.declarations[name];
 			computedStyle[name] = value;
 			if (!CSSValues.hasSlotAliases(name)) {
@@ -13718,6 +13895,23 @@ function computePseudoElementStyle(
 	}
 
 	return computedStyle;
+}
+
+// A block's declared names in the order they were declared, a block
+// being a few names long.
+function getNamesInOrder(block: CSSValues.DeclarationBlock): string[] {
+	const names = Object.keys(block.declarations);
+	for (let index = 1; index < names.length; index++) {
+		const name = names[index];
+		const order = block.order[name] ?? 0;
+		let at = index;
+		while (at > 0 && (block.order[names[at - 1]] ?? 0) > order) {
+			names[at] = names[at - 1];
+			at--;
+		}
+		names[at] = name;
+	}
+	return names;
 }
 
 // The styles are the pseudo-element's, as computePseudoElementStyle
