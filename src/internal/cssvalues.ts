@@ -265,8 +265,23 @@ const RESERVED_FAMILY_NAMES = new Set([...CSS_GENERIC_FAMILIES, "default"]);
 
 const DEFAULT_COUNTER_STYLE = "decimal";
 
+// css-backgrounds-3 §3.4: the one-keyword spellings of a repeat pair.
+const REPEAT_PAIRS: Record<string, string> = {
+	"repeat no-repeat": "repeat-x",
+	"no-repeat repeat": "repeat-y",
+	"repeat repeat": "repeat",
+	"space space": "space",
+	"round round": "round",
+	"no-repeat no-repeat": "no-repeat",
+};
+
 function canonicalizeValue(property: string, value: string): string {
 	let out = value;
+	if (property === "background-repeat" || property === "mask-repeat") {
+		out = splitCommaList(out)
+			.map((layer) => REPEAT_PAIRS[toASCIILowercase(layer)] ?? layer)
+			.join(", ");
+	}
 	if (FAMILY_PROPERTIES.has(property)) {
 		out = out.replace(/"((?:[^"\\]|\\.)*)"/g, (quoted, body: string) => {
 			const name = unescapeCSSString(body);
@@ -1273,6 +1288,94 @@ function expandListStyle(value: string): Record<string, string> {
 // Expands only to the two components a terminal renders. `none` is the
 // IMAGE component, so a bare `background: none` leaves the color
 // transparent.
+const HORIZONTAL_KEYWORDS = new Set(["left", "right"]);
+const VERTICAL_KEYWORDS = new Set(["top", "bottom"]);
+
+function getPositionAxis(part: string): "x" | "y" | "center" | null {
+	const word = toASCIILowercase(part);
+	if (HORIZONTAL_KEYWORDS.has(word)) {
+		return "x";
+	}
+	if (VERTICAL_KEYWORDS.has(word)) {
+		return "y";
+	}
+	return word === "center" ? "center" : null;
+}
+
+// One layer of a <bg-position> as its horizontal and vertical parts
+// (css-backgrounds-3 §3.6). One value leaves the other axis at center.
+// Three or four pair each keyword with the offset after it.
+function splitPosition(layer: string): [string, string] | null {
+	const parts = splitComponents(layer);
+	if (parts.length === 1) {
+		return getPositionAxis(parts[0]) === "y"
+			? ["center", parts[0]]
+			: [parts[0], "center"];
+	}
+	if (parts.length === 2) {
+		const [first, second] = parts;
+		return getPositionAxis(first) === "y" || getPositionAxis(second) === "x"
+			? [second, first]
+			: [first, second];
+	}
+	const groups: string[][] = [];
+	for (const part of parts) {
+		if (getPositionAxis(part) !== null) {
+			groups.push([part]);
+		} else if (groups.length > 0) {
+			groups[groups.length - 1].push(part);
+		} else {
+			return null;
+		}
+	}
+	if (groups.length !== 2) {
+		return null;
+	}
+	const [first, second] = groups;
+	return getPositionAxis(first[0]) === "y" || getPositionAxis(second[0]) === "x"
+		? [second.join(" "), first.join(" ")]
+		: [first.join(" "), second.join(" ")];
+}
+
+const POSITION_PERCENTS: Record<string, number> = {
+	left: 0,
+	top: 0,
+	center: 50,
+	right: 100,
+	bottom: 100,
+};
+
+// One axis of a position as the offset from the top left it computes to:
+// a keyword as a percentage, and an offset from the right or bottom
+// edge as what is left of 100%.
+function computePositionOffset(part: string): string {
+	const [edge, offset] = splitComponents(part);
+	const percent = POSITION_PERCENTS[toASCIILowercase(edge)];
+	if (percent === undefined) {
+		return part;
+	}
+	if (offset === undefined) {
+		return `${percent}%`;
+	}
+	if (percent === 0) {
+		return offset;
+	}
+	return offset.endsWith("%")
+		? `${serializeCSSNumber(String(100 - parseFloat(offset)))}%`
+		: `calc(100% - ${offset})`;
+}
+
+function expandBackgroundPosition(value: string): Record<string, string> {
+	const layers = splitCommaList(value).map(splitPosition);
+	if (layers.length === 0 || layers.some((layer) => layer === null)) {
+		return {};
+	}
+	return {
+		"background-position-x": layers.map((layer) => layer![0]).join(", "),
+		"background-position-y": layers.map((layer) => layer![1]).join(", "),
+	};
+}
+
 function expandBackground(value: string): Record<string, string> {
 	const traced = getGrammarTerms("background", value);
 	if (traced) {
@@ -1284,9 +1387,16 @@ function expandBackground(value: string): Record<string, string> {
 			.filter((component) => component.terms.includes("background-color"))
 			.map((component) => component.text)
 			.join(" ");
+		const position = traced
+			.filter((component) => component.terms.includes("bg-position"))
+			.map((component) => component.text)
+			.join(" ");
 		return {
 			"background-image": image || "none",
 			"background-color": color || "transparent",
+			...(position && !value.includes(",")
+				? expandBackgroundPosition(position)
+				: {}),
 		};
 	}
 	const tokens = splitComponents(value);
@@ -1929,6 +2039,7 @@ const SHAPED_SHORTHANDS = new Set([
 // Serialized from their longhands on read, so the shorthand itself is
 // not kept.
 const SERIALIZED_SHORTHANDS = new Set([
+	"background-position",
 	"margin",
 	"padding",
 	"inset-block",
@@ -2122,6 +2233,9 @@ export function expandShorthands(
 				break;
 			case "background":
 				Object.assign(out, expandBackground(value));
+				break;
+			case "background-position":
+				Object.assign(out, expandBackgroundPosition(value));
 				break;
 			case "transition":
 				Object.assign(out, expandTransition(value));
@@ -2793,6 +2907,11 @@ function normalizeValue(property: string, declared: string): string {
 	}
 	if (COLOR_PROPERTIES.has(property)) {
 		return serializeCSSColor(value) ?? value;
+	}
+	if (
+		property === "background-position-x" || property === "background-position-y"
+	) {
+		return splitCommaList(value).map(computePositionOffset).join(", ");
 	}
 	if (LENGTH_PROPERTIES.has(property)) {
 		const lengths = value
@@ -3758,6 +3877,15 @@ export function serializeShorthandValue(
 			...(style === "auto" ? [] : [style]),
 		];
 		return parts.length === 0 ? "wrap" : parts.join(" ");
+	}
+
+	// Each layer's horizontal part, then its vertical one.
+	if (shorthand === "background-position") {
+		const across = splitCommaList(values[0]);
+		const down = splitCommaList(values[1]);
+		return across.length === down.length
+			? across.map((x, index) => `${x} ${down[index]}`).join(", ")
+			: "";
 	}
 
 	// css-fonts-4 §6.1: `none` is font-variant-ligatures alone, and no
