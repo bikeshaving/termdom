@@ -4220,14 +4220,88 @@ function splitMediaConditions(text: string): string[] {
 	return parts.map((part) => part.trim()).filter(Boolean);
 }
 
+const RATIO_FEATURE = /^(?:min-|max-)?(?:device-)?aspect-ratio$/;
+
+const RESOLUTION_FEATURE = /^(?:min-|max-)?resolution$/;
+
+// A custom feature name keeps its case. A ratio is written with spaces
+// around its slash, and a resolution's calc() as the dppx it sums to.
 function serializeMediaFeature(feature: string): string {
 	const body = feature.slice(1, -1).trim();
 	const colon = body.indexOf(":");
 	if (colon === -1) {
 		return `(${toASCIILowercase(body)})`;
 	}
-	const name = toASCIILowercase(body.slice(0, colon).trim());
-	return `(${name}: ${serializeCSSValue(body.slice(colon + 1))})`;
+	const written = body.slice(0, colon).trim();
+	const name = written.startsWith("--") ? written : toASCIILowercase(written);
+	let value = serializeCSSValue(body.slice(colon + 1));
+	if (RATIO_FEATURE.test(name)) {
+		value = value.replace(/\s*\/\s*/, " / ");
+	} else if (RESOLUTION_FEATURE.test(name)) {
+		value = serializeResolutionCalc(value);
+	}
+	return `(${name}: ${value})`;
+}
+
+// `calc(1x + 2x)` as `calc(3dppx)`. A calc() with anything but x, dppx
+// and plain numbers in it stays as written.
+function serializeResolutionCalc(value: string): string {
+	const match = /^calc\((.*)\)$/i.exec(value);
+	if (match === null) {
+		return value;
+	}
+	const tokens = match[1].match(/\d*\.?\d+(?:x|dppx)?|[-+*/()]|\S/gi) ?? [];
+	let at = 0;
+	// Each operand is [amount, whether it is a resolution].
+	let sum: () => [number, boolean] | null = () => null;
+	const primary = (): [number, boolean] | null => {
+		const token = tokens[at++];
+		if (token === "(") {
+			const inner = sum();
+			return tokens[at++] === ")" ? inner : null;
+		}
+		const number = /^(\d*\.?\d+)(x|dppx)?$/i.exec(token ?? "");
+		return number === null
+			? null
+			: [Number(number[1]), number[2] !== undefined];
+	};
+	const product = (): [number, boolean] | null => {
+		let left = primary();
+		while (left !== null && (tokens[at] === "*" || tokens[at] === "/")) {
+			const operator = tokens[at++];
+			const right = primary();
+			if (right === null || (operator === "/" && right[1])) {
+				return null;
+			}
+			if (left[1] && right[1]) {
+				return null;
+			}
+			left = [
+				operator === "*" ? left[0] * right[0] : left[0] / right[0],
+				left[1] || right[1],
+			];
+		}
+		return left;
+	};
+	sum = (): [number, boolean] | null => {
+		let left = product();
+		while (left !== null && (tokens[at] === "+" || tokens[at] === "-")) {
+			const operator = tokens[at++];
+			const right = product();
+			if (right === null || right[1] !== left[1]) {
+				return null;
+			}
+			left = [
+				operator === "+" ? left[0] + right[0] : left[0] - right[0],
+				left[1],
+			];
+		}
+		return left;
+	};
+	const result = sum();
+	return result === null || at !== tokens.length || !result[1]
+		? value
+		: `calc(${serializeCSSNumber(String(result[0]))}dppx)`;
 }
 
 // For text css-tree rejects. It passes through as authored, case-folded,
@@ -4430,14 +4504,21 @@ const RESERVED_MEDIA_TYPES = new Set(["only", "not", "and", "or", "layer"]);
 // §3.2).
 export function readMediaQuery(piece: string): string {
 	let depth = 0;
-	for (const character of piece) {
-		if (character === "(") {
+	for (let index = 0; index < piece.length; index++) {
+		const character = piece[index];
+		if (character === "\\") {
+			index++;
+		} else if (character === "(") {
 			depth++;
 		} else if (character === ")") {
 			depth = Math.max(0, depth - 1);
 		}
 	}
 	const closed = piece.trim() + ")".repeat(depth);
+	// css-tree reads no escapes, so a query holding one keeps its text.
+	if (closed.includes("\\")) {
+		return serializeMediaQuery(closed) || "not all";
+	}
 	const queries = closed === "" ? null : parseMediaQueryList(closed);
 	const query = queries?.length === 1 ? queries[0] : null;
 	if (

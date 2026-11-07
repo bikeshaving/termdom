@@ -735,17 +735,17 @@ test("a declared color reads back in the spelling CSS Color 4 gives it", () => {
 
 test("a style property's setter converts its value as WebIDL does, and CSS.supports() matches a name as given", () => {
 	const {dom} = makeDOM();
-	const style = dom.document.createElement("div").style as
-		CSSStyleDeclaration & Record<string, unknown>;
+	const style = dom.document.createElement("div").style;
+	const set = style as unknown as Record<string, unknown>;
 	style.backgroundColor = "green";
-	style.backgroundColor = undefined;
+	set.backgroundColor = undefined;
 	expect(style.backgroundColor).toBe("green");
-	style.backgroundColor = null;
+	set.backgroundColor = null;
 	expect(style.backgroundColor).toBe("");
 	expect(() => {
-		style.opacity = Symbol("1");
+		set.opacity = Symbol("1");
 	}).toThrow(TypeError);
-	style.opacity = BigInt(1);
+	set.opacity = BigInt(1);
 	expect(style.opacity).toBe("1");
 	const css = (dom.window as unknown as {CSS: typeof CSS}).CSS;
 	expect(css.supports("  color  ", "red")).toBe(false);
@@ -761,4 +761,19 @@ test("cssText resumes after an at-rule's block, and drops what a nested rule run
 	expect(style.cssText).toBe("color: orange;");
 	style.cssText = "color: olivedrab; &.d { color: peru; } color: green; background: red;";
 	expect(style.cssText).toBe("color: olivedrab; background: red;");
+});
+
+test("a media feature keeps a custom name's case, spaces a ratio, and sums a resolution", () => {
+	const {dom} = makeDOM();
+	const media = (query: string): string => dom.window.matchMedia(query).media;
+	expect(media("(--FOO: bar)")).toBe("(--FOO: bar)");
+	expect(media("(aspect-ratio: 1/3)")).toBe("(aspect-ratio: 1 / 3)");
+	expect(media("(resolution: calc(1x + 2x))")).toBe(
+		"(resolution: calc(3dppx))",
+	);
+	expect(media("(resolution: calc(6x / 2))")).toBe("(resolution: calc(3dppx))");
+	expect(media("(resolution: calc(1x + 1dpi))"))
+		.toBe("(resolution: calc(1x + 1dpi))");
+	expect(media("\\{screen and (--\\(FOO: bar)"))
+		.toBe("\\{screen and (--\\(FOO: bar)");
 });
