@@ -93,6 +93,15 @@ test("an escaped class or id names the character it spells", () => {
 	expect(ids('<p id=a class="台北Táiběi">', ".台北Táiběi")).toEqual(["a"]);
 });
 
+test("an id selector is a hash spelled as an identifier", () => {
+	expect(() => ids('<p id="000">', "#000")).toThrow();
+	expect(() => ids('<p id="1x">', "#1x")).toThrow();
+	expect(() => ids('<p id="-1">', "#-1")).toThrow();
+	expect(ids('<p id="000">', "#\\30 00")).toEqual(["000"]);
+	expect(ids('<p id="-a">', "#-a")).toEqual(["-a"]);
+	expect(ids('<p id="--x">', "#--x")).toEqual(["--x"]);
+});
+
 test("a pseudo-class spelled inside an attribute value is a value", () => {
 	// The second reproduced defect: the string is data, not a selector.
 	expect(ids('<p id=a data-k=":hover">', '[data-k=":hover"]')).toEqual(["a"]);
