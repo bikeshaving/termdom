@@ -808,7 +808,14 @@ const CSSNamespace = {
 		}
 		return CSSValues.serializeCSSIdentifier(String(ident));
 	},
-	supports: CSSValues.cssSupports,
+	supports(conditionOrProperty: string, value?: string): boolean {
+		if (arguments.length === 0) {
+			throw typeError("supports requires a condition or a property");
+		}
+		return arguments.length === 1
+			? CSSValues.cssSupports(conditionOrProperty)
+			: CSSValues.cssSupports(conditionOrProperty, value);
+	},
 };
 // A namespace object's class string is its name, and is not writable.
 Object.defineProperty(CSSNamespace, Symbol.toStringTag, {
@@ -1503,6 +1510,13 @@ function getShorthandValue(
 	);
 }
 
+// A [LegacyNullToEmptyString] CSSOMString: null is empty, undefined is
+// "undefined", and a value with no string conversion, such as a Symbol,
+// throws.
+function toNullableString(value: unknown): string {
+	return value === null ? "" : `${value as string}`;
+}
+
 // Reflects every property in the index as an IDL attribute, which is
 // what separates it from an at-rule's descriptor blocks. `cssFloat`
 // exists on a style rule's block and not on an @page's.
@@ -1514,7 +1528,7 @@ for (const property of CSS_PROPERTIES) {
 			return this.getPropertyValue(property);
 		},
 		set(this: CSSStyleDeclaration, value: unknown) {
-			this.setProperty(property, value == null ? "" : String(value));
+			this.setProperty(property, toNullableString(value));
 		},
 		configurable: true,
 		enumerable: true,
@@ -2228,7 +2242,7 @@ for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
 					return this.getPropertyValue(descriptor);
 				},
 				set(this: CSSStyleDeclaration, value: unknown) {
-					this.setProperty(descriptor, value == null ? "" : String(value));
+					this.setProperty(descriptor, toNullableString(value));
 				},
 				configurable: true,
 				enumerable: index === 0,

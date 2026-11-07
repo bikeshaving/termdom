@@ -3662,7 +3662,12 @@ export function cssSupports(
 		const condition = String(conditionOrProperty).trim();
 		return supportsCondition(condition) || supportsCondition(`(${condition})`);
 	}
-	const property = normalizePropertyName(conditionOrProperty);
+	// The name is matched as given: `  color  ` names no property.
+	const given = String(conditionOrProperty);
+	if (given !== given.trim()) {
+		return false;
+	}
+	const property = normalizePropertyName(given);
 	if (property.startsWith("--")) {
 		return true;
 	}
@@ -4099,6 +4104,16 @@ export function parseDeclarationText(text: string): CSSDeclaration[] {
 			depth++;
 		} else if (character === ")" || character === "]" || character === "}") {
 			depth--;
+			// An at-rule ends with its block, and what follows it starts a
+			// declaration of its own. A nested style rule is a bad
+			// declaration, which runs on to the next `;` (css-syntax-3 §5.4.4).
+			if (
+				character === "}" &&
+				depth === 0 &&
+				text.slice(start, i).trimStart().startsWith("@")
+			) {
+				start = i + 1;
+			}
 		} else if (character === ";" && depth <= 0) {
 			push(i);
 		}

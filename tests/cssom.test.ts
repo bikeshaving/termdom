@@ -732,3 +732,33 @@ test("a declared color reads back in the spelling CSS Color 4 gives it", () => {
 	expect(read("oklch(76% 0.23 150)")).toBe("oklch(0.76 0.23 150)");
 	expect(read("rgb(0, 100%, 100%)")).toBe("");
 });
+
+test("a style property's setter converts its value as WebIDL does, and CSS.supports() matches a name as given", () => {
+	const {dom} = makeDOM();
+	const style = dom.document.createElement("div").style as
+		CSSStyleDeclaration & Record<string, unknown>;
+	style.backgroundColor = "green";
+	style.backgroundColor = undefined;
+	expect(style.backgroundColor).toBe("green");
+	style.backgroundColor = null;
+	expect(style.backgroundColor).toBe("");
+	expect(() => {
+		style.opacity = Symbol("1");
+	}).toThrow(TypeError);
+	style.opacity = BigInt(1);
+	expect(style.opacity).toBe("1");
+	const css = (dom.window as unknown as {CSS: typeof CSS}).CSS;
+	expect(css.supports("  color  ", "red")).toBe(false);
+	expect(css.supports("color", "  red  ")).toBe(true);
+	expect(css.supports("-webkit-line-clamp", "2")).toBe(true);
+	expect(() => (css.supports as () => boolean)()).toThrow(TypeError);
+});
+
+test("cssText resumes after an at-rule's block, and drops what a nested rule runs into", () => {
+	const {dom} = makeDOM();
+	const style = dom.document.createElement("div").style;
+	style.cssText = "color: blue; @media screen { color: red; } color: orange;";
+	expect(style.cssText).toBe("color: orange;");
+	style.cssText = "color: olivedrab; &.d { color: peru; } color: green; background: red;";
+	expect(style.cssText).toBe("color: olivedrab; background: red;");
+});
