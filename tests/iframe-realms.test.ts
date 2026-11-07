@@ -13,7 +13,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {canCreateRealms} from "../src/internal/realms.ts";
-import {MockProcess} from "./test-utils.ts";
+import {MockProcess, until} from "./test-utils.ts";
 
 const realms = canCreateRealms();
 const withRealms = realms ? test : test.skip;
@@ -258,14 +258,12 @@ withRealms(
 				event.source.postMessage("pong", "*");
 			}
 		});
-		const heard = new Promise<any>((resolve) => {
-			frame.eval(
-				"addEventListener('message', (event) => { globalThis.heard = event.data; })",
-			);
-			frame.eval("setTimeout(() => parent.postMessage('ping', '*'), 0)");
-			setTimeout(() => resolve(frame.heard), 50);
-		});
-		expect(await heard).toBe("pong");
+		frame.eval(
+			"addEventListener('message', (event) => { globalThis.heard = event.data; })",
+		);
+		frame.eval("setTimeout(() => parent.postMessage('ping', '*'), 0)");
+		await until(() => frame.heard !== undefined);
+		expect(frame.heard).toBe("pong");
 		expect(replies).toEqual([[true, "ping"]]);
 		dom.dispose();
 	},
