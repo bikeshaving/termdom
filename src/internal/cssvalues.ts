@@ -4393,6 +4393,11 @@ export function serializeKeyText(text: string): string {
 		}
 		const [key] = parts;
 		if (key.type === "Percentage") {
+			// A keyframe is a point in the animation, from 0% to 100%.
+			const percent = Number(key.value);
+			if (!(percent >= 0 && percent <= 100)) {
+				return "";
+			}
 			keys.push(`${serializeCSSNumber(key.value ?? "")}%`);
 			continue;
 		}
