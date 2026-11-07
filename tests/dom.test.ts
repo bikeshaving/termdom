@@ -2270,3 +2270,35 @@ test("an attribute in a namespace is data, not the element's own attribute", () 
 	expect(document.getElementById("owner")).toBe(form);
 	expect(document.getElementById("other")).toBe(null);
 });
+
+test("a style or classList change runs an observed attribute's reaction before it returns", () => {
+	const document = make();
+	const {customElements} = document.defaultView;
+	const seen: unknown[][] = [];
+	customElements.define(
+		"style-watch",
+		class extends HTMLElement {
+			static get observedAttributes(): string[] {
+				return ["style", "class"];
+			}
+
+			attributeChangedCallback(...args: unknown[]): void {
+				seen.push(args);
+			}
+		},
+	);
+	const element = document.createElement("style-watch");
+	element.style.color = "red";
+	expect(seen).toEqual([["style", null, "color: red;", null]]);
+	element.style.setProperty("color", "blue", "important");
+	expect(seen.at(-1)).toEqual([
+		"style",
+		"color: red;",
+		"color: blue !important;",
+		null,
+	]);
+	element.style.cssText = "";
+	expect(seen.at(-1)).toEqual(["style", "color: blue !important;", "", null]);
+	element.classList = "a b";
+	expect(seen.at(-1)).toEqual(["class", null, "a b", null]);
+});

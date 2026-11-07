@@ -14404,7 +14404,7 @@ function invokeReactions(queue: Element[]): void {
 	}
 }
 
-function withReactions<T>(steps: () => T): T {
+export function withReactions<T>(steps: () => T): T {
 	reactionsStack.push([]);
 	try {
 		return steps();
@@ -37882,6 +37882,7 @@ ceReactions(Element.prototype, [
 	"append",
 	"attachShadow",
 	"before",
+	"classList",
 	"className",
 	"id",
 	"innerHTML",
