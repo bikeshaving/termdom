@@ -667,14 +667,22 @@ function getBorderChar(borderEncoding: number): string {
 		return " ";
 	}
 
-	const styles = [
-		hasTop ? getEdgeStyle(topEdge) : 0,
-		hasRight ? getEdgeStyle(rightEdge) : 0,
-		hasBottom ? getEdgeStyle(bottomEdge) : 0,
-		hasLeft ? getEdgeStyle(leftEdge) : 0,
-	].filter((s) => s > 0);
-
-	const dominantStyle = Math.max(...styles);
+	let dominantStyle = -Infinity;
+	if (hasTop) {
+		dominantStyle = Math.max(dominantStyle, getEdgeStyle(topEdge));
+	}
+	if (hasRight) {
+		dominantStyle = Math.max(dominantStyle, getEdgeStyle(rightEdge));
+	}
+	if (hasBottom) {
+		dominantStyle = Math.max(dominantStyle, getEdgeStyle(bottomEdge));
+	}
+	if (hasLeft) {
+		dominantStyle = Math.max(dominantStyle, getEdgeStyle(leftEdge));
+	}
+	if (dominantStyle <= 0) {
+		dominantStyle = -Infinity;
+	}
 	const hasRounded =
 		(hasTop && getEdgeRounded(topEdge)) ||
 		(hasRight && getEdgeRounded(rightEdge)) ||

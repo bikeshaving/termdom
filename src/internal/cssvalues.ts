@@ -167,19 +167,21 @@ function splitCommaList(value: string): string[] {
 // the details: a custom property keeps every number as written, a family
 // name written as identifiers drops its quotes, and a counter() naming
 // the default style drops the argument.
+// The token after `out`, spaced from it where whitespace stood between
+// them or a comma ends it.
+function appendToken(out: string, space: boolean, token: string): string {
+	if (out.endsWith(",")) {
+		return `${out} ${token}`;
+	}
+	return space && out !== "" && !out.endsWith("(")
+		? `${out} ${token}`
+		: out + token;
+}
+
 export function serializeCSSValue(input: string, property = ""): string {
 	const custom = property.startsWith("--");
 	let out = "";
 	let space = false;
-	const emit = (token: string): void => {
-		if (out.endsWith(",")) {
-			out += " ";
-		} else if (space && out !== "" && !out.endsWith("(")) {
-			out += " ";
-		}
-		space = false;
-		out += token;
-	};
 
 	for (let i = 0; i < input.length; i++) {
 		const character = input[i];
@@ -195,7 +197,12 @@ export function serializeCSSValue(input: string, property = ""): string {
 		}
 		if (character === '"' || character === "'") {
 			const end = endOfString(input, i);
-			emit(serializeCSSString(unescapeCSSString(input.slice(i + 1, end))));
+			out = appendToken(
+				out,
+				space,
+				serializeCSSString(unescapeCSSString(input.slice(i + 1, end))),
+			);
+			space = false;
 			i = end;
 			continue;
 		}
@@ -213,10 +220,13 @@ export function serializeCSSValue(input: string, property = ""): string {
 			if (unit) {
 				i += unit.length;
 			}
-			emit(
+			out = appendToken(
+				out,
+				space,
 				(custom ? number : serializeCSSNumber(number)) +
 				(unit === "%" ? "%" : toASCIILowercase(unit ?? "")),
 			);
+			space = false;
 			i--;
 			continue;
 		}
@@ -231,21 +241,25 @@ export function serializeCSSValue(input: string, property = ""): string {
 				const url = body.startsWith('"') || body.startsWith("'")
 					? unescapeCSSString(body.slice(1, -1))
 					: unescapeCSSString(body);
-				emit(`url(${serializeCSSString(url)})`);
+				out = appendToken(out, space, `url(${serializeCSSString(url)})`);
+				space = false;
 				i = end === -1 ? input.length : end;
 				continue;
 			}
-			emit(name);
+			out = appendToken(out, space, name);
+			space = false;
 			i--;
 			continue;
 		}
 		if (character === "#") {
 			const name = /^#[a-zA-Z0-9_\u0080-\uFFFF\\-]*/.exec(input.slice(i))![0];
-			emit(name);
+			out = appendToken(out, space, name);
+			space = false;
 			i += name.length - 1;
 			continue;
 		}
-		emit(character);
+		out = appendToken(out, space, character);
+		space = false;
 	}
 	return custom ? out : canonicalizeValue(property, out);
 }
@@ -275,6 +289,8 @@ const REPEAT_PAIRS: Record<string, string> = {
 	"no-repeat no-repeat": "no-repeat",
 };
 
+const COUNTER_CALL = /\b(counters?)\(([^()]*)\)/gi;
+
 function canonicalizeValue(property: string, value: string): string {
 	let out = value;
 	if (isColorProperty(property)) {
@@ -298,21 +314,23 @@ function canonicalizeValue(property: string, value: string): string {
 	}
 	// `counter(name, decimal)` counts the same as `counter(name)`, and
 	// CSSOM writes the shorter form.
-	out = out.replace(
-		/\b(counters?)\(([^()]*)\)/gi,
-		(whole, name: string, args: string) => {
-			const parts = args.split(",").map((part) => part.trim());
-			const wanted = toASCIILowercase(name) === "counters" ? 3 : 2;
-			if (parts.length !== wanted) {
-				return whole;
-			}
-			if (toASCIILowercase(parts[wanted - 1]) !== DEFAULT_COUNTER_STYLE) {
-				return whole;
-			}
-			return `${name}(${parts.slice(0, wanted - 1).join(", ")})`;
-		},
-	);
-	return out;
+	return /counter/i.test(out) ? out.replace(COUNTER_CALL, shortenCounter) : out;
+}
+
+function shortenCounter(whole: string, name: string, args: string): string {
+	const parts = args.split(",");
+	const wanted = toASCIILowercase(name) === "counters" ? 3 : 2;
+	if (parts.length !== wanted) {
+		return whole;
+	}
+	if (toASCIILowercase(parts[wanted - 1].trim()) !== DEFAULT_COUNTER_STYLE) {
+		return whole;
+	}
+	let kept = parts[0].trim();
+	for (let index = 1; index < wanted - 1; index++) {
+		kept += `, ${parts[index].trim()}`;
+	}
+	return `${name}(${kept})`;
 }
 
 function endOfString(input: string, start: number): number {
@@ -472,12 +490,22 @@ export function getColorAlpha(color: number): number {
 /** A color laid at its alpha over an opaque one. */
 export function blendColor(color: number, under: number): number {
 	const alpha = getColorAlpha(color);
-	const channel = (shift: number): number => {
-		const top = (color >> shift) & 0xff;
-		const bottom = (under >> shift) & 0xff;
-		return Math.round(bottom + (top - bottom) * alpha) << shift;
-	};
-	return toCellColor(channel(16) | channel(8) | channel(0));
+	return toCellColor(
+		blendChannel(color, under, alpha, 16) |
+		blendChannel(color, under, alpha, 8) |
+		blendChannel(color, under, alpha, 0),
+	);
+}
+
+function blendChannel(
+	color: number,
+	under: number,
+	alpha: number,
+	shift: number,
+): number {
+	const top = (color >> shift) & 0xff;
+	const bottom = (under >> shift) & 0xff;
+	return Math.round(bottom + (top - bottom) * alpha) << shift;
 }
 
 // The system colors mapped onto what a terminal already has. 0 is the
@@ -3148,15 +3176,24 @@ export function absolutizeLengths(
 	context: LengthContext,
 ): string {
 	const reduced = value.includes("calc(") ? replaceCalc(value, context) : value;
-	return reduced.replace(
-		LENGTH_TOKEN,
-		(token, number: string, unit: string) => {
-			const factor = getUnitFactor(unit, context);
-			return factor === null
-				? token
-				: absoluteLength(parseFloat(number) * factor);
-		},
-	);
+	let out = "";
+	let index = 0;
+	LENGTH_TOKEN.lastIndex = 0;
+	for (
+		let match = LENGTH_TOKEN.exec(reduced);
+		match !== null;
+		match = LENGTH_TOKEN.exec(reduced)
+	) {
+		const factor = getUnitFactor(match[2], context);
+		if (factor === null) {
+			continue;
+		}
+		out +=
+			reduced.slice(index, match.index) +
+			absoluteLength(parseFloat(match[1]) * factor);
+		index = match.index + match[0].length;
+	}
+	return index === 0 ? reduced : out + reduced.slice(index);
 }
 
 function replaceCalc(value: string, context: LengthContext): string {
@@ -3321,34 +3358,6 @@ export interface DeclarationBlock {
 	// cascade slot, so whichever a block declares LAST decides the value.
 	// Only this map records which that is.
 	order: Record<string, number>;
-}
-
-// The slot name the block declares LAST at this importance, or null.
-// `accepts` rejects a flow-relative name that maps to the opposite edge.
-export function getDeclaredName(
-	block: DeclarationBlock,
-	names: readonly string[],
-	important: boolean,
-	accepts: (name: string) => boolean,
-): string | null {
-	let winner: string | null = null;
-	let winningOrder = -1;
-	for (let index = 0; index < names.length; index++) {
-		const name = names[index];
-		if (block.declarations[name] === undefined) {
-			continue;
-		}
-		if (Boolean(block.important[name]) !== important) {
-			continue;
-		}
-		const order = block.order[name] ?? 0;
-		if (order < winningOrder || !accepts(name)) {
-			continue;
-		}
-		winner = name;
-		winningOrder = order;
-	}
-	return winner;
 }
 
 const LINE_COMPONENTS = ["width", "style", "color"] as const;
@@ -5463,12 +5472,17 @@ const TRANSITIONABLE_ALL = [
 	"z-index",
 ];
 
+/** Where a transition reads the values it transitions between. */
+export interface BaseValues {
+	_baseValue(property: string): string;
+}
+
 export function getTransitionBase(
-	read: (property: string) => string,
+	values: BaseValues,
 	property: string,
 ): string {
 	return (
-		read(property) ||
+		values._baseValue(property) ||
 		getComputedValueEntry(property, CSS_INITIAL_VALUES[property] ?? "")
 	);
 }
@@ -5482,23 +5496,23 @@ function parseCSSTime(token: string): number {
 // covered wins. A property whose duration and delay add up to no time
 // cannot transition, and is left out.
 export function getMatchedTransitions(
-	read: (property: string) => string,
+	values: BaseValues,
 ): Map<string, TransitionTiming> | null {
 	const durations = splitCommaList(
-		getTransitionBase(read, "transition-duration"),
+		getTransitionBase(values, "transition-duration"),
 	).map(parseCSSTime);
 	const delays = splitCommaList(
-		getTransitionBase(read, "transition-delay"),
+		getTransitionBase(values, "transition-delay"),
 	).map(parseCSSTime);
 	if (!durations.some((d) => d > 0) && !delays.some((d) => d > 0)) {
 		return null;
 	}
-	const propertyList = getTransitionBase(read, "transition-property");
+	const propertyList = getTransitionBase(values, "transition-property");
 	if (!propertyList || propertyList === "none") {
 		return null;
 	}
 	const easings = splitCommaList(
-		getTransitionBase(read, "transition-timing-function"),
+		getTransitionBase(values, "transition-timing-function"),
 	);
 	const items = splitCommaList(propertyList);
 	const out = new Map<string, TransitionTiming>();

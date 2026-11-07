@@ -148,6 +148,7 @@ import {
 	UNIT_CELL,
 } from "./units.ts";
 import {
+	applyInRealm,
 	createDocumentIn,
 	declareNodeClasses,
 	forgetClasses,
@@ -6591,7 +6592,7 @@ function callInRealm<Args extends unknown[]>(
 	thisArg: unknown,
 	...args: Args
 ): void {
-	runInRealm(getFunctionRealm(callback), () => callback.apply(thisArg, args));
+	applyInRealm(getFunctionRealm(callback), callback, thisArg, args);
 }
 
 // HTML's "report an exception": the document's window hears an error
@@ -14414,13 +14415,14 @@ function invokeReactions(queue: Element[]): void {
 	}
 }
 
-export function withReactions<T>(steps: () => T): T {
+// A [CEReactions] member's steps run between these two, which runs what
+// the steps queued once they are done, before the member returns.
+export function beginReactions(): void {
 	reactionsStack.push([]);
-	try {
-		return steps();
-	} finally {
-		invokeReactions(reactionsStack.pop() as Element[]);
-	}
+}
+
+export function endReactions(): void {
+	invokeReactions(reactionsStack.pop() as Element[]);
 }
 
 // A getter is never a reactions boundary, because the extended attribute
@@ -14450,7 +14452,12 @@ function wrapWithReactions(
 	steps: (...args: unknown[]) => unknown,
 ): (...args: unknown[]) => unknown {
 	function wrapper(this: unknown, ...args: unknown[]): unknown {
-		return withReactions(() => steps.apply(this, args));
+		beginReactions();
+		try {
+			return steps.apply(this, args);
+		} finally {
+			endReactions();
+		}
 	}
 
 	Object.defineProperty(wrapper, "length", {

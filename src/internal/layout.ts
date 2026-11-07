@@ -1,4 +1,7 @@
 import {
+	beginStyleReads,
+	createStyleReadLog,
+	endStyleReads,
 	establishesFixedContainingBlock,
 	getBoxModel,
 	getCellBlockMargin,
@@ -15,7 +18,6 @@ import {
 	givesViewportOverflow,
 	hasLayoutOrPaintContainment,
 	readStyleAgain,
-	recordStyleReads,
 	replayStyleReads,
 	resolveLength,
 	type StyleGroup,
@@ -753,24 +755,10 @@ function applyLegacyAlignment(
 // content-based minimum, and 0 lets it shrink under its own text. A length
 // in content-box sizing gets the box's edges, as width and height do.
 function applyMinMax(style: Style, element: Element): void {
-	const read = (property: string, vertical: boolean): CSSValues.Value => {
-		const value = vertical
-			? getCellBlockSize(element, property as "min-height" | "max-height")
-			: toCellLength(
-				CSSValues.parseUnitValue(getComputedValue(element, property)),
-				false,
-				element,
-			);
-		return toValue(
-			typeof value === "number"
-				? value + getContentBoxEdges(element, vertical)
-				: value,
-		);
-	};
-	style.minWidth = read("min-width", false);
-	style.minHeight = read("min-height", true);
-	style.maxWidth = read("max-width", false);
-	style.maxHeight = read("max-height", true);
+	style.minWidth = readMinMax(element, "min-width", false);
+	style.minHeight = readMinMax(element, "min-height", true);
+	style.maxWidth = readMinMax(element, "max-width", false);
+	style.maxHeight = readMinMax(element, "max-height", true);
 	// A scroll container's content scrolls rather than sizes it, so its
 	// automatic minimum is zero (css-flexbox-1 §4.5, css-grid-2 §6.6).
 	if (isScrollContainer(element)) {
@@ -802,6 +790,25 @@ function applyMinMax(style: Style, element: Element): void {
 	}
 }
 
+function readMinMax(
+	element: Element,
+	property: string,
+	vertical: boolean,
+): CSSValues.Value {
+	const value = vertical
+		? getCellBlockSize(element, property as "min-height" | "max-height")
+		: toCellLength(
+			CSSValues.parseUnitValue(getComputedValue(element, property)),
+			false,
+			element,
+		);
+	return toValue(
+		typeof value === "number"
+			? value + getContentBoxEdges(element, vertical)
+			: value,
+	);
+}
+
 const INSET_EDGES = ["left", "top", "right", "bottom"] as const;
 
 const TRANSFORM_FUNCTION = /([a-z0-9]+)\(([^()]*)\)/gi;
@@ -811,56 +818,42 @@ const LENGTH = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)([a-z]*|%)$/i;
 // part a grid of cells can draw. A rotation, scale or skew draws the box
 // as it is.
 function getTranslation(element: Element): Translation {
-	const translation = {x: 0, y: 0, xPercent: 0, yPercent: 0};
-	const add = (value: string | undefined, vertical: boolean, unit = "") => {
-		const match = LENGTH.exec((value ?? "").trim());
-		if (match === null) {
-			return;
-		}
-		const number = parseFloat(match[1]);
-		if (match[2] === "%") {
-			translation[vertical ? "yPercent" : "xPercent"] += number;
-			return;
-		}
-		const px = match[2] === "" && unit === ""
-			? number === 0 ? 0 : null
-			: resolveLength(element, number, match[2] || unit, vertical);
-		const cells = px === null ? null : toCellLength(px, vertical, element);
-		if (typeof cells === "number") {
-			translation[vertical ? "y" : "x"] += cells;
-		}
-	};
-
 	const translate = getComputedValue(element, "translate");
-	if (translate !== "" && translate !== "none") {
+	const transform = getComputedValue(element, "transform");
+	const translates = translate !== "" && translate !== "none";
+	const transforms = transform !== "" && transform !== "none";
+	if (!translates && !transforms) {
+		return NO_TRANSLATION;
+	}
+	const translation = {x: 0, y: 0, xPercent: 0, yPercent: 0};
+	if (translates) {
 		const [x, y] = translate.trim().split(/\s+/);
-		add(x, false);
-		add(y, true);
+		addTranslation(translation, element, x, false, "");
+		addTranslation(translation, element, y, true, "");
 	}
 
-	const transform = getComputedValue(element, "transform");
-	if (transform !== "" && transform !== "none") {
+	if (transforms) {
 		for (const [, name, args] of transform.matchAll(TRANSFORM_FUNCTION)) {
 			const values = args.split(",");
 			switch (name.toLowerCase()) {
 				case "translate":
 				case "translate3d":
-					add(values[0], false);
-					add(values[1], true);
+					addTranslation(translation, element, values[0], false, "");
+					addTranslation(translation, element, values[1], true, "");
 					break;
 				case "translatex":
-					add(values[0], false);
+					addTranslation(translation, element, values[0], false, "");
 					break;
 				case "translatey":
-					add(values[0], true);
+					addTranslation(translation, element, values[0], true, "");
 					break;
 				case "matrix":
-					add(values[4], false, "px");
-					add(values[5], true, "px");
+					addTranslation(translation, element, values[4], false, "px");
+					addTranslation(translation, element, values[5], true, "px");
 					break;
 				case "matrix3d":
-					add(values[12], false, "px");
-					add(values[13], true, "px");
+					addTranslation(translation, element, values[12], false, "px");
+					addTranslation(translation, element, values[13], true, "px");
 					break;
 			}
 		}
@@ -872,6 +865,31 @@ function getTranslation(element: Element): Translation {
 		translation.yPercent === 0
 		? NO_TRANSLATION
 		: translation;
+}
+
+function addTranslation(
+	translation: Translation,
+	element: Element,
+	value: string | undefined,
+	vertical: boolean,
+	unit: string,
+): void {
+	const match = LENGTH.exec((value ?? "").trim());
+	if (match === null) {
+		return;
+	}
+	const number = parseFloat(match[1]);
+	if (match[2] === "%") {
+		translation[vertical ? "yPercent" : "xPercent"] += number;
+		return;
+	}
+	const px = match[2] === "" && unit === ""
+		? number === 0 ? 0 : null
+		: resolveLength(element, number, match[2] || unit, vertical);
+	const cells = px === null ? null : toCellLength(px, vertical, element);
+	if (typeof cells === "number") {
+		translation[vertical ? "y" : "x"] += cells;
+	}
 }
 
 // `auto` is a declaration only an absolute box acts on ("wherever the
@@ -1626,6 +1644,15 @@ function applyDisplayType(
 	}
 }
 
+function getItemValue(
+	element: Element,
+	inItem: boolean,
+	property: string,
+	initial: string,
+): string {
+	return inItem ? getComputedValue(element, property) : initial;
+}
+
 // Fills a fresh record, so a property the element no longer declares
 // falls back to its initial value rather than to the last restyle's.
 function styleLayoutNodeProperties(
@@ -1694,16 +1721,26 @@ function styleLayoutNodeProperties(
 	// Item properties are consulted only inside a flex or grid container,
 	// which is what CSS says of them. Outside one they are read as their
 	// initial values without asking the cascade, which is most elements.
-	const item = (property: string, initial: string): string =>
-		parentIsFlex ? getComputedValue(element, property) : initial;
-	const grow = CSSValues.parseCSSNumber(item("flex-grow", "0"));
+	const grow = CSSValues.parseCSSNumber(
+		getItemValue(element, parentIsFlex, "flex-grow", "0"),
+	);
 	style.flexGrow = grow !== null && grow >= 0 ? grow : NaN;
-	style.order = CSSValues.parseCSSInteger(item("order", "0")) ?? 0;
-	const shrink = CSSValues.parseCSSNumber(item("flex-shrink", "1"));
+	style.order =
+		CSSValues.parseCSSInteger(
+			getItemValue(element, parentIsFlex, "order", "0"),
+		) ?? 0;
+	const shrink = CSSValues.parseCSSNumber(
+		getItemValue(element, parentIsFlex, "flex-shrink", "1"),
+	);
 	style.flexShrink = shrink !== null && shrink >= 0 ? shrink : NaN;
 
 	// A basis runs along the container's main axis.
-	const flexBasisText = item("flex-basis", "auto");
+	const flexBasisText = getItemValue(
+		element,
+		parentIsFlex,
+		"flex-basis",
+		"auto",
+	);
 	const flexBasis = toCellLength(
 		CSSValues.parseUnitValue(flexBasisText),
 		parentIsFlex &&
@@ -1715,9 +1752,12 @@ function styleLayoutNodeProperties(
 		flexBasis ?? (flexBasisText === "auto" ? "auto" : undefined),
 	);
 
-	style.alignSelf = getAlignmentConstant(item("align-self", "auto"), "auto");
+	style.alignSelf = getAlignmentConstant(
+		getItemValue(element, parentIsFlex, "align-self", "auto"),
+		"auto",
+	);
 	style.justifySelf = getAlignmentConstant(
-		item("justify-self", "auto"),
+		getItemValue(element, parentIsFlex, "justify-self", "auto"),
 		"auto",
 	);
 	if (isReplacedBox(element) && !inlineBox) {
@@ -1725,7 +1765,9 @@ function styleLayoutNodeProperties(
 	}
 
 	for (const [key, property] of GRID_PLACEMENTS) {
-		const placement = CSSValues.parseGridPlacement(item(property, "auto"));
+		const placement = CSSValues.parseGridPlacement(
+			getItemValue(element, parentIsFlex, property, "auto"),
+		);
 		if (placement) {
 			style[key] = placement;
 		}
@@ -1921,6 +1963,18 @@ export class Box {
 	}
 }
 
+function isSameNodeList(before: Node[], now: Node[]): boolean {
+	if (before.length !== now.length) {
+		return false;
+	}
+	for (let index = 0; index < now.length; index++) {
+		if (before[index] !== now[index]) {
+			return false;
+		}
+	}
+	return true;
+}
+
 // The one builder of boxes. Nothing else creates one. Inline content
 // lays out in anonymous boxes, one per contiguous run of inline-level
 // flow children (CSS2 §9.2.1.1), each a measuring leaf. `heads` maps
@@ -1940,9 +1994,12 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	const children: Box[] = [];
 	// Matched by ordinal. Only a change to the NUMBER of runs creates or
 	// drops a box.
-	const previous = (box.children ?? []).filter(
-		(child) => child.kind === "anonymous",
-	);
+	const previous: Box[] = [];
+	for (const child of box.children ?? []) {
+		if (child.kind === "anonymous") {
+			previous.push(child);
+		}
+	}
 	let runCount = 0;
 	// The membership each reused box had before this rebuild.
 	const opened = new Map<Box, Node[]>();
@@ -1989,10 +2046,7 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	// width, and nothing about the space it is offered says so.
 	for (const [reused, before] of opened) {
 		const now = reused.members;
-		if (
-			before.length !== now.length ||
-			before.some((node, index) => node !== now[index])
-		) {
+		if (!isSameNodeList(before, now)) {
 			reused.layoutNode?.invalidate();
 		}
 	}
@@ -4479,10 +4533,15 @@ function splitRun(
 		replayStyleReads(known.reads);
 		return known;
 	}
-	const reads: Array<Element | string> = [];
-	const split = recordStyleReads((element, read, value) => {
-		reads.push(element, read, value);
-	}, () => readSplitRun(layout, source, width, widthSpace));
+	const log = createStyleReadLog();
+	const outer = beginStyleReads(log);
+	let split: Omit<SplitRun, "reads"> | null;
+	try {
+		split = readSplitRun(layout, source, width, widthSpace);
+	} finally {
+		endStyleReads(outer);
+	}
+	const reads = log.reads!;
 	replayStyleReads(reads);
 	if (split === null) {
 		return null;
@@ -4607,12 +4666,11 @@ function breakNodes(
 		base,
 	);
 
-	return {
-		lines,
-		totalHeight: height,
-		maxLineWidth: Math.max(...lines.map((l) => l.width), 0),
-		wrapped,
-	};
+	let maxLineWidth = 0;
+	for (let index = 0; index < lines.length; index++) {
+		maxLineWidth = Math.max(maxLineWidth, lines[index].width);
+	}
+	return {lines, totalHeight: height, maxLineWidth, wrapped};
 }
 
 // A preserved tab advances to the next tab stop, measured in cells from
@@ -4887,12 +4945,14 @@ function processWhitespace(
 }
 
 function hasNowrapLeaf(content: ProcessedContent): boolean {
-	return content.items.some((item) => {
-		if (item.leafNode.type === "text") {
-			return getWhiteSpace(item.leafNode.node) === "nowrap";
+	const items = content.items;
+	for (let index = 0; index < items.length; index++) {
+		const leaf = items[index].leafNode;
+		if (leaf.type === "text" && getWhiteSpace(leaf.node) === "nowrap") {
+			return true;
 		}
-		return false;
-	});
+	}
+	return false;
 }
 
 // white-space applies to the text it styles, not to the line (css-text-3
@@ -5321,6 +5381,15 @@ function measureText(
 // Reordering stays within each leaf. Whole-line reordering would merge
 // and re-split segments, losing the leaf identity painting, hit-testing
 // and selection key on.
+function someSegmentHasRTL(segments: LineResult["segments"]): boolean {
+	for (let index = 0; index < segments.length; index++) {
+		if (hasRTL(segments[index].processedText)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function toVisualLine(
 	layout: Layout,
 	segments: LineResult["segments"],
@@ -5331,7 +5400,7 @@ function toVisualLine(
 		return;
 	}
 	// The common case pays one scan.
-	if (base === "ltr" && !segments.some((s) => hasRTL(s.processedText))) {
+	if (base === "ltr" && !someSegmentHasRTL(segments)) {
 		return;
 	}
 
@@ -8446,22 +8515,15 @@ function measureRecordingReads(
 	const node = this;
 	const subject = node.measureSubject as MeasureSubject;
 	const contextLayoutsBefore = contextLayouts;
-	const reads: Array<Element | string> = [];
-	// Reads come in runs on one element, and a run reads few
-	// properties, so a read is looked for only in its own run.
-	let runStart = 0;
-	const size = recordStyleReads((element, read, value) => {
-		if (reads[runStart] !== element) {
-			runStart = reads.length;
-		}
-		for (let i = runStart; i < reads.length; i += 3) {
-			if (reads[i + 1] === read) {
-				reads[i + 2] = value;
-				return;
-			}
-		}
-		reads.push(element, read, value);
-	}, () => measureByKind(subject, width, widthSpace, placing, left));
+	const log = createStyleReadLog();
+	const outer = beginStyleReads(log);
+	let size: Size;
+	try {
+		size = measureByKind(subject, width, widthSpace, placing, left);
+	} finally {
+		endStyleReads(outer);
+	}
+	const reads = log.reads!;
 	if (!placing && contextLayouts !== contextLayoutsBefore) {
 		node.hasCachedLayout = false;
 	}

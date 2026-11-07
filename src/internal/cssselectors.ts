@@ -1642,7 +1642,12 @@ function compilePseudoElement(
 		compound.origin = (element) => states.getShadowHost(getRoot(element));
 		compound.tests.push((element) => {
 			const names = states.getPartNames(element);
-			return wanted.every((name) => names.includes(name));
+			for (const name of wanted) {
+				if (!names.includes(name)) {
+					return false;
+				}
+			}
+			return true;
 		});
 		return pseudoElement;
 	}
@@ -2303,15 +2308,13 @@ function findHasMatch(
 	const hostOfShadow =
 		state.shadow !== null && states.getShadowHost(state.shadow) === element;
 	for (const complex of inner) {
-		const selects = (node: Element): boolean =>
-			matchComplex(complex, node, inside, false);
 		const leading = complex.combinators[0] ?? " ";
 		if (hostOfShadow) {
 			// The host is the shadow tree's root, which has no siblings.
 			if (
 				leading !== "+" &&
 				leading !== "~" &&
-				walkElements(state.shadow as Node, selects)
+				matchesUnder(state.shadow as Node, complex, inside)
 			) {
 				return true;
 			}
@@ -2321,11 +2324,14 @@ function findHasMatch(
 				sibling !== null;
 				sibling = getNextElement(sibling)
 			) {
-				if (selects(sibling) || walkElements(sibling, selects)) {
+				if (
+					matchComplex(complex, sibling, inside, false) ||
+					matchesUnder(sibling, complex, inside)
+				) {
 					return true;
 				}
 			}
-		} else if (walkElements(element, selects)) {
+		} else if (matchesUnder(element, complex, inside)) {
 			return true;
 		}
 	}
@@ -2571,12 +2577,15 @@ export function selectAllCompiled(
 ): Element[] {
 	const state = createMatchState(options);
 	const found: Element[] = [];
-	walkElements(root, (element) => {
-		if (matchesAny(selector, element, state)) {
-			found.push(element);
+	for (
+		let node = nextInTree(root, root);
+		node !== null;
+		node = nextInTree(node, root)
+	) {
+		if (isElement(node) && matchesAny(selector, node, state)) {
+			found.push(node);
 		}
-		return false;
-	});
+	}
 	return found;
 }
 
@@ -2603,15 +2612,16 @@ export function selectFirst(
 ): Element | null {
 	const selector = compileSelector(text, options);
 	const state = createMatchState(options);
-	let first: Element | null = null;
-	walkElements(root, (element) => {
-		if (matchesAny(selector, element, state)) {
-			first = element;
-			return true;
+	for (
+		let node = nextInTree(root, root);
+		node !== null;
+		node = nextInTree(node, root)
+	) {
+		if (isElement(node) && matchesAny(selector, node, state)) {
+			return node;
 		}
-		return false;
-	});
-	return first;
+	}
+	return null;
 }
 
 export function closestSelector(
@@ -2635,16 +2645,17 @@ export function closestSelector(
 
 // The walk follows the links a node already has rather than recursing,
 // so a deep tree costs no stack and a wide one allocates nothing.
-function walkElements(
+function matchesUnder(
 	root: Node,
-	visit: (element: Element) => boolean,
+	complex: CompiledComplex,
+	state: MatchState,
 ): boolean {
 	for (
 		let node = nextInTree(root, root);
 		node !== null;
 		node = nextInTree(node, root)
 	) {
-		if (isElement(node) && visit(node)) {
+		if (isElement(node) && matchComplex(complex, node, state, false)) {
 			return true;
 		}
 	}

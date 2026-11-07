@@ -241,15 +241,13 @@ export function getPresentationalHints(element: Element): Hints | null {
 
 function gatherHints(element: Element, hints: Hints): Hints | null {
 	const name = element.localName;
-	const get = (attribute: string): string | null =>
-		element.getAttribute(attribute);
 
 	if (TABLE_PARTS.has(name) || name === "body") {
-		setColor(hints, "background-color", get("bgcolor"));
+		setColor(hints, "background-color", element.getAttribute("bgcolor"));
 	}
 
 	if (name === "body") {
-		setColor(hints, "color", get("text"));
+		setColor(hints, "color", element.getAttribute("text"));
 		for (const [attribute, edges] of [
 			["marginheight", ["top", "bottom"]],
 			["topmargin", ["top"]],
@@ -258,7 +256,7 @@ function gatherHints(element: Element, hints: Hints): Hints | null {
 			["leftmargin", ["left"]],
 			["rightmargin", ["right"]],
 		] as const) {
-			const length = parsePixels(get(attribute));
+			const length = parsePixels(element.getAttribute(attribute));
 			if (length !== null) {
 				for (const edge of edges) {
 					hints[`margin-${edge}`] = length;
@@ -266,7 +264,7 @@ function gatherHints(element: Element, hints: Hints): Hints | null {
 			}
 		}
 	} else if (name === "font") {
-		setColor(hints, "color", get("color"));
+		setColor(hints, "color", element.getAttribute("color"));
 	} else if (isLink(element)) {
 		const body = element.ownerDocument?.body ?? null;
 		if (body?.localName === "body") {
@@ -274,7 +272,7 @@ function gatherHints(element: Element, hints: Hints): Hints | null {
 		}
 	}
 
-	const align = get("align")?.trim().toLowerCase();
+	const align = element.getAttribute("align")?.trim().toLowerCase();
 	if (align !== undefined) {
 		if (ALIGNED_BLOCKS.has(name) && ALIGNMENTS[align] !== undefined) {
 			hints["text-align"] = ALIGNMENTS[align];
@@ -292,37 +290,37 @@ function gatherHints(element: Element, hints: Hints): Hints | null {
 		name === "td" ||
 		name === "th"
 	) {
-		const valign = get("valign")?.trim().toLowerCase();
+		const valign = element.getAttribute("valign")?.trim().toLowerCase();
 		if (valign !== undefined && VERTICAL_ALIGNMENTS[valign] !== undefined) {
 			hints["vertical-align"] = VERTICAL_ALIGNMENTS[valign];
 		}
-		setDimension(hints, "height", get("height"));
+		setDimension(hints, "height", element.getAttribute("height"));
 	}
 
 	if (name === "table") {
-		setDimension(hints, "width", get("width"), true);
-		setDimension(hints, "height", get("height"));
-		const border = parsePixels(get("border"));
+		setDimension(hints, "width", element.getAttribute("width"), true);
+		setDimension(hints, "height", element.getAttribute("height"));
+		const border = parsePixels(element.getAttribute("border"));
 		if (border !== null) {
 			setEdges(hints, "border-*-width", border);
 			if (border !== "0px") {
 				setEdges(hints, "border-*-style", "outset");
 			}
 		}
-		setColor(hints, "border-top-color", get("bordercolor"));
+		setColor(hints, "border-top-color", element.getAttribute("bordercolor"));
 		if (hints["border-top-color"] !== undefined) {
 			setEdges(hints, "border-*-color", hints["border-top-color"]);
 		}
-		const spacing = parsePixels(get("cellspacing"));
+		const spacing = parsePixels(element.getAttribute("cellspacing"));
 		if (spacing !== null) {
 			hints["border-spacing"] = `${spacing} ${spacing}`;
 		}
 	}
 
 	if (name === "td" || name === "th") {
-		setDimension(hints, "width", get("width"), true);
+		setDimension(hints, "width", element.getAttribute("width"), true);
 		// Quirks mode lets a pixel width override nowrap (HTML §15.3.8).
-		const width = parseDimension(get("width"), true);
+		const width = parseDimension(element.getAttribute("width"), true);
 		if (
 			element.hasAttribute("nowrap") && !(
 				element.ownerDocument?.compatMode === "BackCompat" &&
@@ -346,17 +344,17 @@ function gatherHints(element: Element, hints: Hints): Hints | null {
 	}
 
 	if (name === "col" || name === "colgroup") {
-		setDimension(hints, "width", get("width"));
+		setDimension(hints, "width", element.getAttribute("width"));
 	}
 
 	if (name === "hr") {
-		setDimension(hints, "width", get("width"));
-		const color = parseLegacyColor(get("color"));
+		setDimension(hints, "width", element.getAttribute("width"));
+		const color = parseLegacyColor(element.getAttribute("color"));
 		if (color !== null) {
 			hints["color"] = color;
 			setEdges(hints, "border-*-color", color);
 		}
-		const align = get("align")?.trim().toLowerCase();
+		const align = element.getAttribute("align")?.trim().toLowerCase();
 		if (align === "left") {
 			hints["margin-left"] = "0";
 			hints["margin-right"] = "auto";
@@ -371,22 +369,23 @@ function gatherHints(element: Element, hints: Hints): Hints | null {
 
 	if (
 		EMBEDDED.has(name) ||
-		(name === "input" && get("type")?.toLowerCase() === "image")
+		(name === "input" &&
+			element.getAttribute("type")?.toLowerCase() === "image")
 	) {
-		setDimension(hints, "width", get("width"));
-		setDimension(hints, "height", get("height"));
-		const hspace = parseDimension(get("hspace"));
+		setDimension(hints, "width", element.getAttribute("width"));
+		setDimension(hints, "height", element.getAttribute("height"));
+		const hspace = parseDimension(element.getAttribute("hspace"));
 		if (hspace !== null) {
 			hints["margin-left"] = hspace;
 			hints["margin-right"] = hspace;
 		}
-		const vspace = parseDimension(get("vspace"));
+		const vspace = parseDimension(element.getAttribute("vspace"));
 		if (vspace !== null) {
 			hints["margin-top"] = vspace;
 			hints["margin-bottom"] = vspace;
 		}
 		if (name === "img" || name === "object" || name === "input") {
-			const border = parsePixels(get("border"));
+			const border = parsePixels(element.getAttribute("border"));
 			if (border !== null) {
 				setEdges(hints, "border-*-width", border);
 				setEdges(hints, "border-*-style", "solid");
@@ -395,7 +394,7 @@ function gatherHints(element: Element, hints: Hints): Hints | null {
 	}
 
 	if (name === "ul" || name === "ol" || name === "li") {
-		const type = get("type")?.trim();
+		const type = element.getAttribute("type")?.trim();
 		if (type !== undefined) {
 			const listType = LIST_TYPES[type] ?? LIST_TYPES[type.toLowerCase()];
 			if (listType !== undefined) {
