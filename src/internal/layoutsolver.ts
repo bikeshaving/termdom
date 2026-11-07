@@ -1165,7 +1165,8 @@ function isSameRecord(a: object, b: object): boolean {
 function findRecentRecord<T extends object>(kind: string, record: T): T | null {
 	const recent = recentRecords.get(kind);
 	if (recent !== undefined) {
-		for (const candidate of recent.records) {
+		for (let index = 0; index < recent.records.length; index++) {
+			const candidate = recent.records[index];
 			if (isSameRecord(candidate, record)) {
 				return candidate as T;
 			}
@@ -1399,7 +1400,9 @@ export function shareStyle(style: Style): Style {
 	shareStyleEdges(style);
 	const recent = recentRecords.get("style");
 	if (recent !== undefined) {
-		for (const candidate of recent.records as Style[]) {
+		const records = recent.records as Style[];
+		for (let index = 0; index < records.length; index++) {
+			const candidate = records[index];
 			if (isSameStyle(candidate, style)) {
 				return candidate;
 			}
@@ -4708,7 +4711,8 @@ function autoPlaceItems(
 
 	let minorBase = 0;
 	let majorBase = 0;
-	for (const item of items) {
+	for (let index = 0; index < items.length; index++) {
+		const item = items[index];
 		const min = minor(item).start;
 		const maj = major(item).start;
 		if (min !== null) {
@@ -5112,7 +5116,8 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 	const flexible = (track: GridTrack) => track.size.max.kind === "flex";
 
 	const limits = new Array<number>(tracks.length).fill(-Infinity);
-	for (const item of items) {
+	for (let position = 0; position < items.length; position++) {
+		const item = items[position];
 		const [start, end] = getItemTrackRange(sizing, item);
 		if (end - start !== 1) {
 			continue;
@@ -5265,7 +5270,8 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 
 	// Across a flexible track the share goes by flex factor, not equally.
 	// §12.5.4 defers the rest to the fr resolution.
-	for (const item of items) {
+	for (let position = 0; position < items.length; position++) {
+		const item = items[position];
 		const [start, end] = getItemTrackRange(sizing, item);
 		if (end - start < 2) {
 			continue;

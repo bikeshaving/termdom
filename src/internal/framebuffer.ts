@@ -954,7 +954,8 @@ function equalCells(
 
 function meetEdges(existing: number, incoming: number): number {
 	let met = 0;
-	for (const mask of BORDER_EDGE_MASKS) {
+	for (let index = 0; index < BORDER_EDGE_MASKS.length; index++) {
+		const mask = BORDER_EDGE_MASKS[index];
 		const here = getBorderEdge(existing, mask);
 		const there = getBorderEdge(incoming, mask);
 		if (!getEdgePresence(here)) {

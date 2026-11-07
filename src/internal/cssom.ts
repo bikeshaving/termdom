@@ -2268,7 +2268,9 @@ function getSheetNamespaces(
 		return undefined;
 	}
 	const namespaces: SelectorNamespaces = {default: null, prefixes: new Map()};
-	for (const rule of _(sheet).rules) {
+	const rules = _(sheet).rules;
+	for (let index = 0; index < rules.length; index++) {
+		const rule = rules[index];
 		if (getPreludeStage(rule) === PRELUDE_OVER) {
 			break;
 		}
@@ -4662,7 +4664,8 @@ export function establishesFixedContainingBlock(element: Element): boolean {
 	if (hasLayoutOrPaintContainment(element)) {
 		return true;
 	}
-	for (const property of FIXED_CONTAINING_PROPERTIES) {
+	for (let index = 0; index < FIXED_CONTAINING_PROPERTIES.length; index++) {
+		const property = FIXED_CONTAINING_PROPERTIES[index];
 		const value = getComputedValue(element, property);
 		if (value !== "" && value !== "none") {
 			return true;
@@ -5024,7 +5027,8 @@ function getDeclaredInheritedNames(
 		...slots.cssRules.map((rule) => rule.block),
 		getInlineDeclarations(getOwner(slots)),
 	];
-	for (const block of blocks) {
+	for (let index = 0; index < blocks.length; index++) {
+		const block = blocks[index];
 		for (const name of Object.keys(block.declarations)) {
 			if (CSSValues.isInheritedProperty(name)) {
 				names.add(name);
@@ -6446,7 +6450,8 @@ function resolvePropertyValueRaw(
 	const rules = declarationSlots.cssRules;
 	const index = getRuleListIndex(rules);
 	let winner = -1;
-	for (const name of names) {
+	for (let position = 0; position < names.length; position++) {
+		const name = names[position];
 		const at = index.lastNormal.get(name);
 		if (
 			at !== undefined &&
@@ -6462,7 +6467,8 @@ function resolvePropertyValueRaw(
 			getDeclaredSlotName(rule.block, names, false, declarationSlots, property)!
 		];
 	}
-	for (const at of index.withImportant) {
+	for (let position = 0; position < index.withImportant.length; position++) {
+		const at = index.withImportant[position];
 		const rule = rules[at];
 		const importantName = getDeclaredSlotName(
 			rule.block,
@@ -6969,7 +6975,8 @@ function getRoundedCorner(
 	const radii = getComputedValue(element, `border-${corner}-radius`)
 		.split(CSSValues.WHITESPACE_RUN);
 	let any = false;
-	for (const radius of radii) {
+	for (let index = 0; index < radii.length; index++) {
+		const radius = radii[index];
 		if (radius === "") {
 			continue;
 		}
@@ -7182,7 +7189,8 @@ function getRequiredTag(compound: CompiledCompound): string | null {
 	if (compound.tag !== null) {
 		return compound.tag;
 	}
-	for (const {name, args} of compound.pseudoClasses) {
+	for (let index = 0; index < compound.pseudoClasses.length; index++) {
+		const {name, args} = compound.pseudoClasses[index];
 		if (
 			(name === "is" || name === "where") &&
 			args.length === 1 &&
@@ -7305,7 +7313,8 @@ function attachPseudoElementsToElement(
 	}
 
 	const candidates = getPseudoCandidates(cascade, element);
-	for (const pseudoType of PSEUDO_ELEMENT_NAMES) {
+	for (let index = 0; index < PSEUDO_ELEMENT_NAMES.length; index++) {
+		const pseudoType = PSEUDO_ELEMENT_NAMES[index];
 		attachPseudoElementToElementForType(
 			cascade,
 			element,
@@ -8396,7 +8405,8 @@ function buildComputedSlots(
 				new ComputedStyleDeclaration(element, rules, cascade)),
 	);
 	cascade.computedStyleCache.set(element, fresh);
-	for (const {styles} of cascade.droppedStyles) {
+	for (let index = 0; index < cascade.droppedStyles.length; index++) {
+		const {styles} = cascade.droppedStyles[index];
 		const dropped = styles.get(element);
 		if (dropped !== undefined) {
 			styles.delete(element);
@@ -12391,7 +12401,8 @@ function getWrittenCompounds(
 
 function getPseudoClassNames(nested: CompiledCompound[]): string[] {
 	const names: string[] = [];
-	for (const compound of nested) {
+	for (let index = 0; index < nested.length; index++) {
+		const compound = nested[index];
 		for (const pseudoClass of compound.pseudoClasses) {
 			names.push(pseudoClass.name);
 		}
@@ -13246,7 +13257,9 @@ function getRuleIndex(cascade: Cascade, quirks: boolean): RuleIndex {
 }
 
 function getIdValue(element: Element): string | null {
-	for (const attribute of getAttributeList(element)) {
+	const attributes = getAttributeList(element);
+	for (let index = 0; index < attributes.length; index++) {
+		const attribute = attributes[index];
 		if (
 			attribute.extra.localName === "id" && attribute.extra.namespace === null
 		) {
@@ -13333,7 +13346,9 @@ function getCandidateKey(
 			key += ` ${token}`;
 		}
 	}
-	for (const attribute of getAttributeList(element)) {
+	const attributes = getAttributeList(element);
+	for (let index = 0; index < attributes.length; index++) {
+		const attribute = attributes[index];
 		const token = getAttributeKey(attribute.extra.localName);
 		if (keyed.has(token)) {
 			key += ` ${token}`;
@@ -13864,7 +13879,8 @@ function computePseudoElementStyle(
 			? typed
 			: getPseudoCandidates(cascade, element).get(pseudoElement) ?? NO_RULES);
 	const matchingRules: ParsedCSSRule[] = [];
-	for (const rule of candidates) {
+	for (let index = 0; index < candidates.length; index++) {
+		const rule = candidates[index];
 		if (isRuleMatch(element, rule, pseudoRoot)) {
 			matchingRules.push(rule);
 		}
@@ -14026,7 +14042,8 @@ function pseudoRuleCouldMatch(
 	// misses again.
 	const missed = new Set<CompiledSelector>();
 	const candidates = narrowCandidates(rules, "content", mayGiveContent);
-	for (const rule of candidates) {
+	for (let index = 0; index < candidates.length; index++) {
+		const rule = candidates[index];
 		if (
 			(!reachesHost(rule) && missed.has(rule.selector)) ||
 			!subjectCouldMatch(element, rule)

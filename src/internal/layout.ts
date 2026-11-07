@@ -398,7 +398,9 @@ function isSplitAroundBlock(element: Element): boolean {
 }
 
 function hasBlockLevelBox(element: Element): boolean {
-	for (const child of flowContent(element)) {
+	const content = flowContent(element);
+	for (let index = 0; index < content.length; index++) {
+		const child = content[index];
 		if (getNodeType(child) !== child.ELEMENT_NODE) {
 			continue;
 		}
@@ -1572,7 +1574,8 @@ function applyBoxEdges(style: Style, element: Element): void {
 	// padding, margin and border like any block (css-display-3 §2.7).
 	const padding = getCellPadding(element);
 	const borders = getCellBorderWidths(element);
-	for (const edge of EDGES) {
+	for (let index = 0; index < EDGES.length; index++) {
+		const edge = EDGES[index];
 		const property = `margin-${edge}`;
 		const vertical = edge === "top" || edge === "bottom";
 		const margin = vertical
@@ -1765,7 +1768,8 @@ function styleLayoutNodeProperties(
 		sizeReplacedBox(element, style, display);
 	}
 
-	for (const [key, property] of GRID_PLACEMENTS) {
+	for (let index = 0; index < GRID_PLACEMENTS.length; index++) {
+		const [key, property] = GRID_PLACEMENTS[index];
 		const placement = CSSValues.parseGridPlacement(
 			getItemValue(element, parentIsFlex, property, "auto"),
 		);
@@ -1999,7 +2003,9 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	// Matched by ordinal. Only a change to the NUMBER of runs creates or
 	// drops a box.
 	const previous: Box[] = [];
-	for (const child of box.children ?? []) {
+	const oldChildren = box.children ?? [];
+	for (let index = 0; index < oldChildren.length; index++) {
+		const child = oldChildren[index];
 		if (child.kind === "anonymous") {
 			previous.push(child);
 		}
@@ -2009,7 +2015,9 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	const opened = new Map<Box, Node[]>();
 	let run: Box | null = null;
 	box.holdsFragments = false;
-	for (const child of flowChildren(layout, container)) {
+	const flow = flowChildren(layout, container);
+	for (let index = 0; index < flow.length; index++) {
+		const child = flow[index];
 		if (getNodeType(child) === child.ELEMENT_NODE) {
 			const element = child as Element;
 			if (getLayoutDisplay(element) === "none" || isOutOfFlow(element)) {
@@ -2066,7 +2074,8 @@ function getContainerBox(layout: Layout, container: Element): Box {
 	// contents flip left the old box in place, holding rows nothing removed.
 	dropSteppedOver(layout, container);
 
-	for (const child of children) {
+	for (let index = 0; index < children.length; index++) {
+		const child = children[index];
 		if (child.kind === "anonymous") {
 			child.members = fitToLength(child.members);
 		}
@@ -2914,7 +2923,9 @@ function flowChildren(
 	into: Node[] = [],
 	root = container,
 ): Node[] {
-	for (const child of flowContent(container)) {
+	const content = flowContent(container);
+	for (let index = 0; index < content.length; index++) {
+		const child = content[index];
 		into.push(child);
 		if (getNodeType(child) !== child.ELEMENT_NODE) {
 			continue;
@@ -3477,7 +3488,9 @@ function invalidateNode(layout: Layout, node: Node): void {
 }
 
 function invalidateNodeChildren(layout: Layout, element: Element): void {
-	for (const child of flowContent(element)) {
+	const content = flowContent(element);
+	for (let index = 0; index < content.length; index++) {
+		const child = content[index];
 		invalidateNode(layout, child);
 	}
 }
@@ -3523,7 +3536,9 @@ function getEnclosingIndependentFormattingContext(
 // reshapes the others, and a cleared result on a clean node is never
 // recomputed: the box lays out at the right rect and paints nothing.
 function invalidateContainerBoxes(layout: Layout, container: Element): void {
-	for (const entry of getContainerBox(layout, container).children!) {
+	const boxes = getContainerBox(layout, container).children!;
+	for (let index = 0; index < boxes.length; index++) {
+		const entry = boxes[index];
 		if (entry.kind === "anonymous") {
 			invalidateBox(layout, entry);
 		} else if (entry.fragments) {
@@ -3886,7 +3901,8 @@ function getPrefixWidths(
 	text: string,
 ): Float64Array {
 	const widths = new Float64Array(text.length + 1);
-	for (const item of items) {
+	for (let index = 0; index < items.length; index++) {
+		const item = items[index];
 		if (item.leafNode.type === "text") {
 			writeClusterWidths(text.slice(item.start, item.end), widths, item.start);
 		} else if (item.leafNode.type === "inline-block") {
@@ -3998,7 +4014,8 @@ function collectLeafNodes(
 ): Leaf[] {
 	const leafNodes: Leaf[] = [];
 	if (source.kind === "anonymous") {
-		for (const member of source.members) {
+		for (let index = 0; index < source.members.length; index++) {
+			const member = source.members[index];
 			// A broken inline heads the run of its first fragment, and its
 			// content is among the members on its own. Walking into it too
 			// would lay that content out twice.
@@ -4889,7 +4906,8 @@ function processWhitespace(
 		// `   <b class="pre">x</b>` opened on a space no browser draws.
 		let guardStart = text.length;
 		let guardEnd = 0;
-		for (const item of items) {
+		for (let index = 0; index < items.length; index++) {
+			const item = items[index];
 			const leaf = item.leafNode;
 			if (leaf.type === "text" && isSpacePreserving(getWhiteSpace(leaf.node))) {
 				guardStart = Math.min(guardStart, item.start);
@@ -5123,7 +5141,8 @@ function buildLines(
 			let pos = lineStart + 1;
 			while (pos <= content.text.length) {
 				let crossesInlineBlock = false;
-				for (const item of content.items) {
+				for (let slot = 0; slot < content.items.length; slot++) {
+					const item = content.items[slot];
 					if (item.leafNode.type === "inline-block") {
 						if (pos > item.start && pos < item.end) {
 							pos = item.end;
@@ -5162,7 +5181,8 @@ function buildLines(
 			// and of the text on it, with the leading split above and below.
 			// The odd row goes below.
 			let rows = blockRows;
-			for (const node of lineNodes) {
+			for (let slot = 0; slot < lineNodes.length; slot++) {
+				const node = lineNodes[slot];
 				if (node.leaf.type !== "text") {
 					continue;
 				}
@@ -5221,7 +5241,8 @@ function placeOnLine(
 		baseline: number;
 		align: string;
 	}> = [];
-	for (const segment of segments) {
+	for (let index = 0; index < segments.length; index++) {
+		const segment = segments[index];
 		if (segment.leaf.type !== "inline-block") {
 			continue;
 		}
@@ -6082,7 +6103,8 @@ function getNodesInRange(
 	const nodes: LineResult["segments"] = [];
 	let x = 0;
 
-	for (const item of items) {
+	for (let index = 0; index < items.length; index++) {
+		const item = items[index];
 		if (item.start >= end || item.end <= start) {
 			continue;
 		}
@@ -8629,7 +8651,8 @@ function applyRestyles(layout: Layout): void {
 	while (layout.restyled.size > 0) {
 		const restyled = [...layout.restyled];
 		layout.restyled.clear();
-		for (const element of restyled) {
+		for (let index = 0; index < restyled.length; index++) {
+			const element = restyled[index];
 			if (!flatIsConnected(element)) {
 				continue;
 			}

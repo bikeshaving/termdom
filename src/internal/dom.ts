@@ -7848,7 +7848,8 @@ function insertNode(
 		: getObject(parentSlots.lastChild);
 	const document = parentSlots.document;
 	const connected = parentSlots.connected;
-	for (const inserted of nodes) {
+	for (let index = 0; index < nodes.length; index++) {
+		const inserted = nodes[index];
 		// The inserted node was its own tree's root. Everything registered
 		// under it now belongs to the tree it is joining.
 		const insertedSlots = getSlots(inserted);
@@ -12139,7 +12140,8 @@ const RARE_FIELDS: ReadonlyArray<readonly [string, unknown]> = [
 
 function createRareData(): Record<string, unknown> {
 	const rare: Record<string, unknown> = {};
-	for (const [key, fallback] of RARE_FIELDS) {
+	for (let index = 0; index < RARE_FIELDS.length; index++) {
+		const [key, fallback] = RARE_FIELDS[index];
 		rare[key] = fallback;
 	}
 	return rare;
@@ -19220,7 +19222,9 @@ function getTopWindow(window: Window): Window {
 function getDocumentFrames(document: Document): HTMLIFrameElement[] {
 	const frames: HTMLIFrameElement[] = [];
 	const visit = (node: Node) => {
-		for (const child of getChildNodeArray(node)) {
+		const childNodes = getChildNodeArray(node);
+		for (let index = 0; index < childNodes.length; index++) {
+			const child = childNodes[index];
 			if (getNodeType(child) !== ELEMENT_NODE) {
 				continue;
 			}
@@ -36866,7 +36870,9 @@ function dropRegistry(node: Node): void {
 // parent cannot host a shadow tree, or already hosts one, stays a
 // template, which is the parser's own error handling.
 function attachDeclarativeShadowRoots(root: Node): void {
-	for (const child of getChildNodeArray(root)) {
+	const childNodes = getChildNodeArray(root);
+	for (let index = 0; index < childNodes.length; index++) {
+		const child = childNodes[index];
 		if (getNodeType(child) !== ELEMENT_NODE) {
 			continue;
 		}
@@ -43178,7 +43184,8 @@ export function setAttributeByName(
 		name = toASCIILowercase(name);
 	}
 	const string = value === null ? "null" : String(value);
-	for (const attribute of slots.attributeList) {
+	for (let index = 0; index < slots.attributeList.length; index++) {
+		const attribute = slots.attributeList[index];
 		if (attribute._qualifiedName === name) {
 			changeAttribute(getObject(attribute), string);
 			return;
