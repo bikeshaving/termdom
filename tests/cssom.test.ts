@@ -695,3 +695,23 @@ test("elements sharing style text keep their own styles once one changes", async
 	expect(window.getComputedStyle(a).color).toBe("rgb(0, 0, 255)");
 	await dom.dispose();
 });
+
+test("background-position states each layer's horizontal part, then its vertical one", () => {
+	const {dom} = makeDOM();
+	const div = dom.document.createElement("div");
+	dom.document.body.append(div);
+	const style = div.style as CSSStyleDeclaration & Record<string, string>;
+	style.backgroundPosition = "top 10px left";
+	expect(style.backgroundPosition).toBe("left top 10px");
+	expect(style.backgroundPositionX).toBe("left");
+	expect(style.backgroundPositionY).toBe("top 10px");
+	style.backgroundPosition = "left, top, 10px";
+	expect(style.backgroundPosition).toBe("left center, center top, 10px center");
+	style.backgroundPosition = "right 10px bottom 20%";
+	expect(dom.window.getComputedStyle(div).backgroundPosition)
+		.toBe("calc(100% - 10px) 80%");
+	style.background = "url(a.png) 10px 20px / 30px 40px no-repeat";
+	expect(style.backgroundPosition).toBe("10px 20px");
+	style.backgroundRepeat = "repeat no-repeat, round round";
+	expect(style.backgroundRepeat).toBe("repeat-x, round");
+});
