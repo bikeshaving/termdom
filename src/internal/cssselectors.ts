@@ -949,6 +949,11 @@ function compileCompound(
 	return compound;
 }
 
+// Text that would start an identifier (css-syntax-3 §4.3.10): a name
+// start, a hyphen before one, a second hyphen or an escape, or an escape.
+const STARTS_IDENTIFIER =
+	/^(?:-?(?:[A-Za-z_\u0080-\u{10FFFF}]|\\[^\n\r\f])|--)/u;
+
 function compileSimple(
 	part: CSSTree.SelectorNode,
 	compound: CompiledCompound,
@@ -959,8 +964,11 @@ function compileSimple(
 			compileType(String(part.name ?? ""), compound, compiling);
 			return;
 		case "IdSelector": {
-			const id = CSSTree.ident.decode(String(part.name ?? ""));
-			if (id === "") {
+			const raw = String(part.name ?? "");
+			const id = CSSTree.ident.decode(raw);
+			// `#000` is a hash, but only a hash spelled as an identifier is an
+			// id selector (css-syntax-3 §4.3.1).
+			if (id === "" || !STARTS_IDENTIFIER.test(raw)) {
 				throw new SelectorError("an id selector names an id");
 			}
 			compound.ids.push(id);
