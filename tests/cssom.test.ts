@@ -479,13 +479,16 @@ test("text the CSS parsers cannot judge passes through as authored", () => {
 	const {dom} = makeDOM();
 	const sheet = new dom.window.CSSStyleSheet();
 
-	// A media list keeps queries this engine cannot judge, case-folded.
+	// A query that is not one becomes `not all`. A media list keeps the
+	// rest, case-folded, including the ones this engine cannot judge.
 	const mediaText = (query: string): string => {
 		sheet.replaceSync(`@media ${query} { a { color: red } }`);
 		return (sheet.cssRules[0] as CSSMediaRule).media.mediaText;
 	};
-	expect(mediaText("GARBAGE!!")).toBe("garbage!!");
-	expect(mediaText("screen and foo")).toBe("screen and foo");
+	expect(mediaText("GARBAGE!!")).toBe("not all");
+	expect(mediaText("screen and foo")).toBe("not all");
+	expect(mediaText("screen, bad$")).toBe("screen, not all");
+	expect(mediaText("not and")).toBe("not all");
 	expect(mediaText("not(color)")).toBe("not(color)");
 	expect(mediaText("not (a) and (b)")).toBe("not (a) and (b)");
 	expect(mediaText("SCREEN and (Min-Width: 5PX)")).toBe(
@@ -506,16 +509,27 @@ test("text the CSS parsers cannot judge passes through as authored", () => {
 	expect(styleRule.style.length).toBe(0);
 	expect(styleRule.cssText).toBe("a { }");
 
-	// A keyframe selector is `from`, `to` or a percentage, and a percentage
-	// is a number token: an exponent spells one as anywhere else in CSS. A
-	// word standing where a selector belongs serializes empty.
-	sheet.replaceSync("@keyframes k { from {} 50.0% {} 1e2% {} halfway {} }");
+	// A keyframe selector is `from`, `to` or a percentage from 0% to 100%,
+	// and a percentage is a number token: an exponent spells one as anywhere
+	// else in CSS. A keyframe with any other selector is dropped.
+	sheet.replaceSync(
+		"@keyframes k { from {} 50.0% {} 1e2% {} halfway {} 150% {} -5% {} }",
+	);
 	const keyframes = sheet.cssRules[0] as CSSKeyframesRule;
 	expect(
 		Array.from(keyframes.cssRules, (rule) =>
 			(rule as CSSKeyframeRule).keyText,
 		),
-	).toEqual(["0%", "50%", "100%", ""]);
+	).toEqual(["0%", "50%", "100%"]);
+	keyframes.appendRule("to {} @media screen {}");
+	keyframes.appendRule("from {} to {}");
+	keyframes.appendRule("from {} junk");
+	expect(keyframes.cssRules.length).toBe(3);
+	keyframes.appendRule("25% { opacity: 0 }");
+	expect(keyframes.cssRules[3].cssText).toBe("25% { opacity: 0; }");
+	expect(() => {
+		(keyframes.cssRules[0] as CSSKeyframeRule).keyText = "150%";
+	}).toThrow();
 
 	// `layer` names a layer only as a word of its own: `layered-thing` is a
 	// media query, and a media type this engine cannot judge is kept as

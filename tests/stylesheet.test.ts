@@ -790,3 +790,42 @@ test("a large sheet leaves the parser's token buffers small", () => {
 	expect(bytes).toBeGreaterThan(0);
 	expect(bytes).toBeLessThanOrEqual(64 * 1024);
 });
+
+test("a rule replaced or deleted belongs to no sheet and no rule", () => {
+	const termdom = new TermDOM();
+	const {window} = termdom;
+	const sheet = new window.CSSStyleSheet();
+	sheet.replaceSync("p { color: red } @media screen { b { color: red } }");
+	const [plain, media] = Array.from(sheet.cssRules) as CSSRule[];
+	const nested = (media as CSSMediaRule).cssRules[0];
+	sheet.replaceSync("i { color: red }");
+	expect(plain.parentStyleSheet).toBe(null);
+	expect(media.parentStyleSheet).toBe(null);
+	expect(nested.parentStyleSheet).toBe(null);
+	expect(nested.parentRule).toBe(media);
+
+	sheet.replaceSync("@keyframes k { from { opacity: 0 } to { opacity: 1 } }");
+	const keyframes = sheet.cssRules[0] as CSSKeyframesRule;
+	const from = keyframes.cssRules[0];
+	keyframes.deleteRule("from");
+	expect(from.parentRule).toBe(null);
+	expect(from.parentStyleSheet).toBe(null);
+
+	termdom.dispose();
+});
+
+test("a <style> taken out of its tree leaves its sheet with no owner", () => {
+	const termdom = new TermDOM();
+	const {document} = termdom;
+	const style = document.createElement("style");
+	style.textContent = "div { color: green }";
+	document.head.append(style);
+	const sheet = style.sheet!;
+	expect(sheet.ownerNode).toBe(style);
+
+	style.remove();
+	expect(sheet.ownerNode).toBe(null);
+	expect(style.sheet).toBe(null);
+
+	termdom.dispose();
+});

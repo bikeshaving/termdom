@@ -201,21 +201,43 @@ export function nodeContains(
 		isInclusiveAncestor(node as unknown as Node, other as unknown as Node);
 }
 
+// The attribute in no namespace with the local name, which is the one
+// an element's own behavior reads: a namespaced `style` or `open` is
+// data, not the element's style or state.
+function getOwnAttribute(element: Element, localName: string): Attr | null {
+	let name = localName;
+	const elementSlots = _(element);
+	if (
+		elementSlots.namespace === HTML_NAMESPACE &&
+		isHTMLDocument(elementSlots.document)
+	) {
+		name = toASCIILowercase(name);
+	}
+	const attributes = elementSlots.attributeList;
+	for (let index = 0; index < attributes.length; index++) {
+		const extra = attributes[index].extra;
+		if (extra.localName === name && extra.namespace === null) {
+			return getObject(attributes[index]);
+		}
+	}
+	return null;
+}
+
 /** The element's attribute's value, read without going through its binding. */
 export function getAttributeValue(
 	element: globalThis.Element,
-	qualifiedName: string,
+	localName: string,
 ): string | null {
-	const attribute = getAttributeByName(element as Element, qualifiedName);
+	const attribute = getOwnAttribute(element as Element, localName);
 	return attribute === null ? null : _(attribute).extra.value;
 }
 
 /** Whether the element has the attribute, without going through its binding. */
 export function hasAttributeByName(
 	element: globalThis.Element,
-	qualifiedName: string,
+	localName: string,
 ): boolean {
-	return getAttributeByName(element as Element, qualifiedName) !== null;
+	return getOwnAttribute(element as Element, localName) !== null;
 }
 
 /**

@@ -4256,7 +4256,7 @@ const RESERVED_MEDIA_TYPES = new Set(["only", "not", "and", "or", "layer"]);
 // A query as its own list parses it: its open blocks close at its end,
 // and one that is not a media query becomes `not all` (mediaqueries-4
 // §3.2).
-function readMediaQuery(piece: string): string {
+export function readMediaQuery(piece: string): string {
 	let depth = 0;
 	for (const character of piece) {
 		if (character === "(") {
@@ -4393,6 +4393,11 @@ export function serializeKeyText(text: string): string {
 		}
 		const [key] = parts;
 		if (key.type === "Percentage") {
+			// A keyframe is a point in the animation, from 0% to 100%.
+			const percent = Number(key.value);
+			if (!(percent >= 0 && percent <= 100)) {
+				return "";
+			}
 			keys.push(`${serializeCSSNumber(key.value ?? "")}%`);
 			continue;
 		}
