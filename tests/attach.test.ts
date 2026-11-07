@@ -902,3 +902,27 @@ test("a transport serves the first TermDOM to attach, and another fails with Inv
 		.catch((error: DOMException) => (failure = error.name));
 	expect(failure).toBe("InvalidStateError");
 });
+
+// The terminal answered where the cursor is, and the program was busy, as
+// one is loading a large module right after attach(). The reply was waiting
+// to be read when its timer came due, and the page drew over the shell.
+test("a program that blocks while the terminal answers stays under the prompt", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	(terminal as any).terminal.write("$ one\r\n$ two\r\n");
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	const dom = new TermDOM({transport: terminal.sharedTransport});
+	void dom.attach();
+	await new Promise((resolve) => setImmediate(resolve));
+	const end = performance.now() + 1200;
+	while (performance.now() < end) {
+		// Blocking is the point.
+	}
+	dom.document.body.textContent = "page";
+	await until(() => terminal.getPlainText().includes("page"));
+	await nextFrame(dom);
+	const {buffer} = (terminal as any).terminal;
+	const rows = [0, 1, 2].map((row) =>
+		buffer.normal.getLine(row).translateToString(true));
+	expect(rows).toEqual(["$ one", "$ two", "page"]);
+	dom.dispose();
+});
