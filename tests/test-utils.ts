@@ -628,6 +628,29 @@ export async function findCollector(): Promise<(() => void) | null> {
 }
 
 /**
+ * How many of a test's mounts are still held, once `turn` has run enough
+ * times for the rest to go. Bun's collector scans the stack conservatively
+ * and keeps the node:vm context it made last, so one or two values can stay
+ * with nothing of the page's holding them. A leak holds every mount, so a
+ * test mounts several and allows those two.
+ */
+export const COLLECTED_MOUNTS = 6;
+export const COLLECTED_SURVIVORS = 2;
+
+export async function countHeld(
+	mounts: Array<Array<WeakRef<object>>>,
+	turn: () => Promise<void>,
+): Promise<number> {
+	const held = () =>
+		mounts.filter((refs) => refs.some((ref) => ref.deref() !== undefined))
+			.length;
+	for (let i = 0; i < 10 && held() > COLLECTED_SURVIVORS; i++) {
+		await turn();
+	}
+	return held();
+}
+
+/**
  * Waits until what was written to the terminal's input has been
  * dispatched. Each key, click and paste is a task of its own, as in a
  * browser, so a chunk of several takes as many tasks.

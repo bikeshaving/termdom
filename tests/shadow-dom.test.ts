@@ -13,6 +13,9 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.ts";
 import {createWindow} from "../src/internal/window.ts";
 import {
+	COLLECTED_MOUNTS,
+	COLLECTED_SURVIVORS,
+	countHeld,
 	findCollector,
 	inputDispatched,
 	MockProcess,
@@ -780,7 +783,7 @@ const collect = await findCollector();
 		await nextFrame(dom);
 		// In a function of its own: what an async function holds across an
 		// await, it holds until it returns.
-		const mountAndRemove = async (): Promise<WeakRef<ShadowRoot>> => {
+		const mountAndRemove = async (): Promise<Array<WeakRef<object>>> => {
 			const host = dom.document.createElement("div");
 			dom.document.body.append(host);
 			const shadow = host.attachShadow({mode: "open"});
@@ -791,14 +794,17 @@ const collect = await findCollector();
 			// Whether a value was collected is only seen through a weak
 			// reference, which is the thing under test.
 			// eslint-disable-next-line no-restricted-globals
-			return new WeakRef(shadow);
+			return [new WeakRef(shadow)];
 		};
-		const root = await mountAndRemove();
-		for (let i = 0; i < 10 && root.deref() !== undefined; i++) {
+		const mounts: Array<Array<WeakRef<object>>> = [];
+		for (let i = 0; i < COLLECTED_MOUNTS; i++) {
+			mounts.push(await mountAndRemove());
+		}
+		const held = await countHeld(mounts, async () => {
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			collect!();
-		}
-		expect(root.deref()).toBeUndefined();
+		});
+		expect(held).toBeLessThanOrEqual(COLLECTED_SURVIVORS);
 		dom.dispose();
 	},
 );
