@@ -113,6 +113,9 @@ const AHEAD_OF_LIB_DOM: Record<string, Record<string, string>> = {
 	HTMLImageElement: {
 		controls: "https://html.spec.whatwg.org/#dom-img-controls",
 	},
+	HTMLTemplateElement: {
+		shadowRootSlotAssignment: "https://html.spec.whatwg.org/#dom-template-shadowrootslotassignment",
+	},
 	HTMLAreaElement: {
 		hreflang: "https://html.spec.whatwg.org/#dom-area-hreflang",
 		type: "https://html.spec.whatwg.org/#dom-area-type",
