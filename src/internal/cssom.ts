@@ -7348,16 +7348,13 @@ function isStyleElement(element: Element): boolean {
 	);
 }
 
-// The list's padding-left is a function of its items' markers and
-// their ordinals. Only the NEAREST list is affected.
-// TODO(box-tree): the gutter is a layout question answered here in the
-// cascade. Computing it during block layout deletes this.
-// Whether the element is an <li> or holds one.
+// Whether an <li> is among the element's descendants.
 function holdsListItem(element: Element): boolean {
+	const root = element as unknown as DOMNode;
 	for (
-		let next: DOMNode | null = element as unknown as DOMNode;
+		let next = nextInTree(root, root);
 		next !== null;
-		next = nextInTree(next, element as unknown as DOMNode)
+		next = nextInTree(next, root)
 	) {
 		if (
 			getNodeType(next) === ELEMENT_NODE &&
@@ -7369,6 +7366,10 @@ function holdsListItem(element: Element): boolean {
 	return false;
 }
 
+// The list's padding-left is a function of its items' markers and
+// their ordinals. Only the NEAREST list is affected.
+// TODO(box-tree): the gutter is a layout question answered here in the
+// cascade. Computing it during block layout deletes this.
 function mutationChangesListItems(mutation: MutationRecord): boolean {
 	const target = mutation.target;
 	if (
@@ -7381,7 +7382,10 @@ function mutationChangesListItems(mutation: MutationRecord): boolean {
 			if (getNodeType(node) !== ELEMENT_NODE) {
 				continue;
 			}
-			if (holdsListItem(node as Element)) {
+			if (
+				getHTMLLocalName(node as Element) === "li" ||
+				holdsListItem(node as Element)
+			) {
 				return true;
 			}
 		}
