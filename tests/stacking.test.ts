@@ -190,6 +190,20 @@ test("isolation: isolate forms a stacking context without positioning", async ()
 	dom.dispose();
 });
 
+for (const contain of ["paint", "layout", "content", "strict"]) {
+	test(`contain: ${contain} forms a stacking context`, async () => {
+		const {terminal, dom} = await render(
+			`
+			<div style="contain:${contain}; width:20ch; height:1lh">
+				<div style="position:absolute; top:0; left:0; z-index:999; width:10ch">TRAPPED</div>
+			</div>
+			<div style="position:absolute; top:0; left:0; z-index:1; width:10ch">WINNER</div>`,
+		);
+		expect(terminal.getPlainText().split("\n")[0]).toContain("WINNER");
+		dom.dispose();
+	});
+}
+
 test("an isolated box paints its positioned descendants without being positioned", async () => {
 	const {terminal, dom} = await render(
 		`<div style="isolation:isolate"><div id="rel" style="position:relative; z-index:1">REL</div></div>` +
