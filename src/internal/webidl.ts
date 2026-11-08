@@ -60,15 +60,25 @@ interface Member {
 	variadic: boolean;
 }
 
+// Members and checks by their text. Every caller parses against the
+// window's classes, and a parse is never changed, so members of the same
+// signature share one.
+const parsedMembers = new Map<string, Member>();
+const parsedChecks = new Map<string, Check | null>();
+
 function parseMember(
 	text: string,
 	classes: ReadonlyMap<string, Constructor>,
 ): Member {
+	let member = parsedMembers.get(text);
+	if (member !== undefined) {
+		return member;
+	}
 	const [head, ...rest] = text.split(":");
 	const kind = head[0] as Member["kind"];
 	const flags = head.slice(1).replace(/\d+$/, "");
 	const variadic = rest.at(-1)?.startsWith("...") ?? false;
-	return {
+	member = {
 		kind,
 		unforgeable: flags.includes("u"),
 		lenient: flags.includes("l"),
@@ -78,6 +88,8 @@ function parseMember(
 		),
 		variadic,
 	};
+	parsedMembers.set(text, member);
+	return member;
 }
 
 function parseCheck(
@@ -87,6 +99,18 @@ function parseCheck(
 	if (text === "") {
 		return null;
 	}
+	let check = parsedChecks.get(text);
+	if (check === undefined) {
+		check = readCheck(text, classes);
+		parsedChecks.set(text, check);
+	}
+	return check;
+}
+
+function readCheck(
+	text: string,
+	classes: ReadonlyMap<string, Constructor>,
+): Check | null {
 	const nullable = text.endsWith("?");
 	const stringifies = text.startsWith("~");
 	const names = text.replace(/^~|\?$/g, "").split("|");
@@ -271,7 +295,9 @@ interface Resolve {
 }
 
 // An operation's call once its object is branded: its arguments
-// converted, then the definition the object's class runs.
+// converted, then the definition the object's class runs, which is
+// `fixed` when every class runs one, and found through `resolve` when
+// not.
 function runOperation(
 	object: unknown,
 	type: Constructor,
@@ -279,12 +305,12 @@ function runOperation(
 	member: Member,
 	name: string,
 	ownerName: string,
-	resolve: Resolve,
+	fixed: Operation | undefined,
+	resolve: Resolve | null,
 ): unknown {
 	const converted = convertArguments(args, member, name, ownerName) ?? args;
-	const fixed = resolve.fixed?.value as Operation | undefined;
-	if (fixed !== undefined) {
-		return Reflect.apply(fixed, object, converted);
+	if (fixed !== undefined || resolve === null) {
+		return Reflect.apply(fixed!, object, converted);
 	}
 	if (resolve.direct !== undefined) {
 		return Reflect.apply(
@@ -310,9 +336,11 @@ function wrapOperation(
 ): (...args: unknown[]) => unknown {
 	const {required, checks} = member;
 	const fixed = resolve.fixed?.value as Operation | undefined;
-	const direct = resolve.direct;
-	const cache: ClassCache = {accepted: null, acceptedBefore: null};
-	listClassCache(cache);
+	// The resolve, which a binding keeps only when no one definition
+	// serves every class.
+	const dynamic = fixed === undefined ? resolve : null;
+	const direct = dynamic?.direct;
+	const cache = getOwnerCache(owner);
 	let wrapper: Operation;
 	if (member.variadic || checks.length > 3) {
 		wrapper = {
@@ -332,7 +360,8 @@ function wrapOperation(
 					member,
 					name,
 					ownerName,
-					resolve,
+					fixed,
+					dynamic,
 				);
 			},
 		}[name];
@@ -369,7 +398,16 @@ function wrapOperation(
 						args.push(arguments[i]);
 					}
 					return implementation === undefined
-						? runOperation(this, type, args, member, name, ownerName, resolve)
+						? runOperation(
+							this,
+							type,
+							args,
+							member,
+							name,
+							ownerName,
+							fixed,
+							dynamic,
+						)
 						: Reflect.apply(implementation, this, args);
 				}
 				switch (count) {
@@ -397,10 +435,10 @@ function wrapAttribute(
 	resolve: Resolve,
 	settable: boolean,
 ): PropertyDescriptor {
-	const cache: ClassCache = {accepted: null, acceptedBefore: null};
-	listClassCache(cache);
+	const cache = getOwnerCache(owner);
 	const fixedGet = resolve.fixed?.get;
 	const fixedSet = resolve.fixed?.set;
+	const dynamic = resolve.fixed === undefined ? resolve : null;
 	// A read-only attribute with a setter forwards what it is given, as
 	// [PutForwards] and [Replaceable] do, so its type is no check on it.
 	const check = member.kind === "a" ? member.checks[0] ?? null : null;
@@ -416,14 +454,14 @@ function wrapAttribute(
 			if (fixedGet !== undefined) {
 				return fixedGet.call(this);
 			}
-			if (resolve.direct !== undefined) {
-				return resolve.direct(type)!.get!.call(this);
+			if (dynamic!.direct !== undefined) {
+				return dynamic!.direct(type)!.get!.call(this);
 			}
-			const getter = resolve.enter(type, this)!.get!;
+			const getter = dynamic!.enter(type, this)!.get!;
 			try {
 				return getter.call(this);
 			} finally {
-				resolve.leave();
+				dynamic!.leave();
 			}
 		},
 	}[name];
@@ -462,14 +500,16 @@ function wrapAttribute(
 					fixedSet.call(this, value);
 					return;
 				}
-				if (resolve.direct !== undefined) {
-					const direct = resolve.direct(type)?.set;
+				if (dynamic?.direct !== undefined) {
+					const direct = dynamic.direct(type)?.set;
 					if (direct !== undefined) {
 						direct.call(this, value);
 						return;
 					}
 				}
-				const setter = resolve.enter(type, this)?.set;
+				const setter = dynamic === null
+					? undefined
+					: dynamic.enter(type, this)?.set;
 				try {
 					if (setter === undefined) {
 						throw new TypeError(
@@ -478,7 +518,7 @@ function wrapAttribute(
 					}
 					setter.call(this, value);
 				} finally {
-					resolve.leave();
+					dynamic?.leave();
 				}
 			},
 		}[name];
@@ -533,6 +573,20 @@ interface ClassCache {
 }
 
 const classCaches: ClassCache[] = [];
+
+// The classes last accepted as each interface, which every binding of
+// its members checks `this` against.
+const ownerCaches = new Map<Constructor, ClassCache>();
+
+function getOwnerCache(owner: Constructor): ClassCache {
+	let cache = ownerCaches.get(owner);
+	if (cache === undefined) {
+		cache = {accepted: null, acceptedBefore: null};
+		listClassCache(cache);
+		ownerCaches.set(owner, cache);
+	}
+	return cache;
+}
 
 function listClassCache(cache: ClassCache): void {
 	if (listingClassCaches) {
