@@ -25,6 +25,7 @@ import {
 	dropFullscreen,
 	EventTarget,
 	type EventTargetSlots,
+	findRuntimeGlobals,
 	flushLayout,
 	flushObservers,
 	focusInitialAutofocus,
@@ -157,7 +158,6 @@ import {
 	type PixelRatioSetting,
 	UNIT_CELL,
 } from "./internal/units.ts";
-import {findRuntimeTypes} from "./internal/webidl.ts";
 import {createWindow} from "./internal/window.ts";
 
 export type {CanvasCellGridContext} from "./internal/canvas.ts";
@@ -2294,7 +2294,7 @@ export function installGlobals(termDOM: TermDOM): () => void {
 	if (global[kGlobalsInstalled]) {
 		throw new Error("TermDOM's globals are already installed.");
 	}
-	findRuntimeTypes();
+	findRuntimeGlobals();
 	const window = termDOM.window as unknown as Record<string, unknown>;
 	const termDOMSlots = _(termDOM);
 	const processTimers = getProcessTimers(termDOMSlots.window);

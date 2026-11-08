@@ -152,6 +152,7 @@ import {
 	applyInRealm,
 	createDocumentIn,
 	declareNodeClasses,
+	findRuntimeTypes,
 	forgetClasses,
 	getActiveRealm,
 	getCallerRealm,
@@ -36121,6 +36122,19 @@ function getSessionHistory(document: Document): SessionHistory {
 	};
 }
 
+// A version 4 UUID from Math.random(), for the key and id session
+// history gives an entry, which name it and guard nothing.
+function createEntryKey(): string {
+	let hex = "";
+	for (let i = 0; i < 30; i++) {
+		hex += Math.floor(Math.random() * 16).toString(16);
+	}
+	const variant = (8 + Math.floor(Math.random() * 4)).toString(16);
+	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(12, 15)}-${
+		variant
+	}${hex.slice(15, 18)}-${hex.slice(18, 30)}`;
+}
+
 function createHistoryEntry(
 	document: Document,
 	url: URL,
@@ -36133,8 +36147,8 @@ function createHistoryEntry(
 		document,
 		classicState,
 		navigationState,
-		key: globalThis.crypto.randomUUID(),
-		id: globalThis.crypto.randomUUID(),
+		key: createEntryKey(),
+		id: createEntryKey(),
 		scrollRestoration,
 		scrollY: null,
 	};
@@ -41413,9 +41427,25 @@ function getNamedPropertyValue(
 }
 
 // The runtime's clock and random source, which the window's Performance
-// and Crypto read through without handing the runtime's objects out.
+// and Crypto read through without handing the runtime's objects out. The
+// random source is read the first time one is asked for, since Node
+// loads it, 4 MB a process, when globalThis.crypto is first read.
 const runtimePerformance = globalThis.performance;
-const runtimeCrypto = globalThis.crypto;
+let runtimeCrypto: globalThis.Crypto | null = null;
+
+function getRuntimeCrypto(): globalThis.Crypto {
+	runtimeCrypto ??= globalThis.crypto;
+	return runtimeCrypto;
+}
+
+/**
+ * Reads the runtime's classes and random source not read yet, before
+ * installGlobals() puts the window's in their place.
+ */
+export function findRuntimeGlobals(): void {
+	findRuntimeTypes();
+	getRuntimeCrypto();
+}
 
 export interface PerformanceEntrySlots {
 	entryName: string;
@@ -41718,7 +41748,7 @@ export class Crypto {
 
 	get subtle(): globalThis.SubtleCrypto {
 		_(this);
-		return runtimeCrypto.subtle;
+		return getRuntimeCrypto().subtle;
 	}
 
 	getRandomValues<T extends ArrayBufferView | null>(array: T): T {
@@ -41738,14 +41768,14 @@ export class Crypto {
 				"getRandomValues fills at most 65536 bytes",
 			);
 		}
-		runtimeCrypto.getRandomValues(array as ArrayBufferView<ArrayBuffer>);
+		getRuntimeCrypto().getRandomValues(array as ArrayBufferView<ArrayBuffer>);
 		return array;
 	}
 
 	// eslint-disable-next-line acrocase/acrocase
 	randomUUID(): `${string}-${string}-${string}-${string}-${string}` {
 		_(this);
-		return runtimeCrypto.randomUUID();
+		return getRuntimeCrypto().randomUUID();
 	}
 }
 
