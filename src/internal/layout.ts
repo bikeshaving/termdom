@@ -51,6 +51,7 @@ import {
 	setScrollOffset,
 	type Window,
 } from "./dom.ts";
+import {defineFlags} from "./flags.ts";
 import {
 	type Align,
 	type AvailableSpace,
@@ -1912,11 +1913,13 @@ export class Box {
 	// An inline broken around a block-level box lays out none of its own
 	// content. The fragments and the block between them are the container's
 	// boxes (css2 §9.2.1.1). Written by the container's enumeration.
-	broken: boolean;
+	declare broken: boolean;
 
 	// Holds fragments a broken inline handed over, so children no longer
 	// correspond to the child nodes it was written with.
-	holdsFragments: boolean;
+	declare holdsFragments: boolean;
+	// The booleans above defineFlags holds, as bits.
+	flags: number;
 
 	// An anonymous box's own layout node. A principal box's lives in
 	// nodeMap. Use getOwnLayoutNode rather than either store.
@@ -1941,8 +1944,7 @@ export class Box {
 		this.children = null;
 		this.heads = null;
 		this.tables = null;
-		this.broken = false;
-		this.holdsFragments = false;
+		this.flags = 0;
 		this.layoutNode = null;
 		this.styledFrom = null;
 		this.independentFormattingContext = null;
@@ -1962,6 +1964,8 @@ export class Box {
 		return this.parent!.node as Element;
 	}
 }
+
+defineFlags(Box.prototype, ["broken", "holdsFragments"]);
 
 function isSameNodeList(before: Node[], now: Node[]): boolean {
 	if (before.length !== now.length) {
