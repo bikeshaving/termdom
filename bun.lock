@@ -5,7 +5,6 @@
     "": {
       "name": "@b9g/tom",
       "dependencies": {
-        "arabic-persian-reshaper": "1.0.1",
         "css-tree": "3.2.1",
         "parse5": "8.1.0",
       },
@@ -309,8 +308,6 @@
     "ansi-regex": ["ansi-regex@6.4.0", "", {}, "sha512-KzTVk2tCWAHtYrvvvaP8bJKJq2pVinhLcGEQdtLIYPbmNGNyYe8QwNaTUYQp2J7/vIsUKt5QCqAfUkYyG9DkOw=="],
 
     "ansi-styles": ["ansi-styles@5.2.0", "", {}, "sha512-Cxwpt2SfTzTtXcfOlzGEee8O+c+MmUgGrNiBcXnuWxuFJHe6a5Hz7qwhwe5OgaSYI0IJvkLqWX1ASG+cJOkEiA=="],
-
-    "arabic-persian-reshaper": ["arabic-persian-reshaper@1.0.1", "", {}, "sha512-VYBjkhz6o4W1Xt4mD2LAReljJpLSw5CUZMqSBDIQRvFgUSlTKEYghapgBWvkeMWF4W+KF3Fm+/z8EywJU4PBeg=="],
 
     "aria-query": ["aria-query@5.3.1", "", {}, "sha512-Z/ZeOgVl7bcSYZ/u/rh0fOpvEpq//LZmdbkXyc7syVzjPAhfOa9ebsdTSjEBDU4vs5nC98Kfduj1uFo0qyET3g=="],
 

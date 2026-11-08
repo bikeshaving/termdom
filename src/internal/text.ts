@@ -1,10 +1,9 @@
-import arabicPersianReshaper from "arabic-persian-reshaper";
-
 import {
 	UNCERTAIN_RANGES,
 	WIDE_RANGES,
 	ZERO_WIDTH_RANGES,
 } from "../generated/widthtables.ts";
+import {convertArabic} from "./arabicshaper.ts";
 import {getEmbeddingLevels, getReorderedString} from "./bidi.ts";
 
 // Bun has a native getStringWidth. Node and Deno use the fallback.
@@ -353,9 +352,8 @@ function inRanges(
 // Terminals mostly do not implement UAX #9, and one that does reorders
 // a line as it arrives, which a diff of single cells cannot survive, so
 // cells go out in visual order (see negotiateBidi). bidi.ts is UAX #9
-// through L2. arabic-persian-reshaper picks the contextual letterforms
+// through L2. arabicshaper.ts picks the contextual letterforms
 // reordering alone would leave isolated.
-const {ArabicShaper} = arabicPersianReshaper;
 
 // Escapes, not literals. U+FEFF looks like stray whitespace in an
 // editor.
@@ -390,7 +388,7 @@ export function toVisualOrder(text: string, base: "ltr" | "rtl"): string {
 	}
 
 	// Shape in reading order, or a lam is never seen followed by an alef.
-	const shaped = ARABIC.test(text) ? ArabicShaper.convertArabic(text) : text;
+	const shaped = ARABIC.test(text) ? convertArabic(text) : text;
 
 	// L2 and L4. A terminal will not mirror a glyph, so the code point
 	// changes.

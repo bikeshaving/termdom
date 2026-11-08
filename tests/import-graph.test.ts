@@ -80,6 +80,7 @@ test("no module of the engine imports one that imports it back", () => {
 // Modules that could stand as packages of their own: each reaches, at run
 // time, only the modules listed with it.
 const STANDALONE: Record<string, string[]> = {
+	"internal/arabicshaper.ts": [],
 	"internal/bidi.ts": ["generated/biditables.ts"],
 	"internal/flags.ts": [],
 	"internal/layoutsolver.ts": ["internal/flags.ts"],
@@ -87,6 +88,7 @@ const STANDALONE: Record<string, string[]> = {
 	"internal/text.ts": [
 		"generated/biditables.ts",
 		"generated/widthtables.ts",
+		"internal/arabicshaper.ts",
 		"internal/bidi.ts",
 	],
 };
