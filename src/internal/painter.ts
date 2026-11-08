@@ -54,12 +54,7 @@ import {
 	type LineStyle,
 	setCaret,
 } from "./framebuffer.ts";
-import {
-	type Gradient,
-	parseLinearGradient,
-	renderGradient,
-	resolveGradientLengths,
-} from "./gradients.ts";
+import type {Gradient} from "./gradients.ts";
 import {
 	applyTextTransform,
 	type Box,
@@ -94,7 +89,7 @@ import {
 	getComputedWidth,
 	type LayoutNode,
 } from "./layoutsolver.ts";
-import {loadMathML} from "./lazy.ts";
+import {loadGradients, loadMathML} from "./lazy.ts";
 import type {MathCell} from "./mathml.ts";
 import {isReplacedBox, renderReplaced} from "./replaced.ts";
 import {implementsInterface} from "./slots.ts";
@@ -125,11 +120,11 @@ function getBackgroundFill(
 
 function getGradient(element: Element): Gradient | null {
 	const image = getComputedValue(element, "background-image");
-	const gradient = image && image !== "none"
-		? parseLinearGradient(image)
+	const gradient = image.includes("gradient(")
+		? loadGradients().parseLinearGradient(image)
 		: null;
 	return gradient &&
-		resolveGradientLengths(gradient, (length, unit, vertical) =>
+		loadGradients().resolveGradientLengths(gradient, (length, unit, vertical) =>
 			resolveLength(element, length, unit, vertical),
 		);
 }
@@ -1588,7 +1583,7 @@ function paintBox(
 	if (style.gradient !== null) {
 		const cell = painter.framebuffer.cellPixels;
 		for (const fragment of fragments) {
-			renderGradient(
+			loadGradients().renderGradient(
 				ctx,
 				style.gradient,
 				fragment,
