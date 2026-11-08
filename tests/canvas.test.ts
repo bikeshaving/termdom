@@ -18,7 +18,7 @@ import {
 	createImageBitmapFrom,
 	ImageBitmap,
 } from "../src/internal/canvas.ts";
-import {decodeImage, encodePNG} from "../src/internal/images.ts";
+import {decodeImage, encodePNG} from "../src/internal/imagecodecs.ts";
 import {_} from "../src/internal/slots.ts";
 import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.ts";
 

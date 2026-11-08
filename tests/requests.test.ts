@@ -15,7 +15,7 @@ import {pathToFileURL} from "node:url";
 import {expect, test} from "@b9g/libuild/test";
 
 import {ExtendableEvent, FetchEvent, TermDOM} from "../src/index.ts";
-import {encodePNG} from "../src/internal/images.ts";
+import {encodePNG} from "../src/internal/imagecodecs.ts";
 import {MockProcess, until} from "./test-utils.ts";
 
 const PNG = encodePNG({

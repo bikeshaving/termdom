@@ -55,15 +55,14 @@ import {
 	type Bitmap,
 	createBitmap,
 	decodeImageOffThread,
-	encodePNG,
 	getNaturalHeight,
 	getNaturalWidth,
 	IMAGE_ACCEPT,
+	loadImageCodecs,
 	MAX_IMAGE_PIXELS,
 	readImageResponse,
 	registerReplacedContent,
 	resolveImageURL,
-	toBase64,
 	unregisterReplacedContent,
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
@@ -16792,7 +16791,7 @@ class HTMLCanvasElement extends HTMLElement {
 			: getCanvasBitmap(this);
 		const bytes = bitmap === null || bitmap.width === 0 || bitmap.height === 0
 			? null
-			: encodePNG(bitmap);
+			: loadImageCodecs().encodePNG(bitmap);
 		setTimeout(() =>
 			callback(
 				bytes === null
@@ -16814,7 +16813,7 @@ class HTMLCanvasElement extends HTMLElement {
 		if (bitmap.width === 0 || bitmap.height === 0) {
 			return "data:,";
 		}
-		return `data:image/png;base64,${toBase64(encodePNG(bitmap))}`;
+		return `data:image/png;base64,${loadImageCodecs().toBase64(loadImageCodecs().encodePNG(bitmap))}`;
 	}
 
 	transferControlToOffscreen(): globalThis.OffscreenCanvas {

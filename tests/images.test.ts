@@ -11,11 +11,14 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {
-	type Bitmap,
 	decodeImage,
+	encodePNG,
+	sniffImageType,
+} from "../src/internal/imagecodecs.ts";
+import {
+	type Bitmap,
 	decodeImageForPage,
 	decodeImageOffThread,
-	encodePNG,
 	keepAtMost,
 	MAX_IMAGE_BYTES,
 	MAX_KEPT_PIXELS,
@@ -25,7 +28,6 @@ import {
 	retainDecoder,
 	sampleBitmap,
 	setDecodeWorkerURL,
-	sniffImageType,
 } from "../src/internal/images.ts";
 import {IMAGES} from "./fixtures/images.ts";
 
