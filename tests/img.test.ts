@@ -15,7 +15,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {encodePNG} from "../src/internal/images.ts";
+import {encodePNG} from "../src/internal/imagecodecs.ts";
 import {MockProcess, nextFrame, scriptReplies, until} from "./test-utils.ts";
 
 type RGBA = [number, number, number, number];

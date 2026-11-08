@@ -13,7 +13,7 @@ import {expect, test} from "@b9g/libuild/test";
 import {TermDOM, type TermDOMOptions} from "../src/index.ts";
 import {toCellColor} from "../src/internal/cssvalues.ts";
 import {CellGrid} from "../src/internal/framebuffer.ts";
-import {encodePNG, toBase64} from "../src/internal/images.ts";
+import {encodePNG, toBase64} from "../src/internal/imagecodecs.ts";
 import {
 	getPlaceholder,
 	isPlaceholderChar,

@@ -2,7 +2,7 @@ import {describe, expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {transportFromProcess} from "../src/internal/exchange.ts";
-import {encodePNG} from "../src/internal/images.ts";
+import {encodePNG} from "../src/internal/imagecodecs.ts";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 /**

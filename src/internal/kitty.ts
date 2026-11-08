@@ -18,7 +18,7 @@
  * placeholders as unknown characters.
  */
 import type {CellGrid} from "./framebuffer.ts";
-import {deflate, toBase64} from "./images.ts";
+import {loadImageCodecs} from "./images.ts";
 
 /** The character a placeholder cell holds before its diacritics. */
 export const PLACEHOLDER = "\u{10EEEE}";
@@ -291,7 +291,11 @@ export async function compressKittyUploads(images: KittyImages): Promise<void> {
 	await Promise.all(
 		pending.map(async (image) => {
 			const pixels = image.pixels!;
-			const escapes = encodeImage(image, await deflate(pixels), true);
+			const escapes = encodeImage(
+				image,
+				await loadImageCodecs().deflate(pixels),
+				true,
+			);
 			// A flush in the wait may have sent them already.
 			if (image.pixels === pixels) {
 				image.encoded = {pixels, escapes};
@@ -428,7 +432,7 @@ function encodeImage(
 	bytes: Uint8Array | Uint8ClampedArray,
 	compressed: boolean,
 ): string {
-	const payload = toBase64(bytes);
+	const payload = loadImageCodecs().toBase64(bytes);
 	const control =
 		`a=T,U=1,q=2,f=32,${compressed ? "o=z," : ""}` +
 		`s=${image.width},v=${image.height},` +
