@@ -10,6 +10,7 @@
  * createRequire() loads the module there.
  */
 
+import type * as Gradients from "./gradients.ts";
 import type * as MathML from "./mathml.ts";
 
 declare const require: (id: string) => unknown;
@@ -37,4 +38,18 @@ export function loadMathML(): typeof MathML {
 		}
 	}
 	return mathml;
+}
+
+let gradients: typeof Gradients | null = null;
+
+export function loadGradients(): typeof Gradients {
+	if (gradients === null) {
+		try {
+			gradients = require("./gradients.ts") as typeof Gradients;
+		} catch (error) {
+			gradients =
+				requireFromSource("./gradients.ts", error) as typeof Gradients;
+		}
+	}
+	return gradients;
 }
