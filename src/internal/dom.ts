@@ -34,6 +34,7 @@ import {
 } from "./cssselectors.ts";
 import * as CSSValues from "./cssvalues.ts";
 import type {Exchange} from "./exchange.ts";
+import {defineFlags} from "./flags.ts";
 import {
 	type Caret,
 	CellContext,
@@ -1300,7 +1301,34 @@ const spareItems: PathItem[] = [];
 // The spec's internal slots and flags, kept in one object behind a module
 // symbol because dispatch is a module function that reads and writes them
 // for every target in the path.
+class EventState {
+	constructor(runtime: boolean) {
+		this.flags = 0;
+		this.target = null;
+		this.relatedTarget = null;
+		this.currentTarget = null;
+		this.eventPhase = NONE;
+		this.path = NO_PATH;
+		this.runtime = runtime;
+	}
+}
+
+interface EventState extends DispatchState {}
+
+defineFlags(EventState.prototype, [
+	"initialized",
+	"dispatch",
+	"stopPropagation",
+	"stopImmediate",
+	"canceled",
+	"inPassiveListener",
+	"trusted",
+	"runtime",
+]);
+
 interface DispatchState {
+	// The booleans below defineFlags holds, as bits.
+	flags: number;
 	target: EventTarget | null;
 	relatedTarget: EventTarget | null;
 	currentTarget: EventTarget | null;
@@ -1535,21 +1563,7 @@ function startEvent(
 	}
 	seal(event, type as typeof Event, Event);
 	const slots = _(event as Event);
-	slots.state = {
-		target: null,
-		relatedTarget: null,
-		currentTarget: null,
-		eventPhase: NONE,
-		path: NO_PATH,
-		initialized: false,
-		dispatch: false,
-		stopPropagation: false,
-		stopImmediate: false,
-		canceled: false,
-		inPassiveListener: false,
-		trusted: false,
-		runtime,
-	};
+	slots.state = new EventState(runtime);
 	slots.type = init.type;
 	slots.bubbles = init.bubbles;
 	slots.cancelable = init.cancelable;
@@ -4789,7 +4803,35 @@ function countHoverListener(target: EventTarget, listener: Listener): void {
 	}
 }
 
+class ListenerRecord {
+	constructor(
+		type: string,
+		callback: globalThis.EventListenerOrEventListenerObject,
+		capture: boolean,
+		once: boolean,
+		passive: boolean,
+	) {
+		this.flags = 0;
+		this.type = type;
+		this.callback = callback;
+		this.capture = capture;
+		this.once = once;
+		this.passive = passive;
+	}
+}
+
+interface ListenerRecord extends Listener {}
+
+defineFlags(ListenerRecord.prototype, [
+	"capture",
+	"once",
+	"passive",
+	"removed",
+]);
+
 interface Listener {
+	// The booleans below defineFlags holds, as bits.
+	flags: number;
 	type: string;
 	callback: globalThis.EventListenerOrEventListenerObject;
 	capture: boolean;
@@ -4891,14 +4933,13 @@ export class EventTarget
 				return;
 			}
 		}
-		const listener: Listener = {
-			type: name,
-			callback: listenerCallback,
-			capture: flat.capture,
-			once: flat.once,
+		const listener = new ListenerRecord(
+			name,
+			listenerCallback,
+			flat.capture,
+			flat.once,
 			passive,
-			removed: false,
-		};
+		);
 		addListener(this, listener);
 		countHoverListener(this, listener);
 		if (flat.signal !== null) {
@@ -5399,16 +5440,15 @@ function registerHandlerListener(
 	type: string,
 	record: EventHandlerRecord,
 ): Listener {
-	const listener: Listener = {
+	const listener = new ListenerRecord(
 		type,
-		callback: (event: globalThis.Event): void => {
+		(event: globalThis.Event): void => {
 			invokeEventHandler(target, type, record, event as Event);
 		},
-		capture: false,
-		once: false,
-		passive: false,
-		removed: false,
-	};
+		false,
+		false,
+		false,
+	);
 	addListener(target, listener);
 	countHoverListener(target, listener);
 	return listener;
