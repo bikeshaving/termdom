@@ -589,13 +589,10 @@ interface TermDOMSlots extends EventTargetSlots {
 	sealed: boolean;
 	renderQueued: boolean;
 	// How many frames the loop has begun, and the render() calls waiting
-	// for the frame after the one under way when they were made.
+	// for the frame after the one under way when they were made. The calls
+	// that wait for one frame share its promise.
 	framesStarted: number;
-	frameWaiters: Array<{
-		frame: number;
-		resolve: () => void;
-		reject: (error: unknown) => void;
-	}>;
+	frameWaiters: FrameWaiter[];
 	// Which screen frames land on. Switched at the start of a frame when
 	// the document's fullscreen state disagrees.
 	onAlternateScreen: boolean;
@@ -1570,30 +1567,48 @@ function cellSizeChanged(termDOM: TermDOM): void {
 	syncMediaQueries(termDOM.document);
 }
 
+class FrameWaiter {
+	readonly frame: number;
+	readonly promise: Promise<void>;
+	resolve!: () => void;
+	reject!: (error: unknown) => void;
+
+	constructor(frame: number) {
+		this.frame = frame;
+		this.promise = new Promise((resolve, reject) => {
+			this.resolve = resolve;
+			this.reject = reject;
+		});
+	}
+}
+
 // Settled once a frame begun after the call has been painted, which holds
 // the caller's changes, or once the loop stops without painting one.
 function waitForFrame(termDOM: TermDOM): Promise<void> {
 	const termDOMSlots = _(termDOM);
-	return new Promise((resolve, reject) => {
-		termDOMSlots.frameWaiters.push({
-			frame: termDOMSlots.framesStarted + 1,
-			resolve,
-			reject,
-		});
-	});
+	const waiters = termDOMSlots.frameWaiters;
+	const frame = termDOMSlots.framesStarted + 1;
+	const last = waiters[waiters.length - 1];
+	if (last !== undefined && last.frame === frame) {
+		return last.promise;
+	}
+	const waiter = new FrameWaiter(frame);
+	waiters.push(waiter);
+	return waiter.promise;
 }
 
 function settleFrameWaiters(termDOM: TermDOM, painted: number): void {
-	const termDOMSlots = _(termDOM);
-	const waiters = termDOMSlots.frameWaiters;
-	termDOMSlots.frameWaiters = waiters.filter(
-		(waiter) => waiter.frame > painted,
-	);
-	for (const waiter of waiters) {
+	const waiters = _(termDOM).frameWaiters;
+	let kept = 0;
+	for (let index = 0; index < waiters.length; index++) {
+		const waiter = waiters[index];
 		if (waiter.frame <= painted) {
 			waiter.resolve();
+		} else {
+			waiters[kept++] = waiter;
 		}
 	}
+	waiters.length = kept;
 }
 
 async function render(termDOM: TermDOM): Promise<void> {
