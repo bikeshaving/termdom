@@ -2320,10 +2320,6 @@ interface MessageEventInit<T = any> extends EventInit {
 	ports?: globalThis.MessagePort[];
 }
 
-const ErrorEventBase = getEventBase(
-	(globalThis as {ErrorEvent?: typeof globalThis.ErrorEvent}).ErrorEvent,
-);
-
 interface ErrorEventSlots extends EventSlots {
 	errorMessage: string;
 	errorFilename: string;
@@ -2336,7 +2332,10 @@ interface ErrorEvent {
 	readonly [internals]: ErrorEventSlots;
 }
 
-class ErrorEvent extends ErrorEventBase {
+// ErrorEvent and MessageEvent build on this DOM's Event, which builds on
+// the runtime's where it can. Node loads its own two with its fetch, 3 MB
+// a process, the first time either is read.
+class ErrorEvent extends Event {
 	constructor(type: string, eventInitDict: ErrorEventInit = {}) {
 		const converted = convertEventInit(arguments.length, type, eventInitDict);
 		prepareEventType(new.target);
@@ -2383,8 +2382,6 @@ Object.defineProperty(ErrorEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-mirrorEvent(ErrorEvent);
-
 interface PromiseRejectionEventSlots extends EventSlots {
 	rejectedPromise: Promise<unknown>;
 	rejectionReason: unknown;
@@ -2424,11 +2421,6 @@ Object.defineProperty(PromiseRejectionEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-const MessageEventBase = getEventBase(
-	(globalThis as {MessageEvent?: typeof globalThis.MessageEvent})
-		.MessageEvent,
-);
-
 // Nothing in a terminal posts one yet, but the interface is a constructor
 // authors can call and createEvent can name, so it is implemented fully.
 interface MessageEventSlots<T = any> extends EventSlots {
@@ -2443,7 +2435,7 @@ interface MessageEvent<T = any> {
 	readonly [internals]: MessageEventSlots<T>;
 }
 
-class MessageEvent<T = any> extends MessageEventBase {
+class MessageEvent<T = any> extends Event {
 	constructor(type: string, eventInitDict: MessageEventInit<T> = {}) {
 		const converted = convertEventInit(arguments.length, type, eventInitDict);
 		prepareEventType(new.target);
@@ -2537,8 +2529,6 @@ Object.defineProperty(MessageEvent.prototype, Symbol.toStringTag, {
 	value: "MessageEvent",
 	configurable: true,
 });
-
-mirrorEvent(MessageEvent);
 
 interface HashChangeEventInit extends EventInit {
 	oldURL?: string;
@@ -18381,11 +18371,17 @@ function createEntry(
 // does, under the name the file already had. The wire is right either
 // way; only reading an entry back differs, so the filenames are kept here
 // when the runtime reports the wrong one.
-const runtimeKeepsFilenames = ((): boolean => {
-	const probe = new globalThis.FormData();
-	probe.append("k", new File(["x"], "given"), "wanted");
-	return (probe.get("k") as globalThis.File).name === "wanted";
-})();
+let runtimeKeepsFilenames: boolean | null = null;
+
+function keepsFilenames(): boolean {
+	if (runtimeKeepsFilenames === null) {
+		const probe = new globalThis.FormData();
+		probe.append("k", new File(["x"], "given"), "wanted");
+		runtimeKeepsFilenames =
+			(probe.get("k") as globalThis.File).name === "wanted";
+	}
+	return runtimeKeepsFilenames;
+}
 
 // One File per stored blob and name, so reading an entry twice gives one
 // object rather than a fresh copy each time.
@@ -18405,6 +18401,14 @@ function fileNamed(value: Blob, name: string): globalThis.File {
 	return file;
 }
 
+// The class FormData stands on until the first is constructed, which
+// gives it the runtime's FormData as its parent. Node loads its FormData
+// with its fetch, 3 MB a process, the first time it is read, and a
+// class's super() and super.method() reach whatever parent it has when
+// they run.
+const FormDataParent = class {} as unknown as typeof globalThis.FormData;
+let formDataLinked = false;
+
 /**
  * A list of names and values, the shape a form submission is sent in.
  *
@@ -18422,8 +18426,13 @@ interface FormData {
 	readonly [internals]: FormDataSlots;
 }
 
-class FormData extends globalThis.FormData {
+class FormData extends FormDataParent {
 	constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
+		if (!formDataLinked) {
+			formDataLinked = true;
+			Object.setPrototypeOf(FormData, globalThis.FormData);
+			Object.setPrototypeOf(FormData.prototype, globalThis.FormData.prototype);
+		}
 		super();
 		seal(this, new.target, FormData);
 		_(this).filenames = [];
@@ -18584,7 +18593,7 @@ function readEntry(
 	value: globalThis.FormDataEntryValue,
 	index: number,
 ): globalThis.FormDataEntryValue {
-	if (typeof value === "string" || runtimeKeepsFilenames) {
+	if (typeof value === "string" || keepsFilenames()) {
 		return value;
 	}
 	const name = _(formData).filenames[index]?.name;
