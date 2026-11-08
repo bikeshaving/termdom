@@ -82,16 +82,9 @@ import {
 	type Translation,
 	type Wrap,
 } from "./layoutsolver.ts";
+import {loadMathML} from "./lazy.ts";
 import {forEachLineBreak} from "./linebreak.ts";
-import {
-	findMathPosition,
-	getMathAlignOffset,
-	getMathCellRects,
-	isMathRoot,
-	layoutMath,
-	linearizeMath,
-	type MathBox,
-} from "./mathml.ts";
+import type {MathBox} from "./mathml.ts";
 import {
 	getNaturalRatio,
 	getNaturalSize,
@@ -116,6 +109,7 @@ import {
 	getLocalName,
 	getNodeType,
 	getOwnerDocument,
+	isMathRoot,
 } from "./tree.ts";
 import {getCellSize, pxFromCells, UNIT_CELL} from "./units.ts";
 
@@ -3998,7 +3992,10 @@ function getEnclosingMath(layout: Layout, node: Node): Element | null {
 // A <math> element is laid out whole by the math engine. The block and
 // inline engines see only its size, and never descend into it.
 function measureMath(layout: Layout, element: Element): MathBox {
-	const box = layoutMath(element, !isInlineDisplay(getUsedDisplay(element)));
+	const box = loadMathML().layoutMath(
+		element,
+		!isInlineDisplay(getUsedDisplay(element)),
+	);
 	layout.mathBoxes.set(element, box);
 	layout.laidOutMath = true;
 	return box;
@@ -7059,7 +7056,7 @@ export class Layout {
 	// The one-line text of a <math> element, for innerText. The DOM asks
 	// here rather than importing the MathML layout, which reads the DOM.
 	getMathText(element: Element): string {
-		return linearizeMath(element);
+		return loadMathML().linearizeMath(element);
 	}
 
 	getRenderedText(textNode: Text): string {
@@ -7163,7 +7160,11 @@ export class Layout {
 			const origin = getMathOrigin(this, math);
 			return origin === null
 				? null
-				: findMathPosition(getMathBox(this, math), x - origin.x, y - origin.y);
+				: loadMathML().findMathPosition(
+					getMathBox(this, math),
+					x - origin.x,
+					y - origin.y,
+				);
 		}
 		let best: {node: Text; offset: number; distance: number} | null = null;
 		let nearest: {node: Text; fragment: LineFragment; rows: number} | null =
@@ -8117,7 +8118,7 @@ function getMathOrigin(
 			Math.round(rect.left) +
 			model.borderLeftWidth +
 			model.paddingLeft +
-			getMathAlignOffset(
+			loadMathML().getMathAlignOffset(
 				contentWidth - box.width,
 				getComputedValue(element, "text-align"),
 			),
@@ -8136,14 +8137,16 @@ function getMathNodeRects(
 	if (origin === null) {
 		return [];
 	}
-	return getMathCellRects(getMathBox(layout, math), node).map((rect) =>
-		new layout.domRect(
-			origin.x + rect.x,
-			origin.y + rect.y,
-			rect.width,
-			rect.height,
-		),
-	);
+	return loadMathML()
+		.getMathCellRects(getMathBox(layout, math), node)
+		.map((rect) =>
+			new layout.domRect(
+				origin.x + rect.x,
+				origin.y + rect.y,
+				rect.width,
+				rect.height,
+			),
+		);
 }
 
 // Paint extents are cached in unscrolled layout rows, so viewport culling

@@ -94,16 +94,12 @@ import {
 	getComputedWidth,
 	type LayoutNode,
 } from "./layoutsolver.ts";
-import {
-	getMathAlignOffset,
-	isBlankCell,
-	isMathRoot,
-	type MathCell,
-} from "./mathml.ts";
+import {loadMathML} from "./lazy.ts";
+import type {MathCell} from "./mathml.ts";
 import {isReplacedBox, renderReplaced} from "./replaced.ts";
 import {implementsInterface} from "./slots.ts";
 import {getStringWidth} from "./text.ts";
-import {getLocalName, getNodeType, nodeContains} from "./tree.ts";
+import {getLocalName, getNodeType, isMathRoot, nodeContains} from "./tree.ts";
 import {getCellSize} from "./units.ts";
 
 function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
@@ -2414,7 +2410,7 @@ function renderMath(
 		Math.round(rect.left) +
 		boxModel.borderLeftWidth +
 		boxModel.paddingLeft +
-		getMathAlignOffset(
+		loadMathML().getMathAlignOffset(
 			contentWidth - box.width,
 			getComputedValue(element, "text-align"),
 		);
@@ -2425,7 +2421,7 @@ function renderMath(
 		let x = left;
 		for (const cell of box.cells[row]) {
 			const style = getMathCellStyle(painter, cell, selections);
-			if (!isBlankCell(cell) || style !== cell.style) {
+			if (!loadMathML().isBlankCell(cell) || style !== cell.style) {
 				drawText(ctx, cell.text, x, top + row, style ?? undefined);
 			}
 			x += cell.width;

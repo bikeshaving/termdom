@@ -255,6 +255,14 @@ export function getNamespace(element: globalThis.Element): string | null {
 	return _(element as Element).namespace;
 }
 
+export function isMathRoot(node: globalThis.Node): boolean {
+	return (
+		getNodeType(node) === node.ELEMENT_NODE &&
+		getNamespace((node as globalThis.Element)) === MATHML_NAMESPACE &&
+		getLocalName((node as globalThis.Element)) === "math"
+	);
+}
+
 export function parentElement(node: Node): Element | null {
 	const parent = getObject(_(node).parent);
 	return parent !== null && isElement(parent) ? parent : null;
