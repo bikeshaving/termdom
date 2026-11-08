@@ -566,7 +566,8 @@ test("\"auto\" draws in cells where the terminal does not answer", async () => {
 	const {dom, terminal, output} =
 		await mount(`<img src="${BANDS}">`, {images: "auto"});
 	await loaded(dom);
-	expect(output()).toContain(KITTY_QUERY);
+	expect(output()).toContain(VERSION_QUERY);
+	expect(output()).not.toContain(KITTY_QUERY);
 	expect(readUploads(output())).toEqual([]);
 	expect(cell(terminal, 0, 0).char).toBe("▄");
 	dom.dispose();
@@ -595,9 +596,26 @@ test("\"auto\" in a tmux that drops passthrough does not hold the first frame", 
 		],
 	});
 	expect(performance.now() - started).toBeLessThan(1000);
-	expect(output()).toContain(wrapForTmux(KITTY_QUERY));
+	expect(output()).toContain(wrapForTmux(VERSION_QUERY));
 	await loaded(dom);
 	expect(cell(terminal, 0, 0).char).toBe("▄");
+	dom.dispose();
+});
+
+test("tmux is not sent the graphics query unwrapped", async () => {
+	const {dom, output} = await mount(`<img src="${BANDS}">`, {
+		images: "auto",
+		replies: [
+			{ask: wrapForTmux(KITTY_QUERY), reply: KITTY_OK},
+			{ask: wrapForTmux(VERSION_QUERY), reply: "\x1bP>|kitty(0.35.2)\x1b\\"},
+			{ask: wrapForTmux("\x1b[>c"), reply: "\x1b[>1;10;0c"},
+			{ask: VERSION_QUERY, reply: TMUX_VERSION},
+		],
+	});
+	await loaded(dom);
+	await until(() => readUploads(unwrapTmux(output())).length > 0);
+	expect(output().replaceAll(wrapForTmux(KITTY_QUERY), ""))
+		.not.toContain(KITTY_QUERY);
 	dom.dispose();
 });
 
