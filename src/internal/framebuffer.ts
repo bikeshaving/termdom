@@ -2060,10 +2060,78 @@ function probeDeferred(
 
 let plainCodes = new Uint16Array(0);
 
+function reachRows(rows: RowFlags, length: number): void {
+	if (length > rows.flags.length) {
+		const grown = new Uint8Array(Math.max(length, rows.flags.length * 2));
+		grown.set(rows.flags);
+		rows.flags = grown;
+	}
+}
+
+/** The rows a frame has painted content on, a byte each. */
+class RowFlags {
+	flags: Uint8Array;
+
+	constructor() {
+		this.flags = new Uint8Array(64);
+	}
+
+	has(row: number): boolean {
+		return row < this.flags.length && this.flags[row] !== 0;
+	}
+
+	add(row: number): void {
+		reachRows(this, row + 1);
+		this.flags[row] = 1;
+	}
+
+	delete(row: number): void {
+		if (row < this.flags.length) {
+			this.flags[row] = 0;
+		}
+	}
+
+	clear(): void {
+		this.flags.fill(0);
+	}
+
+	// One past the last row painted, or 0.
+	end(): number {
+		for (let row = this.flags.length - 1; row >= 0; row--) {
+			if (this.flags[row] !== 0) {
+				return row + 1;
+			}
+		}
+		return 0;
+	}
+
+	// The rows from `top` to `end` move up by `delta`, down for a negative
+	// one, and those it moves out of that band are dropped. The rows
+	// outside it stay.
+	shift(top: number, end: number, delta: number): void {
+		if (top >= end) {
+			return;
+		}
+		reachRows(this, end);
+		const flags = this.flags;
+		const stop = end;
+		const count = Math.abs(delta);
+		if (count >= stop - top) {
+			flags.fill(0, top, stop);
+		} else if (delta > 0) {
+			flags.copyWithin(top, top + count, stop);
+			flags.fill(0, stop - count, stop);
+		} else {
+			flags.copyWithin(top + count, top, stop - count);
+			flags.fill(0, top, top + count);
+		}
+	}
+}
+
 function generateANSI(
 	grid: CellGrid,
 	writer: FrameWriter,
-	renderedLines: Set<number>,
+	renderedLines: RowFlags,
 	startRow: number,
 	measurer?: Exchange,
 ): string {
@@ -2293,7 +2361,7 @@ export class Framebuffer {
 	unchangedRows: Uint8Array | null;
 	diff: CellGrid | null;
 	pendingEnd: (() => string) | null;
-	renderedLines: Set<number>;
+	renderedLines: RowFlags;
 	prevContentHeight: number;
 	// Where the last frame parked the cursor, in buffer coordinates. The
 	// resize re-anchor derives the frame's new top row from the cursor's
@@ -2343,7 +2411,7 @@ export class Framebuffer {
 		this.unchangedRows = null;
 		this.diff = null;
 		this.pendingEnd = null;
-		this.renderedLines = new Set();
+		this.renderedLines = new RowFlags();
 		this.prevContentHeight = 0;
 		this.park = {row: 0, col: 0};
 		this.lastCaretVisible = false;
@@ -2981,12 +3049,7 @@ export function beginFrame(
 			measurer,
 		);
 
-		let contentHeight = 0;
-		framebuffer.renderedLines.forEach((row) => {
-			if (row + 1 > contentHeight) {
-				contentHeight = row + 1;
-			}
-		});
+		const contentHeight = framebuffer.renderedLines.end();
 
 		// Rows the last frame painted below where this one ends still show
 		// what it left on them.
@@ -3252,18 +3315,7 @@ function shiftPrevious(
 			borders.fill(0, start, start + shift);
 		}
 	}
-	const shiftedLines = new Set<number>();
-	for (const row of framebuffer.renderedLines) {
-		if (row < viewportTop || row >= bandEnd) {
-			shiftedLines.add(row);
-			continue;
-		}
-		const moved = row - delta;
-		if (moved >= viewportTop && moved < bandEnd) {
-			shiftedLines.add(moved);
-		}
-	}
-	framebuffer.renderedLines = shiftedLines;
+	framebuffer.renderedLines.shift(viewportTop, bandEnd, delta);
 
 	// DECSTBM homes the cursor. The standard prefix always CUPs for
 	// this caller afterward.
