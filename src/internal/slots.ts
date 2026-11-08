@@ -23,6 +23,8 @@
  * family's prototype call.
  */
 
+import {defineFlags} from "./flags.ts";
+
 const kObject = Symbol("object");
 // The class whose constructor made the object.
 const kType = Symbol("type");
@@ -133,6 +135,8 @@ const familyRoots = new WeakSet<Constructor>();
 const families = new WeakMap<Constructor, Family>();
 const familyPlans = new WeakMap<Constructor, FamilyPlan | null>();
 const extraTypes = new WeakSet<Constructor>();
+// The booleans a class's extra holds as bits.
+const extraFlags = new WeakMap<Constructor, readonly string[]>();
 let extraKey: string | symbol = Symbol("unused extra");
 const recordTypesByPrototype = new WeakMap<object, new () => SlotRecord>();
 // The two objects looked up most recently, newest first, since the
@@ -500,12 +504,28 @@ export function declareExtraSlots(type: Constructor): void {
 	extraTypes.add(type);
 }
 
+/**
+ * Marks `names` as booleans of `type`'s slots that its records' extra
+ * holds as bits of a `flags` number. A subclass's extra holds its
+ * ancestors' too. Called before any object of the class is made.
+ */
+export function declareExtraFlags(
+	type: Constructor,
+	names: readonly string[],
+): void {
+	extraTypes.add(type);
+	extraFlags.set(type, names);
+}
+
 function planFamilyRecord(
 	type: Constructor,
 	root: Constructor,
 ): FamilyPlan | null {
 	let familyRoot: Constructor | null = null;
 	let extra = false;
+	// The ancestors' flags come first, so each name keeps its bit in every
+	// class below the one that declares it.
+	let flags: readonly string[] = [];
 	for (
 		let current = type;
 		current !== root && familyRoot === null;
@@ -515,6 +535,10 @@ function planFamilyRecord(
 			familyRoot = current;
 		} else if (extraTypes.has(current)) {
 			extra = true;
+			const names = extraFlags.get(current);
+			if (names !== undefined) {
+				flags = [...names, ...flags];
+			}
 		}
 	}
 
@@ -539,7 +563,7 @@ function planFamilyRecord(
 	return {
 		Record: family.Record,
 		steps,
-		Extra: extra ? createExtraType() : null,
+		Extra: extra ? createExtraType(flags) : null,
 	};
 }
 
@@ -609,11 +633,17 @@ function addDispatchers(family: Family, hidden: object): void {
 	}
 }
 
-function createExtraType(): new () => object {
+function createExtraType(flags: readonly string[]): new () => object {
 	function Extra(): void {}
 
-	Extra.prototype = Object.create(null) as object;
-	return Extra as unknown as new () => object;
+	function FlaggedExtra(this: {flags: number}): void {
+		this.flags = 0;
+	}
+
+	const Type = flags.length === 0 ? Extra : FlaggedExtra;
+	Type.prototype = Object.create(null) as object;
+	defineFlags(Type.prototype, flags);
+	return Type as unknown as new () => object;
 }
 
 // Records made by a constructor keep their fields in the object, where

@@ -72,6 +72,7 @@ import type {ResourceLoader} from "./resources.ts";
 import {
 	_,
 	_maybe,
+	declareExtraFlags,
 	declareExtraSlots,
 	declareSealedParent,
 	declareSealedRoot,
@@ -15310,7 +15311,15 @@ export class ShadowRoot
 	}
 }
 
-declareExtraSlots(ShadowRoot);
+declareExtraFlags(ShadowRoot, [
+	"uaShadowTree",
+	"delegatesFocus",
+	"clonable",
+	"serializable",
+	"declarative",
+	"keepRegistryNull",
+	"availableToInternals",
+]);
 
 installEventHandler(ShadowRoot.prototype, "onslotchange");
 
@@ -17086,7 +17095,7 @@ class HTMLDetailsElement extends HTMLElement {
 	}
 }
 
-declareExtraSlots(HTMLDetailsElement);
+declareExtraFlags(HTMLDetailsElement, ["toggleQueued", "upgraded"]);
 
 // The first summary element child goes to the summary slot and every
 // other slottable child to the content slot. Recomputed from the child
@@ -18001,7 +18010,7 @@ class HTMLFormElement extends HTMLElement {
 	}
 }
 
-declareExtraSlots(HTMLFormElement);
+declareExtraFlags(HTMLFormElement, ["firingReset", "constructingEntryList"]);
 
 // A form's controls are found by walking its whole tree, since a control
 // anywhere in it can name the form. They change only when a control or a
@@ -20844,7 +20853,15 @@ export class HTMLInputElement extends HTMLElement {
 	}
 }
 
-declareExtraSlots(HTMLInputElement);
+declareExtraFlags(HTMLInputElement, [
+	"dirtyValue",
+	"checked",
+	"dirtyChecked",
+	"indeterminate",
+	"previouslyChecked",
+	"previouslyIndeterminate",
+	"upgraded",
+]);
 
 function handleInputBeforeInput(
 	input: HTMLInputElement,
@@ -21990,7 +22007,7 @@ class HTMLMediaElement extends HTMLElement {
 	}
 }
 
-declareExtraSlots(HTMLMediaElement);
+declareExtraFlags(HTMLMediaElement, ["muted", "preservesPitch"]);
 
 Object.defineProperties(HTMLMediaElement.prototype, {
 	NETWORK_EMPTY: {value: NETWORK_EMPTY, enumerable: true},
@@ -22593,7 +22610,7 @@ class HTMLOptionElement extends HTMLElement {
 	}
 }
 
-declareExtraSlots(HTMLOptionElement);
+declareExtraFlags(HTMLOptionElement, ["selectednessValue", "optionDirty"]);
 
 function getSelect(option: Element): HTMLSelectElement | null {
 	const parent = getObject(_(option).parent);
@@ -24667,7 +24684,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 }
 
-declareExtraSlots(HTMLTextAreaElement);
+declareExtraFlags(HTMLTextAreaElement, ["dirty", "upgraded"]);
 
 function handleTextAreaBeforeInput(
 	textarea: HTMLTextAreaElement,

@@ -81,7 +81,8 @@ test("no module of the engine imports one that imports it back", () => {
 // time, only the modules listed with it.
 const STANDALONE: Record<string, string[]> = {
 	"internal/bidi.ts": ["generated/biditables.ts"],
-	"internal/layoutsolver.ts": [],
+	"internal/flags.ts": [],
+	"internal/layoutsolver.ts": ["internal/flags.ts"],
 	"internal/linebreak.ts": ["generated/linebreaktables.ts"],
 	"internal/text.ts": [
 		"generated/biditables.ts",
