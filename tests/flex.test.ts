@@ -6,8 +6,6 @@ import {
 	getComputedWidth,
 	insertChild,
 	LayoutNode,
-	NODE_MEASURES_TEXT,
-	STYLE_SCROLL_CONTAINER,
 	toValue,
 } from "../src/internal/layoutsolver.ts";
 
@@ -688,7 +686,7 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		root.style.height = toValue(3);
 
 		const scroller = textItem(root, 15, 15);
-		scroller.style.flags |= STYLE_SCROLL_CONTAINER;
+		scroller.style.scrollContainer = true;
 		const narrow = textItem(root, 4, 4);
 
 		root.performLayout(12, 3);
@@ -884,7 +882,7 @@ test("a replaced box given a definite width after an unbounded probe scales its 
 	const root = node();
 	root.style.flexDirection = "column";
 	const image = box(root);
-	image.flags &= ~NODE_MEASURES_TEXT;
+	image.measuresText = false;
 	image.measure = (width, widthSpace) =>
 		widthSpace === "definite"
 			? {width, height: width / 2}
