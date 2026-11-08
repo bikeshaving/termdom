@@ -18406,8 +18406,11 @@ function fileNamed(value: Blob, name: string): globalThis.File {
 // gives it the runtime's FormData as its parent. Node loads its FormData
 // with its fetch, 3 MB a process, the first time it is read, and a
 // class's super() and super.method() reach whatever parent it has when
-// they run.
-const FormDataParent = class {} as unknown as typeof globalThis.FormData;
+// they run. Its prototype is Object.prototype, so until then FormData's
+// prototype chain is the one Web IDL gives it.
+function FormDataParent(): void {}
+
+FormDataParent.prototype = Object.prototype;
 let formDataLinked = false;
 
 /**
@@ -18427,7 +18430,9 @@ interface FormData {
 	readonly [internals]: FormDataSlots;
 }
 
-class FormData extends FormDataParent {
+class FormData extends (
+	FormDataParent as unknown as typeof globalThis.FormData
+) {
 	constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
 		if (!formDataLinked) {
 			formDataLinked = true;
