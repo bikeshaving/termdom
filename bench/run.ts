@@ -20,6 +20,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	readFileSync,
 	rmSync,
 	symlinkSync,
 } from "node:fs";
@@ -100,10 +101,30 @@ function median(values: number[]): number {
 
 const roots: Array<{name: string; path: string}> = [];
 let worktree: string | undefined;
+let sharesPackages = false;
 if (against !== undefined) {
 	worktree = mkdtempSync(join(tmpdir(), "termdom-bench-"));
 	git("worktree", "add", "--detach", worktree, against);
-	symlinkSync(join(benchRoot, "node_modules"), join(worktree, "node_modules"));
+	// A ref whose packages differ from this checkout's gets its own, so it
+	// does not import what this checkout dropped.
+	sharesPackages =
+		readFileSync(join(benchRoot, "bun.lock"), "utf8") ===
+		readFileSync(join(worktree, "bun.lock"), "utf8");
+	if (sharesPackages) {
+		symlinkSync(
+			join(benchRoot, "node_modules"),
+			join(worktree, "node_modules"),
+		);
+	} else {
+		const install = spawnSync(
+			"bun",
+			["install", "--frozen-lockfile"],
+			{cwd: worktree, stdio: ["ignore", "ignore", "inherit"]},
+		);
+		if (install.status !== 0) {
+			throw new Error(`bun install failed for ${against}`);
+		}
+	}
 	roots.push({name: against, path: worktree});
 }
 roots.push({name: "this checkout", path: benchRoot.replace(/\/$/, "")});
@@ -129,7 +150,9 @@ try {
 	}
 } finally {
 	if (worktree !== undefined) {
-		rmSync(join(worktree, "node_modules"));
+		if (sharesPackages) {
+			rmSync(join(worktree, "node_modules"));
+		}
 		git("worktree", "remove", "--force", worktree);
 	}
 }
