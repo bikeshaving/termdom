@@ -8392,8 +8392,11 @@ export function isStackingContext(element: Element): boolean {
 	return isPositioned(element) && getZIndexValue(element) !== "auto";
 }
 
+// Isolated by isolation, or by layout or paint containment, which forms a
+// stacking context too (css-contain-2 §3.2, §3.3).
 function isIsolated(element: Element): boolean {
-	return getComputedValue(element, "isolation") === "isolate";
+	return getComputedValue(element, "isolation") === "isolate" ||
+		hasLayoutOrPaintContainment(element);
 }
 
 // What paints in its stacking context's layers rather than in flow: a
