@@ -50,7 +50,6 @@
     "verify:tmux": "node scripts/verify-tmux.ts"
   },
   "dependencies": {
-    "arabic-persian-reshaper": "1.0.1",
     "css-tree": "3.2.1",
     "parse5": "8.1.0"
   },
