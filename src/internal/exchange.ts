@@ -1748,31 +1748,41 @@ export async function negotiateKittyGraphicsInTmux(
 	return ok && PLACEHOLDER_TERMINALS.test(name);
 }
 
-// The graphics query and XTVERSION, each as `wrap` sends it, and then
+// XTVERSION, and then the graphics query when the name is one of the
+// placeholder terminals, each as `wrap` sends it and followed by
 // `behind`, a question whose answer ends the wait on a terminal that
-// answers neither. Through tmux that is a DA2: tmux answers a DA1 at
-// once, ahead of what comes back from the terminal it runs in.
+// does not answer. Through tmux that is a DA2: tmux answers a DA1 at
+// once, ahead of what comes back from the terminal it runs in. The
+// graphics query waits for the name because tmux reads an APC it is
+// sent unwrapped as a title for the pane.
 async function askKittyGraphics(
 	exchange: Exchange,
 	wrap: (escape: string) => string,
 	behind: () => Promise<void>,
 ): Promise<{ok: boolean; name: string}> {
 	let answered!: () => void;
-	const until = new Promise<void>((resolve) => (answered = resolve));
-	const [ok, name] = await Promise.all([
-		nextReply<"kitty-graphics", boolean>(exchange, "kitty-graphics", {
-			ask: wrap(KITTY_GRAPHICS_QUERY),
-			timeoutMs: QUERY_TIMEOUT_MS,
-			absent: false,
-			until,
-			read: (item) => item.ok,
-		}),
+	let until = new Promise<void>((resolve) => (answered = resolve));
+	const [name] = await Promise.all([
 		nextReply<"terminal-version", string>(exchange, "terminal-version", {
 			ask: wrap(VERSION_QUERY),
 			timeoutMs: QUERY_TIMEOUT_MS,
 			absent: "",
 			until,
 			read: (item) => item.name,
+		}),
+		behind().then(answered),
+	]);
+	if (!PLACEHOLDER_TERMINALS.test(name) || _(exchange).disposed) {
+		return {ok: false, name};
+	}
+	until = new Promise<void>((resolve) => (answered = resolve));
+	const [ok] = await Promise.all([
+		nextReply<"kitty-graphics", boolean>(exchange, "kitty-graphics", {
+			ask: wrap(KITTY_GRAPHICS_QUERY),
+			timeoutMs: QUERY_TIMEOUT_MS,
+			absent: false,
+			until,
+			read: (item) => item.ok,
 		}),
 		behind().then(answered),
 	]);
