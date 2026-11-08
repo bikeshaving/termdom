@@ -562,14 +562,6 @@ const BAR_ACCENTS = new Set(["‾", "¯", "ˉ", "_", "̄", "̅", "̲", "─"]);
 // zero-width space: operators with no glyph and no cell.
 const INVISIBLE_OPERATORS = /^[\u2061-\u2064\u200b]$/u;
 
-export function isMathRoot(node: Node): boolean {
-	return (
-		getNodeType(node) === node.ELEMENT_NODE &&
-		getNamespace((node as Element)) === MATHML_NAMESPACE &&
-		getLocalName((node as Element)) === "math"
-	);
-}
-
 function isMathElement(node: Node): boolean {
 	return (
 		getNodeType(node) === node.ELEMENT_NODE &&
