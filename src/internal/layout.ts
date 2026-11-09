@@ -4330,6 +4330,12 @@ function measureAtomicInline(
 		}
 	}
 
+	// A definite offer on a row flex item's main axis is its used width,
+	// which its lines align within.
+	if (offerOwnsWidth && contentWidthMode === "definite") {
+		finalContentWidth = contentWidth;
+	}
+
 	// And the REPORTED box. Content that cannot wrap (a single-line
 	// text control's pre text) overflows and is clipped rather than
 	// stretching the box, or the text control's horizontal scroll
@@ -9027,7 +9033,15 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 		}
 	}
 	let descended = false;
-	let alignContainer: Element | null = flatParentElement(runHead);
+	const headsOwnBox =
+		getNodeType(runHead) === runHead.ELEMENT_NODE &&
+		!layout.anonymousBoxes.get(headLayoutNode);
+	// Whose text-align governs the run's lines: the run head's when the run
+	// is in its own box, as a blockified flex item's is, and the block
+	// container's otherwise.
+	let alignContainer: Element | null = headsOwnBox
+		? runHead as Element
+		: flatParentElement(runHead);
 	for (const ancestor of enclosing) {
 		if (!establishesIndependentFormattingContext(ancestor)) {
 			continue;
@@ -9039,9 +9053,7 @@ function getInlineBlockRect(layout: Layout, element: Element): DOMRect | null {
 		// Border and padding both occupy cells. A run headed in its own box
 		// starts at its head's origin.
 		originX +=
-			(ancestor === runHead &&
-					getNodeType(runHead) === runHead.ELEMENT_NODE &&
-					!layout.anonymousBoxes.get(headLayoutNode)
+			(ancestor === runHead && headsOwnBox
 				? 0
 				: getLineStart(alignContainer, breakResult, hop.line) + hop.segment.x) +
 			hop.segment.leaf.boxModel.paddingLeft +
@@ -9786,10 +9798,13 @@ function getRectTexts(layout: Layout, node: Node): RectText[] {
 	let currentBreakResult = breakResult;
 	let accumulatedOffsetX = 0;
 	let accumulatedOffsetY = 0;
-	// Whose text-align governs these lines: the block container, until the
-	// walk descends into an inline-block's nested breakResult, a fresh
+	// Whose text-align governs these lines: the run head's when the run is
+	// in its own box, and the block container's otherwise, until the walk
+	// descends into an inline-block's nested breakResult, a fresh
 	// formatting context with its own alignment.
-	let alignContainer: Element | null = flatParentElement(runHead);
+	let alignContainer: Element | null = headsOwnBox
+		? runHead as Element
+		: flatParentElement(runHead);
 
 	// The flat-tree parents that establish an independent formatting
 	// context, taken outermost first, since each nested breakResult is

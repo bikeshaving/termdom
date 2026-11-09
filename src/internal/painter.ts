@@ -1308,14 +1308,15 @@ function paintContent(
 			);
 		} else if (own === null && box?.fragments) {
 			// A blockified inline reserved padding and border in its box
-			// that its lines count from the inside of.
+			// that its lines count from the inside of, and aligns them by
+			// its own text-align.
 			const inset = style.display === "inline" && hasItemParent(element);
 			paintLines(
 				painter,
 				box.fragments,
 				flowContent(element),
 				element,
-				box.container,
+				inset ? element : box.container,
 				{
 					x: origin.x + (inset ? style.contentInsetX : 0),
 					y: origin.y + (inset ? style.contentInsetY : 0),
