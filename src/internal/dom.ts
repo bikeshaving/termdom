@@ -152,7 +152,7 @@ import {
 	applyInRealm,
 	createDocumentIn,
 	declareNodeClasses,
-	findRuntimeGlobal,
+	findRuntimeTypes,
 	forgetClasses,
 	getActiveRealm,
 	getCallerRealm,
@@ -162,7 +162,6 @@ import {
 	getInterfaceName,
 	hasRealms,
 	placeInRealm,
-	readRuntimeGlobal,
 	type Realm,
 	runInRealm,
 } from "./webidl.ts";
@@ -18369,12 +18368,6 @@ function createEntry(
 	return [key, file];
 }
 
-const runtimeFormDataGlobal = findRuntimeGlobal("FormData");
-
-function getRuntimeFormData(): typeof globalThis.FormData {
-	return readRuntimeGlobal(runtimeFormDataGlobal) as typeof globalThis.FormData;
-}
-
 // A runtime stores a file under the filename its caller gave, or, as Bun
 // does, under the name the file already had. The wire is right either
 // way; only reading an entry back differs, so the filenames are kept here
@@ -18383,7 +18376,8 @@ let runtimeKeepsFilenames: boolean | null = null;
 
 function keepsFilenames(): boolean {
 	if (runtimeKeepsFilenames === null) {
-		const probe = new (getRuntimeFormData())();
+		const probe = new (Object.getPrototypeOf(FormData) as
+			typeof globalThis.FormData)();
 		probe.append("k", new File(["x"], "given"), "wanted");
 		runtimeKeepsFilenames =
 			(probe.get("k") as globalThis.File).name === "wanted";
@@ -18441,12 +18435,7 @@ class FormData extends (
 	FormDataParent as unknown as typeof globalThis.FormData
 ) {
 	constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
-		if (!formDataLinked) {
-			formDataLinked = true;
-			const RuntimeFormData = getRuntimeFormData();
-			Object.setPrototypeOf(FormData, RuntimeFormData);
-			Object.setPrototypeOf(FormData.prototype, RuntimeFormData.prototype);
-		}
+		linkFormData();
 		super();
 		seal(this, new.target, FormData);
 		_(this).filenames = [];
@@ -18599,6 +18588,30 @@ class FormData extends (
 }
 
 declareSealedRoot(FormData);
+
+// Gives FormData the runtime's FormData as its parent, read off globalThis
+// the first time. Node 26 offers no way to keep its FormData without
+// loading its fetch, so it is read here, and an embedder that has put the
+// window's FormData on globalThis by then has left none to read.
+function linkFormData(): void {
+	if (formDataLinked) {
+		return;
+	}
+	const runtime = globalThis.FormData as unknown;
+	if (
+		typeof runtime !== "function" ||
+		runtime.prototype === FormData.prototype ||
+		Object.prototype.isPrototypeOf.call(FormData.prototype, runtime.prototype)
+	) {
+		throw new TypeError(
+			"The runtime's FormData was replaced on globalThis before TermDOM " +
+				"first read it. Construct a FormData before replacing it.",
+		);
+	}
+	formDataLinked = true;
+	Object.setPrototypeOf(FormData, runtime);
+	Object.setPrototypeOf(FormData.prototype, runtime.prototype);
+}
 
 // The runtime's own value, under the filename this entry was stored
 // with. A runtime that keeps that filename is taken at its word.
@@ -41444,12 +41457,33 @@ function getNamedPropertyValue(
 // random source is read the first time one is asked for, since Node
 // loads it, 4 MB a process, when globalThis.crypto is first read.
 const runtimePerformance = globalThis.performance;
-const runtimeCryptoGlobal = findRuntimeGlobal("crypto");
+// Node defines globalThis.crypto as a getter, which is kept here unread,
+// so an embedder that puts the window's Crypto on globalThis before then
+// does not have it read back.
+const runtimeCryptoDescriptor = Object.getOwnPropertyDescriptor(
+	globalThis,
+	"crypto",
+);
 let runtimeCrypto: globalThis.Crypto | null = null;
 
 function getRuntimeCrypto(): globalThis.Crypto {
-	runtimeCrypto ??= readRuntimeGlobal(runtimeCryptoGlobal) as globalThis.Crypto;
+	if (runtimeCrypto === null) {
+		const descriptor = runtimeCryptoDescriptor;
+		runtimeCrypto = (descriptor?.get !== undefined
+			? descriptor.get.call(globalThis)
+			: descriptor?.value) as globalThis.Crypto;
+	}
 	return runtimeCrypto;
+}
+
+/**
+ * Reads the runtime's classes and random source not read yet, before
+ * installGlobals() puts the window's in their place.
+ */
+export function findRuntimeGlobals(): void {
+	findRuntimeTypes();
+	linkFormData();
+	getRuntimeCrypto();
 }
 
 export interface PerformanceEntrySlots {
