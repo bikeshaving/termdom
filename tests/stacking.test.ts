@@ -216,6 +216,19 @@ test("a stacking context that clips its overflow clips its positioned descendant
 	dom.dispose();
 });
 
+for (const sectionZ of ["z-index:2;", ""]) {
+	test(`a fixed box in a z-indexed box is not clipped by a scroller it escapes (${sectionZ || "no z-index"})`, async () => {
+		const {terminal, dom} = await render(
+			`<section style="position:relative; ${sectionZ} overflow:hidden; margin-left:10ch; width:20ch; height:4px">` +
+				"<div style=\"position:relative; z-index:40\">" +
+				"<div style=\"position:fixed; left:4ch; top:1px\">FIXED-MENU</div>" +
+				"</div></section>",
+		);
+		expect(terminal.getPlainText().split("\n")[1]).toBe("    FIXED-MENU");
+		dom.dispose();
+	});
+}
+
 test("an isolated box paints its positioned descendants without being positioned", async () => {
 	const {terminal, dom} = await render(
 		`<div style="isolation:isolate"><div id="rel" style="position:relative; z-index:1">REL</div></div>` +

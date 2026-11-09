@@ -9584,42 +9584,56 @@ function getClipPropertyRect(
 	};
 }
 
-// The clip the context root is painted under, intersected with the
-// overflow of the ancestors in the box's containing block chain up to
-// and including the context root (css-overflow-3 §3). A relative or
-// sticky box is contained by its parent, so every scroller around it
-// clips it. An absolute box skips to its nearest positioned or containing
-// ancestor, and a fixed box to its nearest containing ancestor or the
-// viewport.
+function intersectClips(
+	a: ClipRect | null,
+	b: ClipRect | null,
+): ClipRect | null {
+	if (a === null || b === null) {
+		return a ?? b;
+	}
+	return {
+		left: Math.max(a.left, b.left),
+		top: Math.max(a.top, b.top),
+		right: Math.min(a.right, b.right),
+		bottom: Math.min(a.bottom, b.bottom),
+	};
+}
+
+// The overflow of the ancestors in the box's containing block chain
+// clips it (css-overflow-3 §3). A relative or sticky box is contained by
+// its parent, so every scroller around it clips it. An absolute box skips
+// to its nearest positioned or containing ancestor, and a fixed box to
+// its nearest containing ancestor or the viewport. A chain that reaches
+// the context root takes the clip the root is painted under from there.
+// A chain that skips the root, as a fixed box inside a z-indexed bar
+// does, goes on past it to a top layer element or the viewport, and the
+// root's clip does not apply.
 export function getPositionedClip(
 	layout: Layout,
 	element: Element,
 	contextRoot: Element,
 	contextClip: ClipRect | null,
 ): ClipRect | null {
-	let clip = contextClip;
-	const own = getClipPropertyRect(layout, element);
-	if (own !== null) {
-		clip = clip === null
-			? own
-			: {
-				left: Math.max(clip.left, own.left),
-				top: Math.max(clip.top, own.top),
-				right: Math.min(clip.right, own.right),
-				bottom: Math.min(clip.bottom, own.bottom),
-			};
-	}
+	let clip = getClipPropertyRect(layout, element);
 	let position = getComputedValue(element, "position");
+	let topLayer: Element[] | null = null;
 	for (
 		let ancestor = flatParentElement(element);
 		ancestor !== null;
-		ancestor = ancestor === contextRoot ? null : flatParentElement(ancestor)
+		ancestor = flatParentElement(ancestor)
 	) {
-		if (
+		const skipped =
 			(position === "fixed" ||
-				(position === "absolute" && !isPositioned(ancestor))) &&
-			!establishesFixedContainingBlock(ancestor)
-		) {
+			(position === "absolute" && !isPositioned(ancestor))) &&
+			!establishesFixedContainingBlock(ancestor);
+		const isTop = topLayer !== null && topLayer.includes(ancestor);
+		if (skipped) {
+			if (isTop) {
+				return clip;
+			}
+			if (ancestor === contextRoot) {
+				topLayer = renderedTopLayer(element.ownerDocument) as Element[];
+			}
 			continue;
 		}
 		position = getComputedValue(ancestor, "position");
@@ -9630,6 +9644,12 @@ export function getPositionedClip(
 			if (rect) {
 				clip = getOverflowClipRect(ancestor, rect, overflowX, overflowY, clip);
 			}
+		}
+		if (ancestor === contextRoot) {
+			return intersectClips(contextClip, clip);
+		}
+		if (isTop) {
+			return clip;
 		}
 	}
 	return clip;
