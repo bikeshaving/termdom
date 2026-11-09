@@ -80,6 +80,11 @@ function fgAt(terminal: MockProcess, col: number, row: number): number {
 	return at.isFgRGB() ? at.getFgColor() : -1;
 }
 
+function bgAt(terminal: MockProcess, col: number, row: number): number {
+	const at = (terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	return at.isBgRGB() ? at.getBgColor() : -1;
+}
+
 async function send(terminal: MockProcess, data: string): Promise<void> {
 	(terminal.stdin as any).emit("data", Buffer.from(data));
 	await new Promise((resolve) => setTimeout(resolve, 30));
@@ -254,6 +259,24 @@ test("the program starts at the embed's size and its screen is drawn", async () 
 	expect([box.width, box.height]).toEqual([12, 3]);
 	await dom.dispose();
 	expect(children[0].killed).toBe(true);
+});
+
+test("black from the program stays black", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal} = await mount(
+		`<embed type="application/x-pty" src="top" width="12" height="3">`,
+		spawn,
+	);
+	children[0].options.onData(
+		"\x1b[38;2;0;0;0;48;2;246;246;239mtitle\x1b[0m\r\n" +
+			"\x1b[37;48;5;16mdark\x1b[0m",
+	);
+	await settle(dom);
+	await until(() => rowText(terminal, 1).includes("dark"));
+	expect(fgAt(terminal, 0, 0)).toBe(0x000000);
+	expect(bgAt(terminal, 0, 0)).toBe(0xf6f6ef);
+	expect(bgAt(terminal, 0, 1)).toBe(0x000000);
+	await dom.dispose();
 });
 
 test("the program is resized to the embed's box", async () => {

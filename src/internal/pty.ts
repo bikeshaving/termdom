@@ -4,6 +4,7 @@
  * embed's box.
  */
 
+import {toCellColor} from "./cssvalues.ts";
 import {
 	ANSI_PALETTE,
 	type Caret,
@@ -241,7 +242,7 @@ function resolveColor(color: number): number | undefined {
 	if (color === DEFAULT_COLOR) {
 		return undefined;
 	}
-	return color >= RGB_COLOR ? color & 0xffffff : PALETTE[color];
+	return toCellColor(color >= RGB_COLOR ? color & 0xffffff : PALETTE[color]);
 }
 
 const STYLE_FLAGS: Array<[number, keyof CellStyle]> = [
