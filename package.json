@@ -88,6 +88,7 @@
     "eslint-plugin-crank": "^0.2.2",
     "eslint-plugin-esfold": "^0.1.14",
     "fast-check": "^4.10.2",
+    "ghostty-web": "0.4.0",
     "htm": "^3.1.1",
     "katex": "^0.18.9",
     "marked": "^18.0.14",

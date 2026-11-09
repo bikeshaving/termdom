@@ -136,6 +136,9 @@ function resizeLine(line: Line, cols: number): Line {
 interface SavedCursor {
 	x: number;
 	y: number;
+	// Whether the cursor waited past the last column, which Ghostty saves
+	// and restores with it.
+	wrapPending: boolean;
 	fg: number;
 	bg: number;
 	attrs: number;
@@ -939,11 +942,13 @@ export class Terminal {
 		}
 	}
 
+	// At the top margin the cursor stays put, still waiting to wrap if it
+	// was. Anywhere else it moves up and stops waiting.
 	reverseIndex(): void {
-		this.wrapPending = false;
 		if (this.y === this.scrollTop) {
 			this.scrollDown(1);
 		} else if (this.y > 0) {
+			this.wrapPending = false;
 			this.y--;
 		}
 	}
@@ -1024,6 +1029,7 @@ export class Terminal {
 		this.buffer.saved = {
 			x: this.x,
 			y: this.y,
+			wrapPending: this.wrapPending,
 			fg: this.fg,
 			bg: this.bg,
 			attrs: this.attrs,
@@ -1049,6 +1055,7 @@ export class Terminal {
 		}
 		this.x = Math.min(saved.x, this.cols - 1);
 		this.y = Math.min(saved.y, this.rows - 1);
+		this.wrapPending = saved.wrapPending && saved.x === this.x;
 		this.fg = saved.fg;
 		this.bg = saved.bg;
 		this.attrs = saved.attrs;
@@ -1057,20 +1064,17 @@ export class Terminal {
 		this.shift = saved.shift;
 	}
 
-	// Entering the alternate screen clears it in the current background,
-	// as xterm.js does for all three modes.
+	// Switching screens keeps the cursor, waiting to wrap or not.
 	useAlternate(on: boolean): void {
-		const target = on ? this.alternate : this.normal;
-		if (target === this.buffer) {
-			return;
+		this.buffer = on ? this.alternate : this.normal;
+	}
+
+	// Clears the alternate screen in the current background, as xterm
+	// does when 1049 enters it and when 1047 leaves it.
+	clearAlternate(): void {
+		for (const line of this.alternate.lines) {
+			eraseCells(line, 0, this.cols, this.bg);
 		}
-		this.buffer = target;
-		if (on) {
-			for (const line of this.alternate.lines) {
-				eraseCells(line, 0, this.cols, this.bg);
-			}
-		}
-		this.wrapPending = false;
 	}
 
 	softReset(): void {
@@ -1419,7 +1423,12 @@ export class Terminal {
 				this.cursorVisible = on;
 				return;
 			case 47:
+				this.useAlternate(on);
+				return;
 			case 1047:
+				if (!on && this.alternateScreen) {
+					this.clearAlternate();
+				}
 				this.useAlternate(on);
 				return;
 			case 1048:
@@ -1433,6 +1442,7 @@ export class Terminal {
 				if (on) {
 					this.saveCursor();
 					this.useAlternate(true);
+					this.clearAlternate();
 				} else {
 					this.useAlternate(false);
 					this.restoreCursor();
@@ -1461,16 +1471,16 @@ export class Terminal {
 		}
 	}
 
-	// From past the last column, which is where the cursor waits after
-	// writing there, erasing to the right erases nothing on its row.
-	eraseStart(): number {
-		return this.wrapPending ? this.cols : this.x;
-	}
-
+	// An erase from the last column, where the cursor waits to wrap after
+	// writing there, erases that column and ends the wait, as in xterm
+	// and Ghostty.
 	eraseDisplay(mode: number): void {
 		const lines = this.lines;
+		if (mode !== 3) {
+			this.wrapPending = false;
+		}
 		if (mode === 0) {
-			eraseCells(lines[this.y], this.eraseStart(), this.cols, this.bg);
+			eraseCells(lines[this.y], this.x, this.cols, this.bg);
 			for (let row = this.y + 1; row < this.rows; row++) {
 				eraseCells(lines[row], 0, this.cols, this.bg);
 			}
@@ -1478,7 +1488,7 @@ export class Terminal {
 			for (let row = 0; row < this.y; row++) {
 				eraseCells(lines[row], 0, this.cols, this.bg);
 			}
-			eraseCells(lines[this.y], 0, this.eraseStart() + 1, this.bg);
+			eraseCells(lines[this.y], 0, this.x + 1, this.bg);
 		} else if (mode === 2) {
 			for (const line of lines) {
 				eraseCells(line, 0, this.cols, this.bg);
@@ -1490,10 +1500,11 @@ export class Terminal {
 
 	eraseLine(mode: number): void {
 		const line = this.lines[this.y];
+		this.wrapPending = false;
 		if (mode === 0) {
-			eraseCells(line, this.eraseStart(), this.cols, this.bg);
+			eraseCells(line, this.x, this.cols, this.bg);
 		} else if (mode === 1) {
-			eraseCells(line, 0, this.eraseStart() + 1, this.bg);
+			eraseCells(line, 0, this.x + 1, this.bg);
 		} else if (mode === 2) {
 			eraseCells(line, 0, this.cols, this.bg);
 		}
