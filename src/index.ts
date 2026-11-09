@@ -25,6 +25,7 @@ import {
 	dropFullscreen,
 	EventTarget,
 	type EventTargetSlots,
+	findRuntimeFetchClasses,
 	findRuntimeGlobals,
 	flushLayout,
 	flushObservers,
@@ -672,6 +673,7 @@ export class TermDOM extends EventTarget {
 
 	constructor(options: TermDOMOptions = {}) {
 		super();
+		findRuntimeFetchClasses();
 		const cellSize = toCellSizeSetting(options.cellSize);
 		const devicePixelRatio = toPixelRatioSetting(options.devicePixelRatio);
 		const images = toGraphicsOption("images", options.images);
