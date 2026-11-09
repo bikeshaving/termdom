@@ -41,7 +41,8 @@ import {TermDOM} from "@b9g/termdom";
 
 // ---- the deck ----------------------------------------------------------------
 
-const SUITS = ["♠", "♥", "♦", "♣"];
+// Hearts are U+2764. Nerd Fonts draw U+2665 as an outline icon.
+const SUITS = ["♠", "❤", "♦", "♣"];
 const RANKS = [
   "A",
   "2",
@@ -383,17 +384,17 @@ function faceShade(depth: number): string {
   return `#${hex(0xf0)}${hex(0xf0)}${hex(0xe6)}`;
 }
 
-/** The focus blue, darkened by depth the way faceShade darkens the cream. */
+/** The focus gold, darkened by depth the way faceShade darkens the cream. */
 function focusShade(depth: number): string {
   const step = Math.min(depth, 12) * 5;
   const hex = (channel: number) =>
     (channel - step).toString(16).padStart(2, "0");
-  return `#${hex(0xcf)}${hex(0xe2)}${hex(0xf7)}`;
+  return `#${hex(0xff)}${hex(0xd7)}${hex(0x5f)}`;
 }
 
 /**
  * The focused card and every card on it, which is what a pick-up takes,
- * in the focus blue, shaded by depth as the stack is.
+ * in the focus gold, shaded by depth as the stack is.
  */
 function focusShades(): string {
   return Array.from({length: 13}, (_, depth) => {
@@ -478,15 +479,15 @@ function sheet(): string {
   .slot { background-color: #05381a; color: #2f7a4a; }
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
   /* The focused card is the document's focus: tab, the arrows, the
-     numbers and a click all move the same thing. It is light blue, and so
-     is every card on it, since picking it up takes them too. Suits keep
+     numbers and a click all move the same thing. It is gold, and so is
+     every card on it, since picking it up takes them too. Suits keep
      their colour. */
   .card, .slot { outline: none; }
-  .card:focus { background-color: #cfe2f7; }
+  .card:focus { background-color: #ffd75f; }
   ${focusShades()}
   /* An empty place does not move. It takes the focus only as somewhere to
      put what is held, or as the deck to turn over, and brightens its mark. */
-  .slot:focus { background-color: #cfe2f7; color: #2f5a80; }
+  .slot:focus { background-color: #ffd75f; color: #6b5b1e; }
 
   /* The confirm covers the screen and centers its dialog; the board stays
      visible around the box, the way a modal reads. */
