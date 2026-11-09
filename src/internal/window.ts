@@ -51,23 +51,24 @@ import {
 
 // A window starts with its interfaces and the timers any script expects
 // to find. The display fills in the rest (sizing, scrolling, animation
-// frames, the clipboard) as it mounts the document. A frame's window is
-// its realm's global object, with the realm's interfaces, and its timers
-// run with the realm active.
+// frames, the clipboard) as it mounts the document. A frame's window in a
+// realm is the realm's global object, with the realm's interfaces, and
+// its timers run with the realm active.
 export function buildWindow(
 	document: Document,
 	realm: Realm | null = null,
+	frame: ConstructorParameters<typeof Window>[1] = null,
 ): Window {
 	let window: Record<string, unknown>;
 	if (realm === null) {
-		window = new Window(document) as unknown as Record<string, unknown>;
+		window = new Window(document, frame) as unknown as Record<string, unknown>;
 	} else {
 		// The window keeps the prototype it is built with under its named
 		// properties, so it takes the realm's first.
 		Object.setPrototypeOf(realm.global, realm.prototypes.get(Window)!);
 		window = runInRealm(realm, () =>
-			constructOnto(realm.global, () => new Window(document))) as unknown as
-			Record<string, unknown>;
+			constructOnto(realm.global, () => new Window(document, frame))) as
+			unknown as Record<string, unknown>;
 	}
 	// HTML reports an exception a timer or a microtask lets escape, as it
 	// does a listener's, and the page goes on. The runtime's own would end
@@ -251,21 +252,20 @@ export function getInterfaceObjects(): ReadonlyMap<string, Constructor> {
 }
 
 // A frame's document and window, built in a realm of their own where the
-// runtime can make one. Its handler attributes stay inert, as a frame's
-// did before it had a realm, and its requests are the window's it is in:
-// held to the same policy, and offered to the same fetch listeners.
+// runtime can make one, and where it cannot, in the engine's, sharing its
+// interfaces and intrinsics. Its handler attributes stay inert, and its
+// requests are those of the window it is in: held to its policy, and
+// offered to its fetch listeners.
 setFrameWindowFactory((source, url, registry, parent, frame) => {
 	const realm = createRealm();
-	if (realm === null) {
-		return null;
-	}
 	return runInRealm(realm, () => {
 		const document = parseHTMLDocument(source, url, true, registry);
-		realm.document = document;
-		const window = buildWindow(document, realm);
+		if (realm !== null) {
+			realm.document = document;
+		}
+		const window = buildWindow(document, realm, frame);
 		const windowSlots = _(window);
 		windowSlots.parentWindow = parent;
-		windowSlots.frameOwner = frame;
 		windowSlots.realm = realm;
 		const loader = parent === null ? null : getDocumentLoader(parent);
 		if (loader !== null) {
