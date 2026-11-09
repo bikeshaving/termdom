@@ -148,6 +148,7 @@ import {
 	pxFromCells,
 	UNIT_CELL,
 } from "./units.ts";
+import type {DefaultColors} from "./vt.ts";
 import {
 	applyInRealm,
 	createDocumentIn,
@@ -17636,6 +17637,47 @@ function reportProgramFocus(element: Element | null, focused: boolean): void {
 	);
 }
 
+// The colors a pty embed draws a program's cell in when the program
+// names none: the embed's text color, and the first background on it or
+// behind it. Canvas, or no background at all, is the terminal's own,
+// once the terminal has said what that is. A foreground the page leaves
+// to the terminal is white on a dark background and black on a light
+// one.
+function getProgramColors(
+	embed: Element,
+	exchange: Exchange | undefined,
+): DefaultColors {
+	let background: number | null = null;
+	for (
+		let element: Element | null = embed;
+		element !== null;
+		element = getFlatTreeParent(element)
+	) {
+		const value = cssom.getComputedValue(element, "background-color");
+		if (CSSValues.isCanvasColor(value)) {
+			break;
+		}
+		const color = CSSValues.numberFromCSSColor(value);
+		if (color !== 0) {
+			background = color & 0xffffff;
+			break;
+		}
+	}
+	background ??= exchange?.terminalBackground ?? null;
+	const color = CSSValues.numberFromCSSColor(
+		cssom.getComputedValue(embed, "color"),
+	);
+	let foreground = color === 0 ? null : color & 0xffffff;
+	if (foreground === null && background !== null) {
+		const luminance =
+			0.2126 * ((background >> 16) & 0xff) +
+			0.7152 * ((background >> 8) & 0xff) +
+			0.0722 * (background & 0xff);
+		foreground = luminance < 128 ? 0xffffff : 0x000000;
+	}
+	return {foreground, background};
+}
+
 // The size the embed asks for, in CSS pixels, from its width and height
 // attributes, or a terminal's usual 80 by 24 cells.
 function getProgramNaturalSize(embed: HTMLEmbedElement): {
@@ -17751,6 +17793,7 @@ function startProgram(embed: HTMLEmbedElement): void {
 					new CustomEvent("titlechange", {detail: title}),
 				),
 			bell: () => fire("bell"),
+			colors: () => getProgramColors(embed, attachedSlots.extra.exchange),
 		},
 	);
 	program.setScrollback(getScrollbackLimit(embed));

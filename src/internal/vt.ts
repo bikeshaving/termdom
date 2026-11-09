@@ -155,6 +155,18 @@ interface ScreenBuffer {
 	keyboardFlags: number[];
 }
 
+/** A screen's default colors as RGB, null for one not known. */
+export interface DefaultColors {
+	foreground: number | null;
+	background: number | null;
+}
+
+// A color as XParseColor reads it and xterm reports it: four hex digits
+// for each channel.
+function formatColorReply(color: number): string {
+	return `rgb:${[16, 8, 0].map((shift) => (((color >> shift) & 0xff) * 257).toString(16).padStart(4, "0")).join("/")}`;
+}
+
 // The flags a screen keeps before it drops the oldest, as Ghostty does.
 const KEYBOARD_FLAGS_DEPTH = 8;
 
@@ -569,6 +581,9 @@ export class Terminal {
 	cursorShape: number;
 	// The window title the program set with OSC 0 or 2.
 	title: string;
+	// The default foreground and background, as RGB, that OSC 10 and 11
+	// report, null for one that goes unanswered.
+	colors: (() => DefaultColors) | null;
 	// How many times the program rang the bell.
 	bells: number;
 	insertMode: boolean;
@@ -596,6 +611,7 @@ export class Terminal {
 		this.cols = Math.max(1, cols);
 		this.rows = Math.max(1, rows);
 		this.reply = reply;
+		this.colors = null;
 		this.decoder = new TextDecoder();
 		this.normal = createBuffer(this.cols, this.rows);
 		this.alternate = createBuffer(this.cols, this.rows);
@@ -1730,6 +1746,14 @@ export class Terminal {
 	}
 
 	osc(text: string): void {
+		const query = /^1([01]);\?$/.exec(text);
+		if (query !== null && this.colors !== null) {
+			const colors = this.colors();
+			const color = query[1] === "0" ? colors.foreground : colors.background;
+			if (color !== null) {
+				this.reply(`\x1b]1${query[1]};${formatColorReply(color)}\x1b\\`);
+			}
+		}
 		const match = /^([02]);(.*)$/s.exec(text);
 		if (match !== null) {
 			this.title = match[2];

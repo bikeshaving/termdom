@@ -454,6 +454,29 @@ test("keys reach the program as Ghostty's encoder sends them under each set of k
 	await dom.dispose();
 });
 
+test("OSC 10 and 11 report the colors the embed draws the program's own cells in", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, document} = await mount(
+		`<div style="background: #123456"><embed type="application/x-pty" src="sh" width="10" height="2" style="color: #abcdef"></div>` +
+			`<div style="background: #fff"><embed type="application/x-pty" src="sh" width="10" height="2"></div>` +
+			`<div style="background: #fff"><embed type="application/x-pty" src="sh" width="10" height="2" style="background: Canvas"></div>`,
+		spawn,
+	);
+	const replies: string[] = [];
+	for (const child of children) {
+		child.options.onData("\x1b]10;?\x1b\\\x1b]11;?\x07");
+		await settle(dom);
+		replies.push(child.written.join(""));
+	}
+	expect(replies).toEqual([
+		"\x1b]10;rgb:abab/cdcd/efef\x1b\\\x1b]11;rgb:1212/3434/5656\x1b\\",
+		"\x1b]10;rgb:0000/0000/0000\x1b\\\x1b]11;rgb:ffff/ffff/ffff\x1b\\",
+		"",
+	]);
+	expect(document.querySelectorAll("embed").length).toBe(3);
+	await dom.dispose();
+});
+
 test("a key from the terminal reaches a program that set kitty flags as a kitty key", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, terminal, document} = await mount(

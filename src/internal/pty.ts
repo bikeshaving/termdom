@@ -19,6 +19,7 @@ import {
 	BLINK,
 	BOLD,
 	DEFAULT_COLOR,
+	type DefaultColors,
 	DIM,
 	DOUBLE_UNDERLINE,
 	INVERSE,
@@ -528,6 +529,8 @@ export interface PTYSessionListeners {
 	exit(code: number, signal: string | null): void;
 	titlechange(title: string): void;
 	bell(): void;
+	// The colors the embed draws a cell with no colors of its own in.
+	colors(): DefaultColors;
 }
 
 // A screen's columns or rows, at most a thousand, so that a size the
@@ -582,6 +585,7 @@ export class PTYSession {
 		this.terminal = new Terminal(this.cols, this.rows, (data) =>
 			this.write(data),
 		);
+		this.terminal.colors = listeners.colors;
 	}
 
 	/** Where the program's cursor is, or null while it is hidden or gone. */
