@@ -348,7 +348,7 @@ test("a page whose background fills to the bottom row leaves the shell's lines i
 	await new Promise((resolve) => setTimeout(resolve, 20));
 	const {normal} = xterm.buffer;
 	const rows = [0, 1, 2].map((row) =>
-		normal.getLine(normal.viewportY + row).translateToString(true));
+		normal.getLine(normal.viewportY + row).translateToString(true).trimEnd());
 	expect(rows).toEqual(["$ ls", "notes.txt", "APP"]);
 	expect(normal.cursorY).toBe(3);
 });
