@@ -41,8 +41,7 @@ import {TermDOM} from "@b9g/termdom";
 
 // ---- the deck ----------------------------------------------------------------
 
-// Hearts are U+2764. Nerd Fonts draw U+2665 as an outline icon.
-const SUITS = ["♠", "❤", "♦", "♣"];
+const SUITS = ["♠", "♥", "♦", "♣"];
 const RANKS = [
   "A",
   "2",
