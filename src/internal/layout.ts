@@ -240,23 +240,6 @@ function getLayoutDisplay(element: Element): Display {
 	return DISPLAYS.has(value) ? (value as Display) : "block";
 }
 
-// An inline-block flex item's measure returns a border-box size, so its
-// layout node must not add padding and border again on the cross axis.
-// The main axis is masked by flex sizing. The node then holds none on
-// those edges, though the box has them.
-function getMaskedEdges(element: Element): readonly Edge[] {
-	if (getLayoutDisplay(element) !== "inline-block" || !hasFlexParent(element)) {
-		return [];
-	}
-	const direction = getComputedValue(
-		boxParentElement(element)!,
-		"flex-direction",
-	);
-	return direction === "column" || direction === "column-reverse"
-		? ["left", "right"]
-		: ["top", "bottom"];
-}
-
 function applyTableContainer(style: Style, element: Element): void {
 	style.displayType = "table";
 	style.borderCollapse =
@@ -302,11 +285,6 @@ function boxParentElement(node: Node): Element | null {
 		parent = flatParentElement(parent);
 	}
 	return parent;
-}
-
-function hasFlexParent(element: Element): boolean {
-	const parent = boxParentElement(element);
-	return parent !== null && getLayoutDisplay(parent) === "flex";
 }
 
 export function hasItemParent(element: Element): boolean {
@@ -709,6 +687,20 @@ function parseFlexWrap(value: string): Wrap {
 }
 
 const EDGES = ["top", "right", "bottom", "left"] as const;
+
+// A flex or grid item declared inline-block, inline-flex, inline-grid or
+// inline-table is measured as a run, and the run's measure returns its
+// border-box size. Its layout node must not add padding and border again,
+// so the node holds none, though the box has them.
+function getMaskedEdges(element: Element): readonly Edge[] {
+	return isAtomicInline(getLayoutDisplay(element)) &&
+		hasItemParent(element) &&
+		!isOutOfFlow(element) &&
+		!isReplacedBox(element) &&
+		!isMathRoot(element)
+		? EDGES
+		: [];
+}
 
 const GRID_PLACEMENTS = [
 	["gridRowStart", "grid-row-start"],
@@ -6666,25 +6658,14 @@ export class Layout {
 		let top: number;
 		let right: number;
 		let bottom: number;
-		if (node !== undefined) {
+		// Edges its measure counts in its size are not on its node.
+		if (node !== undefined && getMaskedEdges(element).length === 0) {
 			const {border} = node.style;
 			const {result} = node;
 			left = border.left + result.paddingLeft;
 			top = border.top + result.paddingTop;
 			right = border.right + result.paddingRight;
 			bottom = border.bottom + result.paddingBottom;
-			// Edges its measure counts in its size are not on its node.
-			const masked = getMaskedEdges(element);
-			if (masked.length > 0) {
-				const box = getBoxModel(element);
-				if (masked.includes("top")) {
-					top = (box.borderTopWidth || 0) + (box.paddingTop || 0);
-					bottom = (box.borderBottomWidth || 0) + (box.paddingBottom || 0);
-				} else {
-					left = (box.borderLeftWidth || 0) + (box.paddingLeft || 0);
-					right = (box.borderRightWidth || 0) + (box.paddingRight || 0);
-				}
-			}
 		} else {
 			const box = getBoxModel(element);
 			left = (box.borderLeftWidth || 0) + (box.paddingLeft || 0);

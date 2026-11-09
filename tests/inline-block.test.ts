@@ -26,6 +26,39 @@ test("a bordered inline-block in a flex ROW is not double-counted in height", as
 	dom.dispose();
 });
 
+// A flex or grid item is blockified (css-display-3 §2.7), so each
+// inline-level display sizes as its block form does: 1 cell of text, 2
+// of padding a side and 1 of border, 7 wide and 5 tall.
+test("an inline-level flex or grid item counts its padding and border once", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const sizes: string[] = [];
+	for (const parent of ["display:flex", "display:grid;justify-items:start"]) {
+		for (const display of ["inline-block", "inline-flex", "inline-grid"]) {
+			dom.document.body.innerHTML =
+				`<div style="${parent};align-items:start"><div id="box" ` +
+				`style="display:${display};padding:1px 2px;border:1px solid">` +
+				"<span>x</span></div></div>";
+			await nextFrame(dom);
+			const rect = dom.document.getElementById("box")!.getBoundingClientRect();
+			const span = dom.document.querySelector("span")!.getBoundingClientRect();
+			sizes.push(
+				`${parent} ${display}: ${rect.width}x${rect.height} ` +
+				`at ${span.x - rect.x},${span.y - rect.y}`,
+			);
+		}
+	}
+	expect(sizes).toEqual([
+		"display:flex inline-block: 7x5 at 3,2",
+		"display:flex inline-flex: 7x5 at 3,2",
+		"display:flex inline-grid: 7x5 at 3,2",
+		"display:grid;justify-items:start inline-block: 7x5 at 3,2",
+		"display:grid;justify-items:start inline-flex: 7x5 at 3,2",
+		"display:grid;justify-items:start inline-grid: 7x5 at 3,2",
+	]);
+	dom.dispose();
+});
+
 test("an empty rows=1 textarea in a flex ROW is 3 rows: content + border", async () => {
 	const terminal = new MockProcess({cols: 118, rows: 30});
 	const dom = new TermDOM({transport: terminal.transport});
