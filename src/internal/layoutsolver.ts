@@ -4897,41 +4897,72 @@ function getTrackSpan(
 	return total + gap * Math.max(0, end - start - 1);
 }
 
+function isStatedSize(
+	node: LayoutNode,
+	axis: FlexDirection,
+	ownerSize: number,
+): boolean {
+	const value = isRow(axis) ? node.style.width : node.style.height;
+	return value.unit !== "percent" &&
+		isStyleDimensionDefined(node, axis, ownerSize);
+}
+
 function getGridItemContribution(
 	sizing: TrackSizing,
 	item: GridItem,
 	minContent: boolean,
 ): number {
 	const child = item.node;
+	const {ownerWidth, ownerHeight} = sizing;
+	const marginRow = getAxisMargin(child, "row", ownerWidth);
+	// A width or height the item states is its contribution on that axis,
+	// as it is the size the item is laid out at (css-grid-2 §6.6). A
+	// percentage is of the grid area, which these sizes are finding.
+	const width = isStatedSize(child, "row", ownerWidth)
+		? boundAxisWithinMinMax(
+			child,
+			"row",
+			resolveValue(child.style.width, ownerWidth),
+			ownerWidth,
+		) + marginRow
+		: NaN;
 	if (sizing.columns) {
+		const stated = !Number.isNaN(width);
 		layoutNode(
 			child,
-			minContent ? 0 : NaN,
+			stated ? width : minContent ? 0 : NaN,
 			NaN,
-			minContent ? "shrink-to-fit" : "indefinite",
+			stated ? "definite" : minContent ? "shrink-to-fit" : "indefinite",
 			"indefinite",
-			sizing.ownerWidth,
-			sizing.ownerHeight,
+			ownerWidth,
+			ownerHeight,
 			false,
 		);
-		return (
-			child.result.width + getAxisMargin(child, "row", sizing.ownerWidth)
-		);
+		return child.result.width + marginRow;
 	}
-	const width = getTrackSpan(
-		sizing.columnSizes!,
-		sizing.columnGap,
-		item.columnStart,
-		item.columnEnd,
-	);
+	const height = isStatedSize(child, "column", ownerHeight)
+		? boundAxisWithinMinMax(
+			child,
+			"column",
+			resolveValue(child.style.height, ownerHeight),
+			ownerHeight,
+		) + getAxisMargin(child, "column", ownerWidth)
+		: NaN;
 	layoutNode(
 		child,
-		width,
-		NaN,
+		Number.isNaN(width)
+			? getTrackSpan(
+				sizing.columnSizes!,
+				sizing.columnGap,
+				item.columnStart,
+				item.columnEnd,
+			)
+			: width,
+		height,
 		"definite",
-		"indefinite",
-		sizing.ownerWidth,
-		sizing.ownerHeight,
+		Number.isNaN(height) ? "indefinite" : "definite",
+		ownerWidth,
+		ownerHeight,
 		false,
 	);
 	return (

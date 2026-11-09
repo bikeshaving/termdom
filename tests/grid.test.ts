@@ -1167,6 +1167,26 @@ test("a grid container fills its block container's width", async () => {
 	expect(box("#g").width).toBe(30);
 });
 
+test("an auto row is as tall as its item's stated height", async () => {
+	// css-grid-2 §6.6: the item is laid out at its height, so that is what
+	// it contributes to its row, not its one line of text.
+	const {item} = await render(grid("", letters(2, "height:2px")));
+	expect(item(0).height).toBe(2);
+	expect(item(1).top).toBe(2);
+});
+
+test("an auto column is as wide as its item's stated width", async () => {
+	// Wider or narrower than the text, the width is the contribution.
+	const {item} = await render(
+		grid(
+			"grid-template-columns: auto auto auto; justify-content: start",
+			"<i style=\"width:6px\">a</i><i style=\"width:1px\">bcd</i><i>e</i>",
+		),
+	);
+	expect(item(1).left).toBe(6);
+	expect(item(2).left).toBe(7);
+});
+
 test("a grid container with no items is as tall as its explicit rows", async () => {
 	const {box} = await render(grid("grid-template-rows: 2px 3px", ""));
 	expect(box("#g").height).toBe(5);
