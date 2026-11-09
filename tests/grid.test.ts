@@ -1139,10 +1139,7 @@ test("an absolute grid's auto rows fit content taller than its containing block"
 	// min-height:0 drops the rows' automatic minimum (css-grid-2 §6.6).
 	const {box, items} = await render(
 		"<div style=\"position:relative\">" +
-		grid(
-			"position:absolute; left:0; right:0",
-			letters(3, "min-height:0"),
-		) +
+		grid("position:absolute; left:0; right:0", letters(3, "min-height:0")) +
 		"</div>",
 	);
 	expect(box("#g").height).toBe(3);
@@ -1154,7 +1151,9 @@ test("an absolute column flex box is as tall as its items", async () => {
 	const {box} = await render(
 		"<div style=\"position:relative\">" +
 		"<div id=\"g\" style=\"position:absolute; display:flex; " +
-		"flex-direction:column\">" + letters(3, "min-height:0") + "</div></div>",
+		"flex-direction:column\">" +
+		letters(3, "min-height:0") +
+		"</div></div>",
 	);
 	expect(box("#g").height).toBe(3);
 });
