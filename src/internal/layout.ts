@@ -9572,8 +9572,9 @@ function getClipPropertyRect(
 	};
 }
 
-// The context root's clip intersected with the overflow of the ancestors
-// in the box's containing block chain (css-overflow-3 §3). A relative or
+// The clip the context root is painted under, intersected with the
+// overflow of the ancestors in the box's containing block chain up to
+// and including the context root (css-overflow-3 §3). A relative or
 // sticky box is contained by its parent, so every scroller around it
 // clips it. An absolute box skips to its nearest positioned or containing
 // ancestor, and a fixed box to its nearest containing ancestor or the
@@ -9599,8 +9600,8 @@ export function getPositionedClip(
 	let position = getComputedValue(element, "position");
 	for (
 		let ancestor = flatParentElement(element);
-		ancestor && ancestor !== contextRoot;
-		ancestor = flatParentElement(ancestor)
+		ancestor !== null;
+		ancestor = ancestor === contextRoot ? null : flatParentElement(ancestor)
 	) {
 		if (
 			(position === "fixed" ||

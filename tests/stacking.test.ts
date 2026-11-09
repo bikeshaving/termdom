@@ -204,6 +204,18 @@ for (const contain of ["paint", "layout", "content", "strict"]) {
 	});
 }
 
+test("a stacking context that clips its overflow clips its positioned descendants", async () => {
+	const {terminal, dom} = await render(
+		"<div style=\"position:relative; z-index:0; overflow:hidden; width:10ch; height:2px\">" +
+			"<div style=\"position:absolute; top:0; left:0; width:20ch\">XXXXXXXXXXXXXXXXXXXX<br>YYYY<br>ZZZZ</div>" +
+			"</div><div>after</div>",
+	);
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[0]).toBe("XXXXXXXXXX");
+	expect(rows[2]).toBe("after");
+	dom.dispose();
+});
+
 test("an isolated box paints its positioned descendants without being positioned", async () => {
 	const {terminal, dom} = await render(
 		`<div style="isolation:isolate"><div id="rel" style="position:relative; z-index:1">REL</div></div>` +
