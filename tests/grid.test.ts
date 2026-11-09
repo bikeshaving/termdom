@@ -1132,6 +1132,33 @@ test("an out-of-flow child takes no cell on the grid", async () => {
 	expect(items()[2].left).toBe(4);
 });
 
+test("an absolute grid's auto rows fit content taller than its containing block", async () => {
+	// css-position-3 §5.1: an auto height with an auto top or bottom is the
+	// content's height, so the containing block's height caps nothing. The
+	// relative wrapper is 0 tall, as its only child is out of flow, and
+	// min-height:0 drops the rows' automatic minimum (css-grid-2 §6.6).
+	const {box, items} = await render(
+		"<div style=\"position:relative\">" +
+		grid(
+			"position:absolute; left:0; right:0",
+			letters(3, "min-height:0"),
+		) +
+		"</div>",
+	);
+	expect(box("#g").height).toBe(3);
+	expect(items().map((item) => item.top)).toEqual([0, 1, 2]);
+	expect(items().map((item) => item.height)).toEqual([1, 1, 1]);
+});
+
+test("an absolute column flex box is as tall as its items", async () => {
+	const {box} = await render(
+		"<div style=\"position:relative\">" +
+		"<div id=\"g\" style=\"position:absolute; display:flex; " +
+		"flex-direction:column\">" + letters(3, "min-height:0") + "</div></div>",
+	);
+	expect(box("#g").height).toBe(3);
+});
+
 // ---------------------------------------------------------------------------
 // display: grid and inline-grid
 // ---------------------------------------------------------------------------

@@ -3186,13 +3186,13 @@ function layoutAbsoluteChild(
 	} else if (!Number.isNaN(top) && !Number.isNaN(bottom)) {
 		childHeight.value = blockHeight - top - bottom - marginTop - marginBottom;
 		childHeight.mode = "definite";
-	} else if (!Number.isNaN(blockHeight)) {
+	} else if (
+		!Number.isNaN(blockHeight) &&
+		area &&
+		getGridSelfAlign(node, child, false) === "stretch"
+	) {
 		childHeight.value = blockHeight;
-		childHeight.mode =
-			area &&
-			getGridSelfAlign(node, child, false) === "stretch"
-				? "definite"
-				: "shrink-to-fit";
+		childHeight.mode = "definite";
 	}
 
 	layoutNode(
