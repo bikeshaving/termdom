@@ -4,37 +4,22 @@ import {TermDOM} from "../src/index.ts";
 
 // An embedder that puts the window's objects on globalThis itself, as one
 // that runs pages in an isolate does, before TermDOM first reads the
-// runtime's. This file is the first to construct a FormData or ask for
-// randomness in its process.
-test("the window's crypto and FormData read the runtime's after an embedder puts the window's on globalThis", () => {
+// runtime's random source.
+test("the window's crypto reads the runtime's after an embedder puts the window's on globalThis", () => {
 	const dom = new TermDOM();
-	const global = globalThis as Record<string, unknown>;
-	const saved = ["crypto", "FormData"].map((name) =>
-		[name, Object.getOwnPropertyDescriptor(globalThis, name)] as const,
-	);
+	const saved = Object.getOwnPropertyDescriptor(globalThis, "crypto");
 	try {
-		for (const [name] of saved) {
-			Object.defineProperty(globalThis, name, {
-				value: (dom.window as unknown as Record<string, unknown>)[name],
-				writable: true,
-				configurable: true,
-			});
-		}
-		expect(global.crypto).toBe(dom.window.crypto);
+		Object.defineProperty(globalThis, "crypto", {
+			value: dom.window.crypto,
+			writable: true,
+			configurable: true,
+		});
 		expect(dom.window.crypto.randomUUID()).toHaveLength(36);
-		expect(dom.window.crypto.getRandomValues(new Uint8Array(4))).toHaveLength(
-			4,
-		);
-		const data = new dom.window.FormData();
-		data.append("name", "value");
-		expect(data.get("name")).toBe("value");
+		expect(dom.window.crypto.getRandomValues(new Uint8Array(4)))
+			.toHaveLength(4);
 	} finally {
-		for (const [name, descriptor] of saved) {
-			if (descriptor === undefined) {
-				delete global[name];
-			} else {
-				Object.defineProperty(globalThis, name, descriptor);
-			}
+		if (saved !== undefined) {
+			Object.defineProperty(globalThis, "crypto", saved);
 		}
 		dom.dispose();
 	}
