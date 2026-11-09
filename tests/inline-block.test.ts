@@ -59,6 +59,22 @@ test("an inline-level flex or grid item counts its padding and border once", asy
 	dom.dispose();
 });
 
+// overflow:hidden drops the automatic minimum (css-flexbox-1 §4.5), so
+// the button shrinks toward 0, and stops at its 2 cells of padding and
+// 2 of border a side, as a block would.
+test("a shrinking inline-block flex item stops at its padding and border", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 4});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"display:flex;width:8px\">" +
+		"<button style=\"padding:0 2px;border:1px solid;overflow:hidden\">" +
+		"Today</button><span style=\"flex-shrink:0\">Nov 2026</span></div>";
+	await nextFrame(dom);
+	const button = dom.document.querySelector("button")!.getBoundingClientRect();
+	expect(button.width).toBe(6);
+	dom.dispose();
+});
+
 // css-sizing-3 §5.2.1: while the flex item's width is being found, a
 // percentage of it is auto, so the input asks for its size attribute's
 // 20 columns, and then fills the 20 the item gets.

@@ -259,6 +259,11 @@ export interface Style {
 	position: Edges<CSSValues.Value>;
 	padding: Edges<CSSValues.Value>;
 	border: Edges<number>;
+	// Padding and border the node's measure counts in the size it returns,
+	// which the node holds none of. They floor the box's size on each axis,
+	// as its own padding and border would, and take no space inside it.
+	measuredEdgesRow: number;
+	measuredEdgesColumn: number;
 
 	width: CSSValues.Value;
 	widthSizing: Sizing;
@@ -1317,6 +1322,8 @@ class LayoutStyle {
 			bottom: UNDEFINED_VALUE,
 		};
 		this.border = {left: 0, top: 0, right: 0, bottom: 0};
+		this.measuredEdgesRow = 0;
+		this.measuredEdgesColumn = 0;
 
 		this.width = AUTO_VALUE;
 		this.widthSizing = "none";
@@ -1360,6 +1367,8 @@ function isSameStyle(a: Style, b: Style): boolean {
 		a.margin === b.margin &&
 		a.padding === b.padding &&
 		a.border === b.border &&
+		a.measuredEdgesRow === b.measuredEdgesRow &&
+		a.measuredEdgesColumn === b.measuredEdgesColumn &&
 		a.position === b.position &&
 		a.gap === b.gap &&
 		a.flexDirection === b.flexDirection &&
@@ -1639,9 +1648,12 @@ function boundAxis(
 	axisSize: number,
 	ownerWidth: number,
 ): number {
+	const measuredEdges = isRow(axis)
+		? node.style.measuredEdgesRow
+		: node.style.measuredEdgesColumn;
 	return Math.max(
 		boundAxisWithinMinMax(node, axis, value, axisSize),
-		getAxisPaddingAndBorder(node, axis, ownerWidth),
+		getAxisPaddingAndBorder(node, axis, ownerWidth) + measuredEdges,
 	);
 }
 

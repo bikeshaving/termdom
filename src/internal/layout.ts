@@ -1704,9 +1704,23 @@ function styleLayoutNodeProperties(
 		applyLegacyAlignment(style, element, display, parentIsFlex);
 	}
 
-	for (const edge of getMaskedEdges(element)) {
+	const masked = getMaskedEdges(element);
+	for (const edge of masked) {
 		style.padding[edge] = toValue(0);
 		style.border[edge] = 0;
+	}
+	if (masked.length > 0) {
+		const box = getBoxModel(element);
+		style.measuredEdgesRow =
+			(box.paddingLeft || 0) +
+			(box.paddingRight || 0) +
+			(box.borderLeftWidth || 0) +
+			(box.borderRightWidth || 0);
+		style.measuredEdgesColumn =
+			(box.paddingTop || 0) +
+			(box.paddingBottom || 0) +
+			(box.borderTopWidth || 0) +
+			(box.borderBottomWidth || 0);
 	}
 
 	// Item properties are consulted only inside a flex or grid container,
