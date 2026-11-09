@@ -59,6 +59,24 @@ test("an inline-level flex or grid item counts its padding and border once", asy
 	dom.dispose();
 });
 
+// css-sizing-3 §5.2.1: while the flex item's width is being found, a
+// percentage of it is auto, so the input asks for its size attribute's
+// 20 columns, and then fills the 20 the item gets.
+test("a width:100% input sizes its auto-width flex item as an auto input would", async () => {
+	const terminal = new MockProcess({cols: 60, rows: 4});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<div style=\"display:flex\"><div id=\"item\">" +
+		"<input style=\"width:100%;border:none\" value=\"11/9/2026\"></div>" +
+		"<span>Month</span></div>";
+	await nextFrame(dom);
+	const item = dom.document.getElementById("item")!.getBoundingClientRect();
+	const input = dom.document.querySelector("input")!.getBoundingClientRect();
+	expect(item.width).toBe(20);
+	expect(input.width).toBe(20);
+	dom.dispose();
+});
+
 test("an empty rows=1 textarea in a flex ROW is 3 rows: content + border", async () => {
 	const terminal = new MockProcess({cols: 118, rows: 30});
 	const dom = new TermDOM({transport: terminal.transport});

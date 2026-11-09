@@ -120,7 +120,7 @@ import {getActiveRealm, isInRealm, runInRealm, windowMember} from "./webidl.ts";
 // element's viewport block, a select sized to its widest option label so
 // the text control never jumps, the size attribute driving an input's width.
 // Everything expressible as CSS lives in UA_ELEMENT_STYLES.
-function getElementDefaults(
+export function getElementDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
 	if (getNamespace(element) === MATHML_NAMESPACE) {

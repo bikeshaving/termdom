@@ -10,6 +10,7 @@ import {
 	getCellPadding,
 	getComputedValue,
 	getDeclaredDisplay,
+	getElementDefaults,
 	getWhiteSpace as getElementWhiteSpace,
 	getFixedContainingBlock,
 	getStyleGroup,
@@ -4117,8 +4118,10 @@ function measureAtomicInline(
 	// getBoxModel carries only absolute widths. A percentage
 	// resolves here against the run's available width, which is
 	// what lets `input { width: 100% }` fill its container instead
-	// of collapsing to a void element's zero. Indefinite width
-	// falls through to auto.
+	// of collapsing to a void element's zero. An intrinsic probe's
+	// width is not the container's, so the percentage is auto there
+	// (css-sizing-3 §5.2.1), as it is for an indefinite width, and a
+	// text input or select takes the width its attributes give.
 	if (boxModel.width === undefined) {
 		const widthValue = CSSValues.parseUnitValue(
 			getComputedValue(element, "width"),
@@ -4126,6 +4129,7 @@ function measureAtomicInline(
 		if (
 			widthValue !== null &&
 			typeof widthValue === "object" &&
+			availableWidthMode === "definite" &&
 			Number.isFinite(availableWidth) &&
 			availableWidth < Number.MAX_SAFE_INTEGER
 		) {
@@ -4133,6 +4137,14 @@ function measureAtomicInline(
 				0,
 				(widthValue.percentage / 100) * availableWidth,
 			);
+		} else if (widthValue !== null && typeof widthValue === "object") {
+			const fallback = getElementDefaults(element)?.width;
+			const width = fallback === undefined
+				? null
+				: toCellLength(CSSValues.parseUnitValue(fallback), false, element);
+			if (typeof width === "number") {
+				boxModel.width = width;
+			}
 		}
 	}
 
