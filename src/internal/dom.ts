@@ -18604,8 +18604,8 @@ function linkFormData(): void {
 		Object.prototype.isPrototypeOf.call(FormData.prototype, runtime.prototype)
 	) {
 		throw new TypeError(
-			"The runtime's FormData was replaced on globalThis before TermDOM " +
-				"first read it. Construct a FormData before replacing it.",
+			"Node's FormData was replaced on globalThis before TermDOM first " +
+				"read it. Construct a FormData before replacing it.",
 		);
 	}
 	formDataLinked = true;
@@ -41484,6 +41484,31 @@ export function findRuntimeGlobals(): void {
 	findRuntimeTypes();
 	linkFormData();
 	getRuntimeCrypto();
+}
+
+// Whether reading the runtime's fetch classes would load what they come
+// from: Node loads its fetch, 3 MB a process, the first time one of them
+// is read, and lists the modules it has loaded. Elsewhere, and once Node
+// has loaded it, the read costs nothing.
+function readingFetchClassesLoadsFetch(): boolean {
+	const loaded = (globalThis as {process?: {moduleLoadList?: unknown}})
+		.process?.moduleLoadList;
+	return Array.isArray(loaded) &&
+		loaded.length > 0 &&
+		!loaded.some((name) => String(name).includes("undici"));
+}
+
+/**
+ * Reads the runtime's fetch classes, FormData's parent among them, as a
+ * TermDOM is made, before an embedder can put the window's on
+ * globalThis, unless reading them would load Node's fetch, which is then
+ * read when first needed.
+ */
+export function findRuntimeFetchClasses(): void {
+	if (!readingFetchClassesLoadsFetch()) {
+		findRuntimeTypes();
+		linkFormData();
+	}
 }
 
 export interface PerformanceEntrySlots {
