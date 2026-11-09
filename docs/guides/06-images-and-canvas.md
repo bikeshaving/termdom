@@ -1,6 +1,6 @@
 ---
 title: Images and canvas
-description: How <img> and <canvas> draw pixels, and how <embed> runs a program.
+description: How <img> and <canvas> draw pixels, how <iframe> shows a document, and how <embed> runs a program.
 ---
 
 A cell shows two pixels: a lower half block, `▄`, in the foreground
@@ -374,6 +374,76 @@ the page's borders.
 | `measureText(text)` | Width in columns |
 | `reset()` | Clears the grid and settings |
 | `isContextLost()` | Always `false` |
+
+## `<iframe>`
+
+A frame shows its `srcdoc`, or an empty `about:blank` document. TermDOM
+doesn't load a frame's `src`. An embedder that loads pages has to fill
+the frame itself. The frame draws its document in its
+box, which is 300 by 150 CSS pixels unless CSS or the `width` and
+`height` attributes say otherwise.
+
+Each frame has a window of its own. Where the runtime has `node:vm`, as
+Node, Bun and Deno do, the window is in a realm of its own, with its own
+`Array`, `Object` and DOM interfaces. Elsewhere, as in a browser or
+isolated-vm, the window shares the page's realm, but has the rest of a
+window: `postMessage()`, `location`, `parent`, `top`, `frameElement`,
+timers, and the rest.
+
+Handler attributes in a frame don't run, even with `scripting:
+"enabled"`.
+
+### Origins
+
+A frame showing `srcdoc` or `about:blank` has the page's origin. A
+`sandbox` attribute without `allow-same-origin` gives the frame an
+opaque origin of its own, which reads as `"null"`. A frame inside a
+sandboxed frame is sandboxed too.
+
+Windows of two origins can't read each other. `contentDocument` is
+null, and `contentWindow`, `frames[0]`, a frame's name on the window,
+`parent` and `top` give a stand-in for the window. The stand-in has only
+`window`, `self`, `frames`, `length`, `top`, `parent`, `opener`,
+`closed`, `location`, `postMessage()`, `close()`, `focus()`, `blur()`,
+and the child frames by index. Its `location` lets you set `href` and
+call `replace()`. Anything else throws a `SecurityError`. For example,
+`frame.contentWindow.getSelection()` throws for a sandboxed frame. Add
+`allow-same-origin` to the sandbox to read it.
+
+### Messages
+
+`postMessage(message, targetOrigin)` works between a page and its
+frames, both ways:
+
+```ts
+frame.contentWindow.postMessage("hello", "https://example.com");
+window.addEventListener("message", (event) => {
+  if (event.source === frame.contentWindow) {
+    console.log(event.origin, event.data);
+  }
+});
+```
+
+The message arrives later, as a task, in a `message` event. Its
+`origin` is the sender's, `"null"` for an opaque one, and its `source`
+is the sender as the receiver holds it, so `event.source === parent`
+holds in a frame. The message lands only if the receiver's origin is
+`targetOrigin`. `"*"` matches any origin, and `"/"` the sender's.
+
+Without `node:vm`, TermDOM can't tell whose code calls `postMessage()`
+on a window of the caller's origin, so the message comes from the top
+window. A message sent through the stand-in for a window of another
+origin comes from the window that holds the stand-in.
+
+### Navigation
+
+A frame may set `parent.location.href`, also across origins. The parent
+fires `navigate` on `window.navigation`, where a listener can intercept
+or cancel it. A navigation to another document that nothing intercepts
+throws `NotSupportedError`, as it does in the page. A sandboxed frame
+may navigate its top window only with `allow-top-navigation`, or with
+`allow-top-navigation-by-user-activation` during a user's action, and
+otherwise throws `SecurityError`.
 
 ## `<embed type="application/x-pty">`
 
