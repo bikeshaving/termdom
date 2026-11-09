@@ -310,6 +310,27 @@ export function averageBitmap(
 // The registry: what an <img>, a <canvas> or an ImageBitmap holds, for
 // drawImage() and the painter to read without knowing the elements.
 
+/**
+ * An image a grid shows, `cols` by `rows` cells, and the grid's cells
+ * that show a part of it: each one's place in the grid, the cell of the
+ * image it shows, and the background under it.
+ */
+export interface GridImage {
+	// Names the image and its pixels among the ones any grid shows.
+	key: string;
+	version: number;
+	bitmap: Bitmap;
+	cols: number;
+	rows: number;
+	cells: Array<{
+		row: number;
+		col: number;
+		imageRow: number;
+		imageCol: number;
+		bg: number | null;
+	}>;
+}
+
 /** What a replaced element shows. */
 export type ReplacedContent =
 	{
@@ -334,6 +355,8 @@ export type ReplacedContent =
 		// Where in the grid the terminal's cursor goes, as a frame's focused
 		// field puts it, read once the grid is fitted. None for no caret.
 		caret?: () => Caret | null;
+		// The images the grid's cells show, read once the grid is fitted.
+		images?: () => GridImage[];
 	} |
 	{kind: "text"; text: string; loading: boolean} |
 	null;

@@ -130,6 +130,29 @@ export function getPlaceholder(row: number, col: number): string {
 	return PLACEHOLDER + DIACRITICS[row] + DIACRITICS[col];
 }
 
+const DIACRITIC_NUMBERS = new Map(
+	DIACRITICS.map((diacritic, index) => [diacritic, index]),
+);
+
+/**
+ * The row and column a placeholder another program wrote names, or null
+ * for text that is not one. A placeholder without both diacritics names
+ * no cell this reads.
+ */
+export function readPlaceholder(
+	text: string,
+): {row: number; col: number} | null {
+	if (!text.startsWith(PLACEHOLDER)) {
+		return null;
+	}
+	const [, row, col] = [...text];
+	const rowNumber = row === undefined ? undefined : DIACRITIC_NUMBERS.get(row);
+	const colNumber = col === undefined ? undefined : DIACRITIC_NUMBERS.get(col);
+	return rowNumber === undefined || colNumber === undefined
+		? null
+		: {row: rowNumber, col: colNumber};
+}
+
 // A placeholder in a cell grid's character plane: this bit over its row
 // and column, 12 bits each. Code points sit below it and interned
 // clusters above, so a placeholder is no cluster of its own and no text

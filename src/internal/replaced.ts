@@ -33,6 +33,7 @@ import {
 	getNaturalHeight,
 	getNaturalWidth,
 	getReplacedContent,
+	type GridImage,
 	isReplacedElement,
 	MAX_IMAGE_PIXELS,
 	type ReplacedContent,
@@ -609,6 +610,109 @@ function getPlaceholderCells(
 
 const settledGrids = new WeakMap<CellGrid, {version: number; grid: CellGrid}>();
 
+// A grid image's pixels at two to a cell, for the version and size they
+// were sampled at.
+const gridImagePixels = new WeakMap<
+	Bitmap,
+	{key: string; pixels: Uint8ClampedArray}
+>();
+
+function getGridImagePixels(image: GridImage): Uint8ClampedArray {
+	const key = `${image.version},${image.cols},${image.rows}`;
+	const cached = gridImagePixels.get(image.bitmap);
+	if (cached !== undefined && cached.key === key) {
+		return cached.pixels;
+	}
+	const pixels = drawPlaced(
+		image.bitmap,
+		{x: 0, y: 0, width: image.cols, height: image.rows * 2},
+		image.cols,
+		image.rows * 2,
+		1,
+		1,
+		true,
+	);
+	gridImagePixels.set(image.bitmap, {key, pixels});
+	return pixels;
+}
+
+// The images a grid's cells show, over the grid in its content box,
+// `cols` by `rows` cells at `left`, `top`. Where the terminal draws kitty
+// graphics, each is one image the terminal holds, sized to the cells its
+// placement covers, and its cells are placeholders. Elsewhere its cells
+// are half blocks.
+function drawGridImages(
+	ctx: CellContext,
+	images: GridImage[],
+	left: number,
+	top: number,
+	cols: number,
+	rows: number,
+	under: number | null,
+	style: CellStyle,
+): void {
+	if (images.length === 0) {
+		return;
+	}
+	const overlay = new CellContext(new CellGrid(rows, cols), rows, cols, 0);
+	const graphics = ctx.graphics;
+	for (const image of images) {
+		const cell = graphics?.images ? graphics.cellPixels() : null;
+		const width = image.cols * (cell?.width ?? 0);
+		const height = image.rows * (cell?.height ?? 0);
+		const kitty =
+			graphics !== null &&
+			cell !== null &&
+			image.cols <= MAX_PLACEHOLDER_CELLS &&
+			image.rows <= MAX_PLACEHOLDER_CELLS &&
+			width * height <= MAX_KITTY_PIXELS;
+		const held = kitty
+			? placeKittyImage(
+				graphics,
+				`${image.key},${cell.width},${cell.height}`,
+				image.version,
+				{width, height, cols: image.cols, rows: image.rows},
+				() =>
+					drawPlaced(
+						getFullBitmap(image.bitmap),
+						{x: 0, y: 0, width: image.cols, height: image.rows * 2},
+						width,
+						height,
+						cell.width,
+						cell.height / 2,
+						true,
+					),
+			)
+			: null;
+		const pixels = held === null ? getGridImagePixels(image) : null;
+		for (const place of image.cells) {
+			if (place.row >= rows || place.col >= cols) {
+				continue;
+			}
+			const bg = place.bg ?? under;
+			if (held !== null) {
+				overlay.grid.setPlaceholder(
+					place.row * cols + place.col,
+					place.imageRow,
+					place.imageCol,
+					{fg: CSSValues.toCellColor(held.id), bg: bg ?? undefined},
+				);
+				continue;
+			}
+			const half = halfBlockCell(
+				pixels!,
+				(place.imageRow * 2 * image.cols + place.imageCol) * 4,
+				((place.imageRow * 2 + 1) * image.cols + place.imageCol) * 4,
+				bg,
+			);
+			if (half !== null) {
+				drawText(overlay, half.char, place.col, place.row, half.style);
+			}
+		}
+	}
+	drawGrid(ctx, overlay.grid, left, top, style);
+}
+
 // A cellgrid's cells with its lines joined among themselves and
 // drawn, kept until the canvas draws again.
 function getSettledGrid(
@@ -691,6 +795,16 @@ export function renderReplaced(
 				getSettledGrid(content, content.fit(cols, rows)),
 				left,
 				top,
+				style,
+			);
+			drawGridImages(
+				ctx,
+				content.images?.() ?? [],
+				left,
+				top,
+				cols,
+				rows,
+				under,
 				style,
 			);
 			// The cursor goes where the grid's own caret is, as a frame's

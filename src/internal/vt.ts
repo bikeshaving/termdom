@@ -35,6 +35,7 @@ const CSI_IGNORE = 6;
 const OSC_STRING = 7;
 const IGNORED_STRING = 8;
 const DCS_STRING = 9;
+const APC_STRING = 10;
 
 const MAX_PARAMS = 32;
 const MAX_SUBPARAMS = 8;
@@ -42,6 +43,9 @@ const MAX_DCS = 64;
 const PARAM_LIMIT = {output: 0xffff, input: Infinity};
 // A clipboard reply in "input" mode may reach 64K.
 export const OSC_LIMIT = {output: 4096, input: 1 << 16};
+// An APC, where the kitty graphics protocol sends an image in chunks of
+// 4096 bytes. A program that sends one whole has a megabyte.
+const APC_LIMIT = 1 << 20;
 
 // Printable characters, ending before a high surrogate whose pair the
 // text may cut, and a CSI with no control inside it.
@@ -192,6 +196,7 @@ export interface ParserHandlers {
 	esc(final: string): void;
 	osc(text: string): void;
 	dcs(text: string): void;
+	apc(text: string): void;
 }
 
 /**
@@ -218,6 +223,7 @@ export class Parser {
 	intermediates: string;
 	osc: string;
 	dcs: string;
+	apc: string;
 	highSurrogate: number;
 
 	constructor(handlers: ParserHandlers) {
@@ -228,6 +234,7 @@ export class Parser {
 		this.intermediates = "";
 		this.osc = "";
 		this.dcs = "";
+		this.apc = "";
 		this.highSurrogate = 0;
 	}
 
@@ -408,7 +415,10 @@ export class Parser {
 				} else if (code === 0x50) {
 					this.dcs = "";
 					this.state = DCS_STRING;
-				} else if (code === 0x58 || code === 0x5e || code === 0x5f) {
+				} else if (code === 0x5f) {
+					this.apc = "";
+					this.state = APC_STRING;
+				} else if (code === 0x58 || code === 0x5e) {
 					this.state = IGNORED_STRING;
 				} else {
 					this.state = GROUND;
@@ -495,6 +505,14 @@ export class Parser {
 					this.state = GROUND;
 				}
 				return;
+			case APC_STRING:
+				if (code === 0x07) {
+					this.state = GROUND;
+					this.handlers.apc(this.apc);
+				} else if (code >= 0x20 && this.apc.length < APC_LIMIT) {
+					this.apc += String.fromCodePoint(code);
+				}
+				return;
 			case DCS_STRING:
 				if (mode === "input" || this.dcs.length < MAX_DCS) {
 					this.dcs += String.fromCodePoint(code);
@@ -503,16 +521,18 @@ export class Parser {
 		}
 	}
 
-	// ESC or ST ends a string, and an OSC or a DCS takes effect.
+	// ESC or ST ends a string, and an OSC, a DCS or an APC takes effect.
 	endString(): void {
 		if (this.state === OSC_STRING) {
 			this.handlers.osc(this.osc);
 		} else if (this.state === DCS_STRING) {
 			this.handlers.dcs(this.dcs);
+		} else if (this.state === APC_STRING) {
+			this.handlers.apc(this.apc);
 		}
 	}
 
-	// The 8-bit controls, as xterm reads them: CSI, OSC and DCS start
+	// The 8-bit controls, as xterm reads them: CSI, OSC, DCS and APC start
 	// their sequences, and the rest are controls.
 	consumeC1(code: number): void {
 		switch (code) {
@@ -530,9 +550,12 @@ export class Parser {
 				this.dcs = "";
 				this.state = DCS_STRING;
 				return;
+			case 0x9f:
+				this.apc = "";
+				this.state = APC_STRING;
+				return;
 			case 0x98:
 			case 0x9e:
-			case 0x9f:
 				this.state = IGNORED_STRING;
 				return;
 		}
@@ -584,6 +607,9 @@ export class Terminal {
 	// The default foreground and background, as RGB, that OSC 10 and 11
 	// report, null for one that goes unanswered.
 	colors: (() => DefaultColors) | null;
+	// Takes the kitty graphics protocol's commands, each without its G.
+	// Without one, they are dropped.
+	graphics: ((command: string) => void) | null;
 	// How many times the program rang the bell.
 	bells: number;
 	insertMode: boolean;
@@ -612,6 +638,7 @@ export class Terminal {
 		this.rows = Math.max(1, rows);
 		this.reply = reply;
 		this.colors = null;
+		this.graphics = null;
 		this.decoder = new TextDecoder();
 		this.normal = createBuffer(this.cols, this.rows);
 		this.alternate = createBuffer(this.cols, this.rows);
@@ -1281,6 +1308,8 @@ export class Terminal {
 		if (prefix === ">") {
 			if (final === "c") {
 				this.reply("\x1b[>0;276;0c");
+			} else if (final === "q" && this.param(0, 0) === 0) {
+				this.reply("\x1bP>|TermDOM\x1b\\");
 			}
 			return;
 		}
@@ -1763,6 +1792,13 @@ export class Terminal {
 			this.link = link[2] !== "";
 		}
 		this.preceding = null;
+	}
+
+	apc(text: string): void {
+		this.preceding = null;
+		if (text.startsWith("G")) {
+			this.graphics?.(text.slice(1));
+		}
 	}
 
 	// DECRQSS: the SGR, the margins, the cursor's shape, and the fixed

@@ -609,8 +609,8 @@ const KITTY_GRAPHICS_QUERY =
 const KITTY_GRAPHICS_REPORT = /^\x1b_G[^;\x1b]*;([^\x1b]*)\x1b\\/;
 
 // The terminals whose XTVERSION names one that draws the protocol's
-// Unicode placeholders.
-const PLACEHOLDER_TERMINALS = /^(?:kitty|ghostty)\b/i;
+// Unicode placeholders, a TermDOM pty embed among them.
+const PLACEHOLDER_TERMINALS = /^(?:kitty|ghostty|termdom)\b/i;
 
 /**
  * Decodes one chunk into what it meant. Keeps what a chunk boundary can
@@ -805,6 +805,8 @@ class WireReader implements ParserHandlers {
 	execute(): void {}
 
 	esc(): void {}
+
+	apc(): void {}
 
 	csi(final: string): void {
 		const item = decodeCSI(this.parser, final);

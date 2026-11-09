@@ -14,6 +14,9 @@ import {
 	clearGrid,
 	drawText,
 } from "./framebuffer.ts";
+import type {GridImage} from "./images.ts";
+import {readPlaceholder} from "./kitty.ts";
+import {type ProgramImage, ProgramImages} from "./ptyimages.ts";
 import {clearTimeout, setTimeout} from "./timers.ts";
 import {
 	BLINK,
@@ -541,6 +544,8 @@ function clampSize(size: number): number {
 	return Math.min(MAX_SIZE, Math.max(1, Math.floor(size) || 1));
 }
 
+let nextSessionToken = 0;
+
 /**
  * One program on one pseudo-terminal, and the screen it draws. It draws
  * into a box as a frame's document does: fit() gives the cells at the
@@ -567,6 +572,12 @@ export class PTYSession {
 	// While the program has synchronized output on, the timer that draws
 	// what it wrote anyway, should it never turn it off.
 	held: ReturnType<typeof setTimeout> | null;
+	// The kitty graphics the program sent, and the ones its cells showed
+	// when the grid was drawn last.
+	images: ProgramImages;
+	shown: GridImage[];
+	// Tells this session's images from another's.
+	token: number;
 
 	constructor(cols: number, rows: number, listeners: PTYSessionListeners) {
 		this.cols = clampSize(cols);
@@ -586,6 +597,13 @@ export class PTYSession {
 			this.write(data),
 		);
 		this.terminal.colors = listeners.colors;
+		this.images = new ProgramImages(
+			(data) => this.write(data),
+			() => this.show(),
+		);
+		this.terminal.graphics = (command) => this.images.command(command);
+		this.shown = [];
+		this.token = nextSessionToken++;
 	}
 
 	/** Where the program's cursor is, or null while it is hidden or gone. */
@@ -871,10 +889,12 @@ export class PTYSession {
 		if (this.drawn !== this.version) {
 			this.drawn = this.version;
 			clearGrid(this.grid);
-			drawScreen(
+			this.shown = drawScreen(
 				new CellContext(this.grid, this.rows, this.cols, 0),
 				this.terminal,
 				this.scrolled,
+				this.images.images,
+				this.token,
 			);
 		}
 		return this.grid;
@@ -884,6 +904,7 @@ export class PTYSession {
 		this.process?.kill();
 		this.process = null;
 		this.release();
+		this.images.dispose();
 		this.disposed = true;
 	}
 }
@@ -899,11 +920,26 @@ function isBlank(chars: string, style: CellStyle): boolean {
 		!style.overline;
 }
 
+// The image a placeholder cell names by its foreground: 24-bit color for
+// an id of three bytes, a palette index for one of one.
+function getImageId(fg: number): number {
+	if (fg === DEFAULT_COLOR) {
+		return 0;
+	}
+	return fg >= RGB_COLOR ? fg & 0xffffff : fg;
+}
+
+// The screen's cells, and the images its placeholder cells show. A
+// placeholder for an image the program has not placed draws nothing
+// but its background.
 function drawScreen(
 	cells: CellContext,
 	terminal: Terminal,
 	scrolled: number,
-): void {
+	images: Map<number, ProgramImage>,
+	token: number,
+): GridImage[] {
+	const shown = new Map<number, GridImage>();
 	const {lines, history} = terminal;
 	for (let row = 0; row < terminal.rows; row++) {
 		const line = row < scrolled
@@ -915,10 +951,45 @@ function drawScreen(
 				continue;
 			}
 			const style = readCellStyle(line, col);
+			const place = readPlaceholder(line.chars[col]);
+			if (place !== null) {
+				const id = getImageId(line.fg[col]);
+				const image = images.get(id);
+				if (
+					image !== undefined &&
+					place.row < image.rows &&
+					place.col < image.cols
+				) {
+					let entry = shown.get(id);
+					if (entry === undefined) {
+						entry = {
+							key: `pty:${token}:${id}`,
+							version: image.version,
+							bitmap: image.bitmap,
+							cols: image.cols,
+							rows: image.rows,
+							cells: [],
+						};
+						shown.set(id, entry);
+					}
+					entry.cells.push({
+						row,
+						col,
+						imageRow: place.row,
+						imageCol: place.col,
+						bg: style.bg ?? null,
+					});
+				}
+				if (style.bg !== undefined) {
+					drawText(cells, " ", col, row, {bg: style.bg});
+				}
+				continue;
+			}
 			const chars = line.attrs[col] & INVISIBLE ? "" : line.chars[col];
 			if (!isBlank(chars, style)) {
 				drawText(cells, chars === "" ? " " : chars, col, row, style);
 			}
 		}
 	}
+	return [...shown.values()];
 }

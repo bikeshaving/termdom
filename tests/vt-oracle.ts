@@ -215,9 +215,9 @@ function show(value: unknown): string {
 // how nvim learns it can use 24-bit color.
 const SGR_REPORT = /\x1bP1\$r[\d;:]*m\x1b\\/g;
 
-// xterm.js has no kitty keyboard protocol, so it leaves the query for
-// the protocol's flags unanswered.
-const KEYBOARD_FLAGS_REPORT = /\x1b\[\?\d+u/g;
+// xterm.js has no kitty keyboard protocol and no XTVERSION, so it
+// leaves the queries for the protocol's flags and its name unanswered.
+const UNANSWERED_REPORTS = /\x1b\[\?\d+u|\x1bP>\|[^\x1b]*\x1b\\/g;
 
 /**
  * The ways the emulator's state after `data` differs from xterm.js's,
@@ -235,7 +235,7 @@ export async function compareWithXterm(
 ): Promise<string[]> {
 	const ours = snapshotOurs(data, cols, rows, scrollback);
 	const theirs = await snapshotXterm(data, cols, rows, scrollback);
-	ours.replies = ours.replies.replace(KEYBOARD_FLAGS_REPORT, "");
+	ours.replies = ours.replies.replace(UNANSWERED_REPORTS, "");
 	if (sgrReports === "ignore") {
 		ours.replies = ours.replies.replace(SGR_REPORT, "");
 		theirs.replies = theirs.replies.replace(SGR_REPORT, "");

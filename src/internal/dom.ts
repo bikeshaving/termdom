@@ -17814,6 +17814,7 @@ function startProgram(embed: HTMLEmbedElement): void {
 			hasSystemFocus(slots.document)
 				? program.caret
 				: null,
+		images: () => program.shown,
 	}));
 	attachedSlots.extra.loadSignal.addEventListener(
 		"abort",

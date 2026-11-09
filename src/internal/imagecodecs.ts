@@ -80,7 +80,10 @@ function readUint32(bytes: Uint8Array, offset: number): number {
 // and browsers all have it, and nothing else here needs a platform API.
 // Reading stops at `limit` bytes: deflate shrinks a run of zeros a
 // thousandfold, so what a stream would inflate to is no bound at all.
-async function inflate(data: Uint8Array, limit: number): Promise<Uint8Array> {
+export async function inflate(
+	data: Uint8Array,
+	limit: number,
+): Promise<Uint8Array> {
 	const reader = new Blob([data as BlobPart])
 		.stream()
 		.pipeThrough(new DecompressionStream("deflate"))

@@ -6,6 +6,8 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {encodePNG, toBase64} from "../src/internal/imagecodecs.ts";
+import {getPlaceholder} from "../src/internal/kitty.ts";
 import {
 	encodeKey,
 	type PTYProcess,
@@ -14,7 +16,13 @@ import {
 	replaceSpawner,
 } from "../src/internal/pty.ts";
 import {encodeWithGhostty} from "./ghostty-oracle.ts";
-import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.js";
+import {
+	captureRawOutput,
+	MockProcess,
+	nextFrame,
+	scriptReplies,
+	until,
+} from "./test-utils.js";
 
 interface FakeChild {
 	command: string;
@@ -476,6 +484,195 @@ test("OSC 10 and 11 report the colors the embed draws the program's own cells in
 	expect(document.querySelectorAll("embed").length).toBe(3);
 	await dom.dispose();
 });
+
+// Two pixels across and two down, red on the left and blue on the right,
+// sent as RGB and placed over two cells.
+const TWO_PIXELS =
+	"\x1b_Ga=T,U=1,i=7,f=24,s=2,v=2,c=2,r=1,q=2;" +
+	btoa(String.fromCharCode(255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255)) +
+	"\x1b\\\x1b[38;2;0;0;7m" +
+	getPlaceholder(0, 0) +
+	getPlaceholder(0, 1) +
+	"\x1b[m";
+
+async function mountImages(
+	images: "cells" | "kitty",
+): Promise<{
+	dom: TermDOM;
+	terminal: MockProcess;
+	output: () => string;
+	children: FakeChild[];
+}> {
+	const {spawn, children} = fakeSpawner();
+	replaceSpawner(spawn);
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;16;8t"}]);
+	const output = captureRawOutput(terminal);
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		ptyEmbeds: "auto",
+		colorDepth: "rgb",
+		images,
+	});
+	dom.document.body.innerHTML =
+		`<embed type="application/x-pty" src="sh" width="4" height="2">`;
+	await nextFrame(dom);
+	return {dom, terminal, output, children};
+}
+
+function cellColors(
+	terminal: MockProcess,
+	col: number,
+	row: number,
+): {char: string; fg: number; bg: number} {
+	const at = (terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	return {
+		char: at.getChars(),
+		fg: at.isFgRGB() ? at.getFgColor() : -1,
+		bg: at.isBgRGB() ? at.getBgColor() : -1,
+	};
+}
+
+test("the embed answers the questions a program asks before it sends kitty graphics", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="2">`,
+		spawn,
+	);
+	children[0].options.onData(
+		"\x1b[>0q\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\" +
+			"\x1b_Gi=32,a=q,t=f;AAAA\x1b\\",
+	);
+	await until(() => children[0].written.length >= 3);
+	expect(children[0].written).toEqual([
+		"\x1bP>|TermDOM\x1b\\",
+		"\x1b_Gi=31;OK\x1b\\",
+		"\x1b_Gi=32;EINVAL:only direct transmission is supported\x1b\\",
+	]);
+	await dom.dispose();
+});
+
+test("a program's kitty image draws in half blocks on a terminal without kitty graphics", async () => {
+	const {dom, terminal, children} = await mountImages("cells");
+	children[0].options.onData(TWO_PIXELS);
+	await until(() => cellColors(terminal, 1, 0).bg === 0x0000ff);
+	expect([cellColors(terminal, 0, 0).bg, cellColors(terminal, 1, 0).bg])
+		.toEqual([0xff0000, 0x0000ff]);
+	await dom.dispose();
+});
+
+test("a program's kitty image goes to a terminal with kitty graphics as one of the page's own", async () => {
+	const {dom, terminal, output, children} = await mountImages("kitty");
+	children[0].options.onData(TWO_PIXELS);
+	await until(() => cellColors(terminal, 1, 0).char === getPlaceholder(0, 1));
+	const upload = /\x1b_G([^;\x1b]*a=T[^;\x1b]*);/.exec(output());
+	expect(upload).not.toBe(null);
+	const keys = Object.fromEntries(
+		upload![1].split(",").map((pair) => pair.split("=")),
+	);
+	expect(keys).toMatchObject({U: "1", c: "2", r: "1", s: "16", v: "16"});
+	const id = Number(keys.i);
+	expect(cellColors(terminal, 0, 0)).toMatchObject({
+		char: getPlaceholder(0, 0),
+		fg: id,
+	});
+	expect(cellColors(terminal, 1, 0).fg).toBe(id);
+	await dom.dispose();
+});
+
+// A TermDOM page run as the program, as a Parkour tab runs one: what it
+// writes is the program's output, and what the embed sends it is its
+// terminal's input.
+function pageSpawner(html: string): {spawn: PTYSpawner; pages: TermDOM[]} {
+	const pages: TermDOM[] = [];
+	const spawn: PTYSpawner = (_command, options) => {
+		let input!: ReadableStreamDefaultController<string>;
+		const transport = {
+			cols: options.cols,
+			rows: options.rows,
+			interactive: true,
+			sharesScreen: false,
+			readable: new ReadableStream<string>({
+				start: (controller) => {
+					input = controller;
+				},
+			}),
+			writable: new WritableStream<string>({
+				write: (chunk) => options.onData(chunk),
+			}),
+			resizes: new ReadableStream({}),
+			ready: Promise.resolve(),
+			closed: new Promise<never>(() => {}),
+			close: () => {},
+		};
+		queueMicrotask(() => {
+			const page = new TermDOM({
+				transport,
+				colorDepth: "rgb",
+				csp: "img-src data:",
+			});
+			page.attach();
+			page.document.body.innerHTML = html;
+			pages.push(page);
+		});
+		return {
+			write: (data) => input.enqueue(data),
+			resize: () => {},
+			kill: () => {},
+		};
+	};
+	return {spawn, pages};
+}
+
+// Red on the left half and blue on the right.
+const HALVES = (() => {
+	const data = new Uint8ClampedArray(16 * 32 * 4);
+	for (let pixel = 0; pixel < 16 * 32; pixel++) {
+		data.set(pixel % 16 < 8 ? [255, 0, 0, 255] : [0, 0, 255, 255], pixel * 4);
+	}
+	return `data:image/png;base64,${toBase64(encodePNG({width: 16, height: 32, data}))}`;
+})();
+
+for (const images of ["cells", "kitty"] as const) {
+	test(`a TermDOM page in an embed sends its image as kitty graphics, which the embed draws ${images === "kitty" ? "as kitty graphics" : "in half blocks"}`, async () => {
+		const {spawn, pages} =
+			pageSpawner(`<img src="${HALVES}" style="width: 4ch; height: 2em">`);
+		replaceSpawner(spawn);
+		const terminal = new MockProcess({cols: 40, rows: 12});
+		scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;16;8t"}]);
+		const output = captureRawOutput(terminal);
+		const dom = new TermDOM({
+			transport: terminal.transport,
+			ptyEmbeds: "auto",
+			colorDepth: "rgb",
+			images,
+		});
+		dom.document.body.innerHTML =
+			`<embed type="application/x-pty" src="page" width="80" height="64">`;
+		await nextFrame(dom);
+		if (images === "cells") {
+			await until(() => cellColors(terminal, 3, 1).bg === 0x0000ff);
+			expect(
+				[0, 1, 2, 3].map((col) => cellColors(terminal, col, 0).bg),
+			).toEqual(
+				[0xff0000, 0xff0000, 0x0000ff, 0x0000ff],
+			);
+		} else {
+			await until(() =>
+				cellColors(terminal, 3, 1).char === getPlaceholder(1, 3),
+			);
+			const uploads = [
+				...output().matchAll(/\x1b_G[^;\x1b]*a=T[^;\x1b]*,i=(\d+)[^;\x1b]*;/g),
+			];
+			expect(uploads.length).toBe(1);
+			expect(cellColors(terminal, 0, 0).fg).toBe(Number(uploads[0][1]));
+		}
+		for (const page of pages) {
+			page.dispose();
+		}
+		await dom.dispose();
+	});
+}
 
 test("a key from the terminal reaches a program that set kitty flags as a kitty key", async () => {
 	const {spawn, children} = fakeSpawner();
