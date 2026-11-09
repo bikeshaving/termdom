@@ -315,3 +315,216 @@ export function compareWithGhostty(
 	}
 	return differences;
 }
+
+const TYPES = readFileSync(
+	new URL("../node_modules/ghostty-web/dist/index.d.ts", import.meta.url),
+	"utf8",
+);
+const KEY_ENUM = TYPES.slice(
+	TYPES.indexOf("export declare enum Key {"),
+	TYPES.indexOf("\n}", TYPES.indexOf("export declare enum Key {")),
+);
+// ghostty-web's Key enum, which it declares and does not export.
+const GHOSTTY_KEYS = new Map(
+	[...KEY_ENUM.matchAll(/(\w+) = (\d+)/g)].map((match) => [
+		match[1],
+		Number(match[2]),
+	]),
+);
+
+const DIGIT_NAMES = [
+	"ZERO",
+	"ONE",
+	"TWO",
+	"THREE",
+	"FOUR",
+	"FIVE",
+	"SIX",
+	"SEVEN",
+	"EIGHT",
+	"NINE",
+];
+
+// The US layout's keys, as Ghostty names them, for each character.
+const PUNCTUATION_KEYS: Record<string, string> = {
+	"`": "GRAVE",
+	"~": "GRAVE",
+	"-": "MINUS",
+	_: "MINUS",
+	"=": "EQUAL",
+	"+": "EQUAL",
+	"[": "BRACKET_LEFT",
+	"{": "BRACKET_LEFT",
+	"]": "BRACKET_RIGHT",
+	"}": "BRACKET_RIGHT",
+	"\\": "BACKSLASH",
+	"|": "BACKSLASH",
+	";": "SEMICOLON",
+	":": "SEMICOLON",
+	"'": "QUOTE",
+	'"': "QUOTE",
+	",": "COMMA",
+	"<": "COMMA",
+	".": "PERIOD",
+	">": "PERIOD",
+	"/": "SLASH",
+	"?": "SLASH",
+	" ": "SPACE",
+	"!": "ONE",
+	"@": "TWO",
+	"#": "THREE",
+	$: "FOUR",
+	"%": "FIVE",
+	"^": "SIX",
+	"&": "SEVEN",
+	"*": "EIGHT",
+	"(": "NINE",
+	")": "ZERO",
+};
+
+const NAMED_KEYS: Record<string, string> = {
+	ArrowUp: "UP",
+	ArrowDown: "DOWN",
+	ArrowLeft: "LEFT",
+	ArrowRight: "RIGHT",
+	PageUp: "PAGE_UP",
+	PageDown: "PAGE_DOWN",
+};
+
+function ghosttyKeyName(key: string): string {
+	if (/^[a-z]$/i.test(key)) {
+		return key.toUpperCase();
+	}
+	if (/^\d$/.test(key)) {
+		return DIGIT_NAMES[Number(key)];
+	}
+	return PUNCTUATION_KEYS[key] ?? NAMED_KEYS[key] ?? key.toUpperCase();
+}
+
+export interface OracleKey {
+	key: string;
+	base: string;
+	ctrlKey: boolean;
+	shiftKey: boolean;
+	altKey: boolean;
+	metaKey: boolean;
+}
+
+/**
+ * The bytes Ghostty's key encoder sends for `key`, pressed, repeated or
+ * released, under the kitty keyboard protocol's `flags`. `base` is the
+ * character the key writes without Shift.
+ */
+export function encodeWithGhostty(
+	key: OracleKey,
+	{flags = 0, applicationCursor = false, action = "press"}: {
+		flags?: number;
+		applicationCursor?: boolean;
+		action?: "press" | "repeat" | "release";
+	} = {},
+): string {
+	const name = ghosttyKeyName(key.key);
+	const physical = GHOSTTY_KEYS.get(name);
+	if (physical === undefined) {
+		throw new Error(`Ghostty has no key ${name}`);
+	}
+	const instance = new WebAssembly.Instance(MODULE, {env: {log() {}}});
+	const encoder = new Ghostty(instance).createKeyEncoder();
+	// ghostty-web's encode() drops the unshifted character and the
+	// modifiers the character took, so the event is built here.
+	const exports = instance.exports as unknown as GhosttyKeyExports;
+	const handle = (encoder as unknown as {encoder: number}).encoder;
+	const slot = exports.ghostty_wasm_alloc_opaque();
+	exports.ghostty_key_event_new(0, slot);
+	const event = new DataView(exports.memory.buffer).getUint32(slot, true);
+	exports.ghostty_wasm_free_opaque(slot);
+	try {
+		encoder.setOption(0, applicationCursor);
+		encoder.setOption(3, true);
+		encoder.setOption(5, flags);
+		const printable = [...key.key].length === 1;
+		exports.ghostty_key_event_set_action(
+			event,
+			action === "release" ? 0 : action === "press" ? 1 : 2,
+		);
+		exports.ghostty_key_event_set_key(event, physical);
+		exports.ghostty_key_event_set_mods(
+			event,
+			(key.shiftKey ? 1 : 0) |
+			(key.ctrlKey ? 2 : 0) |
+				(key.altKey ? 4 : 0) |
+			(key.metaKey ? 8 : 0),
+		);
+		exports.ghostty_key_event_set_consumed_mods(
+			event,
+			printable && key.shiftKey && key.key !== key.base ? 1 : 0,
+		);
+		exports.ghostty_key_event_set_unshifted_codepoint(
+			event,
+			printable ? key.base.codePointAt(0)! : 0,
+		);
+		// The character the layout makes, Shift applied and Ctrl not, as
+		// Ghostty's own apps pass it.
+		if (printable) {
+			const text = new TextEncoder().encode(key.key);
+			const pointer = exports.ghostty_wasm_alloc_u8_array(text.length);
+			new Uint8Array(exports.memory.buffer).set(text, pointer);
+			exports.ghostty_key_event_set_utf8(event, pointer, text.length);
+			exports.ghostty_wasm_free_u8_array(pointer, text.length);
+		}
+		const size = 128;
+		const output = exports.ghostty_wasm_alloc_u8_array(size);
+		const written = exports.ghostty_wasm_alloc_usize();
+		const status = exports.ghostty_key_encoder_encode(
+			handle,
+			event,
+			output,
+			size,
+			written,
+		);
+		const length = new DataView(exports.memory.buffer).getUint32(written, true);
+		const bytes = new Uint8Array(exports.memory.buffer, output, length)
+			.slice();
+		exports.ghostty_wasm_free_u8_array(output, size);
+		exports.ghostty_wasm_free_usize(written);
+		if (status !== 0) {
+			throw new Error(`Ghostty could not encode ${key.key}: ${status}`);
+		}
+		return new TextDecoder().decode(bytes);
+	} finally {
+		exports.ghostty_key_event_free(event);
+		encoder.dispose();
+	}
+}
+
+interface GhosttyKeyExports {
+	memory: WebAssembly.Memory;
+	ghostty_wasm_alloc_opaque(): number;
+	ghostty_wasm_free_opaque(pointer: number): void;
+	ghostty_wasm_alloc_u8_array(length: number): number;
+	ghostty_wasm_free_u8_array(pointer: number, length: number): void;
+	ghostty_wasm_alloc_usize(): number;
+	ghostty_wasm_free_usize(pointer: number): void;
+	ghostty_key_event_new(allocator: number, out: number): number;
+	ghostty_key_event_free(event: number): void;
+	ghostty_key_event_set_action(event: number, action: number): void;
+	ghostty_key_event_set_key(event: number, key: number): void;
+	ghostty_key_event_set_mods(event: number, mods: number): void;
+	ghostty_key_event_set_consumed_mods(event: number, mods: number): void;
+	ghostty_key_event_set_unshifted_codepoint(
+		event: number,
+		codepoint: number,
+	): void;
+	ghostty_key_event_set_utf8(
+		event: number,
+		pointer: number,
+		length: number,
+	): void;
+	ghostty_key_encoder_encode(
+		encoder: number,
+		event: number,
+		output: number,
+		size: number,
+		written: number,
+	): number;
+}

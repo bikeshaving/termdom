@@ -13,6 +13,7 @@ import {
 	type PTYSpawnOptions,
 	replaceSpawner,
 } from "../src/internal/pty.ts";
+import {encodeWithGhostty} from "./ghostty-oracle.ts";
 import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils.js";
 
 interface FakeChild {
@@ -336,6 +337,135 @@ test("a height alone leaves the embed its natural width, in a flex column too", 
 		[80, 4],
 		[80, 4],
 	]);
+	await dom.dispose();
+});
+
+test("the program's kitty keyboard flags are pushed, popped, set and reported, one stack for each screen", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="2">`,
+		spawn,
+	);
+	const reported: string[] = [];
+	for (const output of [
+		"",
+		"\x1b[>5u",
+		"\x1b[?1049h",
+		"\x1b[>1u",
+		"\x1b[?1049l",
+		"\x1b[=3;2u",
+		"\x1b[=1;3u",
+		"\x1b[=8u",
+		"\x1b[<u",
+		"\x1b[<9u",
+	]) {
+		const before = children[0].written.length;
+		children[0].options.onData(`${output}\x1b[?u`);
+		await settle(dom);
+		reported.push(children[0].written.slice(before).join(""));
+	}
+	expect(reported).toEqual([
+		"\x1b[?0u",
+		"\x1b[?5u",
+		"\x1b[?0u",
+		"\x1b[?1u",
+		"\x1b[?5u",
+		"\x1b[?7u",
+		"\x1b[?6u",
+		"\x1b[?8u",
+		"\x1b[?0u",
+		"\x1b[?0u",
+	]);
+	await dom.dispose();
+});
+
+test("keys reach the program as Ghostty's encoder sends them under each set of kitty flags", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, document} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="2">`,
+		spawn,
+	);
+	const embed = document.querySelector("embed")!;
+	const keys: Array<[string, string?]> = [
+		["a", "A"],
+		["1", "!"],
+		["-", "_"],
+		["/", "?"],
+		[" ", " "],
+		["Enter"],
+		["Tab"],
+		["Backspace"],
+		["Escape"],
+		["ArrowUp"],
+		["Home"],
+		["PageUp"],
+		["Delete"],
+		["F1"],
+		["F3"],
+		["F5"],
+		["F13"],
+	];
+	const modifiers = [
+		[],
+		["shiftKey"],
+		["ctrlKey"],
+		["altKey"],
+		["metaKey"],
+		["ctrlKey", "shiftKey"],
+		["altKey", "shiftKey"],
+	];
+	const differences: string[] = [];
+	for (const flags of [1, 2, 4, 5, 8, 13, 16, 24, 31]) {
+		children[0].options.onData(`\x1b[=${flags};1u`);
+		await settle(dom);
+		for (const action of ["press", "repeat", "release"] as const) {
+			for (const [base, shifted] of keys) {
+				for (const held of modifiers) {
+					const key = {
+						key: base,
+						base,
+						ctrlKey: held.includes("ctrlKey"),
+						shiftKey: held.includes("shiftKey"),
+						altKey: held.includes("altKey"),
+						metaKey: held.includes("metaKey"),
+					};
+					if (key.shiftKey && shifted !== undefined) {
+						key.key = shifted;
+					}
+					const before = children[0].written.length;
+					embed.postMessage({
+						...key,
+						type: action === "release" ? "keyup" : "keydown",
+						repeat: action === "repeat",
+					});
+					const ours = children[0].written.slice(before).join("");
+					const theirs = encodeWithGhostty(key, {flags, action});
+					if (ours !== theirs) {
+						differences.push(
+							`flags ${flags} ${action} ${[...held, key.key].join("+")}: ` +
+								`ours ${JSON.stringify(ours)}, ghostty ${JSON.stringify(theirs)}`,
+						);
+					}
+				}
+			}
+		}
+	}
+	expect(differences).toEqual([]);
+	await dom.dispose();
+});
+
+test("a key from the terminal reaches a program that set kitty flags as a kitty key", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="2">`,
+		spawn,
+	);
+	document.querySelector("embed")!.focus();
+	children[0].options.onData("\x1b[>5u");
+	await settle(dom);
+	await send(terminal, "\x03");
+	await send(terminal, "a");
+	expect(children[0].written).toEqual(["\x1b[99;5u", "a"]);
 	await dom.dispose();
 });
 

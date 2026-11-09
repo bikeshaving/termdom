@@ -150,12 +150,19 @@ interface SavedCursor {
 interface ScreenBuffer {
 	lines: Line[];
 	saved: SavedCursor | null;
+	// The kitty keyboard protocol's flags, pushed and popped, the last in
+	// effect. Each screen keeps its own.
+	keyboardFlags: number[];
 }
+
+// The flags a screen keeps before it drops the oldest, as Ghostty does.
+const KEYBOARD_FLAGS_DEPTH = 8;
 
 function createBuffer(cols: number, rows: number): ScreenBuffer {
 	return {
 		lines: Array.from({length: rows}, () => new Line(cols, DEFAULT_COLOR)),
 		saved: null,
+		keyboardFlags: [],
 	};
 }
 
@@ -633,6 +640,42 @@ export class Terminal {
 
 	get alternateScreen(): boolean {
 		return this.buffer === this.alternate;
+	}
+
+	/** The kitty keyboard protocol's flags in effect, 0 for none. */
+	get keyboardFlags(): number {
+		return this.buffer.keyboardFlags.at(-1) ?? 0;
+	}
+
+	// CSI = flags ; mode u sets the flags in effect: 1 replaces them, 2
+	// adds to them and 3 takes away from them. CSI > flags u pushes and
+	// CSI < count u pops.
+	updateKeyboardFlags(prefix: string): void {
+		const stack = this.buffer.keyboardFlags;
+		const flags = this.param(0, 0) & 31;
+		if (prefix === ">") {
+			stack.push(flags);
+			if (stack.length > KEYBOARD_FLAGS_DEPTH) {
+				stack.shift();
+			}
+		} else if (prefix === "<") {
+			stack.length = Math.max(0, stack.length - this.param(0, 1));
+		} else {
+			const mode = this.param(1, 1);
+			let next = this.keyboardFlags;
+			if (mode === 1) {
+				next = flags;
+			} else if (mode === 2) {
+				next |= flags;
+			} else if (mode === 3) {
+				next &= ~flags;
+			}
+			if (stack.length === 0) {
+				stack.push(next);
+			} else {
+				stack[stack.length - 1] = next;
+			}
+		}
 	}
 
 	setHistoryLimit(limit: number): void {
@@ -1183,6 +1226,16 @@ export class Terminal {
 
 	runCSI(final: string): void {
 		const {prefix, intermediates} = this.parser;
+		if (final === "u" && intermediates === "") {
+			if (prefix === "?") {
+				this.reply(`\x1b[?${this.keyboardFlags}u`);
+				return;
+			}
+			if (prefix === ">" || prefix === "<" || prefix === "=") {
+				this.updateKeyboardFlags(prefix);
+				return;
+			}
+		}
 		if (prefix === "?" && intermediates === "") {
 			if (final === "h" || final === "l") {
 				for (const [mode] of this.parser.params) {

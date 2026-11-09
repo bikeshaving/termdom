@@ -327,6 +327,139 @@ interface KeyLike {
 	metaKey: boolean;
 }
 
+/** A key's press, its repeat while held, or its release. */
+export type KeyAction = "press" | "repeat" | "release";
+
+// The kitty keyboard protocol's flags. The first, disambiguate, is
+// what any of them asks for, as in Ghostty.
+const REPORT_EVENTS = 2;
+const REPORT_ALTERNATES = 4;
+const REPORT_ALL = 8;
+const REPORT_TEXT = 16;
+
+const EVENT_NUMBERS: Record<KeyAction, number> = {
+	press: 1,
+	repeat: 2,
+	release: 3,
+};
+
+// The keys the kitty keyboard protocol numbers as CSI u.
+const KITTY_KEY_NUMBERS: Record<string, number> = {
+	Escape: 27,
+	Enter: 13,
+	Tab: 9,
+	Backspace: 127,
+};
+
+// The character each shifted character on a US layout comes from. A
+// terminal says what a key wrote, not which key it was.
+const US_UNSHIFTED: Record<string, string> = Object.fromEntries(
+	[..."~!@#$%^&*()_+{}|:\"<>?"].map((shifted, index) => [
+		shifted,
+		"`1234567890-=[]\\;',./"[index],
+	]),
+);
+
+function unshifted(key: string): string {
+	return US_UNSHIFTED[key] ?? key.toLowerCase();
+}
+
+// The kitty protocol's modifier bits: shift 1, alt 2, ctrl 4, super 8.
+function kittyModifiers(key: KeyLike): number {
+	return (key.shiftKey ? 1 : 0) +
+		(key.altKey ? 2 : 0) +
+		(key.ctrlKey ? 4 : 0) +
+		(key.metaKey ? 8 : 0);
+}
+
+/**
+ * The bytes for a key under the kitty keyboard protocol's `flags`, as
+ * Ghostty sends them, or null for a key or an action it sends nothing
+ * for.
+ */
+export function encodeKittyKey(
+	key: KeyLike,
+	flags: number,
+	action: KeyAction,
+): string | null {
+	const events = (flags & REPORT_EVENTS) !== 0;
+	if (!events) {
+		if (action === "release") {
+			return null;
+		}
+		action = "press";
+	}
+	const modifiers = kittyModifiers(key);
+	const event = EVENT_NUMBERS[action];
+	const letter =
+		CSI_KEYS[key.key] ?? (key.key === "F3" ? undefined : SS3_KEYS[key.key]);
+	if (letter !== undefined) {
+		const field = modifierField(modifiers, event, events);
+		return field === "" ? `\x1b[${letter}` : `\x1b[1;${field}${letter}`;
+	}
+	const field = modifierField(modifiers, event, false);
+	const tilde = key.key === "F3" ? 13 : TILDE_KEYS[key.key];
+	if (tilde !== undefined) {
+		return `\x1b[${tilde}${field === "" ? "" : `;${field}`}~`;
+	}
+	const function_ = /^F(\d+)$/.exec(key.key);
+	if (function_ !== null && Number(function_[1]) >= 13) {
+		const number = 57376 + Number(function_[1]) - 13;
+		return `\x1b[${number}${field === "" ? "" : `;${field}`}u`;
+	}
+	const named = KITTY_KEY_NUMBERS[key.key];
+	const characters = [...key.key];
+	const text = named === undefined && characters.length === 1;
+	if (named === undefined && !text) {
+		return null;
+	}
+	// Shift that changes the character is in the character. Shift that
+	// does not, as on Space, makes the key a modified key.
+	const shiftWrites = text && key.shiftKey && unshifted(key.key) !== key.key;
+	const plain = !key.ctrlKey && !key.altKey && !key.metaKey;
+	if (!(flags & REPORT_ALL)) {
+		if (named !== undefined && named !== 27) {
+			if (action === "release") {
+				return null;
+			}
+			if (modifiers === 0) {
+				return encodeKey(key, false);
+			}
+		}
+		if (text && plain && (shiftWrites || !key.shiftKey)) {
+			if (action !== "release") {
+				return key.key;
+			}
+		}
+	}
+	const base = named ?? unshifted(key.key).codePointAt(0)!;
+	const alternate = flags & REPORT_ALTERNATES && shiftWrites
+		? `:${key.key.codePointAt(0)}`
+		: "";
+	if (flags & REPORT_TEXT && text && plain && action !== "release") {
+		const codes = characters.map((each) => each.codePointAt(0)).join(":");
+		return `\x1b[${base}${alternate};${field};${codes}u`;
+	}
+	return `\x1b[${base}${alternate}${field === "" ? "" : `;${field}`}u`;
+}
+
+// The kitty protocol's field of modifiers and event: 1 plus the
+// modifiers, then a colon and the event when it is not a press. Empty
+// for a press with none, unless `always`.
+function modifierField(
+	modifiers: number,
+	event: number,
+	always: boolean,
+): string {
+	if (always) {
+		return `${modifiers + 1}:${event}`;
+	}
+	if (modifiers === 0 && event === 1) {
+		return "";
+	}
+	return `${modifiers + 1}${event === 1 ? "" : `:${event}`}`;
+}
+
 // xterm's modifier parameter: 1 plus shift 1, alt 2, ctrl 4.
 function encodeModifier(key: KeyLike): number {
 	return 1 +
@@ -554,9 +687,10 @@ export class PTYSession {
 	/**
 	 * Takes what a page posts to the program: text, or an event, or an
 	 * object shaped like one, forwarded as the user's own input would
-	 * be. A keydown is the key in the program's modes and a paste is
-	 * its text. A keyup, a key alone such as Shift, and a key still
-	 * composing send nothing.
+	 * be. A keydown is the key in the program's modes, a keyup is its
+	 * release when the program asked for releases, and a paste is its
+	 * text. A key alone such as Shift and a key still composing send
+	 * nothing.
 	 */
 	receive(message: unknown): void {
 		if (typeof message === "string") {
@@ -571,8 +705,9 @@ export class PTYSession {
 		const event = message as Record<string, unknown>;
 		switch (event.type) {
 			case "keydown":
+			case "keyup":
 				if (typeof event.key !== "string") {
-					throw new TypeError("A keydown message needs a key");
+					throw new TypeError(`A ${event.type} message needs a key`);
 				}
 				if (!event.isComposing) {
 					this.sendKey({
@@ -581,10 +716,10 @@ export class PTYSession {
 						shiftKey: Boolean(event.shiftKey),
 						altKey: Boolean(event.altKey),
 						metaKey: Boolean(event.metaKey),
-					});
+					}, event.type === "keyup"
+						? "release"
+						: event.repeat ? "repeat" : "press");
 				}
-				return;
-			case "keyup":
 				return;
 			case "paste": {
 				const data = event.clipboardData as
@@ -601,9 +736,18 @@ export class PTYSession {
 		);
 	}
 
-	/** Sends a key, or returns false for a key the terminal sends nothing for. */
-	sendKey(key: KeyLike): boolean {
-		const bytes = encodeKey(key, this.terminal.applicationCursor);
+	/**
+	 * Sends a key, or returns false for a key the terminal sends nothing
+	 * for. A repeat is a press, and a release sends nothing, unless the
+	 * program asked for them through the kitty keyboard protocol.
+	 */
+	sendKey(key: KeyLike, action: KeyAction = "press"): boolean {
+		const flags = this.terminal.keyboardFlags;
+		const bytes = flags !== 0
+			? encodeKittyKey(key, flags, action)
+			: action === "release"
+				? null
+				: encodeKey(key, this.terminal.applicationCursor);
 		if (bytes === null) {
 			return false;
 		}
