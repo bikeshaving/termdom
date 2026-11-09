@@ -5,7 +5,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {captureRawOutput, MockProcess, nextFrame} from "./test-utils";
+import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils";
 
 test("TermDOM provides HTML document with terminal capabilities", () => {
 	const terminal = new MockProcess();
@@ -328,6 +328,29 @@ test("a program fullscreen from its first frame leaves the cursor where it was",
 	const restoreAt = written.indexOf("\x1b[?1049l");
 	expect(restoreAt).toBeGreaterThan(-1);
 	expect(written.slice(restoreAt)).not.toContain("\r\n");
+});
+
+test("a page whose background fills to the bottom row leaves the shell's lines in place on exit", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 30});
+	const xterm = (terminal as any).terminal;
+	xterm.write("$ ls\r\nnotes.txt\r\n");
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	const dom = new TermDOM({transport: terminal.sharedTransport});
+	const {document} = dom;
+	document.documentElement.style.background = "#07b";
+	document.body.style.margin = "0";
+	document.body.innerHTML = "<div>APP</div>";
+	dom.attach();
+	await until(() => terminal.getPlainText().includes("APP"));
+	void document.body.requestFullscreen();
+	await nextFrame(dom);
+	await dom.dispose();
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	const {normal} = xterm.buffer;
+	const rows = [0, 1, 2].map((row) =>
+		normal.getLine(normal.viewportY + row).translateToString(true));
+	expect(rows).toEqual(["$ ls", "notes.txt", "APP"]);
+	expect(normal.cursorY).toBe(3);
 });
 
 test("no frame straddles a screen switch, even mid-animation", async () => {

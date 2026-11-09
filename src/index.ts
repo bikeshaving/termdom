@@ -2073,9 +2073,12 @@ async function renderInteractive(termDOM: TermDOM): Promise<void> {
 	});
 	// Drawn in the flow under what came before it, the page fills to the
 	// screen's bottom row and no further: a full screen of rows from its
-	// top would scroll the terminal under the rows it was given.
+	// top would scroll the terminal under the rows it was given. A page
+	// with no rows fills none.
 	termDOMSlots.painter.canvasRows = fullscreen
 		? null
+		: contentHeight === 0
+		? 0
 		: Math.max(
 			contentHeight,
 			termDOMSlots.framebuffer.scrollTop + termDOMSlots.framebuffer.rows - top,

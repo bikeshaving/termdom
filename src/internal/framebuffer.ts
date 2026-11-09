@@ -3098,11 +3098,17 @@ export function beginFrame(
 		}
 		framebuffer.prevContentHeight = contentHeight;
 
-		const parkOutput = hasContent && contentHeight > 0
+		// The root's background can fill rows past the region the page was
+		// given. The cursor parks at the region's end, so a screen switch
+		// saves it there and the shell's next line lands under the page.
+		const parkHeight = regionRows === undefined
+			? contentHeight
+			: Math.min(contentHeight, regionRows - regionTop);
+		const parkOutput = hasContent && parkHeight > 0
 			? parkCursor(
 				framebuffer,
 				caretVisible ? {row: caretBufferRow, col: caret.col} : null,
-				contentHeight,
+				parkHeight,
 				frameStartRow,
 			)
 			: "";
