@@ -1039,3 +1039,21 @@ test("a single line in a definite height centers in that height, though an item 
 	expect([top("icon"), top("short")]).toEqual([2, 1]);
 	dom.dispose();
 });
+
+for (const display of ["inline", "inline-block", "block"]) {
+	test(`a flex item with display: ${display} aligns its text by its own text-align`, async () => {
+		const terminal = new MockProcess({cols: 50, rows: 3});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML =
+			"<div style=\"display: flex; width: 40ch\">" +
+			"<span style=\"flex: 1\">s</span>" +
+			`<span id="date" style="display: ${display}; flex: none; ` +
+			"width: 8ch; text-align: right\">19:28</span></div>";
+		await nextFrame(dom);
+		expect(terminal.getPlainText().split("\n")[0].indexOf("19:28")).toBe(35);
+		const range = dom.document.createRange();
+		range.selectNodeContents(dom.document.getElementById("date")!.firstChild!);
+		expect(range.getBoundingClientRect().left).toBe(35);
+		dom.dispose();
+	});
+}
