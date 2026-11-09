@@ -39,11 +39,11 @@ export type Constructor = Function & {prototype: object};
 
 interface Check {
 	types: Constructor[];
-	// The names the runtime has classes of too, whose objects the engine
-	// takes, and those classes once a check first needs them. Node loads
-	// its FormData with its fetch, 3 MB a process, the first time it is
-	// read.
-	runtimeNames: string[];
+	// The runtime's globals of the same names, whose objects the engine
+	// takes, as they were when the check was read, and their classes once
+	// a check first needs them. Node loads its FormData with its fetch,
+	// 3 MB a process, the first time it is read.
+	runtimeGlobals: RuntimeGlobal[];
 	runtimeTypes: Constructor[] | null;
 	// The classes it last took objects of.
 	accepted: Constructor | null;
@@ -120,7 +120,7 @@ function readCheck(
 	if (names[0] === "Function") {
 		return {
 			types: [],
-			runtimeNames: [],
+			runtimeGlobals: [],
 			runtimeTypes: [],
 			accepted: null,
 			acceptedBefore: null,
@@ -131,14 +131,14 @@ function readCheck(
 		};
 	}
 	const types = names.flatMap((name) => classes.get(name) ?? []);
-	const runtimeNames = names.filter((name) => name in globalThis);
-	if (types.length === 0 && runtimeNames.length === 0 && !stringifies) {
+	const runtimeGlobals = names.flatMap((name) => findRuntimeGlobal(name) ?? []);
+	if (types.length === 0 && runtimeGlobals.length === 0 && !stringifies) {
 		return null;
 	}
 	const check: Check = {
 		types,
-		runtimeNames,
-		runtimeTypes: runtimeNames.length === 0 ? [] : null,
+		runtimeGlobals,
+		runtimeTypes: runtimeGlobals.length === 0 ? [] : null,
 		accepted: null,
 		acceptedBefore: null,
 		label: names[0],
@@ -619,10 +619,10 @@ let installedClasses: ReadonlyMap<string, Constructor> = new Map();
 
 function getRuntimeTypes(check: Check): Constructor[] {
 	if (check.runtimeTypes === null) {
-		check.runtimeTypes = check.runtimeNames.flatMap((name) => {
-			const runtime = (globalThis as Record<string, unknown>)[name];
+		check.runtimeTypes = check.runtimeGlobals.flatMap((global) => {
+			const runtime = readRuntimeGlobal(global);
 			return typeof runtime === "function" &&
-				runtime !== installedClasses.get(name)
+				runtime !== installedClasses.get(global.name)
 				? [runtime as Constructor]
 				: [];
 		});
@@ -631,15 +631,39 @@ function getRuntimeTypes(check: Check): Constructor[] {
 }
 
 /**
- * Finds the runtime's classes for each check that has not needed them
- * yet, before installGlobals() puts the window's in their place.
+ * A property of the runtime's global object, own or inherited, kept so
+ * what it names is read when first needed. Node and Deno define some
+ * globals as getters that load what they name when called, and an
+ * embedder may put the window's objects on globalThis in between, as
+ * installGlobals() does.
  */
-export function findRuntimeTypes(): void {
-	for (const check of parsedChecks.values()) {
-		if (check !== null) {
-			getRuntimeTypes(check);
+export interface RuntimeGlobal {
+	name: string;
+	descriptor: PropertyDescriptor;
+}
+
+export function findRuntimeGlobal(name: string): RuntimeGlobal | null {
+	for (
+		let owner: object | null = globalThis;
+		owner !== null;
+		owner = Object.getPrototypeOf(owner)
+	) {
+		const descriptor = Object.getOwnPropertyDescriptor(owner, name);
+		if (descriptor !== undefined) {
+			return {name, descriptor};
 		}
 	}
+	return null;
+}
+
+export function readRuntimeGlobal(global: RuntimeGlobal | null): unknown {
+	if (global === null) {
+		return undefined;
+	}
+	const {descriptor} = global;
+	return descriptor.get !== undefined
+		? descriptor.get.call(globalThis)
+		: descriptor.value;
 }
 
 /**

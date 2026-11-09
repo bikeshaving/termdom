@@ -25,7 +25,6 @@ import {
 	dropFullscreen,
 	EventTarget,
 	type EventTargetSlots,
-	findRuntimeGlobals,
 	flushLayout,
 	flushObservers,
 	focusInitialAutofocus,
@@ -2294,7 +2293,6 @@ export function installGlobals(termDOM: TermDOM): () => void {
 	if (global[kGlobalsInstalled]) {
 		throw new Error("TermDOM's globals are already installed.");
 	}
-	findRuntimeGlobals();
 	const window = termDOM.window as unknown as Record<string, unknown>;
 	const termDOMSlots = _(termDOM);
 	const processTimers = getProcessTimers(termDOMSlots.window);

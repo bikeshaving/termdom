@@ -152,7 +152,7 @@ import {
 	applyInRealm,
 	createDocumentIn,
 	declareNodeClasses,
-	findRuntimeTypes,
+	findRuntimeGlobal,
 	forgetClasses,
 	getActiveRealm,
 	getCallerRealm,
@@ -162,6 +162,7 @@ import {
 	getInterfaceName,
 	hasRealms,
 	placeInRealm,
+	readRuntimeGlobal,
 	type Realm,
 	runInRealm,
 } from "./webidl.ts";
@@ -18368,6 +18369,12 @@ function createEntry(
 	return [key, file];
 }
 
+const runtimeFormDataGlobal = findRuntimeGlobal("FormData");
+
+function getRuntimeFormData(): typeof globalThis.FormData {
+	return readRuntimeGlobal(runtimeFormDataGlobal) as typeof globalThis.FormData;
+}
+
 // A runtime stores a file under the filename its caller gave, or, as Bun
 // does, under the name the file already had. The wire is right either
 // way; only reading an entry back differs, so the filenames are kept here
@@ -18376,7 +18383,7 @@ let runtimeKeepsFilenames: boolean | null = null;
 
 function keepsFilenames(): boolean {
 	if (runtimeKeepsFilenames === null) {
-		const probe = new globalThis.FormData();
+		const probe = new (getRuntimeFormData())();
 		probe.append("k", new File(["x"], "given"), "wanted");
 		runtimeKeepsFilenames =
 			(probe.get("k") as globalThis.File).name === "wanted";
@@ -18436,8 +18443,9 @@ class FormData extends (
 	constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
 		if (!formDataLinked) {
 			formDataLinked = true;
-			Object.setPrototypeOf(FormData, globalThis.FormData);
-			Object.setPrototypeOf(FormData.prototype, globalThis.FormData.prototype);
+			const RuntimeFormData = getRuntimeFormData();
+			Object.setPrototypeOf(FormData, RuntimeFormData);
+			Object.setPrototypeOf(FormData.prototype, RuntimeFormData.prototype);
 		}
 		super();
 		seal(this, new.target, FormData);
@@ -41436,20 +41444,12 @@ function getNamedPropertyValue(
 // random source is read the first time one is asked for, since Node
 // loads it, 4 MB a process, when globalThis.crypto is first read.
 const runtimePerformance = globalThis.performance;
+const runtimeCryptoGlobal = findRuntimeGlobal("crypto");
 let runtimeCrypto: globalThis.Crypto | null = null;
 
 function getRuntimeCrypto(): globalThis.Crypto {
-	runtimeCrypto ??= globalThis.crypto;
+	runtimeCrypto ??= readRuntimeGlobal(runtimeCryptoGlobal) as globalThis.Crypto;
 	return runtimeCrypto;
-}
-
-/**
- * Reads the runtime's classes and random source not read yet, before
- * installGlobals() puts the window's in their place.
- */
-export function findRuntimeGlobals(): void {
-	findRuntimeTypes();
-	getRuntimeCrypto();
 }
 
 export interface PerformanceEntrySlots {
