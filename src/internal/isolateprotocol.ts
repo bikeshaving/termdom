@@ -18,6 +18,9 @@ import type {Caret, GridCells} from "./framebuffer.ts";
 export interface FrameInit {
 	url: string;
 	html: string;
+	// The origin of the window the frame's iframe is in, which the frame's
+	// parent and top have.
+	parentOrigin: string;
 	cols: number;
 	rows: number;
 	cellWidth: number;
@@ -34,7 +37,7 @@ export interface FrameRequest {
 	method: string;
 	headers: Array<[string, string]>;
 	body: Uint8Array | null;
-	redirect: "follow" | "manual" | "error";
+	redirect: RequestRedirect;
 	destination: string;
 	referrer: string;
 }
@@ -45,17 +48,21 @@ export interface FrameResponse {
 	statusText: string;
 	headers: Array<[string, string]>;
 	redirected: boolean;
-	body: Uint8Array;
+	body: Uint8Array | null;
 }
 
 export type FrameMessage =
 	{type: "paint"; cells: GridCells; caret: Caret | null} |
 	{type: "title"; title: string} |
-	{type: "navigate"; url: string} |
+	// The frame went to another document, or sent its parent to one.
+	{type: "navigate"; target: "self" | "parent"; url: string} |
 	{type: "load"} |
 	{type: "message"; data: unknown; targetOrigin: string} |
 	{type: "fetch"; id: number; request: FrameRequest} |
-	{type: "abortFetch"; id: number};
+	{type: "abortFetch"; id: number} |
+	// The frame ran past its time or memory, or failed to start, and its
+	// isolate is gone.
+	{type: "crash"; reason: string};
 
 export type HostMessage =
 	{

@@ -150,6 +150,7 @@ function createFrame(init: FrameInit): Frame {
 			devicePixelRatio: pixelRatio,
 			images: "cells",
 			canvas: "cells",
+			isolateFrame: null,
 			load: (request) => fetch(request),
 			loadSignal: loads.signal,
 			reportUncaught: (error) => {

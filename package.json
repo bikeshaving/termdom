@@ -54,9 +54,13 @@
     "parse5": "8.1.0"
   },
   "peerDependencies": {
+    "isolated-vm": "^7.0.2",
     "node-pty": "^1.1.0"
   },
   "peerDependenciesMeta": {
+    "isolated-vm": {
+      "optional": true
+    },
     "node-pty": {
       "optional": true
     }

@@ -12,15 +12,16 @@ import {randomFillSync} from "node:crypto";
 import type ivm from "isolated-vm";
 
 import {HOST_CALLBACKS, loadFrameScript} from "./isolate/bundle.ts";
+import type {ScriptItem} from "./isolate/scripts.ts";
+import {ModuleLoader} from "./isolatedvmmodules.ts";
 import type {
 	FrameInit,
+	FrameIsolator,
 	FrameMessage,
 	FrameRequest,
 	FrameResponse,
 	HostMessage,
-} from "./isolate/host.ts";
-import type {ScriptItem} from "./isolate/scripts.ts";
-import {ModuleLoader} from "./isolatedvmmodules.ts";
+} from "./isolateprotocol.ts";
 
 export const DEFAULT_MEMORY_LIMIT = 256;
 export const DEFAULT_TASK_TIMEOUT = 30000;
@@ -29,16 +30,6 @@ const MAX_RANDOM_BYTES = 65536;
 const MAX_TIMERS = 10000;
 const MAX_SCRIPTS = 1000;
 const MAX_LOG_LENGTH = 4096;
-
-export interface IsolatedFrame {
-	send(message: HostMessage): void;
-	dispose(): void;
-}
-
-export type FrameIsolator = (
-	init: FrameInit,
-	receive: (message: FrameMessage) => void,
-) => IsolatedFrame;
 
 export interface IsolatedVMOptions {
 	// Megabytes of heap each frame's isolate may use.

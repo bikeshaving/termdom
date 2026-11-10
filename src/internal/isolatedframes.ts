@@ -13,6 +13,7 @@ import {
 	Event,
 	type HTMLIFrameElement,
 	type IsolatedFrameView,
+	navigateFrameParent,
 	receiveFrameMessage,
 	setIsolatedFrameFactory,
 	setRequestDestination,
@@ -26,6 +27,7 @@ import {
 	importGrid,
 } from "./framebuffer.ts";
 import type {
+	FrameInit,
 	FrameIsolator,
 	FrameMessage,
 	FrameRequest,
@@ -33,6 +35,7 @@ import type {
 	IsolatedFrame,
 } from "./isolateprotocol.ts";
 import {_} from "./slots.ts";
+import {getCellSize} from "./units.ts";
 
 // The loads a frame may have in flight at once.
 const MAX_FETCHES = 64;
@@ -157,6 +160,7 @@ class RemoteFrame implements IsolatedFrameView {
 		}
 		this.url = documentURL;
 		const framebuffer = engine.framebuffer;
+		const cell = getCellSize(this.parent);
 		const view = engine.defaultView as globalThis.Window | null;
 		const media = (query: string) => view?.matchMedia(query).matches ?? false;
 		const sandbox = _(this.window).sandbox;
@@ -164,10 +168,11 @@ class RemoteFrame implements IsolatedFrameView {
 			{
 				url: documentURL,
 				html,
+				parentOrigin: view?.origin ?? "null",
 				cols: this.cols,
 				rows: this.rows,
-				cellWidth: framebuffer.cellPixels.width,
-				cellHeight: framebuffer.cellPixels.height,
+				cellWidth: cell.width,
+				cellHeight: cell.height,
 				pixelRatio: framebuffer.pixelRatio ?? 1,
 				colorDepth: framebuffer.writer.colorDepth,
 				colorScheme: media("(prefers-color-scheme: dark)") ? "dark" : "light",
@@ -210,7 +215,18 @@ class RemoteFrame implements IsolatedFrameView {
 				this.changed();
 				break;
 			case "navigate":
-				this.navigate(message.url);
+				if (message.target === "parent") {
+					navigateFrameParent(this.window, String(message.url));
+				} else {
+					this.navigate(message.url);
+				}
+				break;
+			case "crash":
+				this.stop();
+				this.cells = null;
+				this.caret = null;
+				this.stale = true;
+				this.changed();
 				break;
 			case "load":
 				this.frame.dispatchEvent(constructInternal(() => new Event("load")));
@@ -352,15 +368,15 @@ class RemoteFrame implements IsolatedFrameView {
 			this.rows = rows;
 			this.grid = new CellGrid(rows, cols);
 			this.stale = true;
-			const cell = _(this.parent).extra.framebuffer;
+			const cell = getCellSize(this.parent);
 			if (this.running !== null) {
 				this.running.send({
 					type: "resize",
 					cols,
 					rows,
-					cellWidth: cell.cellPixels.width,
-					cellHeight: cell.cellPixels.height,
-					pixelRatio: cell.pixelRatio ?? 1,
+					cellWidth: cell.width,
+					cellHeight: cell.height,
+					pixelRatio: _(this.parent).extra.framebuffer.pixelRatio ?? 1,
 				});
 			}
 		}
@@ -429,6 +445,76 @@ class RemoteFrame implements IsolatedFrameView {
 		this.stop();
 		this.disposed = true;
 	}
+}
+
+// A frame started before its backend has loaded, which starts there and
+// sends what it was given once the backend has.
+class PendingFrame implements IsolatedFrame {
+	init: FrameInit;
+	receive: (message: FrameMessage) => void;
+	waiting: HostMessage[];
+	frame: IsolatedFrame | null;
+	disposed: boolean;
+
+	constructor(
+		init: FrameInit,
+		receive: (message: FrameMessage) => void,
+		backend: Promise<FrameIsolator | string>,
+	) {
+		this.init = init;
+		this.receive = receive;
+		this.waiting = [];
+		this.frame = null;
+		this.disposed = false;
+		void backend.then((isolate) => this.start(isolate));
+	}
+
+	start(isolate: FrameIsolator | string): void {
+		if (this.disposed) {
+			return;
+		}
+		if (typeof isolate === "string") {
+			this.receive({type: "crash", reason: isolate});
+			return;
+		}
+		this.frame = isolate(this.init, this.receive);
+		for (const message of this.waiting.splice(0)) {
+			this.frame.send(message);
+		}
+	}
+
+	send(message: HostMessage): void {
+		if (this.frame === null) {
+			this.waiting.push(message);
+		} else {
+			this.frame.send(message);
+		}
+	}
+
+	dispose(): void {
+		this.disposed = true;
+		this.waiting = [];
+		this.frame?.dispose();
+	}
+}
+
+let isolatedVM: Promise<FrameIsolator | string> | null = null;
+
+/**
+ * The isolator isolatedFrames: "auto" names: isolated-vm's, loaded with
+ * the first frame. Where isolated-vm cannot load, each frame crashes and
+ * says why.
+ */
+export function startInIsolatedVM(
+	init: FrameInit,
+	receive: (message: FrameMessage) => void,
+): IsolatedFrame {
+	isolatedVM ??= import("./isolatedvm.ts")
+		.then((backend) => backend.createIsolatedVMFrames())
+		.catch((error: unknown) =>
+			`isolated-vm could not load: ${describeError(error)}`,
+		);
+	return new PendingFrame(init, receive, isolatedVM);
 }
 
 setIsolatedFrameFactory((frame, window, url, parent, isolate, changed) =>
