@@ -265,6 +265,12 @@ class IsolatedVMFrame {
 		const text = error instanceof Error ? error.message : String(error);
 		this.log("error", `The frame stopped: ${text}`);
 		this.dispose();
+		this.receive({
+			type: "crash",
+			reason: /timed out/i.test(text)
+				? "timeout"
+				: /memory limit/i.test(text) ? "memory" : "error",
+		});
 	}
 
 	dispose(): void {

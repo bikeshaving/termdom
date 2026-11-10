@@ -7,13 +7,15 @@
 import "./install.ts";
 import "../frames.ts";
 
-import {Cascade} from "../cssom.ts";
+import {Cascade, setReducedMotion} from "../cssom.ts";
 import {
 	type Document,
 	findRuntimeFetchClasses,
 	findRuntimeGlobals,
+	focusInitialAutofocus,
 	type Window,
 } from "../dom.ts";
+import {installEditing} from "../editing.ts";
 import {Exchange, type TerminalTransport} from "../exchange.ts";
 import {exportGrid, Framebuffer} from "../framebuffer.ts";
 import {createFrameEngine} from "../frames.ts";
@@ -34,6 +36,8 @@ import {ScriptRunner} from "./scripts.ts";
 import {fireTimer, queueTask} from "./timers.ts";
 
 export {fireTimer};
+
+type WireInput = Parameters<typeof dispatchInput>[1];
 
 function nullTransport(cols: number, rows: number): TerminalTransport {
 	return {
@@ -166,6 +170,12 @@ function createFrame(init: FrameInit): Frame {
 	);
 	const extra = _(document).extra;
 	extra.framebuffer.measurer = exchange;
+	installEditing(exchange);
+	setReducedMotion(
+		document as unknown as globalThis.Document,
+		init.reducedMotion,
+	);
+	focusInitialAutofocus(document as unknown as globalThis.Document);
 	const input = new Input(
 		document as unknown as globalThis.Document,
 		extra.layout,
@@ -248,7 +258,7 @@ function createFrame(init: FrameInit): Frame {
 					schedule();
 					return;
 				case "input":
-					dispatchInput(input, message.item);
+					dispatchInput(input, toWireInput(message.item));
 					schedule();
 					return;
 				case "message": {
@@ -302,6 +312,14 @@ function createExchange(window: Window, init: FrameInit): Exchange {
 		framebuffer,
 		init.colorScheme,
 	);
+}
+
+// The page reports a click in the frame's own cells, counted from zero.
+// The engine reads mouse reports as the terminal sends them, from one.
+function toWireInput(item: WireInput): WireInput {
+	return !Array.isArray(item) && item.kind === "mouse"
+		? {...item, col: item.col + 1, row: item.row + 1}
+		: item;
 }
 
 function describe(error: unknown): string {
