@@ -5,78 +5,16 @@
  * runtime. Messages are plain values and typed arrays, so any backend
  * that copies structured data can carry them.
  */
-import type {
-	ColorDepth,
-	WireFocus,
-	WireKey,
-	WireMouse,
-	WirePaste,
-} from "../exchange.ts";
-import type {GridCells} from "../framebuffer.ts";
+import type {FrameMessage} from "../isolateprotocol.ts";
 import type {ScriptItem} from "./scripts.ts";
 
-export interface FrameRequest {
-	url: string;
-	method: string;
-	headers: Array<[string, string]>;
-	body: Uint8Array | null;
-	redirect: RequestRedirect;
-	destination: string;
-	referrer: string;
-}
-
-export interface FrameResponse {
-	url: string;
-	status: number;
-	statusText: string;
-	headers: Array<[string, string]>;
-	redirected: boolean;
-	body: Uint8Array | null;
-}
-
-export interface FrameCaret {
-	col: number;
-	row: number;
-	shape: number;
-	color: number | null;
-}
-
-export type FrameMessage =
-	{type: "paint"; cells: GridCells; caret: FrameCaret | null} |
-	{type: "title"; title: string} |
-	{type: "navigate"; target: "self" | "parent"; url: string} |
-	{type: "load"} |
-	{type: "message"; data: unknown; targetOrigin: string} |
-	{type: "fetch"; id: number; request: FrameRequest} |
-	{type: "abortFetch"; id: number};
-
-export interface FrameInit {
-	url: string;
-	html: string;
-	parentOrigin: string;
-	cols: number;
-	rows: number;
-	cellWidth: number;
-	cellHeight: number;
-	pixelRatio: number;
-	colorDepth: ColorDepth;
-	colorScheme: "light" | "dark";
-	scripting: boolean;
-}
-
-export type HostMessage =
-	{
-		type: "resize";
-		cols: number;
-		rows: number;
-		cellWidth: number;
-		cellHeight: number;
-		pixelRatio: number;
-	} |
-	{type: "input"; item: WireKey[] | WireMouse | WirePaste | WireFocus} |
-	{type: "message"; data: unknown; origin: string; targetOrigin: string} |
-	{type: "response"; id: number; response: FrameResponse} |
-	{type: "fetchError"; id: number; message: string};
+export type {
+	FrameInit,
+	FrameMessage,
+	FrameRequest,
+	FrameResponse,
+	HostMessage,
+} from "../isolateprotocol.ts";
 
 export interface IsolateHost {
 	post(message: FrameMessage): void;

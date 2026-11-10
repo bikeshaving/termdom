@@ -1,5 +1,4 @@
 import "./internal/frames.ts";
-import "./internal/isolatedframes.ts";
 import "./internal/inspector.ts";
 
 import type {CanvasCellGridContext} from "./internal/canvas.ts";
@@ -110,6 +109,7 @@ import {
 	setDecodeWorkerURL,
 } from "./internal/images.ts";
 import {Input, resolvePendingHover} from "./internal/input.ts";
+import {startInIsolatedVM} from "./internal/isolatedframes.ts";
 import type {FrameIsolator} from "./internal/isolateprotocol.ts";
 import {
 	compressKittyUploads,
@@ -372,6 +372,10 @@ export interface TermDOMOptions {
 	 * through `postMessage()`, as windows of two origins do. A page that
 	 * freezes or runs out of memory there takes its frame down alone.
 	 * - `"none"` (the default): the frame shows an empty `about:blank`.
+	 * - `"auto"`: in a V8 isolate of its own, through the isolated-vm
+	 *   package, on Node when it is installed. Each has 256 MB of heap,
+	 *   and each call into it 30 seconds. Where isolated-vm cannot load,
+	 *   as on Bun and Deno, the frame shows nothing.
 	 * - A function: called with the frame's document and the terminal it
 	 *   is drawn for, and with where to send what the frame sends. It
 	 *   returns the frame, which takes the page's messages until it is
@@ -379,7 +383,7 @@ export interface TermDOMOptions {
 	 * Any other value throws a TypeError.
 	 * @experimental The messages may change in a minor release.
 	 */
-	isolatedFrames?: "none" | FrameIsolator;
+	isolatedFrames?: "none" | "auto" | FrameIsolator;
 
 	/**
 	 * The colors the terminal shows, in the bits `screen.colorDepth`
@@ -520,10 +524,13 @@ function toFrameIsolator(
 	if (option === undefined || option === "none") {
 		return null;
 	}
+	if (option === "auto") {
+		return startInIsolatedVM;
+	}
 	if (typeof option === "function") {
 		return option;
 	}
-	throw new TypeError('isolatedFrames must be "none" or a function');
+	throw new TypeError('isolatedFrames must be "none", "auto" or a function');
 }
 
 function toFailFast(option: unknown): boolean {

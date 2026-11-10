@@ -362,6 +362,6 @@ test("a srcdoc frame stays in the page's heap, and a removed frame's isolate goe
 	dom.dispose();
 });
 
-test("isolatedFrames takes \"none\" or a function", () => {
-	expect(() => new TermDOM({isolatedFrames: "auto" as any})).toThrow(TypeError);
+test("isolatedFrames takes \"none\", \"auto\" or a function", () => {
+	expect(() => new TermDOM({isolatedFrames: "yes" as any})).toThrow(TypeError);
 });

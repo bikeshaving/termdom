@@ -40217,6 +40217,26 @@ function navigateWindow(
 	}
 }
 
+/**
+ * An isolated frame's navigation of the window its iframe is in, which
+ * `window` stands in the page for, held to the frame's sandbox. What the
+ * parent or its navigate listeners refuse comes to nothing, as the frame
+ * that asked is in another isolate.
+ */
+export function navigateFrameParent(window: Window, url: string): void {
+	const parent = _(window).parentWindow;
+	if (parent === null || _(window).discarded) {
+		return;
+	}
+	try {
+		navigateWindow(window, parent, url, "auto");
+	} catch (error) {
+		if (!(error instanceof DOMException)) {
+			throw error;
+		}
+	}
+}
+
 // A setter of one part of the URL: the location navigates to its URL with
 // that part changed. A URL with an opaque path has no host, port or path
 // to change, and a protocol other than http and https is not one to go to.
