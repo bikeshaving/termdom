@@ -20,6 +20,7 @@ import {Exchange, type TerminalTransport} from "../exchange.ts";
 import {exportGrid, Framebuffer} from "../framebuffer.ts";
 import {createFrameEngine} from "../frames.ts";
 import {dispatchInput, Input, resolvePendingHover} from "../input.ts";
+import {KittyImages, takeFrameImages} from "../kitty.ts";
 import {Layout} from "../layout.ts";
 import {_} from "../slots.ts";
 import {createWindow} from "../window.ts";
@@ -176,6 +177,14 @@ function createFrame(init: FrameInit): Frame {
 	);
 	const extra = _(document).extra;
 	extra.framebuffer.measurer = exchange;
+	const graphics = init.images === "kitty" && init.colorDepth === "rgb"
+		? new KittyImages(() => extra.framebuffer.cellPixels)
+		: null;
+	if (graphics !== null) {
+		graphics.images = true;
+		graphics.canvas = true;
+		extra.framebuffer.graphics = graphics;
+	}
 	installEditing(exchange);
 	setReducedMotion(
 		document as unknown as globalThis.Document,
@@ -263,6 +272,12 @@ function createFrame(init: FrameInit): Frame {
 		}
 		resolvePendingHover(input);
 		const grid = engine.fit(cols, rows);
+		if (graphics !== null) {
+			const {added, dropped} = takeFrameImages(graphics, grid);
+			if (added.length > 0 || dropped.length > 0) {
+				host.post({type: "images", added, dropped});
+			}
+		}
 		host.post({type: "paint", cells: exportGrid(grid), caret: engine.caret});
 		if (document.title !== title) {
 			title = document.title;

@@ -225,6 +225,11 @@ export function createFrameEngine(
 		revealTextControlCaret(page);
 		clearGrid(grid);
 		const context = new CellContext(grid, rows, cols, -framebuffer.scrollTop);
+		// A frame whose images are sent on by the page holds them in its
+		// framebuffer's table, and paints the placeholders that name them.
+		context.graphics = framebuffer.colorDepth === "rgb"
+			? framebuffer.graphics
+			: null;
 		paint(painter, context);
 		framePainted(layout);
 		painted++;
