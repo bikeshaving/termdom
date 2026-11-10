@@ -412,7 +412,9 @@ export class Request extends Body {
 			mode: init.mode ?? source?.mode ?? "cors",
 			credentials: init.credentials ?? source?.credentials ?? "same-origin",
 			cache: init.cache ?? source?.cache ?? "default",
-			destination: source?.destination ?? "",
+			// Read through the request, where the engine sets it as its own
+			// property.
+			destination: source === undefined ? "" : (input as Request).destination,
 			referrer: init.referrer ?? source?.referrer ?? "about:client",
 			referrerPolicy: init.referrerPolicy ?? source?.referrerPolicy ?? "",
 			integrity: init.integrity ?? source?.integrity ?? "",
@@ -485,10 +487,7 @@ export class Request extends Body {
 	}
 
 	clone(): Request {
-		const state = requestState(this);
-		const copy = new Request(this);
-		setDestination(copy, state.destination);
-		return copy;
+		return new Request(this);
 	}
 }
 
