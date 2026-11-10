@@ -635,8 +635,10 @@ function faceRows(card: Card, tier: Tier): string[] {
   if (width > 3) {
     grid[Math.floor(height / 2)][Math.floor(width / 2)] = SUITS[card.suit];
   }
+  // A column short of the edge, so a suit drawn large stays on the card.
+  const end = width - 1;
   for (let i = 0; i < index.length; i++) {
-    grid[height - 1][width - index.length + i] = index[i];
+    grid[height - 1][end - index.length + i] = index[i];
   }
   return grid.map((row) => row.join(""));
 }
