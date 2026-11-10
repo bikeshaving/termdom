@@ -30,6 +30,9 @@ export interface FrameInit {
 	colorScheme: "light" | "dark";
 	reducedMotion: boolean;
 	scripting: boolean;
+	// What a backend holds this frame to, where it holds frames to limits:
+	// megabytes of heap, and milliseconds any one task may run.
+	limits?: {memoryLimit?: number; taskTimeout?: number};
 }
 
 export interface FrameRequest {
@@ -93,6 +96,19 @@ export type HostMessage =
 export interface IsolatedFrame {
 	send(message: HostMessage): void;
 	dispose(): void;
+	// What the frame has used, where its backend can tell, or null once it
+	// is gone.
+	stats?(): Promise<FrameStats | null>;
+}
+
+export interface FrameStats {
+	// Nanoseconds of CPU the frame's isolate has run, and the most one
+	// task took.
+	cpuTime: number;
+	longestTask: number;
+	// Bytes of heap in use, and held outside it, as by array buffers.
+	heapUsed: number;
+	external: number;
 }
 
 /**
