@@ -8,7 +8,12 @@ import "./install.ts";
 import "../frames.ts";
 
 import {Cascade} from "../cssom.ts";
-import type {Document, Window} from "../dom.ts";
+import {
+	type Document,
+	findRuntimeFetchClasses,
+	findRuntimeGlobals,
+	type Window,
+} from "../dom.ts";
 import {Exchange, type TerminalTransport} from "../exchange.ts";
 import {exportGrid, Framebuffer} from "../framebuffer.ts";
 import {createFrameEngine} from "../frames.ts";
@@ -24,6 +29,8 @@ import {
 	setHost,
 } from "./host.ts";
 import {deliverError, deliverResponse} from "./network.ts";
+import {installPage} from "./page.ts";
+import {ScriptRunner} from "./scripts.ts";
 import {fireTimer, queueTask} from "./timers.ts";
 
 export {fireTimer};
@@ -45,6 +52,8 @@ function nullTransport(cols: number, rows: number): TerminalTransport {
 
 interface Frame {
 	receive(message: HostMessage): void;
+	scripts: ScriptRunner | null;
+	loaded(): void;
 	dispose(): void;
 }
 
@@ -62,6 +71,39 @@ export function receive(message: HostMessage): void {
 	frame?.receive(message);
 }
 
+// The backend runs the scripts the frame reports, and tells it where each
+// one starts and ends and how the document's loading goes.
+export function scriptBegin(id: number): void {
+	if (frame !== null) {
+		frame.scripts?.begin(id);
+	}
+}
+
+export function scriptEnd(id: number): void {
+	if (frame !== null) {
+		frame.scripts?.end(id);
+	}
+}
+
+export function scriptFinished(id: number, ok: boolean): void {
+	if (frame !== null) {
+		frame.scripts?.finished(id, ok);
+	}
+}
+
+export function documentInteractive(): void {
+	if (frame !== null) {
+		frame.scripts?.interactive();
+	}
+}
+
+export function documentLoaded(): void {
+	if (frame !== null) {
+		frame.scripts?.loaded();
+		frame.loaded();
+	}
+}
+
 export function dispose(): void {
 	frame?.dispose();
 	frame = null;
@@ -69,6 +111,8 @@ export function dispose(): void {
 
 function createFrame(init: FrameInit): Frame {
 	let {cols, rows, cellWidth, cellHeight, pixelRatio} = init;
+	findRuntimeGlobals();
+	findRuntimeFetchClasses();
 	const window = createWindow(
 		init.html,
 		init.url,
@@ -152,7 +196,22 @@ function createFrame(init: FrameInit): Frame {
 		});
 	});
 
+	let scripts: ScriptRunner | null = null;
+	if (init.scripting) {
+		installPage(window);
+		scripts = new ScriptRunner(document as unknown as globalThis.Document);
+		scripts.start();
+	}
 	schedule();
+
+	// Without scripts, the document is loaded once its first paint is out.
+	// With them, once the backend has run them all.
+	function announceLoad(): void {
+		if (!loaded) {
+			loaded = true;
+			host.post({type: "load"});
+		}
+	}
 
 	function paint(): void {
 		queued = false;
@@ -166,13 +225,14 @@ function createFrame(init: FrameInit): Frame {
 			title = document.title;
 			host.post({type: "title", title});
 		}
-		if (!loaded) {
-			loaded = true;
-			host.post({type: "load"});
+		if (scripts === null) {
+			announceLoad();
 		}
 	}
 
 	return {
+		scripts,
+		loaded: announceLoad,
 		receive(message) {
 			if (disposed) {
 				return;
