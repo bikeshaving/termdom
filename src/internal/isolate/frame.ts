@@ -177,7 +177,7 @@ function createFrame(init: FrameInit): Frame {
 	);
 	const extra = _(document).extra;
 	extra.framebuffer.measurer = exchange;
-	const graphics = init.images === "kitty" && init.colorDepth === "rgb"
+	const graphics = init.images === "kitty"
 		? new KittyImages(() => extra.framebuffer.cellPixels)
 		: null;
 	if (graphics !== null) {
