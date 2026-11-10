@@ -196,13 +196,29 @@ function createFrame(init: FrameInit): Frame {
 	] of [["self", window], ["parent", parent]] as const) {
 		view.navigation.addEventListener("navigate", (event) => {
 			const navigate = event as NavigateEvent;
-			if (navigate.hashChange || !navigate.cancelable) {
+			if (
+				navigate.hashChange ||
+				navigate.destination.sameDocument ||
+				!navigate.cancelable
+			) {
 				return;
 			}
 			navigate.preventDefault();
-			host.post({type: "navigate", target, url: navigate.destination.url});
+			host.post({
+				type: "navigate",
+				target,
+				url: navigate.destination.url,
+				...encodeForm(navigate.formData, navigate.sourceElement),
+			});
 		});
 	}
+	window.navigation.addEventListener("currententrychange", (event) => {
+		const type = (event as NavigationCurrentEntryChangeEvent).navigationType;
+		const url = window.navigation.currentEntry?.url;
+		if ((type === "push" || type === "replace") && url) {
+			host.post({type: "history", url, replace: type === "replace"});
+		}
+	});
 	// The frame's postMessage to its parent lands on the stand-in, past the
 	// targetOrigin check, and goes on to the page.
 	parent.addEventListener("message", (event) => {
@@ -328,6 +344,54 @@ function createExchange(window: Window, init: FrameInit): Exchange {
 		framebuffer,
 		init.colorScheme,
 	);
+}
+
+// A form submitted with POST, in the encoding its enctype names. A file
+// field sends its name only, since its bytes are not read here.
+function encodeForm(
+	data: FormData | null,
+	source: Element | null,
+): {method?: string; body?: Uint8Array; contentType?: string} {
+	if (data === null) {
+		return {};
+	}
+	const control = source as HTMLButtonElement | HTMLInputElement | null;
+	const form = control?.form ?? (source as HTMLFormElement | null);
+	const enctype = (
+		control?.getAttribute("formenctype") ?? form?.getAttribute("enctype") ?? ""
+	).toLowerCase();
+	const entries = [...data].map(([name, value]): [string, string] => [
+		name,
+		typeof value === "string" ? value : value.name,
+	]);
+	const encoder = new TextEncoder();
+	if (enctype === "multipart/form-data") {
+		const boundary = `----termdom${Math.random().toString(16).slice(2)}`;
+		const parts = entries.map(([name, value]) =>
+			`--${boundary}\r\nContent-Disposition: form-data; name="${
+				name.replace(/"/g, "%22")
+			}"\r\n\r\n${value}\r\n`,
+		);
+		return {
+			method: "POST",
+			body: encoder.encode(`${parts.join("")}--${boundary}--\r\n`),
+			contentType: `multipart/form-data; boundary=${boundary}`,
+		};
+	}
+	if (enctype === "text/plain") {
+		return {
+			method: "POST",
+			body: encoder.encode(
+				entries.map(([name, value]) => `${name}=${value}\r\n`).join(""),
+			),
+			contentType: "text/plain",
+		};
+	}
+	return {
+		method: "POST",
+		body: encoder.encode(new URLSearchParams(entries).toString()),
+		contentType: "application/x-www-form-urlencoded",
+	};
 }
 
 // The page reports a click in the frame's own cells, counted from zero.
