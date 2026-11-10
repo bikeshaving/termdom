@@ -613,9 +613,11 @@ function centered(text: string, width: number): string {
 
 /**
  * A card's face: its index across the top-left, its suit at the center on
- * any card wide enough to carry one, and the mirrored index -- suit then
- * rank -- reading into the bottom-right corner, the rotational symmetry of
- * a real card's two indices.
+ * any card wide enough to carry one, and the index again in the
+ * bottom-right corner. Both read rank then suit, so a suit ends either
+ * index and draws at one size in both: Ghostty draws a Nerd Font symbol,
+ * as it draws U+2665, larger when a space follows it than when a rank
+ * does.
  */
 function faceRows(card: Card, tier: Tier): string[] {
   const {width, height} = tier;
@@ -633,12 +635,8 @@ function faceRows(card: Card, tier: Tier): string[] {
   if (width > 3) {
     grid[Math.floor(height / 2)][Math.floor(width / 2)] = SUITS[card.suit];
   }
-  // The bottom corner mirrors the top: suit then rank, reading into the
-  // corner -- the rotational symmetry of a real card's two indices, spelled
-  // by unit order rather than by turned glyphs.
-  const corner = `${SUITS[card.suit]}${RANKS[card.rank - 1]}`;
-  for (let i = 0; i < corner.length; i++) {
-    grid[height - 1][width - corner.length + i] = corner[i];
+  for (let i = 0; i < index.length; i++) {
+    grid[height - 1][width - index.length + i] = index[i];
   }
   return grid.map((row) => row.join(""));
 }
