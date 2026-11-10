@@ -8,8 +8,16 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {encodePNG} from "../src/internal/imagecodecs.ts";
 import {createIsolatedVMFrames} from "../src/internal/isolatedvm.ts";
-import {inputDispatched, MockProcess, nextFrame, until} from "./test-utils.ts";
+import {
+	captureRawOutput,
+	inputDispatched,
+	MockProcess,
+	nextFrame,
+	scriptReplies,
+	until,
+} from "./test-utils.ts";
 
 const onNode =
 	(globalThis as {Bun?: unknown}).Bun === undefined &&
@@ -168,6 +176,43 @@ nodeTest(
 		dom.document.body.append("after");
 		const later = await drawn(dom, terminal, "after");
 		expect(later.some((row) => row.includes("after"))).toBe(true);
+		await dom.dispose();
+	},
+	60000,
+);
+
+nodeTest(
+	"an image in a frame goes to the terminal in the kitty protocol",
+	async () => {
+		const terminal = new MockProcess({cols: 40, rows: 12});
+		scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;16;8t"}]);
+		const output = captureRawOutput(terminal);
+		const dom = new TermDOM({
+			transport: terminal.transport,
+			colorDepth: "rgb",
+			images: "kitty",
+			cellSize: {width: 8, height: 16},
+			isolatedFrames: "auto",
+		});
+		const data = new Uint8ClampedArray(16 * 32 * 4).fill(255);
+		let binary = "";
+		for (const byte of encodePNG({width: 16, height: 32, data})) {
+			binary += String.fromCharCode(byte);
+		}
+		servePages(dom, {
+			"https://frame.example/":
+				"<body style='margin: 0'>" +
+				`<img src="data:image/png;base64,${btoa(binary)}"></body>`,
+		});
+		dom.document.body.innerHTML =
+			"<iframe src=\"https://frame.example/\" style=\"display: block; border: 0; width: 10ch; height: 4em\"></iframe>";
+		await dom.attach();
+		const deadline = Date.now() + 20000;
+		while (!/\x1b_G[^;]*c=2,r=2/.test(output()) && Date.now() < deadline) {
+			await nextFrame(dom);
+			await new Promise((resolve) => setTimeout(resolve, 20));
+		}
+		expect(output()).toMatch(/\x1b_G[^;]*c=2,r=2/);
 		await dom.dispose();
 	},
 	60000,

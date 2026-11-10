@@ -57,6 +57,7 @@ import {
 	decodeImageOffThread,
 	getNaturalHeight,
 	getNaturalWidth,
+	type GridImage,
 	IMAGE_ACCEPT,
 	loadImageCodecs,
 	MAX_IMAGE_PIXELS,
@@ -19317,6 +19318,8 @@ let frameEngineFactory: FrameEngineFactory | null = null;
 export interface IsolatedFrameView extends BoxRenderer, ProgramInput {
 	// A message for the frame's window, from a window of `origin`.
 	postMessage(data: unknown, origin: string, targetOrigin: string): void;
+	// The images the cells the last fit returned show.
+	images(): GridImage[];
 }
 
 // Builds a frame whose document at `url` is in another isolate, standing
@@ -19904,6 +19907,7 @@ class HTMLIFrameElement extends HTMLElement {
 				getFocusedElement(slots.document) === this
 					? slots.extra.frameRenderer?.caret ?? null
 					: null,
+			images: () => getFrameImages(this),
 		}));
 	}
 
@@ -20212,6 +20216,15 @@ function ensureFrameRenderer(frame: HTMLIFrameElement): void {
 			() => frameChanged(frame),
 		);
 	}
+}
+
+// The images an isolated frame's cells show. A frame in the engine's heap
+// paints its images into its cells.
+function getFrameImages(frame: HTMLIFrameElement): GridImage[] {
+	const window = _(frame).extra.contentWindow;
+	return implementsInterface(window, Window)
+		? _(window).isolatedFrame?.images() ?? []
+		: [];
 }
 
 // The frame's document changed: its cells are painted again with the
