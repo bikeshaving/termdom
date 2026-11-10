@@ -506,6 +506,7 @@ const FETCH_DIRECTIVES: Partial<Record<RequestDestination, string>> = {
 	audio: "media-src",
 	video: "media-src",
 	track: "media-src",
+	iframe: "frame-src",
 };
 
 /** The directive a policy enforces for a load, or null when none applies. */
@@ -517,6 +518,10 @@ function getEffectiveDirective(
 	const directive = FETCH_DIRECTIVES[destination ?? ""];
 	if (directive !== undefined && policy.directives.has(directive)) {
 		return directive;
+	}
+	// A frame falls back to child-src before default-src.
+	if (directive === "frame-src" && policy.directives.has("child-src")) {
+		return "child-src";
 	}
 	return policy.directives.has("default-src") ? "default-src" : null;
 }

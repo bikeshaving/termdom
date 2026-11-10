@@ -38,6 +38,7 @@ import {
 	Framebuffer,
 	resize,
 } from "./framebuffer.ts";
+import type {FrameIsolator} from "./isolateprotocol.ts";
 import {framePainted, Layout} from "./layout.ts";
 import {paint, Painter} from "./painter.ts";
 import {getDocumentLoader, type ResourceLoader} from "./resources.ts";
@@ -55,6 +56,8 @@ export interface FrameSettings {
 	devicePixelRatio: PixelRatioSetting;
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
+	// Where the frame's own frames start their documents, if anywhere.
+	isolateFrame: FrameIsolator | null;
 	load: ResourceLoader;
 	loadSignal: AbortSignal;
 	reportUncaught(error: unknown): void;
@@ -76,6 +79,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 			devicePixelRatio: parentSlots.devicePixelRatio,
 			images: parentSlots.images,
 			canvas: parentSlots.canvas,
+			isolateFrame: parentSlots.isolateFrame,
 			load: loader === null
 				? parentSlots.load
 				: (request, context) => loader(document, request, context),
@@ -145,6 +149,7 @@ export function createFrameEngine(
 		images: settings.images,
 		canvas: settings.canvas,
 		pty: "framed",
+		isolateFrame: settings.isolateFrame,
 		load: settings.load,
 		// A frame's handler attributes stay inert.
 		allowsInlineHandler: () => false,

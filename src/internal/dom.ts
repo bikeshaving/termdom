@@ -33,7 +33,7 @@ import {
 	setElementStates,
 } from "./cssselectors.ts";
 import * as CSSValues from "./cssvalues.ts";
-import type {Exchange} from "./exchange.ts";
+import type {Exchange, WireKey} from "./exchange.ts";
 import {defineFlags} from "./flags.ts";
 import {
 	type Caret,
@@ -65,6 +65,7 @@ import {
 	resolveImageURL,
 	unregisterReplacedContent,
 } from "./images.ts";
+import type {FrameIsolator} from "./isolateprotocol.ts";
 import type {Layout} from "./layout.ts";
 import {PTYSession, type PTYSpawner} from "./pty.ts";
 import {rehomeClone} from "./realms.ts";
@@ -17622,10 +17623,31 @@ class HTMLEmbedElement extends HTMLElement {
 
 declareExtraSlots(HTMLEmbedElement);
 
-/** The program an embed runs, or null for an element that runs none. */
+/**
+ * What takes the input that reaches a box as a terminal's program would:
+ * an embed's program, or a frame drawn from another isolate.
+ */
+export interface ProgramInput {
+	readonly cols: number;
+	readonly rows: number;
+	sendKey(key: WireKey): boolean;
+	paste(text: string): void;
+	sendMouse(code: number, col: number, row: number, release: boolean): boolean;
+	scrollBy(lines: number): boolean;
+	sendFocus(focused: boolean): void;
+}
+
+/**
+ * The program an embed runs, or the isolated frame an iframe shows, or
+ * null for an element that has neither.
+ */
 export function getRunningProgram(
 	element: globalThis.Element | Element | null,
-): PTYSession | null {
+): ProgramInput | null {
+	if (implementsInterface(element, HTMLIFrameElement)) {
+		const window = _(element).extra.contentWindow;
+		return implementsInterface(window, Window) ? _(window).isolatedFrame : null;
+	}
 	if (element === null || !implementsInterface(element, HTMLEmbedElement)) {
 		return null;
 	}
@@ -19291,6 +19313,29 @@ type FrameEngineFactory = (
 
 let frameEngineFactory: FrameEngineFactory | null = null;
 
+/** A frame drawn from another isolate, as the iframe that shows it holds it. */
+export interface IsolatedFrameView extends BoxRenderer, ProgramInput {
+	// A message for the frame's window, from a window of `origin`.
+	postMessage(data: unknown, origin: string, targetOrigin: string): void;
+}
+
+// Builds a frame whose document at `url` is in another isolate, standing
+// in `window` for it, given the attached document the iframe is in.
+type IsolatedFrameFactory = (
+	frame: HTMLIFrameElement,
+	window: Window,
+	url: string,
+	parent: Document,
+	isolate: FrameIsolator,
+	changed: () => void,
+) => IsolatedFrameView;
+
+let isolatedFrameFactory: IsolatedFrameFactory | null = null;
+
+export function setIsolatedFrameFactory(factory: IsolatedFrameFactory): void {
+	isolatedFrameFactory = factory;
+}
+
 export function setFrameEngineFactory(factory: FrameEngineFactory): void {
 	frameEngineFactory = factory;
 }
@@ -19792,9 +19837,10 @@ export function setFrameWindowFactory(factory: FrameWindowFactory): void {
 // A nested document. On insertion the iframe gets a content document (its
 // srcdoc parsed, or about:blank) with its own registry, and fires load.
 // Removal discards it, as removal discards a browsing context. The src
-// attribute does nothing, because this engine performs no fetches, so a
-// src iframe holds about:blank, the same document a browser shows before
-// navigation. The document has a window of its own. Where the runtime can
+// attribute loads nothing in the engine's heap, so a src iframe holds
+// about:blank, the same document a browser shows before navigation,
+// unless the TermDOM starts frames in isolates, where an http: or https:
+// src loads there. The document has a window of its own. Where the runtime can
 // make a realm, the window is in one, with its own interfaces and
 // intrinsics; otherwise its constructors are this realm's. A window
 // stands in for the frame's only where no factory builds windows.
@@ -19969,10 +20015,39 @@ function scheduleFrameLoad(frame: HTMLIFrameElement): void {
 	const slots = _(frame);
 	const run = (slots.extra.frameDocumentRun = {});
 	setTimeout(() => {
-		if (frame.isConnected && slots.extra.frameDocumentRun === run) {
+		if (
+			frame.isConnected &&
+			slots.extra.frameDocumentRun === run &&
+			getIsolatedSource(frame) === null
+		) {
 			frame.dispatchEvent(constructInternal(() => new Event("load")));
 		}
 	}, 0);
+}
+
+/**
+ * The URL of the document an iframe shows from another isolate: its src,
+ * where the TermDOM showing the iframe isolates frames and src names an
+ * http: or https: URL. Null for a frame drawn in the engine's heap. An
+ * isolated frame fires load when its document has loaded there.
+ */
+function getIsolatedSource(frame: HTMLIFrameElement): string | null {
+	const attached = getAttachedDocument(frame);
+	if (
+		attached === undefined ||
+		_(attached).extra.isolateFrame === null ||
+		isolatedFrameFactory === null ||
+		getAttributeValue(frame, "srcdoc") !== null
+	) {
+		return null;
+	}
+	const src = getAttributeValue(frame, "src");
+	const url = src === null
+		? null
+		: parseURL(src, getDocumentBaseURL(_(frame).document));
+	return url !== null && (url.protocol === "http:" || url.protocol === "https:")
+		? url.href
+		: null;
 }
 
 /**
@@ -19994,7 +20069,8 @@ export function getDrawnFrameDocument(
 	element: globalThis.Element | Element | null,
 ): Document | null {
 	return implementsInterface(element, HTMLIFrameElement) &&
-		_(element).extra.frameRenderer !== null
+		_(element).extra.frameRenderer !== null &&
+		getRunningProgram(element) === null
 		? _(element).extra.contentDocument
 		: null;
 }
@@ -20160,6 +20236,30 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 	const parent = _(frameSlots.document).extra.defaultView as Window | null;
 	const built =
 		frameWindowFactory?.(srcdoc ?? "", url, registry, parent, frame) ?? null;
+	const isolated = getIsolatedSource(frame);
+	const attached = getAttachedDocument(frame);
+	if (built !== null && isolated !== null && attached !== undefined) {
+		// The window here stands in for the frame's, whose document is in
+		// the other isolate. Its origin is opaque to the page, so the page
+		// reaches it as a window of another origin, through messages.
+		const windowSlots = _(built.window);
+		windowSlots.sandbox = getFrameSandbox(frame, parent);
+		windowSlots.sandboxOrigin = {};
+		windowSlots.windowName = getAttributeValue(frame, "name") ?? "";
+		frameSlots.extra.contentDocument = built.document;
+		frameSlots.extra.contentWindow = built.window;
+		const view = isolatedFrameFactory!(
+			frame,
+			built.window,
+			isolated,
+			attached,
+			_(attached).extra.isolateFrame!,
+			() => frameChanged(frame),
+		);
+		windowSlots.isolatedFrame = view;
+		frameSlots.extra.frameRenderer = view;
+		return;
+	}
 	if (built !== null) {
 		const windowSlots = _(built.window);
 		const sandbox = getFrameSandbox(frame, parent);
@@ -29142,6 +29242,9 @@ export interface DocumentExtra extends NodeExtra {
 	// none may run: the ptyEmbeds option is "none", the runtime has no
 	// pseudo-terminal, or the document is a frame's.
 	pty: PTYSpawner | "none" | "unavailable" | "framed";
+	// Starts a frame's document in an isolate of its own, or null where
+	// frames are drawn in the engine's heap.
+	isolateFrame: FrameIsolator | null;
 	load: ResourceLoader;
 	loadSignal: globalThis.AbortSignal;
 	// Whether the document's policies let an element's inline handler run.
@@ -38876,6 +38979,7 @@ export interface DocumentEngine {
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
 	pty: PTYSpawner | "none" | "unavailable" | "framed";
+	isolateFrame?: FrameIsolator | null;
 	// Answers the loads the document's markup asks for.
 	load: ResourceLoader;
 	allowsInlineHandler(element: globalThis.Element): boolean;
@@ -38921,6 +39025,7 @@ export function attachDocument(
 	attachedSlots.extra.allowsPlugin = (element, violations) =>
 		engine.allowsPlugin(element, violations);
 	attachedSlots.extra.loadSignal = engine.loadSignal;
+	attachedSlots.extra.isolateFrame = engine.isolateFrame ?? null;
 	attachedSlots.extra.visible = false;
 	attachedSlots.extra.systemFocused = true;
 	attachedSlots.extra.layout = layout;
@@ -42412,6 +42517,9 @@ export interface WindowSlots extends EventTargetSlots {
 	// origin it has where the sandbox lacks allow-same-origin.
 	sandbox: ReadonlySet<string> | null;
 	sandboxOrigin: object | null;
+	// Where a frame's document is in another isolate, the frame there,
+	// which this window stands in for.
+	isolatedFrame: IsolatedFrameView | null;
 	// The cross-origin WindowProxy each window of another origin holds this
 	// one by.
 	crossOriginViews?: WeakMap<Window, Window>;
@@ -42713,6 +42821,7 @@ export class Window extends EventTarget {
 		slots.realm = null;
 		slots.sandbox = null;
 		slots.sandboxOrigin = null;
+		slots.isolatedFrame = null;
 		slots.discarded = false;
 		slots.frameIndexes = 0;
 		for (const name of new Set([
@@ -43721,6 +43830,16 @@ function postWindowMessage(
 		}
 		targetOrigin = getURLOrigin(parsed.href, {});
 	}
+	const isolated = _(target).isolatedFrame;
+	if (isolated !== null) {
+		const origin = serializeOrigin(getWindowOrigin(source));
+		isolated.postMessage(
+			cloneStructured(message, "execute 'postMessage' on 'Window'"),
+			origin,
+			targetOrigin === null ? "*" : serializeOrigin(targetOrigin),
+		);
+		return;
+	}
 	const realm = _(target).realm;
 	const data = runInRealm(realm, () => {
 		const clone = cloneStructured(message, "execute 'postMessage' on 'Window'");
@@ -43740,6 +43859,44 @@ function postWindowMessage(
 					source: eventSource as unknown as globalThis.MessageEventSource,
 				})));
 		dispatch(target, event);
+	});
+}
+
+/**
+ * A message the document of an isolated frame posted to its parent, which
+ * `window` stands in the page for. It lands as one from a window of
+ * `origin` would, and only where the parent's origin is `targetOrigin`.
+ */
+export function receiveFrameMessage(
+	window: Window,
+	data: unknown,
+	origin: string,
+	targetOrigin: string,
+): void {
+	const parent = _(window).parentWindow;
+	if (
+		parent === null ||
+		_(window).discarded ||
+		(targetOrigin !== "*" &&
+			targetOrigin !== serializeOrigin(getWindowOrigin(parent)))
+	) {
+		return;
+	}
+	const realm = _(parent).realm;
+	const cloned = runInRealm(realm, () => {
+		const clone = cloneStructured(data, "execute 'postMessage' on 'Window'");
+		return realm === null ? clone : rehomeClone(clone, realm);
+	});
+	const eventSource = viewWindow(parent, window);
+	queueWindowTask(parent, () => {
+		const event = runInRealm(realm, () =>
+			constructInternal(() =>
+				new MessageEvent("message", {
+					data: cloned,
+					origin,
+					source: eventSource as unknown as globalThis.MessageEventSource,
+				})));
+		dispatch(parent, event);
 	});
 }
 

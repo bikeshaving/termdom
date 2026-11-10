@@ -1,4 +1,5 @@
 import "./internal/frames.ts";
+import "./internal/isolatedframes.ts";
 import "./internal/inspector.ts";
 
 import type {CanvasCellGridContext} from "./internal/canvas.ts";
@@ -109,6 +110,7 @@ import {
 	setDecodeWorkerURL,
 } from "./internal/images.ts";
 import {Input, resolvePendingHover} from "./internal/input.ts";
+import type {FrameIsolator} from "./internal/isolateprotocol.ts";
 import {
 	compressKittyUploads,
 	forgetKittyImages,
@@ -162,6 +164,15 @@ import {
 import {createWindow} from "./internal/window.ts";
 
 export type {CanvasCellGridContext} from "./internal/canvas.ts";
+export type {
+	FrameInit,
+	FrameIsolator,
+	FrameMessage,
+	FrameRequest,
+	FrameResponse,
+	HostMessage,
+	IsolatedFrame,
+} from "./internal/isolateprotocol.ts";
 export type {CellSize} from "./internal/units.ts";
 export {
 	HistoryChangeEvent,
@@ -353,6 +364,24 @@ export interface TermDOMOptions {
 	ptyEmbeds?: "none" | "auto";
 
 	/**
+	 * Where an `<iframe src>` with an http: or https: URL shows its
+	 * document. TermDOM loads it under the page's policy, as a `fetch`
+	 * event and then the network, and starts it in an isolate this
+	 * function makes. The page draws the cells it paints there and hands
+	 * it keys, the mouse and focus, and the two reach each other only
+	 * through `postMessage()`, as windows of two origins do. A page that
+	 * freezes or runs out of memory there takes its frame down alone.
+	 * - `"none"` (the default): the frame shows an empty `about:blank`.
+	 * - A function: called with the frame's document and the terminal it
+	 *   is drawn for, and with where to send what the frame sends. It
+	 *   returns the frame, which takes the page's messages until it is
+	 *   disposed. Anything the frame sends is checked as untrusted.
+	 * Any other value throws a TypeError.
+	 * @experimental The messages may change in a minor release.
+	 */
+	isolatedFrames?: "none" | FrameIsolator;
+
+	/**
 	 * The colors the terminal shows, in the bits `screen.colorDepth`
 	 * reports: `24` for 24-bit color, `8` for the 256-color palette, `4`
 	 * for the 16 basic colors. `"rgb"`, `"256"` and `"ansi"` name the same
@@ -483,6 +512,18 @@ function toPTYSpawner(
 		return findSpawner() ?? "unavailable";
 	}
 	throw new TypeError('ptyEmbeds must be "none" or "auto"');
+}
+
+function toFrameIsolator(
+	option: TermDOMOptions["isolatedFrames"],
+): FrameIsolator | null {
+	if (option === undefined || option === "none") {
+		return null;
+	}
+	if (typeof option === "function") {
+		return option;
+	}
+	throw new TypeError('isolatedFrames must be "none" or a function');
 }
 
 function toFailFast(option: unknown): boolean {
@@ -679,6 +720,7 @@ export class TermDOM extends EventTarget {
 		const images = toGraphicsOption("images", options.images);
 		const canvas = toGraphicsOption("canvas", options.canvas);
 		const pty = toPTYSpawner(options.ptyEmbeds);
+		const isolateFrame = toFrameIsolator(options.isolatedFrames);
 		const slots = _(this);
 		slots.colorDepth = toColorDepth(options.colorDepth);
 		slots.graphicsProtocols = {
@@ -773,6 +815,7 @@ export class TermDOM extends EventTarget {
 			images: images.setting,
 			canvas: canvas.setting,
 			pty,
+			isolateFrame,
 			load: (request, context) =>
 				answerRequest(
 					slots.fetchTarget,
