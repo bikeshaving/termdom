@@ -230,9 +230,8 @@ export function createFrameEngine(
 		const context = new CellContext(grid, rows, cols, -framebuffer.scrollTop);
 		// A frame whose images are sent on by the page holds them in its
 		// framebuffer's table, and paints the placeholders that name them.
-		context.graphics = framebuffer.colorDepth === "rgb"
-			? framebuffer.graphics
-			: null;
+		// The page draws them in kitty or in cells, as its terminal can.
+		context.graphics = framebuffer.graphics;
 		context.layers = layers;
 		paint(painter, context);
 		// Joined here, since the layers do not leave with the grid.
