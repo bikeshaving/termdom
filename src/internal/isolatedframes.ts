@@ -24,9 +24,12 @@ import {
 	type Caret,
 	CellGrid,
 	type GridCells,
+	type ImportedPlaceholder,
 	importGrid,
 } from "./framebuffer.ts";
+import type {Bitmap, GridImage} from "./images.ts";
 import type {
+	FrameImage,
 	FrameInit,
 	FrameIsolator,
 	FrameMessage,
@@ -34,11 +37,18 @@ import type {
 	HostMessage,
 	IsolatedFrame,
 } from "./isolateprotocol.ts";
+import {MAX_KITTY_PIXELS, MAX_PLACEHOLDER_CELLS} from "./kitty.ts";
 import {_} from "./slots.ts";
 import {getCellSize} from "./units.ts";
 
 // The loads a frame may have in flight at once.
 const MAX_FETCHES = 64;
+
+// The images a frame may hold at once.
+const MAX_IMAGES = 256;
+
+// Tells each frame's images from another's among those the page shows.
+let nextFrameToken = 1;
 
 // Request headers a frame may not set, as Fetch forbids a page to.
 const FORBIDDEN_HEADER =
@@ -96,6 +106,16 @@ class RemoteFrame implements IsolatedFrameView {
 	// next fit.
 	cells: GridCells | null;
 	stale: boolean;
+	token: number;
+	// The images the frame posted, by its ids, and those the grid's
+	// placeholders show.
+	posted: Map<
+		number,
+		{bitmap: Bitmap; cols: number; rows: number; version: number}
+	>;
+
+	shown: GridImage[];
+	imageVersion: number;
 	focused: boolean;
 	running: IsolatedFrame | null;
 	// What is sent before the frame has started, sent once it has.
@@ -126,6 +146,10 @@ class RemoteFrame implements IsolatedFrameView {
 		this.grid = new CellGrid(0, 0);
 		this.cells = null;
 		this.stale = false;
+		this.token = nextFrameToken++;
+		this.posted = new Map();
+		this.shown = [];
+		this.imageVersion = 0;
 		this.focused = false;
 		this.running = null;
 		this.waiting = [];
@@ -180,6 +204,7 @@ class RemoteFrame implements IsolatedFrameView {
 				scripting:
 					media("(scripting: enabled)") &&
 					(sandbox === null || sandbox.has("allow-scripts")),
+				images: engine.images === "none" ? "cells" : "kitty",
 			},
 			(message) => {
 				if (unload === this.unload) {
@@ -221,6 +246,9 @@ class RemoteFrame implements IsolatedFrameView {
 					this.navigate(message.url);
 				}
 				break;
+			case "images":
+				this.receiveImages(message.added, message.dropped);
+				break;
 			case "crash":
 				this.stop();
 				this.cells = null;
@@ -258,6 +286,45 @@ class RemoteFrame implements IsolatedFrameView {
 		return URL.parse(this.url)?.origin ?? "null";
 	}
 
+	// The images the frame's next cells show, each checked against its
+	// size before the page holds it.
+	receiveImages(added: FrameImage[], dropped: number[]): void {
+		for (const id of dropped) {
+			this.posted.delete(id);
+		}
+		for (const image of added) {
+			const {id, width, height, cols, rows, pixels} = image;
+			if (
+				![id, width, height, cols, rows].every(Number.isInteger) ||
+				id < 1 ||
+				id > 0xffffff ||
+				width < 1 ||
+				height < 1 ||
+				width * height > MAX_KITTY_PIXELS ||
+				!(pixels instanceof Uint8ClampedArray) ||
+				pixels.length !== width * height * 4 ||
+				cols < 1 ||
+				rows < 1 ||
+				cols > MAX_PLACEHOLDER_CELLS ||
+				rows > MAX_PLACEHOLDER_CELLS ||
+				(!this.posted.has(id) && this.posted.size >= MAX_IMAGES)
+			) {
+				continue;
+			}
+			this.posted.set(id, {
+				bitmap: {width, height, data: pixels},
+				cols,
+				rows,
+				version: ++this.imageVersion,
+			});
+		}
+		this.stale = true;
+	}
+
+	images(): GridImage[] {
+		return this.shown;
+	}
+
 	// A caret the frame names is drawn only inside the cells it painted.
 	readCaret(caret: Caret | null, cells: GridCells): Caret | null {
 		if (
@@ -288,6 +355,7 @@ class RemoteFrame implements IsolatedFrameView {
 		}
 		this.stop();
 		this.unload = new AbortController();
+		this.posted.clear();
 		this.cells = null;
 		this.caret = null;
 		this.stale = true;
@@ -382,11 +450,46 @@ class RemoteFrame implements IsolatedFrameView {
 		}
 		if (this.stale) {
 			this.stale = false;
+			const shown = new Map<number, GridImage>();
 			if (this.cells !== null) {
-				importGrid(this.cells, this.grid);
+				importGrid(this.cells, this.grid, (place) =>
+					this.showImage(shown, place));
 			}
+			this.shown = [...shown.values()];
 		}
 		return this.grid;
+	}
+
+	// A placeholder cell shows its image only where the frame posted one
+	// with that id that has a cell there.
+	showImage(shown: Map<number, GridImage>, place: ImportedPlaceholder): void {
+		const image = this.posted.get(place.id);
+		if (
+			image === undefined ||
+			place.imageRow >= image.rows ||
+			place.imageCol >= image.cols
+		) {
+			return;
+		}
+		let entry = shown.get(place.id);
+		if (entry === undefined) {
+			entry = {
+				key: `frame:${this.token}:${place.id}`,
+				version: image.version,
+				bitmap: image.bitmap,
+				cols: image.cols,
+				rows: image.rows,
+				cells: [],
+			};
+			shown.set(place.id, entry);
+		}
+		entry.cells.push({
+			row: place.row,
+			col: place.col,
+			imageRow: place.imageRow,
+			imageCol: place.imageCol,
+			bg: place.bg,
+		});
 	}
 
 	sendKey(key: WireKey): boolean {

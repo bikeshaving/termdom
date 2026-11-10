@@ -883,7 +883,8 @@ const STYLE_BITS = (1 << ATTR.WidthShift) - 1;
 
 // The text a cell from elsewhere shows, or a space for what a terminal
 // must never be sent: a control character, a lone surrogate, a code point
-// past Unicode's, or a placeholder naming one of this heap's images.
+// past Unicode's, or a placeholder, which would name one of this heap's
+// images.
 function readImportedChar(
 	char: number,
 	border: number,
@@ -911,13 +912,30 @@ function readImportedChar(
 	return /\p{Cc}/u.test(text) ? " " : text;
 }
 
+/** A placeholder cell of another heap's, at a cell of the grid. */
+export interface ImportedPlaceholder {
+	row: number;
+	col: number;
+	imageRow: number;
+	imageCol: number;
+	// The image's id in the other heap, from the cell's foreground.
+	id: number;
+	bg: number | null;
+}
+
 /**
  * Cells another heap painted, into `grid` from its top left corner, as
  * much of them as fits. What they name is checked as untrusted: each
  * cell's text and width are taken again here, so no cell can write a
- * control sequence or claim columns its text does not take.
+ * control sequence or claim columns its text does not take. A placeholder
+ * for one of the other heap's images is left blank, with its background,
+ * and handed to `placed`, which draws the image over it.
  */
-export function importGrid(cells: GridCells, grid: CellGrid): void {
+export function importGrid(
+	cells: GridCells,
+	grid: CellGrid,
+	placed?: (placeholder: ImportedPlaceholder) => void,
+): void {
 	clearGrid(grid);
 	const graphemes = new Map(cells.graphemes);
 	const rows = Math.min(cells.rows, grid.rows);
@@ -939,6 +957,21 @@ export function importGrid(cells: GridCells, grid: CellGrid): void {
 			grid.bg[to] = cells.bg[from] & COLOR_MASK;
 			const char = cells.cluster[from];
 			if (char === 0) {
+				col++;
+				continue;
+			}
+			if (placed !== undefined && isPlaceholderChar(char)) {
+				grid.cluster[to] = 0x20;
+				grid.attrs[to] = 1 << ATTR.WidthShift;
+				placed({
+					row,
+					col,
+					imageRow: (char >>> 12) & 0xfff,
+					imageCol: char & 0xfff,
+					id: cells.fg[from] & 0xffffff,
+					bg: grid.bg[to] === 0 ? null : grid.bg[to],
+				});
+				grid.fg[to] = 0;
 				col++;
 				continue;
 			}

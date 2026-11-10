@@ -17,8 +17,16 @@ import {
 	type HostMessage,
 	TermDOM,
 } from "../src/index.ts";
+import {toCellColor} from "../src/internal/cssvalues.ts";
 import {CellGrid, exportGrid} from "../src/internal/framebuffer.ts";
-import {inputDispatched, MockProcess, nextFrame, until} from "./test-utils.ts";
+import {
+	captureRawOutput,
+	inputDispatched,
+	MockProcess,
+	nextFrame,
+	scriptReplies,
+	until,
+} from "./test-utils.ts";
 
 interface FakeFrame {
 	init: FrameInit;
@@ -364,4 +372,74 @@ test("a srcdoc frame stays in the page's heap, and a removed frame's isolate goe
 
 test("isolatedFrames takes \"none\", \"auto\" or a function", () => {
 	expect(() => new TermDOM({isolatedFrames: "yes" as any})).toThrow(TypeError);
+});
+
+// A frame's red image, 2 by 1 cells, of 16 by 16 pixels, and the cells
+// that show it under id 7 at the frame's top left.
+function postRedImage(frame: FakeFrame, cols: number): void {
+	const pixels = new Uint8ClampedArray(16 * 16 * 4);
+	for (let index = 0; index < pixels.length; index += 4) {
+		pixels.set([255, 0, 0, 255], index);
+	}
+	frame.post({
+		type: "images",
+		added: [{id: 7, width: 16, height: 16, cols: 2, rows: 1, pixels}],
+		dropped: [],
+	});
+	const grid = new CellGrid(1, cols);
+	grid.setPlaceholder(0, 0, 0, {fg: toCellColor(7)});
+	grid.setPlaceholder(1, 0, 1, {fg: toCellColor(7)});
+	grid.setPlaceholder(2, 0, 0, {fg: toCellColor(8)});
+	frame.post({type: "paint", cells: exportGrid(grid), caret: null});
+}
+
+test("a frame's images are drawn in half blocks where the terminal has no graphics", async () => {
+	const {frames, isolate} = fakeIsolator();
+	const terminal = new MockProcess({cols: 30, rows: 6});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		colorDepth: "rgb",
+		images: "cells",
+		isolatedFrames: isolate,
+	});
+	answerPages(dom, {"https://frame.example/": ""});
+	dom.document.body.innerHTML =
+		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
+	await settle(dom);
+	await until(() => frames.length === 1);
+	expect(frames[0].init.images).toBe("kitty");
+	postRedImage(frames[0], 12);
+	await settle(dom);
+	const buffer = (terminal as any).terminal.buffer.active;
+	const line = buffer.getLine(1);
+	const backgrounds = [1, 2, 3].map((col) => {
+		const cell = line.getCell(col);
+		return cell.isBgRGB() ? cell.getBgColor() : null;
+	});
+	expect(backgrounds).toEqual([0xff0000, 0xff0000, null]);
+	dom.dispose();
+});
+
+test("a frame's images are sent in the kitty protocol where the terminal draws it", async () => {
+	const {frames, isolate} = fakeIsolator();
+	const terminal = new MockProcess({cols: 30, rows: 6});
+	scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;16;8t"}]);
+	const output = captureRawOutput(terminal);
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		colorDepth: "rgb",
+		images: "kitty",
+		isolatedFrames: isolate,
+	});
+	answerPages(dom, {"https://frame.example/": ""});
+	dom.document.body.innerHTML =
+		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
+	await settle(dom);
+	await until(() => frames.length === 1);
+	postRedImage(frames[0], 12);
+	await settle(dom);
+	const uploads = output().match(/\x1b_G[^;\x1b]*/g) ?? [];
+	expect(uploads.length).toBe(1);
+	expect(uploads[0]).toContain("c=2,r=1");
+	dom.dispose();
 });
