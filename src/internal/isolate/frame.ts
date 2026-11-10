@@ -33,7 +33,12 @@ import {
 import {deliverError, deliverResponse} from "./network.ts";
 import {installPage} from "./page.ts";
 import {ScriptRunner} from "./scripts.ts";
-import {fireTimer, queueTask} from "./timers.ts";
+import {loadStylesheets} from "./stylesheets.ts";
+import {clearTimeout, fireTimer, queueTask, setTimeout} from "./timers.ts";
+
+// How long the first paint waits for the document's stylesheets, so it
+// does not flash the page unstyled.
+const STYLESHEET_WAIT = 5000;
 
 export {fireTimer};
 
@@ -131,6 +136,7 @@ function createFrame(init: FrameInit): Frame {
 	_(window).parentWindow = parent;
 
 	let queued = false;
+	let styled = false;
 	let disposed = false;
 	let title = "";
 	let loaded = false;
@@ -213,7 +219,17 @@ function createFrame(init: FrameInit): Frame {
 		scripts = new ScriptRunner(document as unknown as globalThis.Document);
 		scripts.start();
 	}
-	schedule();
+	let wait: number | undefined;
+	void Promise.race([
+		loadStylesheets(document as unknown as globalThis.Document),
+		new Promise<void>((resolve) => {
+			wait = setTimeout(resolve, STYLESHEET_WAIT);
+		}),
+	]).finally(() => {
+		clearTimeout(wait);
+		styled = true;
+		schedule();
+	});
 
 	// Without scripts, the document is loaded once its first paint is out.
 	// With them, once the backend has run them all.
@@ -226,7 +242,7 @@ function createFrame(init: FrameInit): Frame {
 
 	function paint(): void {
 		queued = false;
-		if (disposed) {
+		if (disposed || !styled) {
 			return;
 		}
 		resolvePendingHover(input);
