@@ -7,11 +7,13 @@
  * fetches, its scripts included, goes to the page, which loads it under
  * its own policy.
  */
-import {randomFillSync} from "node:crypto";
-
 import type ivm from "isolated-vm";
 
-import {HOST_CALLBACKS, loadFrameScript} from "./isolate/bundle.ts";
+import {
+	HOST_CALLBACKS,
+	loadFrameScript,
+	requireNodePackage,
+} from "./isolate/bundle.ts";
 import type {ScriptItem} from "./isolate/scripts.ts";
 import {ModuleLoader} from "./isolatedvmmodules.ts";
 import type {
@@ -50,7 +52,7 @@ type Dispatch = ivm.Reference<(kind: string, ...args: unknown[]) => unknown>;
 export async function createIsolatedVMFrames(
 	options: IsolatedVMOptions = {},
 ): Promise<FrameIsolator> {
-	const {default: ivmModule} = await import("isolated-vm");
+	const ivmModule = requireNodePackage<typeof ivm>("isolated-vm");
 	const source = await loadFrameScript();
 	const memoryLimit = options.memoryLimit ?? DEFAULT_MEMORY_LIMIT;
 	const taskTimeout = options.taskTimeout ?? DEFAULT_TASK_TIMEOUT;
@@ -351,7 +353,7 @@ class IsolatedVMFrame {
 
 	random(length: number): Uint8Array {
 		const size = Math.max(0, Math.min(Number(length) | 0, MAX_RANDOM_BYTES));
-		return randomFillSync(new Uint8Array(size));
+		return crypto.getRandomValues(new Uint8Array(size));
 	}
 
 	// The backend's own loads, a script's or a module's source, go to the
