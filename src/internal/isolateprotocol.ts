@@ -55,7 +55,18 @@ export type FrameMessage =
 	{type: "paint"; cells: GridCells; caret: Caret | null} |
 	{type: "title"; title: string} |
 	// The frame went to another document, or sent its parent to one.
-	{type: "navigate"; target: "self" | "parent"; url: string} |
+	// A form's POST carries its method, its encoded fields and their type.
+	{
+		type: "navigate";
+		target: "self" | "parent";
+		url: string;
+		method?: string;
+		body?: Uint8Array | null;
+		contentType?: string;
+	} |
+	// The frame's document changed its URL in place: pushState,
+	// replaceState or a fragment.
+	{type: "history"; url: string; replace: boolean} |
 	{type: "load"} |
 	{type: "message"; data: unknown; targetOrigin: string} |
 	{type: "fetch"; id: number; request: FrameRequest} |
