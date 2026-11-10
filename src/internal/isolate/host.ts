@@ -13,6 +13,7 @@ import type {
 	WirePaste,
 } from "../exchange.ts";
 import type {GridCells} from "../framebuffer.ts";
+import type {ScriptItem} from "./scripts.ts";
 
 export interface FrameRequest {
 	url: string;
@@ -83,6 +84,9 @@ export interface IsolateHost {
 	setTimer(id: number, ms: number): void;
 	clearTimer(id: number): void;
 	random(length: number): Uint8Array;
+	// The scripts the document holds, or that were added to it, for the
+	// backend to fetch, compile and run in order.
+	scripts(initial: boolean, items: ScriptItem[]): void;
 }
 
 function missing(): never {
@@ -95,6 +99,7 @@ export const host: IsolateHost = {
 	setTimer: missing,
 	clearTimer: missing,
 	random: missing,
+	scripts: missing,
 };
 
 export function setHost(next: IsolateHost): void {
@@ -103,4 +108,5 @@ export function setHost(next: IsolateHost): void {
 	host.setTimer = (id, ms) => next.setTimer(id, ms);
 	host.clearTimer = (id) => next.clearTimer(id);
 	host.random = (length) => next.random(length);
+	host.scripts = (initial, items) => next.scripts(initial, items);
 }
