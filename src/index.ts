@@ -375,7 +375,9 @@ export interface TermDOMOptions {
 	 * - `"auto"`: in a V8 isolate of its own, through the isolated-vm
 	 *   package, on Node when it is installed. Each has 256 MB of heap,
 	 *   and each call into it 30 seconds. Where isolated-vm cannot load,
-	 *   as on Bun and Deno, the frame shows nothing.
+	 *   as on Bun and Deno, the frame shows nothing. For other limits,
+	 *   pass what `createIsolatedVMFrames()` from
+	 *   `@b9g/termdom/isolated-vm` resolves to.
 	 * - A function: called with the frame's document and the terminal it
 	 *   is drawn for, and with where to send what the frame sends. It
 	 *   returns the frame, which takes the page's messages until it is

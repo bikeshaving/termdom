@@ -489,8 +489,38 @@ Click a frame, or focus it, and keys, the mouse and pastes go to the
 document in it. To the page, the frame's window is one of another
 origin, whatever its URL: `contentDocument` is null, and the two talk
 through `postMessage()`. A frame that sets `parent.location.href` asks
-the page to navigate, as above, and a link in the frame loads the new
-page in a new isolate.
+the page to navigate, as above, and a link or form in the frame loads
+the new page in a new isolate.
+
+The iframe fires these events, so a page can show where its frame is:
+
+- `titlechange`: a `CustomEvent` with the frame's new title in `detail`,
+  without control characters.
+- `navigate`: the frame is going to another page. A `CustomEvent` whose
+  `detail` has the `url` and the `method`, `"GET"` or `"POST"`. Call
+  `preventDefault()` and the frame stays where it is.
+- `historychange`: the frame changed its URL in place, with
+  `pushState()`, `replaceState()` or a fragment. A `HistoryChangeEvent`
+  with the new `url` and whether it `replace`d the last one. Its `state`
+  is null. A URL of another origin is ignored.
+
+For other limits, or to log what frames print, make the isolator
+yourself:
+
+```ts
+import {createIsolatedVMFrames} from "@b9g/termdom/isolated-vm";
+
+const dom = new TermDOM({
+  isolatedFrames: await createIsolatedVMFrames({
+    memoryLimit: 64,
+    taskTimeout: 5000,
+    log: (level, text) => console.error(level, text),
+  }),
+});
+```
+
+`memoryLimit` is in megabytes and `taskTimeout` in milliseconds. It
+rejects where isolated-vm can't load.
 
 `isolatedFrames` also takes a function, for an embedder that runs
 frames elsewhere, such as in a process of its own. TermDOM calls it with
