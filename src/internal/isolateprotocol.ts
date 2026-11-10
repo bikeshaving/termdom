@@ -30,6 +30,9 @@ export interface FrameInit {
 	colorScheme: "light" | "dark";
 	reducedMotion: boolean;
 	scripting: boolean;
+	// "kitty" where the page sends images in the kitty graphics protocol,
+	// so the frame paints placeholders and posts the images' pixels.
+	images?: "kitty" | "cells";
 	// What a backend holds this frame to, where it holds frames to limits:
 	// megabytes of heap, and milliseconds any one task may run.
 	limits?: {memoryLimit?: number; taskTimeout?: number};
@@ -71,6 +74,9 @@ export type FrameMessage =
 	// replaceState or a fragment.
 	{type: "history"; url: string; replace: boolean} |
 	{type: "load"} |
+	// The images the frame's placeholder cells name: those placed since its
+	// last paint, as RGBA pixels, and the ids it no longer shows.
+	{type: "images"; added: FrameImage[]; dropped: number[]} |
 	{type: "message"; data: unknown; targetOrigin: string} |
 	{type: "fetch"; id: number; request: FrameRequest} |
 	{type: "abortFetch"; id: number} |
@@ -91,6 +97,15 @@ export type HostMessage =
 	{type: "message"; data: unknown; origin: string; targetOrigin: string} |
 	{type: "response"; id: number; response: FrameResponse} |
 	{type: "fetchError"; id: number; message: string};
+
+export interface FrameImage {
+	id: number;
+	width: number;
+	height: number;
+	cols: number;
+	rows: number;
+	pixels: Uint8ClampedArray;
+}
 
 /** A frame running in an isolate, as its page holds it. */
 export interface IsolatedFrame {
