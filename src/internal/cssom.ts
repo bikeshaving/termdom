@@ -7795,6 +7795,17 @@ const LIST_NUMBERING_ATTRIBUTES = new Set([
 	"type",
 ]);
 
+// Past the cap a restyle keeps, the next frame repaints whole.
+function repaintLink(cascade: Cascade, element: Element): void {
+	const restyled = cascade.layout.restyledForPaint;
+	if (restyled.size >= 256) {
+		restyled.clear();
+		cascade.layout.invalidateFrame();
+		return;
+	}
+	restyled.set(element, null);
+}
+
 // What one batch of records has done, for the work that waits until
 // the batch ends.
 interface MutationBatch {
@@ -8186,6 +8197,14 @@ function handleAttributeMutation(
 	) {
 		noteCounterChange(cascade, element);
 		cascade.layout.invalidateFrame();
+	}
+	// A link paints its URL into its cells apart from its style, so its
+	// rows repaint whatever the sheets make of the change.
+	if (
+		mutation.attributeName === "href" &&
+		(getLocalName(element) === "a" || getLocalName(element) === "area")
+	) {
+		repaintLink(cascade, element);
 	}
 	// A change to keys whose rules declare only paint properties
 	// leaves every box where it was. The styles are dropped so the

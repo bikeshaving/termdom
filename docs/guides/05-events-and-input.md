@@ -100,6 +100,12 @@ cells. `mousedown` moves focus, and `wheel` scrolls.
 Each wheel notch scrolls three lines. There's no context menu; the
 right button is an ordinary press.
 
+A link's text is painted as a terminal hyperlink (OSC 8) when its `href`
+resolves to an absolute `http`, `https`, `mailto`, `file` or `ftp` URL, so
+a terminal that supports them opens it on its own modifier-click or hover,
+whether or not the page has the mouse. The engine never follows a link
+itself; a `click` listener is where an app acts on one.
+
 ```ts
 row.addEventListener("click", () => open(row.dataset.path!));
 ```
