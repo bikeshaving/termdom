@@ -26,6 +26,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./isolated-vm": "./src/isolated-vm.ts",
     "./package.json": "./package.json"
   },
   "files": [

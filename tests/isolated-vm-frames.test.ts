@@ -9,7 +9,7 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {encodePNG} from "../src/internal/imagecodecs.ts";
-import {createIsolatedVMFrames} from "../src/internal/isolatedvm.ts";
+import {createIsolatedVMFrames} from "../src/isolated-vm.ts";
 import {
 	captureRawOutput,
 	inputDispatched,
@@ -213,6 +213,48 @@ nodeTest(
 			await new Promise((resolve) => setTimeout(resolve, 20));
 		}
 		expect(output()).toMatch(/\x1b_G[^;]*c=2,r=2/);
+		await dom.dispose();
+	},
+	60000,
+);
+
+nodeTest(
+	"a frame's title, history and links come to its iframe as events",
+	async () => {
+		const terminal = new MockProcess({cols: 40, rows: 12});
+		const dom = new TermDOM({
+			transport: terminal.transport,
+			scripting: "enabled",
+			isolatedFrames: "auto",
+		});
+		servePages(dom, {
+			"https://frame.example/":
+				"<title>First</title><a id=go href='/next'>go</a><script>" +
+				"history.pushState(null, '', '/moved');" +
+				"setTimeout(() => document.getElementById('go').click(), 100);" +
+				"</script>",
+			"https://frame.example/next": "<p style='margin: 0'>next page</p>",
+		});
+		dom.document.body.innerHTML =
+			`<iframe src="https://frame.example/" style="${FRAME}"></iframe>`;
+		const frame = dom.document.querySelector("iframe")!;
+		const events: string[] = [];
+		frame.addEventListener("titlechange", (event: any) =>
+			events.push(`title ${event.detail}`),
+		);
+		frame.addEventListener("historychange", (event: any) =>
+			events.push(`history ${event.url}`),
+		);
+		frame.addEventListener("navigate", (event: any) =>
+			events.push(`navigate ${event.detail.url}`),
+		);
+		await dom.attach();
+		await drawn(dom, terminal, "next page");
+		expect(events).toEqual([
+			"history https://frame.example/moved",
+			"title First",
+			"navigate https://frame.example/next",
+		]);
 		await dom.dispose();
 	},
 	60000,

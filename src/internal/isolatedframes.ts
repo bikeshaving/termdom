@@ -9,8 +9,10 @@
  */
 import {
 	constructInternal,
+	CustomEvent,
 	type Document,
 	Event,
+	HistoryChangeEvent,
 	type HTMLIFrameElement,
 	type IsolatedFrameView,
 	navigateFrameParent,
@@ -47,6 +49,9 @@ const MAX_FETCHES = 64;
 // The images a frame may hold at once.
 const MAX_IMAGES = 256;
 
+// The characters of a frame's title the page hears of.
+const MAX_TITLE_LENGTH = 4096;
+
 // Tells each frame's images from another's among those the page shows.
 let nextFrameToken = 1;
 
@@ -73,6 +78,37 @@ const DESTINATIONS = new Set<string>([
 
 function isWebURL(url: URL): boolean {
 	return url.protocol === "http:" || url.protocol === "https:";
+}
+
+// A form's POST, as the frame encoded it.
+interface Submission {
+	body: Uint8Array<ArrayBuffer>;
+	contentType: string;
+}
+
+function readSubmission(
+	message: Extract<FrameMessage, {type: "navigate"}>,
+): Submission | undefined {
+	if (
+		typeof message.method !== "string" ||
+		message.method.toUpperCase() !== "POST"
+	) {
+		return undefined;
+	}
+	return {
+		body: message.body instanceof Uint8Array
+			? Uint8Array.from(message.body)
+			: new Uint8Array(0),
+		contentType: typeof message.contentType === "string"
+			? message.contentType.replace(/[\r\n]/g, "")
+			: "",
+	};
+}
+
+function readTitle(title: unknown): string {
+	return String(title)
+		.replace(/[\u0000-\u001f\u007f-\u009f]/g, "")
+		.slice(0, MAX_TITLE_LENGTH);
 }
 
 function describeError(error: unknown): string {
@@ -159,13 +195,20 @@ class RemoteFrame implements IsolatedFrameView {
 		void this.start(url);
 	}
 
-	async start(url: string): Promise<void> {
+	async start(url: string, submission?: Submission): Promise<void> {
 		const unload = this.unload;
 		const engine = _(this.parent).extra;
 		let html: string;
 		let documentURL = url;
 		try {
-			const request = new Request(url, {signal: unload.signal});
+			const request = new Request(url, {
+				method: submission === undefined ? "GET" : "POST",
+				headers: submission?.contentType
+					? {"content-type": submission.contentType}
+					: undefined,
+				body: submission?.body,
+				signal: unload.signal,
+			});
 			setRequestDestination(request, "iframe");
 			const response = await engine.load(request, {
 				initiator: this.frame as unknown as globalThis.Element,
@@ -243,8 +286,18 @@ class RemoteFrame implements IsolatedFrameView {
 				if (message.target === "parent") {
 					navigateFrameParent(this.window, String(message.url));
 				} else {
-					this.navigate(message.url);
+					this.navigate(message.url, readSubmission(message));
 				}
+				break;
+			case "history":
+				this.receiveHistory(message.url, message.replace);
+				break;
+			case "title":
+				this.frame.dispatchEvent(
+					constructInternal(() =>
+						new CustomEvent("titlechange", {detail: readTitle(message.title)}),
+					),
+				);
 				break;
 			case "images":
 				this.receiveImages(message.added, message.dropped);
@@ -274,6 +327,25 @@ class RemoteFrame implements IsolatedFrameView {
 				this.fetches.get(message.id)?.abort();
 				break;
 		}
+	}
+
+	// The frame's document changed its URL in place, which keeps its
+	// origin.
+	receiveHistory(target: string, replace: unknown): void {
+		const url = URL.parse(String(target), this.url);
+		if (url === null || url.origin !== URL.parse(this.url)?.origin) {
+			return;
+		}
+		this.url = url.href;
+		this.frame.dispatchEvent(
+			constructInternal(() =>
+				new HistoryChangeEvent("historychange", {
+					url: url.href,
+					state: null,
+					replace: replace === true,
+				}),
+			),
+		);
 	}
 
 	// The origin the frame's messages come from: its document's, or an
@@ -346,11 +418,26 @@ class RemoteFrame implements IsolatedFrameView {
 		};
 	}
 
-	// The frame's document went to another URL: the isolate goes, and
-	// one for the new document starts.
-	navigate(target: string): void {
+	// The frame's document went to another URL, where the page's navigate
+	// event allows it: the isolate goes, and one for the new document
+	// starts.
+	navigate(target: string, submission?: Submission): void {
 		const url = URL.parse(String(target), this.url);
 		if (url === null || !isWebURL(url)) {
+			return;
+		}
+		const allowed = this.frame.dispatchEvent(
+			constructInternal(() =>
+				new CustomEvent("navigate", {
+					cancelable: true,
+					detail: {
+						url: url.href,
+						method: submission === undefined ? "GET" : "POST",
+					},
+				}),
+			),
+		);
+		if (!allowed || this.disposed) {
 			return;
 		}
 		this.stop();
@@ -360,7 +447,7 @@ class RemoteFrame implements IsolatedFrameView {
 		this.caret = null;
 		this.stale = true;
 		this.changed();
-		void this.start(url.href);
+		void this.start(url.href, submission);
 	}
 
 	async fetch(id: number, request: FrameRequest): Promise<void> {

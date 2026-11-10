@@ -443,3 +443,139 @@ test("a frame's images are sent in the kitty protocol where the terminal draws i
 	expect(uploads[0]).toContain("c=2,r=1");
 	dom.dispose();
 });
+
+test("a frame's title comes to its iframe as titlechange, without control characters", async () => {
+	const {frames, isolate} = fakeIsolator();
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		isolatedFrames: isolate,
+	});
+	answerPages(dom, {"https://frame.example/": ""});
+	dom.document.body.innerHTML =
+		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
+	const frame = dom.document.querySelector("iframe")!;
+	const titles: string[] = [];
+	frame.addEventListener("titlechange", (event: any) => titles.push(event.detail));
+	await settle(dom);
+	await until(() => frames.length === 1);
+	frames[0].post({type: "title", title: "News\x1b]0;evil\x07 today"});
+	expect(titles).toEqual(["News]0;evil today"]);
+	dom.dispose();
+});
+
+test("a frame goes to another document after a navigate event its page may cancel", async () => {
+	const {frames, isolate} = fakeIsolator();
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		isolatedFrames: isolate,
+	});
+	const asked = answerPages(dom, {
+		"https://frame.example/": "",
+		"https://frame.example/next": "<p>next</p>",
+	});
+	dom.document.body.innerHTML =
+		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
+	const frame = dom.document.querySelector("iframe")!;
+	const seen: Array<{url: string; method: string}> = [];
+	let cancel = true;
+	frame.addEventListener("navigate", (event: any) => {
+		seen.push(event.detail);
+		if (cancel) {
+			event.preventDefault();
+		}
+	});
+	await settle(dom);
+	await until(() => frames.length === 1);
+	frames[0].post({type: "navigate", target: "self", url: "/blocked"});
+	frames[0].post({type: "navigate", target: "self", url: "file:///etc/passwd"});
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	expect(seen).toEqual([{url: "https://frame.example/blocked", method: "GET"}]);
+	expect(frames[0].disposed).toBe(false);
+	cancel = false;
+	frames[0].post({type: "navigate", target: "self", url: "next"});
+	await until(() => frames.length === 2);
+	expect(frames[0].disposed).toBe(true);
+	expect(frames[1].init.html).toBe("<p>next</p>");
+	expect(asked).toEqual(["https://frame.example/", "https://frame.example/next"]);
+	dom.dispose();
+});
+
+test("a form a frame posts loads its next document with a POST", async () => {
+	const {frames, isolate} = fakeIsolator();
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		isolatedFrames: isolate,
+	});
+	const posted: Array<{method: string; type: string | null; body: string}> = [];
+	dom.addEventListener("fetch", (event: any) => {
+		const request: Request = event.request;
+		if (request.method === "POST") {
+			event.respondWith(
+				request.text().then((body) => {
+					posted.push({
+						method: request.method,
+						type: request.headers.get("content-type"),
+						body,
+					});
+					return new Response("<p>thanks</p>");
+				}),
+			);
+		} else {
+			event.respondWith(new Response(""));
+		}
+	});
+	dom.document.body.innerHTML =
+		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
+	const frame = dom.document.querySelector("iframe")!;
+	const methods: string[] = [];
+	frame.addEventListener("navigate", (event: any) => methods.push(event.detail.method));
+	await settle(dom);
+	await until(() => frames.length === 1);
+	frames[0].post({
+		type: "navigate",
+		target: "self",
+		url: "https://frame.example/send",
+		method: "post",
+		body: new TextEncoder().encode("q=tea"),
+		contentType: "application/x-www-form-urlencoded\r\nx-evil: 1",
+	});
+	await until(() => frames.length === 2);
+	expect(methods).toEqual(["POST"]);
+	expect(posted).toEqual([{
+		method: "POST",
+		type: "application/x-www-form-urlencodedx-evil: 1",
+		body: "q=tea",
+	}]);
+	expect(frames[1].init.html).toBe("<p>thanks</p>");
+	dom.dispose();
+});
+
+test("a frame's history changes come to its iframe, within its own origin", async () => {
+	const {frames, isolate} = fakeIsolator();
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		isolatedFrames: isolate,
+	});
+	answerPages(dom, {"https://frame.example/a": ""});
+	dom.document.body.innerHTML =
+		`<iframe src="https://frame.example/a" style="${FRAME_STYLE}"></iframe>`;
+	const frame = dom.document.querySelector("iframe")!;
+	const changes: Array<{url: string; replace: boolean}> = [];
+	frame.addEventListener("historychange", (event: any) =>
+		changes.push({url: event.url, replace: event.replace}),
+	);
+	await settle(dom);
+	await until(() => frames.length === 1);
+	frames[0].post({type: "history", url: "https://frame.example/b", replace: false});
+	frames[0].post({type: "history", url: "https://bank.example/", replace: false});
+	frames[0].post({type: "history", url: "#top", replace: true});
+	expect(changes).toEqual([
+		{url: "https://frame.example/b", replace: false},
+		{url: "https://frame.example/b#top", replace: true},
+	]);
+	dom.dispose();
+});
