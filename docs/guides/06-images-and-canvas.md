@@ -378,8 +378,8 @@ the page's borders.
 ## `<iframe>`
 
 A frame shows its `srcdoc`, or an empty `about:blank` document. TermDOM
-doesn't load a frame's `src`. An embedder that loads pages has to fill
-the frame itself. The frame draws its document in its
+loads a frame's `src` only with the `isolatedFrames` option, described
+below. The frame draws its document in its
 box, which is 300 by 150 CSS pixels unless CSS or the `width` and
 `height` attributes say otherwise.
 
@@ -444,6 +444,60 @@ throws `NotSupportedError`, as it does in the page. A sandboxed frame
 may navigate its top window only with `allow-top-navigation`, or with
 `allow-top-navigation-by-user-activation` during a user's action, and
 otherwise throws `SecurityError`.
+
+### Frames in isolates
+
+Experimental. The messages may change in a minor release.
+
+With `isolatedFrames: "auto"`, an `<iframe src>` with an `http:` or
+`https:` URL loads its page in a V8 isolate of its own, through the
+[isolated-vm](https://github.com/laverdet/isolated-vm) package. Install
+it next to TermDOM. It runs on Node only, and Node has to start with
+`--no-node-snapshot`:
+
+```sh
+npm install isolated-vm
+node --no-node-snapshot app.js
+```
+
+```ts
+const dom = new TermDOM({isolatedFrames: "auto", scripting: "enabled"});
+dom.document.body.innerHTML =
+  '<iframe src="https://example.com/" style="width: 100%; height: 20em"></iframe>';
+```
+
+A frame lays its page out in the page's cell, so a page that shows web
+pages wants a cell the size web pages expect, such as `cellSize: {width:
+8, height: 16}` or `"auto"`. Under the default cell of one CSS pixel, a
+page meant for a browser lays out 8 times as wide.
+
+TermDOM loads the frame's page the way it loads an image: under the
+page's `csp`, where `frame-src` governs frames, and through its `fetch`
+listeners. So do the frame's own stylesheets, images and scripts,
+without the headers Fetch forbids a page to set, such as `Cookie`. The
+frame lays out, runs its scripts and paints in its isolate, and the page
+draws the cells it paints, checking each one, so a frame can't send the
+terminal escape codes.
+
+Each frame's isolate has 256 MB of heap, and each call into it 30
+seconds. A frame that runs past either is stopped and shows nothing, and
+the page goes on. A frame runs scripts where the page has `scripting:
+"enabled"` and a `sandbox` attribute, if it has one, includes
+`allow-scripts`.
+
+Click a frame, or focus it, and keys, the mouse and pastes go to the
+document in it. To the page, the frame's window is one of another
+origin, whatever its URL: `contentDocument` is null, and the two talk
+through `postMessage()`. A frame that sets `parent.location.href` asks
+the page to navigate, as above, and a link in the frame loads the new
+page in a new isolate.
+
+`isolatedFrames` also takes a function, for an embedder that runs
+frames elsewhere, such as in a process of its own. TermDOM calls it with
+the frame's page and the terminal it is drawn for, and with a function
+that receives what the frame sends. It returns an object with
+`send(message)` and `dispose()`. The `FrameInit`, `FrameMessage` and
+`HostMessage` types describe the messages.
 
 ## `<embed type="application/x-pty">`
 
