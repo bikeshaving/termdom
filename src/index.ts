@@ -109,8 +109,7 @@ import {
 	setDecodeWorkerURL,
 } from "./internal/images.ts";
 import {Input, resolvePendingHover} from "./internal/input.ts";
-import {startInIsolatedVM} from "./internal/isolatedframes.ts";
-import type {FrameIsolator} from "./internal/isolateprotocol.ts";
+import {findFrameIsolator} from "./internal/isolatedframes.ts";
 import {
 	compressKittyUploads,
 	forgetKittyImages,
@@ -164,15 +163,6 @@ import {
 import {createWindow} from "./internal/window.ts";
 
 export type {CanvasCellGridContext} from "./internal/canvas.ts";
-export type {
-	FrameInit,
-	FrameIsolator,
-	FrameMessage,
-	FrameRequest,
-	FrameResponse,
-	HostMessage,
-	IsolatedFrame,
-} from "./internal/isolateprotocol.ts";
 export type {CellSize} from "./internal/units.ts";
 export {
 	HistoryChangeEvent,
@@ -364,30 +354,6 @@ export interface TermDOMOptions {
 	ptyEmbeds?: "none" | "auto";
 
 	/**
-	 * Where an `<iframe src>` with an http: or https: URL shows its
-	 * document. TermDOM loads it under the page's policy, as a `fetch`
-	 * event and then the network, and starts it in an isolate this
-	 * function makes. The page draws the cells it paints there and hands
-	 * it keys, the mouse and focus, and the two reach each other only
-	 * through `postMessage()`, as windows of two origins do. A page that
-	 * freezes or runs out of memory there takes its frame down alone.
-	 * - `"none"` (the default): the frame shows an empty `about:blank`.
-	 * - `"auto"`: in a V8 isolate of its own, through the isolated-vm
-	 *   package, on Node when it is installed. Each has 256 MB of heap,
-	 *   and each call into it 30 seconds. Where isolated-vm cannot load,
-	 *   as on Bun and Deno, the frame shows nothing. For other limits,
-	 *   pass what `createIsolatedVMFrames()` from
-	 *   `@b9g/termdom/isolated-vm` resolves to.
-	 * - A function: called with the frame's document and the terminal it
-	 *   is drawn for, and with where to send what the frame sends. It
-	 *   returns the frame, which takes the page's messages until it is
-	 *   disposed. Anything the frame sends is checked as untrusted.
-	 * Any other value throws a TypeError.
-	 * @experimental The messages may change in a minor release.
-	 */
-	isolatedFrames?: "none" | "auto" | FrameIsolator;
-
-	/**
 	 * The colors the terminal shows, in the bits `screen.colorDepth`
 	 * reports: `24` for 24-bit color, `8` for the 256-color palette, `4`
 	 * for the 16 basic colors. `"rgb"`, `"256"` and `"ansi"` name the same
@@ -518,21 +484,6 @@ function toPTYSpawner(
 		return findSpawner() ?? "unavailable";
 	}
 	throw new TypeError('ptyEmbeds must be "none" or "auto"');
-}
-
-function toFrameIsolator(
-	option: TermDOMOptions["isolatedFrames"],
-): FrameIsolator | null {
-	if (option === undefined || option === "none") {
-		return null;
-	}
-	if (option === "auto") {
-		return startInIsolatedVM;
-	}
-	if (typeof option === "function") {
-		return option;
-	}
-	throw new TypeError('isolatedFrames must be "none", "auto" or a function');
 }
 
 function toFailFast(option: unknown): boolean {
@@ -729,7 +680,7 @@ export class TermDOM extends EventTarget {
 		const images = toGraphicsOption("images", options.images);
 		const canvas = toGraphicsOption("canvas", options.canvas);
 		const pty = toPTYSpawner(options.ptyEmbeds);
-		const isolateFrame = toFrameIsolator(options.isolatedFrames);
+		const isolateFrame = findFrameIsolator();
 		const slots = _(this);
 		slots.colorDepth = toColorDepth(options.colorDepth);
 		slots.graphicsProtocols = {

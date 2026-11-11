@@ -9,10 +9,8 @@
  */
 import {
 	constructInternal,
-	CustomEvent,
 	type Document,
 	Event,
-	HistoryChangeEvent,
 	type HTMLIFrameElement,
 	type IsolatedFrameView,
 	navigateFrameParent,
@@ -30,6 +28,7 @@ import {
 	importGrid,
 } from "./framebuffer.ts";
 import type {Bitmap, GridImage} from "./images.ts";
+import {requireNodePackage} from "./isolate/bundle.ts";
 import type {
 	FrameImage,
 	FrameInit,
@@ -48,9 +47,6 @@ const MAX_FETCHES = 64;
 
 // The images a frame may hold at once.
 const MAX_IMAGES = 256;
-
-// The characters of a frame's title the page hears of.
-const MAX_TITLE_LENGTH = 4096;
 
 // Tells each frame's images from another's among those the page shows.
 let nextFrameToken = 1;
@@ -103,12 +99,6 @@ function readSubmission(
 			? message.contentType.replace(/[\r\n]/g, "")
 			: "",
 	};
-}
-
-function readTitle(title: unknown): string {
-	return String(title)
-		.replace(/[\u0000-\u001f\u007f-\u009f]/g, "")
-		.slice(0, MAX_TITLE_LENGTH);
 }
 
 function describeError(error: unknown): string {
@@ -290,14 +280,7 @@ class RemoteFrame implements IsolatedFrameView {
 				}
 				break;
 			case "history":
-				this.receiveHistory(message.url, message.replace);
-				break;
-			case "title":
-				this.frame.dispatchEvent(
-					constructInternal(() =>
-						new CustomEvent("titlechange", {detail: readTitle(message.title)}),
-					),
-				);
+				this.receiveHistory(message.url);
 				break;
 			case "images":
 				this.receiveImages(message.added, message.dropped);
@@ -331,21 +314,12 @@ class RemoteFrame implements IsolatedFrameView {
 
 	// The frame's document changed its URL in place, which keeps its
 	// origin.
-	receiveHistory(target: string, replace: unknown): void {
+	receiveHistory(target: string): void {
 		const url = URL.parse(String(target), this.url);
 		if (url === null || url.origin !== URL.parse(this.url)?.origin) {
 			return;
 		}
 		this.url = url.href;
-		this.frame.dispatchEvent(
-			constructInternal(() =>
-				new HistoryChangeEvent("historychange", {
-					url: url.href,
-					state: null,
-					replace: replace === true,
-				}),
-			),
-		);
 	}
 
 	// The origin the frame's messages come from: its document's, or an
@@ -418,26 +392,11 @@ class RemoteFrame implements IsolatedFrameView {
 		};
 	}
 
-	// The frame's document went to another URL, where the page's navigate
-	// event allows it: the isolate goes, and one for the new document
-	// starts.
+	// The frame's document went to another URL: the isolate goes, and
+	// one for the new document starts.
 	navigate(target: string, submission?: Submission): void {
 		const url = URL.parse(String(target), this.url);
 		if (url === null || !isWebURL(url)) {
-			return;
-		}
-		const allowed = this.frame.dispatchEvent(
-			constructInternal(() =>
-				new CustomEvent("navigate", {
-					cancelable: true,
-					detail: {
-						url: url.href,
-						method: submission === undefined ? "GET" : "POST",
-					},
-				}),
-			),
-		);
-		if (!allowed || this.disposed) {
 			return;
 		}
 		this.stop();
@@ -690,12 +649,8 @@ class PendingFrame implements IsolatedFrame {
 
 let isolatedVM: Promise<FrameIsolator | string> | null = null;
 
-/**
- * The isolator isolatedFrames: "auto" names: isolated-vm's, loaded with
- * the first frame. Where isolated-vm cannot load, each frame crashes and
- * says why.
- */
-export function startInIsolatedVM(
+// isolated-vm's isolator, compiled with the first frame.
+function startInIsolatedVM(
 	init: FrameInit,
 	receive: (message: FrameMessage) => void,
 ): IsolatedFrame {
@@ -705,6 +660,25 @@ export function startInIsolatedVM(
 			`isolated-vm could not load: ${describeError(error)}`,
 		);
 	return new PendingFrame(init, receive, isolatedVM);
+}
+
+let found: FrameIsolator | null | undefined;
+
+/**
+ * What starts a frame's document in an isolate of its own, where the
+ * isolated-vm package is installed and loads, as on Node. Null elsewhere,
+ * where an iframe's src shows nothing.
+ */
+export function findFrameIsolator(): FrameIsolator | null {
+	if (found === undefined) {
+		try {
+			requireNodePackage("isolated-vm");
+			found = startInIsolatedVM;
+		} catch (_err) {
+			found = null;
+		}
+	}
+	return found;
 }
 
 setIsolatedFrameFactory((frame, window, url, parent, isolate, changed) =>

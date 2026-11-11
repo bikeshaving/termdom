@@ -9,7 +9,9 @@ import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
 import {encodePNG} from "../src/internal/imagecodecs.ts";
-import {createIsolatedVMFrames} from "../src/isolated-vm.ts";
+import {createIsolatedVMFrames} from "../src/internal/isolatedvm.ts";
+import type {FrameIsolator} from "../src/internal/isolateprotocol.ts";
+import {_} from "../src/internal/slots.ts";
 import {
 	captureRawOutput,
 	inputDispatched,
@@ -65,11 +67,7 @@ nodeTest(
 	"a frame's document is laid out and painted in its own isolate",
 	async () => {
 		const terminal = new MockProcess({cols: 40, rows: 12});
-		const dom = new TermDOM({
-			transport: terminal.transport,
-			colorDepth: "rgb",
-			isolatedFrames: "auto",
-		});
+		const dom = new TermDOM({transport: terminal.transport, colorDepth: "rgb"});
 		servePages(dom, {
 			"https://frame.example/": "<p style='margin: 0'>from the isolate</p>",
 		});
@@ -94,7 +92,6 @@ nodeTest(
 			transport: terminal.transport,
 			url: "https://page.example/",
 			scripting: "enabled",
-			isolatedFrames: "auto",
 		});
 		servePages(dom, {
 			"https://frame.example/":
@@ -132,10 +129,7 @@ nodeTest(
 	"keys typed into a focused frame reach its field",
 	async () => {
 		const terminal = new MockProcess({cols: 40, rows: 12});
-		const dom = new TermDOM({
-			transport: terminal.transport,
-			isolatedFrames: "auto",
-		});
+		const dom = new TermDOM({transport: terminal.transport});
 		servePages(dom, {
 			"https://frame.example/":
 				"<input autofocus style='border: 0; margin: 0; padding: 0'>",
@@ -162,8 +156,9 @@ nodeTest(
 		const dom = new TermDOM({
 			transport: terminal.transport,
 			scripting: "enabled",
-			isolatedFrames: await createIsolatedVMFrames({taskTimeout: 200}),
 		});
+		(_(dom.document as never) as {extra: {isolateFrame: FrameIsolator}})
+			.extra.isolateFrame = await createIsolatedVMFrames({taskTimeout: 200});
 		servePages(dom, {
 			"https://spin.example/": "<p>spin</p><script>for (;;) {}</script>",
 			"https://calm.example/": "<p style='margin: 0'>calm</p>",
@@ -192,7 +187,6 @@ nodeTest(
 			colorDepth: "rgb",
 			images: "kitty",
 			cellSize: {width: 8, height: 16},
-			isolatedFrames: "auto",
 		});
 		const data = new Uint8ClampedArray(16 * 32 * 4).fill(255);
 		let binary = "";
@@ -219,42 +213,26 @@ nodeTest(
 );
 
 nodeTest(
-	"a frame's title, history and links come to its iframe as events",
+	"a link clicked in a frame loads its next page there",
 	async () => {
 		const terminal = new MockProcess({cols: 40, rows: 12});
 		const dom = new TermDOM({
 			transport: terminal.transport,
 			scripting: "enabled",
-			isolatedFrames: "auto",
 		});
 		servePages(dom, {
 			"https://frame.example/":
-				"<title>First</title><a id=go href='/next'>go</a><script>" +
-				"history.pushState(null, '', '/moved');" +
+				"<a id=go href='/next'>go</a><script>" +
+				"history.pushState(null, '', '/moved/here');" +
 				"setTimeout(() => document.getElementById('go').click(), 100);" +
 				"</script>",
 			"https://frame.example/next": "<p style='margin: 0'>next page</p>",
 		});
 		dom.document.body.innerHTML =
 			`<iframe src="https://frame.example/" style="${FRAME}"></iframe>`;
-		const frame = dom.document.querySelector("iframe")!;
-		const events: string[] = [];
-		frame.addEventListener("titlechange", (event: any) =>
-			events.push(`title ${event.detail}`),
-		);
-		frame.addEventListener("historychange", (event: any) =>
-			events.push(`history ${event.url}`),
-		);
-		frame.addEventListener("navigate", (event: any) =>
-			events.push(`navigate ${event.detail.url}`),
-		);
 		await dom.attach();
-		await drawn(dom, terminal, "next page");
-		expect(events).toEqual([
-			"history https://frame.example/moved",
-			"title First",
-			"navigate https://frame.example/next",
-		]);
+		const screen = await drawn(dom, terminal, "next page");
+		expect(screen[1]).toMatch(/^│next page/);
 		await dom.dispose();
 	},
 	60000,

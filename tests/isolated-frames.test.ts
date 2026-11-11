@@ -1,7 +1,7 @@
 /**
  * Frames whose document is in another isolate.
  *
- * With isolatedFrames, an iframe whose src is an http: or https: URL
+ * Where frames are isolated, an iframe whose src is an http: or https: URL
  * loads its document under the page's policy and fetch listeners and
  * starts it through the isolator. The page draws the cells the frame
  * sends, checked as untrusted, hands it keys and the mouse while it has
@@ -11,14 +11,16 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
-import {
-	type FrameInit,
-	type FrameMessage,
-	type HostMessage,
-	TermDOM,
-} from "../src/index.ts";
+import {TermDOM} from "../src/index.ts";
 import {toCellColor} from "../src/internal/cssvalues.ts";
 import {CellGrid, exportGrid} from "../src/internal/framebuffer.ts";
+import type {
+	FrameInit,
+	FrameIsolator,
+	FrameMessage,
+	HostMessage,
+} from "../src/internal/isolateprotocol.ts";
+import {_} from "../src/internal/slots.ts";
 import {
 	captureRawOutput,
 	inputDispatched,
@@ -58,6 +60,11 @@ function fakeIsolator(): {
 			};
 		},
 	};
+}
+
+function useIsolator(dom: TermDOM, isolate: FrameIsolator): void {
+	(_(dom.document as never) as {extra: {isolateFrame: FrameIsolator}})
+		.extra.isolateFrame = isolate;
 }
 
 function paintText(lines: string[], cols: number): FrameMessage {
@@ -104,8 +111,8 @@ test("a frame's document loads through the page and starts in the isolator", asy
 	const dom = new TermDOM({
 		transport: terminal.transport,
 		url: "https://page.example/",
-		isolatedFrames: isolate,
 	});
+	useIsolator(dom, isolate);
 	answerPages(dom, {"https://frame.example/a": "<p>framed</p>"});
 	dom.document.body.innerHTML =
 		`<iframe src="https://frame.example/a" style="${FRAME_STYLE}"></iframe>`;
@@ -131,10 +138,8 @@ test("a frame's document loads through the page and starts in the isolator", asy
 test("the cells a frame paints are drawn in its box, without control characters", async () => {
 	const {frames, isolate} = fakeIsolator();
 	const terminal = new MockProcess({cols: 30, rows: 6});
-	const dom = new TermDOM({
-		transport: terminal.transport,
-		isolatedFrames: isolate,
-	});
+	const dom = new TermDOM({transport: terminal.transport});
+	useIsolator(dom, isolate);
 	answerPages(dom, {"https://frame.example/": ""});
 	dom.document.body.innerHTML =
 		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
@@ -155,10 +160,8 @@ test("the cells a frame paints are drawn in its box, without control characters"
 test("a frame's cells claim no columns their text does not take", async () => {
 	const {frames, isolate} = fakeIsolator();
 	const terminal = new MockProcess({cols: 30, rows: 6});
-	const dom = new TermDOM({
-		transport: terminal.transport,
-		isolatedFrames: isolate,
-	});
+	const dom = new TermDOM({transport: terminal.transport});
+	useIsolator(dom, isolate);
 	answerPages(dom, {"https://frame.example/": ""});
 	dom.document.body.innerHTML =
 		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
@@ -181,10 +184,8 @@ test("a frame's cells claim no columns their text does not take", async () => {
 test("a click focuses the frame, and its keys and mouse go there in its own cells", async () => {
 	const {frames, isolate} = fakeIsolator();
 	const terminal = new MockProcess({cols: 30, rows: 8});
-	const dom = new TermDOM({
-		transport: terminal.transport,
-		isolatedFrames: isolate,
-	});
+	const dom = new TermDOM({transport: terminal.transport});
+	useIsolator(dom, isolate);
 	answerPages(dom, {"https://frame.example/": ""});
 	dom.document.body.innerHTML =
 		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
@@ -225,8 +226,8 @@ test("the page and the frame reach each other only through messages", async () =
 	const dom = new TermDOM({
 		transport: new MockProcess({cols: 30, rows: 8}).transport,
 		url: "https://page.example/",
-		isolatedFrames: isolate,
 	});
+	useIsolator(dom, isolate);
 	answerPages(dom, {"https://frame.example/": ""});
 	dom.document.body.innerHTML =
 		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
@@ -266,8 +267,8 @@ test("a frame's loads go through the page's fetch listeners, without forbidden h
 	const {frames, isolate} = fakeIsolator();
 	const dom = new TermDOM({
 		transport: new MockProcess({cols: 30, rows: 8}).transport,
-		isolatedFrames: isolate,
 	});
+	useIsolator(dom, isolate);
 	const headers: Array<[string, string]> = [];
 	dom.addEventListener("fetch", (event: any) => {
 		if (event.request.url === "https://frame.example/") {
@@ -330,8 +331,8 @@ test("a frame-src policy keeps a frame's document from loading", async () => {
 	const dom = new TermDOM({
 		transport: new MockProcess({cols: 30, rows: 8}).transport,
 		csp: "frame-src https://allowed.example",
-		isolatedFrames: isolate,
 	});
+	useIsolator(dom, isolate);
 	const asked = answerPages(dom, {
 		"https://allowed.example/": "<p>allowed</p>",
 		"https://blocked.example/": "<p>blocked</p>",
@@ -356,8 +357,8 @@ test("a srcdoc frame stays in the page's heap, and a removed frame's isolate goe
 	const {frames, isolate} = fakeIsolator();
 	const dom = new TermDOM({
 		transport: new MockProcess({cols: 30, rows: 8}).transport,
-		isolatedFrames: isolate,
 	});
+	useIsolator(dom, isolate);
 	answerPages(dom, {"https://frame.example/": ""});
 	dom.document.body.innerHTML =
 		`<iframe srcdoc="<p id=here>here</p>"></iframe><iframe src="https://frame.example/"></iframe>`;
@@ -368,10 +369,6 @@ test("a srcdoc frame stays in the page's heap, and a removed frame's isolate goe
 	isolated.remove();
 	expect(frames[0].disposed).toBe(true);
 	dom.dispose();
-});
-
-test("isolatedFrames takes \"none\", \"auto\" or a function", () => {
-	expect(() => new TermDOM({isolatedFrames: "yes" as any})).toThrow(TypeError);
 });
 
 // A frame's red image, 2 by 1 cells, of 16 by 16 pixels, and the cells
@@ -400,8 +397,8 @@ test("a frame's images are drawn in half blocks where the terminal has no graphi
 		transport: terminal.transport,
 		colorDepth: "rgb",
 		images: "cells",
-		isolatedFrames: isolate,
 	});
+	useIsolator(dom, isolate);
 	answerPages(dom, {"https://frame.example/": ""});
 	dom.document.body.innerHTML =
 		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
@@ -429,8 +426,8 @@ test("a frame's images are sent in the kitty protocol where the terminal draws i
 		transport: terminal.transport,
 		colorDepth: "rgb",
 		images: "kitty",
-		isolatedFrames: isolate,
 	});
+	useIsolator(dom, isolate);
 	answerPages(dom, {"https://frame.example/": ""});
 	dom.document.body.innerHTML =
 		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
@@ -444,71 +441,44 @@ test("a frame's images are sent in the kitty protocol where the terminal draws i
 	dom.dispose();
 });
 
-test("a frame's title comes to its iframe as titlechange, without control characters", async () => {
+test("a frame goes to the document its own navigation names", async () => {
 	const {frames, isolate} = fakeIsolator();
 	const terminal = new MockProcess({cols: 30, rows: 8});
-	const dom = new TermDOM({
-		transport: terminal.transport,
-		isolatedFrames: isolate,
-	});
-	answerPages(dom, {"https://frame.example/": ""});
-	dom.document.body.innerHTML =
-		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
-	const frame = dom.document.querySelector("iframe")!;
-	const titles: string[] = [];
-	frame.addEventListener("titlechange", (event: any) => titles.push(event.detail));
-	await settle(dom);
-	await until(() => frames.length === 1);
-	frames[0].post({type: "title", title: "News\x1b]0;evil\x07 today"});
-	expect(titles).toEqual(["News]0;evil today"]);
-	dom.dispose();
-});
-
-test("a frame goes to another document after a navigate event its page may cancel", async () => {
-	const {frames, isolate} = fakeIsolator();
-	const terminal = new MockProcess({cols: 30, rows: 8});
-	const dom = new TermDOM({
-		transport: terminal.transport,
-		isolatedFrames: isolate,
-	});
+	const dom = new TermDOM({transport: terminal.transport});
+	useIsolator(dom, isolate);
 	const asked = answerPages(dom, {
 		"https://frame.example/": "",
-		"https://frame.example/next": "<p>next</p>",
+		"https://frame.example/b/next": "<p>next</p>",
 	});
 	dom.document.body.innerHTML =
 		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
-	const frame = dom.document.querySelector("iframe")!;
-	const seen: Array<{url: string; method: string}> = [];
-	let cancel = true;
-	frame.addEventListener("navigate", (event: any) => {
-		seen.push(event.detail);
-		if (cancel) {
-			event.preventDefault();
-		}
-	});
 	await settle(dom);
 	await until(() => frames.length === 1);
-	frames[0].post({type: "navigate", target: "self", url: "/blocked"});
 	frames[0].post({type: "navigate", target: "self", url: "file:///etc/passwd"});
+	frames[0].post({
+		type: "history",
+		url: "https://bank.example/",
+		replace: false,
+	});
+	frames[0].post({type: "history", url: "/b/here", replace: false});
 	await new Promise((resolve) => setTimeout(resolve, 10));
-	expect(seen).toEqual([{url: "https://frame.example/blocked", method: "GET"}]);
 	expect(frames[0].disposed).toBe(false);
-	cancel = false;
 	frames[0].post({type: "navigate", target: "self", url: "next"});
 	await until(() => frames.length === 2);
 	expect(frames[0].disposed).toBe(true);
 	expect(frames[1].init.html).toBe("<p>next</p>");
-	expect(asked).toEqual(["https://frame.example/", "https://frame.example/next"]);
+	expect(asked).toEqual([
+		"https://frame.example/",
+		"https://frame.example/b/next",
+	]);
 	dom.dispose();
 });
 
 test("a form a frame posts loads its next document with a POST", async () => {
 	const {frames, isolate} = fakeIsolator();
 	const terminal = new MockProcess({cols: 30, rows: 8});
-	const dom = new TermDOM({
-		transport: terminal.transport,
-		isolatedFrames: isolate,
-	});
+	const dom = new TermDOM({transport: terminal.transport});
+	useIsolator(dom, isolate);
 	const posted: Array<{method: string; type: string | null; body: string}> = [];
 	dom.addEventListener("fetch", (event: any) => {
 		const request: Request = event.request;
@@ -529,9 +499,6 @@ test("a form a frame posts loads its next document with a POST", async () => {
 	});
 	dom.document.body.innerHTML =
 		`<iframe src="https://frame.example/" style="${FRAME_STYLE}"></iframe>`;
-	const frame = dom.document.querySelector("iframe")!;
-	const methods: string[] = [];
-	frame.addEventListener("navigate", (event: any) => methods.push(event.detail.method));
 	await settle(dom);
 	await until(() => frames.length === 1);
 	frames[0].post({
@@ -543,39 +510,13 @@ test("a form a frame posts loads its next document with a POST", async () => {
 		contentType: "application/x-www-form-urlencoded\r\nx-evil: 1",
 	});
 	await until(() => frames.length === 2);
-	expect(methods).toEqual(["POST"]);
-	expect(posted).toEqual([{
-		method: "POST",
-		type: "application/x-www-form-urlencodedx-evil: 1",
-		body: "q=tea",
-	}]);
-	expect(frames[1].init.html).toBe("<p>thanks</p>");
-	dom.dispose();
-});
-
-test("a frame's history changes come to its iframe, within its own origin", async () => {
-	const {frames, isolate} = fakeIsolator();
-	const terminal = new MockProcess({cols: 30, rows: 8});
-	const dom = new TermDOM({
-		transport: terminal.transport,
-		isolatedFrames: isolate,
-	});
-	answerPages(dom, {"https://frame.example/a": ""});
-	dom.document.body.innerHTML =
-		`<iframe src="https://frame.example/a" style="${FRAME_STYLE}"></iframe>`;
-	const frame = dom.document.querySelector("iframe")!;
-	const changes: Array<{url: string; replace: boolean}> = [];
-	frame.addEventListener("historychange", (event: any) =>
-		changes.push({url: event.url, replace: event.replace}),
-	);
-	await settle(dom);
-	await until(() => frames.length === 1);
-	frames[0].post({type: "history", url: "https://frame.example/b", replace: false});
-	frames[0].post({type: "history", url: "https://bank.example/", replace: false});
-	frames[0].post({type: "history", url: "#top", replace: true});
-	expect(changes).toEqual([
-		{url: "https://frame.example/b", replace: false},
-		{url: "https://frame.example/b#top", replace: true},
+	expect(posted).toEqual([
+		{
+			method: "POST",
+			type: "application/x-www-form-urlencodedx-evil: 1",
+			body: "q=tea",
+		},
 	]);
+	expect(frames[1].init.html).toBe("<p>thanks</p>");
 	dom.dispose();
 });

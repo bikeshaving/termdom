@@ -378,7 +378,7 @@ the page's borders.
 ## `<iframe>`
 
 A frame shows its `srcdoc`, or an empty `about:blank` document. TermDOM
-loads a frame's `src` only with the `isolatedFrames` option, described
+loads a frame's `src` only where it can isolate the frame, described
 below. The frame draws its document in its
 box, which is 300 by 150 CSS pixels unless CSS or the `width` and
 `height` attributes say otherwise.
@@ -447,13 +447,12 @@ otherwise throws `SecurityError`.
 
 ### Frames in isolates
 
-Experimental. The messages may change in a minor release.
-
-With `isolatedFrames: "auto"`, an `<iframe src>` with an `http:` or
-`https:` URL loads its page in a V8 isolate of its own, through the
-[isolated-vm](https://github.com/laverdet/isolated-vm) package. Install
-it next to TermDOM. It runs on Node only, and Node has to start with
-`--no-node-snapshot`:
+An `<iframe src>` with an `http:` or `https:` URL of another origin
+than the page's loads its page in a V8 isolate of its own, where the
+[isolated-vm](https://github.com/laverdet/isolated-vm) package is
+installed next to TermDOM. It runs on Node only, and asks that Node
+start with `--no-node-snapshot`. Without it, the frame shows an empty
+`about:blank`.
 
 ```sh
 npm install isolated-vm
@@ -461,7 +460,7 @@ node --no-node-snapshot app.js
 ```
 
 ```ts
-const dom = new TermDOM({isolatedFrames: "auto", scripting: "enabled"});
+const dom = new TermDOM({scripting: "enabled"});
 dom.document.body.innerHTML =
   '<iframe src="https://example.com/" style="width: 100%; height: 20em"></iframe>';
 ```
@@ -491,43 +490,6 @@ origin, whatever its URL: `contentDocument` is null, and the two talk
 through `postMessage()`. A frame that sets `parent.location.href` asks
 the page to navigate, as above, and a link or form in the frame loads
 the new page in a new isolate.
-
-The iframe fires these events, so a page can show where its frame is:
-
-- `titlechange`: a `CustomEvent` with the frame's new title in `detail`,
-  without control characters.
-- `navigate`: the frame is going to another page. A `CustomEvent` whose
-  `detail` has the `url` and the `method`, `"GET"` or `"POST"`. Call
-  `preventDefault()` and the frame stays where it is.
-- `historychange`: the frame changed its URL in place, with
-  `pushState()`, `replaceState()` or a fragment. A `HistoryChangeEvent`
-  with the new `url` and whether it `replace`d the last one. Its `state`
-  is null. A URL of another origin is ignored.
-
-For other limits, or to log what frames print, make the isolator
-yourself:
-
-```ts
-import {createIsolatedVMFrames} from "@b9g/termdom/isolated-vm";
-
-const dom = new TermDOM({
-  isolatedFrames: await createIsolatedVMFrames({
-    memoryLimit: 64,
-    taskTimeout: 5000,
-    log: (level, text) => console.error(level, text),
-  }),
-});
-```
-
-`memoryLimit` is in megabytes and `taskTimeout` in milliseconds. It
-rejects where isolated-vm can't load.
-
-`isolatedFrames` also takes a function, for an embedder that runs
-frames elsewhere, such as in a process of its own. TermDOM calls it with
-the frame's page and the terminal it is drawn for, and with a function
-that receives what the frame sends. It returns an object with
-`send(message)` and `dispose()`. The `FrameInit`, `FrameMessage` and
-`HostMessage` types describe the messages.
 
 ## `<embed type="application/x-pty">`
 

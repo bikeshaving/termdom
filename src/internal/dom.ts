@@ -20032,8 +20032,9 @@ function scheduleFrameLoad(frame: HTMLIFrameElement): void {
 /**
  * The URL of the document an iframe shows from another isolate: its src,
  * where the TermDOM showing the iframe isolates frames and src names an
- * http: or https: URL. Null for a frame drawn in the engine's heap. An
- * isolated frame fires load when its document has loaded there.
+ * http: or https: URL of another origin than the iframe's document has.
+ * Null for a frame drawn in the engine's heap, which its page can reach
+ * into. An isolated frame fires load when its document has loaded there.
  */
 function getIsolatedSource(frame: HTMLIFrameElement): string | null {
 	const attached = getAttachedDocument(frame);
@@ -20049,7 +20050,9 @@ function getIsolatedSource(frame: HTMLIFrameElement): string | null {
 	const url = src === null
 		? null
 		: parseURL(src, getDocumentBaseURL(_(frame).document));
-	return url !== null && (url.protocol === "http:" || url.protocol === "https:")
+	return url !== null &&
+		(url.protocol === "http:" || url.protocol === "https:") &&
+		url.origin !== getDocumentOrigin(_(frame).document)
 		? url.href
 		: null;
 }
