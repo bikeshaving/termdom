@@ -6,7 +6,7 @@
  * are the ones xterm documents in ctlseqs that full-screen programs use.
  */
 
-import {getStringWidth} from "./text.ts";
+import {getStringWidth, graphemeSegmenter} from "./text.ts";
 
 export const BOLD = 1;
 export const DIM = 2;
@@ -43,6 +43,9 @@ const MAX_DCS = 64;
 const PARAM_LIMIT = {output: 0xffff, input: Infinity};
 // A clipboard reply in "input" mode may reach 64K.
 export const OSC_LIMIT = {output: 4096, input: 1 << 16};
+// An OSC 52 a program writes, which carries the clipboard's text in
+// base64. One that outgrows it is dropped whole, not cut.
+const CLIPBOARD_LIMIT = 1 << 20;
 // An APC, where the kitty graphics protocol sends an image in chunks of
 // 4096 bytes. A program that sends one whole has a megabyte.
 const APC_LIMIT = 1 << 20;
@@ -171,8 +174,39 @@ function formatColorReply(color: number): string {
 	return `rgb:${[16, 8, 0].map((shift) => (((color >> shift) & 0xff) * 257).toString(16).padStart(4, "0")).join("/")}`;
 }
 
+// A color a program names as rgb:r/g/b, each channel one to four hex
+// digits, or as #rgb with one to four digits a channel. Null for any
+// other spelling, a color's name among them.
+function parseColorSpec(spec: string): number | null {
+	let channels = /^rgb:([0-9a-f]{1,4})\/([0-9a-f]{1,4})\/([0-9a-f]{1,4})$/i
+		.exec(spec)?.slice(1);
+	let scaled = true;
+	if (channels === undefined) {
+		const digits = /^#((?:[0-9a-f]{3}){1,4})$/i.exec(spec)?.[1];
+		if (digits === undefined) {
+			return null;
+		}
+		const size = digits.length / 3;
+		channels = [0, 1, 2].map((at) => digits.slice(at * size, (at + 1) * size));
+		// #rgb gives each channel's high digits, where rgb: scales them.
+		scaled = false;
+	}
+	let color = 0;
+	for (const channel of channels) {
+		const value = parseInt(channel, 16);
+		const byte = scaled
+			? Math.round((value * 255) / (16 ** channel.length - 1))
+			: parseInt(channel.padEnd(2, "0").slice(0, 2), 16);
+		color = (color << 8) | byte;
+	}
+	return color;
+}
+
 // The flags a screen keeps before it drops the oldest, as Ghostty does.
 const KEYBOARD_FLAGS_DEPTH = 8;
+
+// The titles XTWINOPS 22 keeps before it drops the oldest, as xterm does.
+const TITLE_STACK_DEPTH = 10;
 
 function createBuffer(cols: number, rows: number): ScreenBuffer {
 	return {
@@ -224,6 +258,9 @@ export class Parser {
 	osc: string;
 	dcs: string;
 	apc: string;
+	// Whether the OSC that reached its limit is an OSC 52, which goes on
+	// to the clipboard's.
+	clipboardString: boolean;
 	highSurrogate: number;
 
 	constructor(handlers: ParserHandlers) {
@@ -235,6 +272,7 @@ export class Parser {
 		this.osc = "";
 		this.dcs = "";
 		this.apc = "";
+		this.clipboardString = false;
 		this.highSurrogate = 0;
 	}
 
@@ -496,8 +534,18 @@ export class Parser {
 				if (code === 0x07) {
 					this.state = GROUND;
 					this.handlers.osc(this.osc);
-				} else if (code >= 0x20 && this.osc.length < OSC_LIMIT[mode]) {
-					this.osc += String.fromCodePoint(code);
+				} else if (code >= 0x20) {
+					const length = this.osc.length;
+					if (length === OSC_LIMIT[mode]) {
+						this.clipboardString =
+							mode === "output" && this.osc.startsWith("52;");
+					}
+					if (
+						length < OSC_LIMIT[mode] ||
+						(this.clipboardString && length <= CLIPBOARD_LIMIT)
+					) {
+						this.osc += String.fromCodePoint(code);
+					}
 				}
 				return;
 			case IGNORED_STRING:
@@ -602,14 +650,25 @@ export class Terminal {
 	// DECSCUSR's shape: 0 for the terminal's own, 1 to 6 for a blinking or
 	// steady block, underline or bar.
 	cursorShape: number;
-	// The window title the program set with OSC 0 or 2.
+	// The cursor's color as RGB, which OSC 12 sets and OSC 112 gives back
+	// to the terminal, null for the terminal's own.
+	cursorColor: number | null;
+	// The window title the program set with OSC 0 or 2, and the titles
+	// XTWINOPS 22 put away for 23 to bring back.
 	title: string;
+	titles: string[];
 	// The default foreground and background, as RGB, that OSC 10 and 11
 	// report, null for one that goes unanswered.
 	colors: (() => DefaultColors) | null;
 	// Takes the kitty graphics protocol's commands, each without its G.
 	// Without one, they are dropped.
 	graphics: ((command: string) => void) | null;
+	// One cell in pixels, which CSI 16 t reports and CSI 14 t reports the
+	// screen in. Without one, or with null, neither is answered.
+	cellPixels: (() => {width: number; height: number} | null) | null;
+	// Takes OSC 52's selection and what follows it: the clipboard's text
+	// in base64, or ? to ask for it. Without one, they are dropped.
+	clipboard: ((selection: string, data: string) => void) | null;
 	// How many times the program rang the bell.
 	bells: number;
 	insertMode: boolean;
@@ -617,6 +676,10 @@ export class Terminal {
 	bracketedPaste: boolean;
 	focusReporting: boolean;
 	synchronizedOutput: boolean;
+	// Mode 2027: characters join into grapheme clusters, each as wide as
+	// termdom measures it. Without it, they join as terminals that measure
+	// each character do.
+	graphemeClusters: boolean;
 	// Whether an OSC 8 link is open, which underlines what is printed.
 	link: boolean;
 	// The character printed last, which a mark, a joiner or a selector
@@ -639,6 +702,8 @@ export class Terminal {
 		this.reply = reply;
 		this.colors = null;
 		this.graphics = null;
+		this.cellPixels = null;
+		this.clipboard = null;
 		this.decoder = new TextDecoder();
 		this.normal = createBuffer(this.cols, this.rows);
 		this.alternate = createBuffer(this.cols, this.rows);
@@ -663,13 +728,16 @@ export class Terminal {
 		this.autowrap = true;
 		this.cursorVisible = true;
 		this.cursorShape = 0;
+		this.cursorColor = null;
 		this.title = "";
+		this.titles = [];
 		this.bells = 0;
 		this.insertMode = false;
 		this.newlineMode = false;
 		this.bracketedPaste = false;
 		this.focusReporting = false;
 		this.synchronizedOutput = false;
+		this.graphemeClusters = false;
 		this.link = false;
 		this.preceding = null;
 		this.mouseTracking = 0;
@@ -867,7 +935,9 @@ export class Terminal {
 		}
 		const preceding = this.preceding;
 		if (preceding !== null) {
-			const joined = joinedWidth(code, width, preceding);
+			const joined = this.graphemeClusters
+				? this.clusterWidth(char, preceding)
+				: joinedWidth(code, width, preceding);
 			if (joined !== null) {
 				this.join(char, joined, code === 0x200d);
 				return;
@@ -921,6 +991,26 @@ export class Terminal {
 		}
 		this.preceding = {col: this.x, width, joining: false};
 		this.advance(width);
+	}
+
+	// Under mode 2027, how wide the cluster before grows to with `char`
+	// after it, or null for a character that starts a cluster of its own.
+	// The cluster is as wide as termdom measures it, so a page in the
+	// program and this screen agree on where every cell is. A cluster
+	// never narrows, and none is wider than two cells.
+	clusterWidth(
+		char: string,
+		preceding: {col: number; width: number},
+	): number | null {
+		if (char.codePointAt(0)! < 0x300) {
+			return null;
+		}
+		const cluster = this.lines[this.y].chars[preceding.col] + char;
+		const first = graphemeSegmenter.segment(cluster).containing(0);
+		if (first === undefined || first.segment.length !== cluster.length) {
+			return null;
+		}
+		return Math.max(preceding.width, Math.min(getStringWidth(cluster), 2));
 	}
 
 	// What a printed cell takes: the SGR attributes, underlined in a link.
@@ -1193,7 +1283,10 @@ export class Terminal {
 		this.bracketedPaste = false;
 		this.focusReporting = false;
 		this.synchronizedOutput = false;
+		this.graphemeClusters = false;
 		this.link = false;
+		this.cursorColor = null;
+		this.titles = [];
 		this.mouseTracking = 0;
 		this.mouseEncoding = 0;
 		this.cursorShape = 0;
@@ -1454,10 +1547,33 @@ export class Terminal {
 				this.restoreCursor();
 				return;
 			case "t":
-				if (this.param(0, 0) === 18) {
-					this.reply(`\x1b[8;${this.rows};${this.cols}t`);
-				}
+				this.windowOperation(this.param(0, 0));
 				return;
+		}
+	}
+
+	// XTWINOPS: the screen's size in cells and in pixels, a cell's size in
+	// pixels, and the title put away and brought back. 22 and 23 take 0
+	// or 2 for the window's title, and 1 names the icon's alone.
+	windowOperation(operation: number): void {
+		if (operation === 18) {
+			this.reply(`\x1b[8;${this.rows};${this.cols}t`);
+		} else if (operation === 14 || operation === 16) {
+			const cell = this.cellPixels?.() ?? null;
+			if (cell !== null) {
+				this.reply(
+					operation === 16
+						? `\x1b[6;${cell.height};${cell.width}t`
+						: `\x1b[4;${cell.height * this.rows};${cell.width * this.cols}t`,
+				);
+			}
+		} else if (operation === 22 && this.param(1, 0) !== 1) {
+			this.titles.push(this.title);
+			if (this.titles.length > TITLE_STACK_DEPTH) {
+				this.titles.shift();
+			}
+		} else if (operation === 23 && this.param(1, 0) !== 1) {
+			this.title = this.titles.pop() ?? this.title;
 		}
 	}
 
@@ -1476,6 +1592,7 @@ export class Terminal {
 			1049: this.alternateScreen,
 			2004: this.bracketedPaste,
 			2026: this.synchronizedOutput,
+			2027: this.graphemeClusters,
 			1004: this.focusReporting,
 			1048: true,
 			9: this.mouseTracking === 9,
@@ -1565,6 +1682,9 @@ export class Terminal {
 				return;
 			case 2026:
 				this.synchronizedOutput = on;
+				return;
+			case 2027:
+				this.graphemeClusters = on;
 				return;
 		}
 	}
@@ -1791,7 +1911,33 @@ export class Terminal {
 		if (link !== null && (link[2] !== "" || link[1].trim() === "")) {
 			this.link = link[2] !== "";
 		}
+		const cursor = /^12;(.*)$/s.exec(text);
+		if (cursor !== null) {
+			this.setCursorColor(cursor[1]);
+		} else if (text === "112") {
+			this.cursorColor = null;
+		}
+		const clipboard = /^52;([^;]*);(.*)$/s.exec(text);
+		if (clipboard !== null && text.length <= CLIPBOARD_LIMIT) {
+			this.clipboard?.(clipboard[1], clipboard[2]);
+		}
 		this.preceding = null;
+	}
+
+	// OSC 12 sets the cursor's color, or asks for it with ?, which is
+	// answered with the color it was set to, or the one text is drawn in.
+	setCursorColor(spec: string): void {
+		if (spec === "?") {
+			const color = this.cursorColor ?? this.colors?.().foreground ?? null;
+			if (color !== null) {
+				this.reply(`\x1b]12;${formatColorReply(color)}\x1b\\`);
+			}
+			return;
+		}
+		const color = parseColorSpec(spec);
+		if (color !== null) {
+			this.cursorColor = color;
+		}
 	}
 
 	apc(text: string): void {

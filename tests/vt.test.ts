@@ -4,6 +4,7 @@
  */
 import {expect, test} from "@b9g/libuild/test";
 
+import {getStringWidth} from "../src/internal/text.ts";
 import {
 	BOLD,
 	DEFAULT_COLOR,
@@ -214,6 +215,82 @@ test("questions about the terminal are answered", () => {
 		"\x1b[>0;276;0c",
 		"\x1b[8;5;10t",
 		"\x1b[?25;1$y",
+	]);
+});
+
+test("a cell and the screen are reported in pixels once a cell's size is known", () => {
+	const {term, replies} = create(10, 5);
+	term.write("\x1b[16t\x1b[14t");
+	expect(replies).toEqual([]);
+	term.cellPixels = () => null;
+	term.write("\x1b[16t");
+	expect(replies).toEqual([]);
+	term.cellPixels = () => ({width: 9, height: 18});
+	term.write("\x1b[16t\x1b[14t");
+	expect(replies).toEqual(["\x1b[6;18;9t", "\x1b[4;90;90t"]);
+});
+
+test("XTWINOPS 22 puts the title away and 23 brings it back", () => {
+	const {term} = create();
+	term.write("\x1b]2;shell\x07\x1b[22;0t\x1b]2;editor\x07");
+	expect(term.title).toBe("editor");
+	term.write("\x1b[22;1t\x1b[23;1t");
+	expect(term.title).toBe("editor");
+	term.write("\x1b[23;0t");
+	expect(term.title).toBe("shell");
+	term.write("\x1b[23;0t");
+	expect(term.title).toBe("shell");
+});
+
+test("OSC 12 sets the cursor's color, OSC 112 gives it back, and ? asks for it", () => {
+	const {term, replies} = create();
+	expect(term.cursorColor).toBe(null);
+	term.write("\x1b]12;?\x07");
+	expect(replies).toEqual([]);
+	term.colors = () => ({foreground: 0xabcdef, background: null});
+	term.write("\x1b]12;?\x07");
+	term.write("\x1b]12;rgb:ff/80/00\x07");
+	expect(term.cursorColor).toBe(0xff8000);
+	term.write("\x1b]12;rgb:ffff/0000/8080\x1b\\");
+	expect(term.cursorColor).toBe(0xff0080);
+	term.write("\x1b]12;#1a2b3c\x07\x1b]12;?\x07");
+	expect(term.cursorColor).toBe(0x1a2b3c);
+	term.write("\x1b]12;papayawhip\x07");
+	expect(term.cursorColor).toBe(0x1a2b3c);
+	term.write("\x1b]112\x07");
+	expect(term.cursorColor).toBe(null);
+	expect(replies).toEqual([
+		"\x1b]12;rgb:abab/cdcd/efef\x1b\\",
+		"\x1b]12;rgb:1a1a/2b2b/3c3c\x1b\\",
+	]);
+});
+
+test("OSC 52 hands over its selection and the rest, whole or not at all", () => {
+	const {term} = create();
+	term.write("\x1b]52;c;aGk=\x07");
+	const heard: Array<[string, number]> = [];
+	term.clipboard = (selection, data) => heard.push([selection, data.length]);
+	const long = "QUJD".repeat(5000);
+	term.write(`\x1b]52;c;aGk=\x07\x1b]52;;?\x1b\\\x1b]52;c;${long}\x07`);
+	term.write(`\x1b]52;c;${"QUJD".repeat(300000)}\x07`);
+	term.write("\x1b]52;p;QQ==\x07");
+	expect(heard).toEqual([["c", 4], ["", 1], ["c", 20000], ["p", 4]]);
+});
+
+test("under mode 2027, characters join into the clusters termdom measures", () => {
+	const text = "1\ufe0f\u20e3|\u0915\u094d\u0937\u093f|x\ufe0f|\u{1f468}\u200d\u{1f469}\u200d\u{1f467}|e\u0301";
+	const {term, replies} = create(20, 2);
+	term.write("\x1b[?2027$p" + text);
+	expect(term.x).toBe(14);
+	term.write("\r\n\x1b[?2027h\x1b[?2027$p" + text);
+	expect(term.x).toBe(11);
+	expect(term.x).toBe(getStringWidth(text));
+	expect(screen(term)[1]).toBe(text);
+	term.write("\x1b[?2027l\x1b[?2027$p");
+	expect(replies).toEqual([
+		"\x1b[?2027;2$y",
+		"\x1b[?2027;1$y",
+		"\x1b[?2027;2$y",
 	]);
 });
 

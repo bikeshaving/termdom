@@ -457,10 +457,33 @@ embed.postMessage({type: "keydown", key: "c", ctrlKey: true});
 - `titlechange`: a `CustomEvent` with the new title in `detail`.
 - `bell`: the program rang the bell.
 
+### What the program can do
+
+The embed is a terminal to its program, and names itself `TermDOM` when
+asked (XTVERSION). Besides drawing text, a program can:
+
+- Draw images with the kitty graphics protocol, sent in the escape
+  (`t=d`) and placed with Unicode placeholders (`U=1`). The page sends
+  them on as kitty graphics where its own terminal has them, and draws
+  them in half blocks elsewhere.
+- Copy to the clipboard with OSC 52. The text goes to the clipboard of
+  the page's terminal. A program that asks for the clipboard gets what
+  that terminal answers, and most answer nothing.
+- Set the cursor's shape (DECSCUSR) and color (OSC 12), which the
+  terminal's cursor takes while the embed has focus.
+- Ask for the kitty keyboard protocol, the mouse, focus reports,
+  bracketed paste, synchronized output and grapheme clusters (mode
+  2027), and for the default colors (OSC 10 and 11) and a cell's size in
+  pixels (`CSI 16 t`).
+
+A TermDOM page run as the program finds all of these, so it draws in an
+embed as it does in a terminal.
+
 ### Limits
 
 - The 16 basic colors are xterm's, not the outer terminal's.
-- Images the program draws don't show.
+- Images sent any other way, as a file or placed at the cursor, don't
+  show.
 - Links (OSC 8) show underlined, but can't be followed.
 
 ## Pixels as text
