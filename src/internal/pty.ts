@@ -534,6 +534,36 @@ export interface PTYSessionListeners {
 	bell(): void;
 	// The colors the embed draws a cell with no colors of its own in.
 	colors(): DefaultColors;
+	// One cell in the terminal's pixels, or null where none is known.
+	cellPixels(): {width: number; height: number} | null;
+	// The program put text on the clipboard, or asked for what is on it,
+	// which resolves to null where the terminal does not say.
+	writeClipboard(text: string): void;
+	readClipboard(): Promise<string | null>;
+}
+
+// Text as the base64 of its UTF-8, which is how OSC 52 carries it.
+function encodeBase64(text: string): string {
+	let binary = "";
+	for (const byte of new TextEncoder().encode(text)) {
+		binary += String.fromCharCode(byte);
+	}
+	return btoa(binary);
+}
+
+// Null for what is not base64.
+function decodeBase64(data: string): string | null {
+	let binary: string;
+	try {
+		binary = atob(data);
+	} catch (_err) {
+		return null;
+	}
+	const bytes = new Uint8Array(binary.length);
+	for (let index = 0; index < binary.length; index++) {
+		bytes[index] = binary.charCodeAt(index);
+	}
+	return new TextDecoder().decode(bytes);
 }
 
 // A screen's columns or rows, at most a thousand, so that a size the
@@ -597,6 +627,9 @@ export class PTYSession {
 			this.write(data),
 		);
 		this.terminal.colors = listeners.colors;
+		this.terminal.cellPixels = listeners.cellPixels;
+		this.terminal.clipboard = (selection, data) =>
+			this.clipboard(selection, data);
 		this.images = new ProgramImages(
 			(data) => this.write(data),
 			() => this.show(),
@@ -617,7 +650,7 @@ export class PTYSession {
 			col: Math.min(terminal.x, this.cols - 1),
 			row,
 			shape: terminal.cursorShape,
-			color: null,
+			color: terminal.cursorColor,
 		};
 	}
 
@@ -689,6 +722,28 @@ export class PTYSession {
 		if (this.held !== null) {
 			clearTimeout(this.held);
 			this.held = null;
+		}
+	}
+
+	// OSC 52: the clipboard's text in base64 goes to the page's terminal,
+	// and ? is answered with what the terminal says is on it, or with
+	// nothing where it does not say, as most do not. Only the clipboard
+	// itself is kept, the selection c, which an empty one means too.
+	clipboard(selection: string, data: string): void {
+		if (selection !== "" && !selection.includes("c")) {
+			return;
+		}
+		if (data === "?") {
+			void this.listeners.readClipboard().then((text) => {
+				if (text !== null && !this.disposed && !this.exited) {
+					this.write(`\x1b]52;c;${encodeBase64(text)}\x1b\\`);
+				}
+			});
+			return;
+		}
+		const text = decodeBase64(data);
+		if (text !== null) {
+			this.listeners.writeClipboard(text);
 		}
 	}
 
