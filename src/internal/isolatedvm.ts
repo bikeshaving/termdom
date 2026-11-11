@@ -22,7 +22,6 @@ import type {
 	FrameMessage,
 	FrameRequest,
 	FrameResponse,
-	FrameStats,
 	HostMessage,
 } from "./isolateprotocol.ts";
 
@@ -61,11 +60,7 @@ export async function createIsolatedVMFrames(
 	return (init, receive) => {
 		const frame = new IsolatedVMFrame(
 			ivmModule,
-			{
-				memoryLimit: init.limits?.memoryLimit ?? memoryLimit,
-				taskTimeout: init.limits?.taskTimeout ?? taskTimeout,
-				log,
-			},
+			{memoryLimit, taskTimeout, log},
 			init,
 			receive,
 		);
@@ -75,7 +70,6 @@ export async function createIsolatedVMFrames(
 		return {
 			send: (message) => frame.send(message),
 			dispose: () => frame.dispose(),
-			stats: () => frame.stats(),
 		};
 	};
 }
@@ -102,8 +96,6 @@ class IsolatedVMFrame {
 	asyncScripts: Set<Promise<void>>;
 	executing: Promise<void>;
 	scriptCount: number;
-	longestTask: number;
-	lastCPUTime: number;
 	disposed: boolean;
 
 	constructor(
@@ -131,8 +123,6 @@ class IsolatedVMFrame {
 		this.asyncScripts = new Set();
 		this.executing = Promise.resolve();
 		this.scriptCount = 0;
-		this.longestTask = 0;
-		this.lastCPUTime = 0;
 		this.disposed = false;
 		this.isolate = new ivmModule.Isolate({
 			memoryLimit: limits.memoryLimit,
@@ -236,30 +226,8 @@ class IsolatedVMFrame {
 				undefined,
 				[kind, ...args],
 				{arguments: {copy: true}, timeout: this.taskTimeout},
-			).then(() => this.measure(), (error: unknown) => this.fail(error));
-	}
-
-	// The CPU each call took, so the longest task shows a page that blocks.
-	measure(): void {
-		if (this.isolate.isDisposed) {
-			return;
-		}
-		const cpuTime = Number(this.isolate.cpuTime);
-		this.longestTask = Math.max(this.longestTask, cpuTime - this.lastCPUTime);
-		this.lastCPUTime = cpuTime;
-	}
-
-	async stats(): Promise<FrameStats | null> {
-		if (this.disposed || this.isolate.isDisposed) {
-			return null;
-		}
-		const heap = await this.isolate.getHeapStatistics();
-		return {
-			cpuTime: Number(this.isolate.cpuTime),
-			longestTask: this.longestTask,
-			heapUsed: heap.used_heap_size,
-			external: heap.externally_allocated_size,
-		};
+			)
+			.then(() => {}, (error: unknown) => this.fail(error));
 	}
 
 	send(message: HostMessage): void {
