@@ -598,7 +598,7 @@ export class PTYSession {
 		this.held = null;
 		this.process = null;
 		this.terminal = new Terminal(this.cols, this.rows, (data) =>
-			this.write(data),
+			this.images.answer(data),
 		);
 		this.terminal.colors = listeners.colors;
 		this.images = new ProgramImages(
