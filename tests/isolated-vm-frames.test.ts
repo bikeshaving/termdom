@@ -3,7 +3,7 @@
  * frame's document, the frame lays it out, runs its scripts and paints it
  * in an isolate of its own, and the page draws it, hands it keys and
  * trades messages with it. A frame that runs forever is stopped alone.
- * isolated-vm loads on Node only.
+ * isolated-vm loads on Node only, from Node 24.
  */
 import {expect, test} from "@b9g/libuild/test";
 
@@ -24,7 +24,9 @@ import {
 const onNode =
 	(globalThis as {Bun?: unknown}).Bun === undefined &&
 	(globalThis as {Deno?: unknown}).Deno === undefined;
-const nodeTest = onNode ? test : test.skip;
+// isolated-vm 7 asks for Node 24, and neither loads nor builds under 20.
+const loads = onNode && Number(process.versions.node.split(".")[0]) >= 24;
+const nodeTest = loads ? test : test.skip;
 
 function rows(terminal: MockProcess, count: number): string[] {
 	const buffer = (terminal as any).terminal.buffer.active;
