@@ -60,8 +60,10 @@ jobs:
 
       # libuild's executable is a shell script, which npx can't start on
       # Windows.
+      # A file that waits on thousands of frames takes Node several times as
+      # long on the Windows runners.
       - name: Test on Node
-        run: node node_modules/@b9g/libuild/cli.js test -p node --timeout 180000
+        run: node node_modules/@b9g/libuild/cli.js test -p node --timeout ${{ runner.os == 'Windows' && 600000 || 180000 }}
 
   bun:
     runs-on: ${{ matrix.os }}
