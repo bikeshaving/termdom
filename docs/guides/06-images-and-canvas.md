@@ -450,9 +450,9 @@ otherwise throws `SecurityError`.
 An `<iframe src>` with an `http:` or `https:` URL of another origin
 than the page's loads its page in a V8 isolate of its own, where the
 [isolated-vm](https://github.com/laverdet/isolated-vm) package is
-installed next to TermDOM. It runs on Node only, and asks that Node
-start with `--no-node-snapshot`. Without it, the frame shows an empty
-`about:blank`.
+installed next to TermDOM. It runs on Node only, from Node 24, and
+asks that Node start with `--no-node-snapshot`. Without it, the frame
+shows an empty `about:blank`.
 
 ```sh
 npm install isolated-vm

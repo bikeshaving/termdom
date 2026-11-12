@@ -57,9 +57,11 @@
         "webidl2": "^24.5.0",
       },
       "peerDependencies": {
+        "isolated-vm": "^7.0.2",
         "node-pty": "^1.1.0",
       },
       "optionalPeers": [
+        "isolated-vm",
         "node-pty",
       ],
     },
