@@ -325,8 +325,11 @@ function resolveStops(
 	return resolved;
 }
 
+// A sine as every platform computes it. They differ in its last digit,
+// which is enough to move a cell that sits halfway between two colors
+// to the other one.
 function squareOff(value: number): number {
-	return Math.abs(value) < 1e-9 ? 0 : value;
+	return Math.abs(value) < 1e-9 ? 0 : Math.round(value * 1e12) / 1e12;
 }
 
 function mixColors(before: number, after: number, ratio: number): number {
