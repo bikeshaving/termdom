@@ -2536,11 +2536,18 @@ function getPaintSelectionRange(
 /**
  * What a `::highlight()` rule can change about a cell. A property it does
  * not declare is absent here, so the layer under it shows through.
+ *
+ * CSS keeps font-weight and font-style out of highlights because they
+ * change the width of text. In cells they change nothing but the paint,
+ * so a highlight may set them here.
  */
 interface HighlightPaint {
 	fg?: number;
 	bg?: number;
 	inverse?: boolean;
+	bold?: boolean;
+	dim?: boolean;
+	italic?: boolean;
 	underline?: boolean;
 	strikethrough?: boolean;
 }
@@ -2555,6 +2562,10 @@ interface HighlightDeclaration {
 	background: boolean;
 	bg: number | undefined;
 	inverse: boolean | undefined;
+	weight: boolean;
+	bold: boolean | undefined;
+	dim: boolean | undefined;
+	italic: boolean | undefined;
 	decoration: boolean;
 	underline: boolean | undefined;
 	strikethrough: boolean | undefined;
@@ -2578,6 +2589,10 @@ function readHighlightDeclaration(
 		background: false,
 		bg: undefined,
 		inverse: undefined,
+		weight: false,
+		bold: undefined,
+		dim: undefined,
+		italic: undefined,
 		decoration: false,
 		underline: undefined,
 		strikethrough: undefined,
@@ -2604,6 +2619,18 @@ function readHighlightDeclaration(
 		) {
 			result.bg = CSSValues.numberFromCSSColor(background);
 		}
+	}
+	if ("font-weight" in declared) {
+		const {bold, dim} = resolveFontWeight(
+			getComputedValue(element, "font-weight", pseudo),
+		);
+		result.weight = true;
+		result.bold = bold;
+		result.dim = dim;
+	}
+	if ("font-style" in declared) {
+		result.italic =
+			getComputedValue(element, "font-style", pseudo) === "italic";
 	}
 	if ("text-decoration-line" in declared) {
 		const decoration = CSSValues.parseTextDecorationLine(
@@ -2646,6 +2673,13 @@ function readHighlightStyle(
 	if (own.background) {
 		paint.bg = own.bg;
 		paint.inverse = own.inverse;
+	}
+	if (own.weight) {
+		paint.bold = own.bold;
+		paint.dim = own.dim;
+	}
+	if (own.italic !== undefined) {
+		paint.italic = own.italic;
 	}
 	if (own.decoration) {
 		paint.underline = own.underline;
@@ -2720,6 +2754,9 @@ function foldHighlight(base: CellStyle, paint: HighlightPaint): CellStyle {
 		fg: paint.fg ?? base.fg,
 		bg: paint.bg ?? base.bg,
 		inverse: paint.inverse ?? (paint.bg === undefined ? base.inverse : false),
+		bold: paint.bold ?? base.bold,
+		dim: paint.dim ?? base.dim,
+		italic: paint.italic ?? base.italic,
 		underline: paint.underline || base.underline,
 		strikethrough: paint.strikethrough || base.strikethrough,
 	};

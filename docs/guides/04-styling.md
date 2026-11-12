@@ -182,9 +182,16 @@ the built-in controls.
 
 `CSS.highlights.set("hit", new Highlight(...ranges))` colors ranges
 through `::highlight(hit)`, which can set `color`, `background-color`,
-and `text-decoration-line`. Highlights don't change layout. Where they
-overlap, the higher `priority` wins, and `::selection` paints over all
-of them. See `examples/highlights.ts`.
+`text-decoration-line`, `font-weight`, and `font-style`. Highlights
+don't change layout. Where they overlap, the higher `priority` wins,
+and `::selection` paints over all of them. See
+`examples/highlights.ts`.
+
+CSS keeps `font-weight` and `font-style` out of highlights, because in
+a browser they change how wide text is. A cell is as wide bold or
+italic as it is plain, so a highlight here can make text bold, faint,
+or italic, and `normal` takes them away. A browser ignores both
+properties in a `::highlight()` rule.
 
 ## Default styles
 
