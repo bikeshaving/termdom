@@ -6,12 +6,17 @@
  * imports erase, so they may point anywhere.
  */
 import {readdirSync, readFileSync} from "node:fs";
-import {dirname, join, normalize} from "node:path";
+import {dirname, join, normalize, sep} from "node:path";
 import {fileURLToPath} from "node:url";
 
 import {expect, test} from "@b9g/libuild/test";
 
 const src = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
+
+// A module as the lists below name it, whatever the platform's separator.
+function nameOf(path: string): string {
+	return path.slice(src.length + 1).split(sep).join("/");
+}
 
 function modules(directory: string): string[] {
 	return readdirSync(directory, {withFileTypes: true}).flatMap((entry) => {
@@ -59,9 +64,7 @@ test("no module of the engine imports one that imports it back", () => {
 		for (const next of graph.get(file) ?? []) {
 			if (state.get(next) === "visiting") {
 				const loop = stack.slice(stack.indexOf(next)).concat(next);
-				cycles.push(
-					loop.map((path) => path.slice(src.length + 1)).join(" -> "),
-				);
+				cycles.push(loop.map(nameOf).join(" -> "));
 			} else if (!state.has(next) && graph.has(next)) {
 				visit(next);
 			}
@@ -106,8 +109,7 @@ test("the standalone modules reach no other module of the engine", () => {
 			}
 		};
 		visit(join(src, module));
-		reached[module] = [...seen].map((path) => path.slice(src.length + 1))
-			.sort();
+		reached[module] = [...seen].map(nameOf).sort();
 	}
 	expect(reached).toEqual(STANDALONE);
 });

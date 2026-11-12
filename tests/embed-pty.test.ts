@@ -924,7 +924,11 @@ test("keys are sent as xterm sends them", () => {
 });
 
 test("with ptyEmbeds: \"auto\", Bun runs the command in its own pseudo-terminal", async () => {
-	if ((globalThis as {Bun?: unknown}).Bun === undefined) {
+	// Windows has no /bin/sh, and an embed there fires error.
+	if (
+		(globalThis as {Bun?: unknown}).Bun === undefined ||
+		process.platform === "win32"
+	) {
 		return;
 	}
 	const {dom, terminal, heard} = await mount(
