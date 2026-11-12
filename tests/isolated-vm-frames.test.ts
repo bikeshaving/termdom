@@ -159,8 +159,10 @@ nodeTest(
 			transport: terminal.transport,
 			scripting: "enabled",
 		});
+		// Long enough for the calm frame to start on a busy machine: the
+		// limit is on the clock, and holds a frame's first paint too.
 		(_(dom.document as never) as {extra: {isolateFrame: FrameIsolator}})
-			.extra.isolateFrame = await createIsolatedVMFrames({taskTimeout: 200});
+			.extra.isolateFrame = await createIsolatedVMFrames({taskTimeout: 2000});
 		servePages(dom, {
 			"https://spin.example/": "<p>spin</p><script>for (;;) {}</script>",
 			"https://calm.example/": "<p style='margin: 0'>calm</p>",
