@@ -134,6 +134,10 @@ test("the engine failing in a frame is told to a transport that logs, then ends 
 		},
 	});
 	await dom.attach();
+	// The terminal's answers each ask for a frame of their own, and a frame
+	// nobody waits for would raise the error out of the loop. They are all
+	// in once the cell is measured.
+	await dom.measureCell();
 	await nextFrame(dom);
 	const layout =
 		(_(dom) as unknown as {layout: {performLayout(): void}}).layout;

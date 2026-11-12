@@ -117,11 +117,15 @@ export function replaceSpawner(spawner: PTYSpawner | null): void {
 
 /**
  * The pseudo-terminal this runtime can use: Bun's own, or node-pty on
- * Node when it is installed. Null where there is none.
+ * Node when it is installed. Null where there is none, and on Windows,
+ * which has no /bin/sh to run the command with.
  */
 export function findSpawner(): PTYSpawner | null {
 	if (replacement !== null) {
 		return replacement;
+	}
+	if (globalThis.process?.platform === "win32") {
+		return null;
 	}
 	const bun = (globalThis as {Bun?: BunLike}).Bun;
 	if (bun !== undefined && typeof bun.spawn === "function") {
