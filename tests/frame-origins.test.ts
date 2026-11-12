@@ -9,6 +9,7 @@
  * its parent to another page through the parent's location.
  */
 import {spawn} from "node:child_process";
+import {fileURLToPath} from "node:url";
 
 import {expect, test} from "@b9g/libuild/test";
 
@@ -285,7 +286,9 @@ const bun = (globalThis as {Bun?: unknown}).Bun === undefined
 (bun === null ? test.skip : test)(
 	"without node:vm, a frame has a window that posts and navigates",
 	async () => {
-		const script = new URL("./frames-without-vm.ts", import.meta.url).pathname;
+		const script = fileURLToPath(
+			new URL("./frames-without-vm.ts", import.meta.url),
+		);
 		const output = await new Promise<string>((resolve) => {
 			const child = spawn(bun!, [script], {stdio: ["ignore", "pipe", "pipe"]});
 			let text = "";
