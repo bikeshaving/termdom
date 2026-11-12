@@ -8,6 +8,7 @@
  */
 import type * as FS from "node:fs/promises";
 import type * as NodeModule from "node:module";
+import type * as NodeURL from "node:url";
 
 import type * as ESBuild from "esbuild";
 
@@ -46,8 +47,10 @@ const ENTRY = new URL("./frame.ts", import.meta.url);
 
 export async function buildFrameScript(): Promise<string> {
 	const {build} = requireNodePackage<typeof ESBuild>("esbuild");
+	// The file's path, which on Windows a URL's pathname is not.
+	const {fileURLToPath} = getNodeBuiltin<typeof NodeURL>("node:url");
 	const result = await build({
-		entryPoints: [ENTRY.pathname],
+		entryPoints: [fileURLToPath(ENTRY)],
 		bundle: true,
 		write: false,
 		format: "iife",
