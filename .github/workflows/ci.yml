@@ -35,11 +35,17 @@ jobs:
   # engines and the newest release: the floor leg is what holds engines
   # honest.
   node:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node: ["20.19", 26]
     steps:
+      # A Windows runner would otherwise check the sources and fixtures
+      # out with CRLF line endings.
+      - run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v5
 
       - uses: oven-sh/setup-bun@v2
@@ -56,8 +62,14 @@ jobs:
         run: npx libuild test -p node --timeout 180000
 
   bun:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
+      - run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v5
 
       - uses: oven-sh/setup-bun@v2
