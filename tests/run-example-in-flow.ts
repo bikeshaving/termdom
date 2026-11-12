@@ -56,7 +56,8 @@ Bun.plugin({
 	name: "example in flow",
 	setup(build) {
 		build.onLoad(
-			{filter: /\/examples\/[^/]+\.ts$/},
+			// Either separator: Windows names the file with backslashes.
+			{filter: /[\\/]examples[\\/][^\\/]+\.ts$/},
 			async ({path}) => ({
 				contents: (await Bun.file(path).text()).replaceAll(
 					"new TermDOM(",
