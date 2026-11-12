@@ -1023,6 +1023,8 @@ test("the embed tells a program a cell's pixels once the terminal has said, and 
 	expect(children[0].written).toEqual(["\x1b[?1;2c"]);
 	await unmeasured.dom.dispose();
 	const measured = await mountImages("kitty");
+	// The terminal's answer can land after the first frame.
+	await measured.dom.measureCell();
 	measured.children[0].options.onData("\x1b[16t\x1b[14t");
 	await settle(measured.dom);
 	expect(measured.children[0].written).toEqual([
