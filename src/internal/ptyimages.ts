@@ -129,6 +129,8 @@ export class ProgramImages {
 	pending: {control: Map<string, string>; payload: string} | null;
 	// Commands run in order, each after the decode of the one before.
 	work: Promise<void>;
+	// How many commands and answers wait on `work`.
+	waiting: number;
 	reply: (data: string) => void;
 	changed: () => void;
 	version: number;
@@ -138,6 +140,7 @@ export class ProgramImages {
 		this.images = new Map();
 		this.pending = null;
 		this.work = Promise.resolve();
+		this.waiting = 0;
 		this.reply = reply;
 		this.changed = changed;
 		this.version = 0;
@@ -171,9 +174,33 @@ export class ProgramImages {
 	}
 
 	queue(control: Map<string, string>, payload: string): void {
+		this.waiting++;
 		this.work = this.work
 			.then(() => this.run(control, payload))
-			.catch(() => {});
+			.catch(() => {})
+			.then(() => {
+				this.waiting--;
+			});
+	}
+
+	/**
+	 * Sends the terminal's answer to another of the program's questions,
+	 * after the answers to the commands the program sent before it. A
+	 * program that asks for its device attributes behind a graphics
+	 * command reads their answer as the end of the command's.
+	 */
+	answer(data: string): void {
+		if (this.waiting === 0) {
+			this.reply(data);
+			return;
+		}
+		this.waiting++;
+		this.work = this.work.then(() => {
+			this.waiting--;
+			if (!this.disposed) {
+				this.reply(data);
+			}
+		});
 	}
 
 	async run(control: Map<string, string>, payload: string): Promise<void> {

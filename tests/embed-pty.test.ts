@@ -552,6 +552,38 @@ test("the embed answers the questions a program asks before it sends kitty graph
 	await dom.dispose();
 });
 
+test("the embed answers a graphics command before the question a program asks behind it", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="2">`,
+		spawn,
+	);
+	// A page asks for the device attributes behind its graphics query,
+	// and takes their answer to mean the query went unanswered. The image
+	// with no size is one whose answer is an error, after its decode.
+	children[0].options.onData(
+		"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c" +
+			"\x1b_Gi=33,a=t,f=100;AAAA\x1b\\\x1b[>c\x1b[5n",
+	);
+	await until(() => children[0].written.length >= 5);
+	expect(
+		children[0].written.map((reply) => reply.replace(/:[^\x1b]*/, "")),
+	).toEqual(
+		[
+			"\x1b_Gi=31;OK\x1b\\",
+			"\x1b[?1;2c",
+			"\x1b_Gi=33;EBADPNG\x1b\\",
+			"\x1b[>0;276;0c",
+			"\x1b[0n",
+		],
+	);
+	// With nothing waiting, an answer goes out as the question is read.
+	children[0].written.length = 0;
+	children[0].options.onData("\x1b[c");
+	expect(children[0].written).toEqual(["\x1b[?1;2c"]);
+	await dom.dispose();
+});
+
 test("a program's kitty image draws in half blocks on a terminal without kitty graphics", async () => {
 	const {dom, terminal, children} = await mountImages("cells");
 	children[0].options.onData(TWO_PIXELS);
