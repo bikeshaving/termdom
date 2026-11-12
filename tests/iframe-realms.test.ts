@@ -424,7 +424,7 @@ withRealms(
 			frame.postMessage("from the parent", "*");
 		});
 		frame.eval("(async () => { await null; parent.document.body.click() })()");
-		await new Promise((resolve) => setTimeout(resolve, 30));
+		await until(() => heard.length > 0);
 		expect(heard).toEqual(["top"]);
 		dom.dispose();
 	},
