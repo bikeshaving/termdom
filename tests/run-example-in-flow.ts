@@ -7,6 +7,8 @@
  *
  *   bun tests/run-example-in-flow.ts prism
  */
+import {fileURLToPath} from "node:url";
+
 import {MockProcess} from "./test-utils.ts";
 
 interface Loaded {
@@ -54,7 +56,8 @@ Bun.plugin({
 	name: "example in flow",
 	setup(build) {
 		build.onLoad(
-			{filter: /\/examples\/[^/]+\.ts$/},
+			// Either separator: Windows names the file with backslashes.
+			{filter: /[\\/]examples[\\/][^\\/]+\.ts$/},
 			async ({path}) => ({
 				contents: (await Bun.file(path).text()).replaceAll(
 					"new TermDOM(",
@@ -87,8 +90,8 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // The command line the example would have had, which some read, run from
 // the examples, which fuzzy-finder lists, rather than whatever the suite
 // is writing around it.
-process.argv = [process.argv[0], example.pathname];
-process.chdir(new URL(".", example).pathname);
+process.argv = [process.argv[0], fileURLToPath(example)];
+process.chdir(fileURLToPath(new URL(".", example)));
 // An example that ends itself ends the same way.
 process.exit = ((code?: number) => {
 	throw new Error(`Mock process.exit(${code ?? 0})`);

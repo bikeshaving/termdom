@@ -35,11 +35,17 @@ jobs:
   # engines and the newest release: the floor leg is what holds engines
   # honest.
   node:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node: ["20.19", 26]
     steps:
+      # A Windows runner would otherwise check the sources and fixtures
+      # out with CRLF line endings.
+      - run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v5
 
       - uses: oven-sh/setup-bun@v2
@@ -54,12 +60,22 @@ jobs:
       # load, and its install script fails trying to build one.
       - run: bun install --frozen-lockfile ${{ matrix.node == '20.19' && '--ignore-scripts' || '' }}
 
+      # libuild's executable is a shell script, which npx can't start on
+      # Windows.
+      # A file that waits on thousands of frames takes Node several times as
+      # long on the Windows runners.
       - name: Test on Node
-        run: npx libuild test -p node --timeout 180000
+        run: node node_modules/@b9g/libuild/cli.js test -p node --timeout ${{ runner.os == 'Windows' && 600000 || 180000 }}
 
   bun:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
+      - run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v5
 
       - uses: oven-sh/setup-bun@v2
@@ -69,7 +85,7 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - name: Test on Bun
-        run: npx libuild test -p bun --timeout 180000
+        run: bun node_modules/@b9g/libuild/cli.js test -p bun --timeout 180000
 
   deno:
     runs-on: ubuntu-latest

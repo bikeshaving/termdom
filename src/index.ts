@@ -343,7 +343,8 @@ export interface TermDOMOptions {
 	 *   from anywhere else, such as email, must never start a program.
 	 * - `"auto"`: it runs `src` with `/bin/sh -c` in a pseudo-terminal:
 	 *   Bun's own, or on Node the node-pty package when it is installed.
-	 *   Where there is none, such as on Deno, it fires `error`.
+	 *   Where there is none, such as on Deno or on Windows, it fires
+	 *   `error`.
 	 *
 	 * Only the page runs programs, never a frame. Any other value throws
 	 * a TypeError.
