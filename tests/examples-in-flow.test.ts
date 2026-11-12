@@ -7,6 +7,7 @@
  * its background filled the screen, or when the shell's rows change.
  */
 import {spawn} from "node:child_process";
+import {fileURLToPath} from "node:url";
 
 import {expect, test} from "@b9g/libuild/test";
 
@@ -54,7 +55,9 @@ const NAMES = [
 	"tree",
 ];
 
-const runner = new URL("./run-example-in-flow.ts", import.meta.url).pathname;
+const runner = fileURLToPath(
+	new URL("./run-example-in-flow.ts", import.meta.url),
+);
 const bun = (globalThis as {Bun?: unknown}).Bun === undefined
 	? null
 	: process.execPath;
