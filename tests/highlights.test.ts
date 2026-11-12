@@ -647,6 +647,75 @@ test("text-decoration-line: underline in a highlight rule underlines", async () 
 	dom.dispose();
 });
 
+test("font-weight and font-style in a highlight rule paint bold, faint and italic", async () => {
+	const {terminal, dom, window} = highlightDOM({rows: 8});
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>::highlight(hit) { font-weight: bold; font-style: italic } " +
+		"::highlight(plain) { font-weight: normal; font-style: normal } " +
+		"::highlight(faint) { font-weight: 300 }</style>";
+	document.body.innerHTML =
+		"<p>abcdefgh</p><p><b><i>abcdefgh</i></b></p><p>abcdefgh</p>";
+	const texts = [...document.querySelectorAll("p")].map((p) => {
+		let node: Node = p;
+		while (node.firstChild !== null) {
+			node = node.firstChild;
+		}
+		return node;
+	});
+	["hit", "plain", "faint"].forEach((name, index) => {
+		const range = document.createRange();
+		range.setStart(texts[index], 2);
+		range.setEnd(texts[index], 5);
+		window.CSS.highlights.set(name, new window.Highlight(range));
+	});
+	await nextFrame(dom);
+	const [hit, plain, faint] = [0, 1, 2, 3, 4, 5, 6, 7].filter(
+		(row) => cellAt(terminal, row, 0).getChars() === "a",
+	);
+
+	expect(cellAt(terminal, hit, 1).isBold()).toBeFalsy();
+	expect(cellAt(terminal, hit, 2).isBold()).toBeTruthy();
+	expect(cellAt(terminal, hit, 2).isItalic()).toBeTruthy();
+	expect(cellAt(terminal, hit, 4).isBold()).toBeTruthy();
+	expect(cellAt(terminal, hit, 5).isBold()).toBeFalsy();
+	expect(cellAt(terminal, hit, 5).isItalic()).toBeFalsy();
+
+	// Over text that is bold and italic already, normal takes both away.
+	expect(cellAt(terminal, plain, 1).isBold()).toBeTruthy();
+	expect(cellAt(terminal, plain, 1).isItalic()).toBeTruthy();
+	expect(cellAt(terminal, plain, 2).isBold()).toBeFalsy();
+	expect(cellAt(terminal, plain, 2).isItalic()).toBeFalsy();
+	expect(cellAt(terminal, plain, 5).isBold()).toBeTruthy();
+
+	expect(cellAt(terminal, faint, 1).isDim()).toBeFalsy();
+	expect(cellAt(terminal, faint, 2).isDim()).toBeTruthy();
+	expect(cellAt(terminal, faint, 5).isDim()).toBeFalsy();
+
+	dom.dispose();
+});
+
+test("a highlight's weight and style come from the nearest ancestor that sets them", async () => {
+	const {terminal, dom, window} = highlightDOM();
+	const {document} = dom;
+	document.head.innerHTML =
+		"<style>div::highlight(hit) { font-weight: bold; font-style: italic } " +
+		"span::highlight(hit) { color: red; font-style: normal }</style>";
+	document.body.innerHTML = "<div>ab<span>cd</span></div>";
+	const range = document.createRange();
+	range.selectNodeContents(document.querySelector("div")!);
+	window.CSS.highlights.set("hit", new window.Highlight(range));
+	await nextFrame(dom);
+
+	expect(cellAt(terminal, 0, 0).isBold()).toBeTruthy();
+	expect(cellAt(terminal, 0, 0).isItalic()).toBeTruthy();
+	// The span's rule says nothing of weight, so the div's shows through.
+	expect(cellAt(terminal, 0, 2).isBold()).toBeTruthy();
+	expect(cellAt(terminal, 0, 2).isItalic()).toBeFalsy();
+
+	dom.dispose();
+});
+
 test("a highlight mutation repaints without a DOM mutation", async () => {
 	const {terminal, dom, window} = highlightDOM();
 	const {document} = dom;
