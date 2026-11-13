@@ -130,6 +130,10 @@ let offering = 0;
 const REDIRECT_LIMIT = 20;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
+// The request headers that identify the program to a server, which a
+// redirect to another origin does not carry along.
+const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"];
+
 /**
  * Settle a load the document's markup asks for: checked against the
  * document's policies, offered to `target`'s "fetch" listeners, and sent
@@ -178,6 +182,7 @@ export async function answerRequest(
 		}
 	}
 	let current = new URL(response.url || request.url);
+	const headers = new Headers(request.headers);
 	for (let redirects = 1; isRedirect(response); redirects++) {
 		await response.body?.cancel().catch(() => {});
 		if (request.redirect !== "follow") {
@@ -186,11 +191,19 @@ export async function answerRequest(
 		if (redirects > REDIRECT_LIMIT) {
 			throw new TypeError(`${request.url} redirects too many times`);
 		}
+		const from = current;
 		current = new URL(response.headers.get("location")!, current);
 		checkRedirectScheme(request, current);
 		checkRequest(document, request, current, redirects, context, policy);
+		// Fetch's HTTP-redirect fetch: what the program wrote for one origin
+		// is not handed to the next, and stays off for the hops after it.
+		if (current.origin !== from.origin) {
+			for (const name of CREDENTIAL_HEADERS) {
+				headers.delete(name);
+			}
+		}
 		const next = new Request(current, {
-			headers: request.headers,
+			headers,
 			signal: request.signal,
 			redirect: "manual",
 		});

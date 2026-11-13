@@ -3547,12 +3547,20 @@ function buildTableGrid(rows: TableRow[]): {
 	columnCount: number;
 } {
 	const cells: TableCell[] = [];
-	const occupied = new Set<string>();
+	// The cells that reach into rows below their own, as the columns they
+	// take and the last row they reach. A cell is never listed slot by slot:
+	// colspan=1000 with rowspan=65534 is 65 million slots.
+	let spanning: Array<{start: number; end: number; lastRow: number}> = [];
 	let columnCount = 0;
 
 	rows.forEach((row, rowIndex) => {
 		let column = 0;
 		let open: TableCell | null = null;
+		// Those that reach this row, by column. A row's cells are placed left
+		// to right, so one walk over them serves the whole row.
+		spanning = spanning.filter((span) => span.lastRow >= rowIndex);
+		const reaching = [...spanning].sort((a, b) => a.start - b.start);
+		let next = 0;
 
 		for (const node of row.cells) {
 			const anonymous = isAnonymousCellContent(node);
@@ -3565,17 +3573,19 @@ function buildTableGrid(rows: TableRow[]): {
 				continue;
 			}
 
-			while (occupied.has(`${rowIndex}:${column}`)) {
-				column++;
+			for (; next < reaching.length && reaching[next].start <= column; next++) {
+				column = Math.max(column, reaching[next].end);
 			}
 
 			const colSpan = Math.max(1, node.style.colSpan);
 			const rowSpan = Math.max(1, node.style.rowSpan);
 
-			for (let dr = 0; dr < rowSpan; dr++) {
-				for (let dc = 0; dc < colSpan; dc++) {
-					occupied.add(`${rowIndex + dr}:${column + dc}`);
-				}
+			if (rowSpan > 1) {
+				spanning.push({
+					start: column,
+					end: column + colSpan,
+					lastRow: rowIndex + rowSpan - 1,
+				});
 			}
 
 			const cell: TableCell = {
@@ -4347,6 +4357,13 @@ function isIntrinsicBreadth(
 const MAX_GRID_LINES = 10000;
 const MAX_GRID_SPAN = 1000;
 
+// A placed item's area: where it starts and ends on the major axis, then
+// on the minor one.
+type Area = [number, number, number, number];
+
+// The most cells an item is listed by when it is placed.
+const LISTED_AREA_CELLS = 64;
+
 // For counting repeat(auto-fill) repetitions.
 function getDefiniteTrackSize(
 	size: CSSValues.TrackSize,
@@ -4747,30 +4764,67 @@ function autoPlaceItems(
 		}
 	}
 
+	// An item of a few cells is listed cell by cell, which finds the cell a
+	// neighbor wants at once. A larger one is kept as its area alone: an
+	// item from line 1 to line 10000 both ways covers 100 million cells.
 	const occupied = new Set<string>();
+	const areas: Area[] = [];
+	const largeAreas: Area[] = [];
 	const occupy = (item: GridItem) => {
 		const maj = major(item);
 		const min = minor(item);
+		const area: Area = [
+			maj.start!,
+			maj.start! + maj.span,
+			min.start!,
+			min.start! + min.span,
+		];
+		areas.push(area);
+		if (maj.span * min.span > LISTED_AREA_CELLS) {
+			largeAreas.push(area);
+			return;
+		}
 		for (let a = 0; a < maj.span; a++) {
 			for (let b = 0; b < min.span; b++) {
 				occupied.add(`${maj.start! + a}:${min.start! + b}`);
 			}
 		}
 	};
-	const fits = (
+	// The placed item in the way of one at this position, or one of its
+	// cells, or null where the position is free. The search goes on past
+	// where what is in the way ends, since every position before that
+	// meets it again.
+	const findBlocker = (
 		majorStart: number,
 		majorSpan: number,
 		minorStart: number,
 		minorSpan: number,
-	) => {
+	): Area | null => {
+		const overlaps = ([a0, a1, b0, b1]: Area) =>
+			majorStart < a1 &&
+			a0 < majorStart + majorSpan &&
+			minorStart < b1 &&
+			b0 < minorStart + minorSpan;
+		if (majorSpan * minorSpan > LISTED_AREA_CELLS) {
+			return areas.find(overlaps) ?? null;
+		}
+		const large = largeAreas.find(overlaps);
+		if (large !== undefined) {
+			return large;
+		}
 		for (let a = 0; a < majorSpan; a++) {
 			for (let b = 0; b < minorSpan; b++) {
 				if (occupied.has(`${majorStart + a}:${minorStart + b}`)) {
-					return false;
+					return [
+						majorStart + a,
+						majorStart + a + 1,
+						minorStart + b,
+						minorStart + b + 1,
+					];
 				}
 			}
 		}
-		return true;
+		return null;
 	};
 
 	// §8.5 step 1.
@@ -4790,8 +4844,12 @@ function autoPlaceItems(
 		}
 		const from = dense ? minorBase : (rowCursors.get(maj.start) ?? minorBase);
 		let position = from;
-		while (!fits(maj.start, maj.span, position, min.span)) {
-			position++;
+		for (
+			let blocker = findBlocker(maj.start, maj.span, position, min.span);
+			blocker !== null;
+			blocker = findBlocker(maj.start, maj.span, position, min.span)
+		) {
+			position = blocker[3];
 		}
 		min.start = position;
 		if (!dense) {
@@ -4821,8 +4879,12 @@ function autoPlaceItems(
 			if (!dense) {
 				cursorMinor = min.start;
 			}
-			while (!fits(cursorMajor, maj.span, min.start, min.span)) {
-				cursorMajor++;
+			for (
+				let blocker = findBlocker(cursorMajor, maj.span, min.start, min.span);
+				blocker !== null;
+				blocker = findBlocker(cursorMajor, maj.span, min.start, min.span)
+			) {
+				cursorMajor = blocker[1];
 			}
 			maj.start = cursorMajor;
 			occupy(item);
@@ -4830,16 +4892,22 @@ function autoPlaceItems(
 		}
 		// An item wider than the whole minor axis still gets a row of its own.
 		const span = Math.min(min.span, Math.max(1, minorEnd - minorBase));
+		// Where the first of the items in the way of this row ends. A row
+		// searched from its start, and found full, stays full up to there.
+		let fullUntil = cursorMinor === minorBase ? Infinity : cursorMajor + 1;
 		for (;;) {
 			if (cursorMinor + span > minorEnd) {
-				cursorMajor++;
+				cursorMajor = Number.isFinite(fullUntil) ? fullUntil : cursorMajor + 1;
 				cursorMinor = minorBase;
+				fullUntil = Infinity;
 				continue;
 			}
-			if (fits(cursorMajor, maj.span, cursorMinor, min.span)) {
+			const blocker = findBlocker(cursorMajor, maj.span, cursorMinor, min.span);
+			if (blocker === null) {
 				break;
 			}
-			cursorMinor++;
+			fullUntil = Math.min(fullUntil, blocker[1]);
+			cursorMinor = blocker[3];
 		}
 		maj.start = cursorMajor;
 		min.start = cursorMinor;
