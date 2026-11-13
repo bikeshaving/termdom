@@ -1,6 +1,6 @@
 ---
 title: Images and canvas
-description: How <img> and <canvas> draw pixels, and how <embed> runs a program.
+description: How <img> and <canvas> draw pixels, how <iframe> shows a document, and how <embed> runs a program.
 ---
 
 A cell shows two pixels: a lower half block, `▄`, in the foreground
@@ -374,6 +374,122 @@ the page's borders.
 | `measureText(text)` | Width in columns |
 | `reset()` | Clears the grid and settings |
 | `isContextLost()` | Always `false` |
+
+## `<iframe>`
+
+A frame shows its `srcdoc`, or an empty `about:blank` document. TermDOM
+loads a frame's `src` only where it can isolate the frame, described
+below. The frame draws its document in its
+box, which is 300 by 150 CSS pixels unless CSS or the `width` and
+`height` attributes say otherwise.
+
+Each frame has a window of its own. Where the runtime has `node:vm`, as
+Node, Bun and Deno do, the window is in a realm of its own, with its own
+`Array`, `Object` and DOM interfaces. Elsewhere, as in a browser or
+isolated-vm, the window shares the page's realm, but has the rest of a
+window: `postMessage()`, `location`, `parent`, `top`, `frameElement`,
+timers, and the rest.
+
+Handler attributes in a frame don't run, even with `scripting:
+"enabled"`.
+
+### Origins
+
+A frame showing `srcdoc` or `about:blank` has the page's origin. A
+`sandbox` attribute without `allow-same-origin` gives the frame an
+opaque origin of its own, which reads as `"null"`. A frame inside a
+sandboxed frame is sandboxed too.
+
+Windows of two origins can't read each other. `contentDocument` is
+null, and `contentWindow`, `frames[0]`, a frame's name on the window,
+`parent` and `top` give a stand-in for the window. The stand-in has only
+`window`, `self`, `frames`, `length`, `top`, `parent`, `opener`,
+`closed`, `location`, `postMessage()`, `close()`, `focus()`, `blur()`,
+and the child frames by index. Its `location` lets you set `href` and
+call `replace()`. Anything else throws a `SecurityError`. For example,
+`frame.contentWindow.getSelection()` throws for a sandboxed frame. Add
+`allow-same-origin` to the sandbox to read it.
+
+### Messages
+
+`postMessage(message, targetOrigin)` works between a page and its
+frames, both ways:
+
+```ts
+frame.contentWindow.postMessage("hello", "https://example.com");
+window.addEventListener("message", (event) => {
+  if (event.source === frame.contentWindow) {
+    console.log(event.origin, event.data);
+  }
+});
+```
+
+The message arrives later, as a task, in a `message` event. Its
+`origin` is the sender's, `"null"` for an opaque one, and its `source`
+is the sender as the receiver holds it, so `event.source === parent`
+holds in a frame. The message lands only if the receiver's origin is
+`targetOrigin`. `"*"` matches any origin, and `"/"` the sender's.
+
+Without `node:vm`, TermDOM can't tell whose code calls `postMessage()`
+on a window of the caller's origin, so the message comes from the top
+window. A message sent through the stand-in for a window of another
+origin comes from the window that holds the stand-in.
+
+### Navigation
+
+A frame may set `parent.location.href`, also across origins. The parent
+fires `navigate` on `window.navigation`, where a listener can intercept
+or cancel it. A navigation to another document that nothing intercepts
+throws `NotSupportedError`, as it does in the page. A sandboxed frame
+may navigate its top window only with `allow-top-navigation`, or with
+`allow-top-navigation-by-user-activation` during a user's action, and
+otherwise throws `SecurityError`.
+
+### Frames in isolates
+
+An `<iframe src>` with an `http:` or `https:` URL of another origin
+than the page's loads its page in a V8 isolate of its own, where the
+[isolated-vm](https://github.com/laverdet/isolated-vm) package is
+installed next to TermDOM. It runs on Node only, from Node 24, and
+asks that Node start with `--no-node-snapshot`. Without it, the frame
+shows an empty `about:blank`.
+
+```sh
+npm install isolated-vm
+node --no-node-snapshot app.js
+```
+
+```ts
+const dom = new TermDOM({scripting: "enabled"});
+dom.document.body.innerHTML =
+  '<iframe src="https://example.com/" style="width: 100%; height: 20em"></iframe>';
+```
+
+A frame lays its page out in the page's cell, so a page that shows web
+pages wants a cell the size web pages expect, such as `cellSize: {width:
+8, height: 16}` or `"auto"`. Under the default cell of one CSS pixel, a
+page meant for a browser lays out 8 times as wide.
+
+TermDOM loads the frame's page the way it loads an image: under the
+page's `csp`, where `frame-src` governs frames, and through its `fetch`
+listeners. So do the frame's own stylesheets, images and scripts,
+without the headers Fetch forbids a page to set, such as `Cookie`. The
+frame lays out, runs its scripts and paints in its isolate, and the page
+draws the cells it paints, checking each one, so a frame can't send the
+terminal escape codes.
+
+Each frame's isolate has 256 MB of heap, and each call into it 30
+seconds. A frame that runs past either is stopped and shows nothing, and
+the page goes on. A frame runs scripts where the page has `scripting:
+"enabled"` and a `sandbox` attribute, if it has one, includes
+`allow-scripts`.
+
+Click a frame, or focus it, and keys, the mouse and pastes go to the
+document in it. To the page, the frame's window is one of another
+origin, whatever its URL: `contentDocument` is null, and the two talk
+through `postMessage()`. A frame that sets `parent.location.href` asks
+the page to navigate, as above, and a link or form in the frame loads
+the new page in a new isolate.
 
 ## `<embed type="application/x-pty">`
 

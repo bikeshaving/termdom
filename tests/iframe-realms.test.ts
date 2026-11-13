@@ -12,6 +12,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {getDrawnFrameDocument} from "../src/internal/dom.ts";
 import {canCreateRealms} from "../src/internal/realms.ts";
 import {MockProcess, until} from "./test-utils.ts";
 
@@ -269,6 +270,33 @@ withRealms(
 	},
 );
 
+withRealms(
+	"a sandboxed frame's code holds its parent as a window of another origin",
+	async () => {
+		const dom = new TermDOM({
+			transport: new MockProcess().transport,
+			url: "https://example.com/inbox",
+		});
+		const iframe = dom.document.createElement("iframe");
+		iframe.setAttribute("sandbox", "allow-scripts");
+		dom.document.body.append(iframe);
+		const outer = iframe.contentWindow as any;
+		const frame = (getDrawnFrameDocument(iframe as any) as any).defaultView;
+		expect(
+			frame.eval("try { parent.document } catch (error) { error.name }"),
+		).toBe("SecurityError");
+		expect(frame.eval("parent === top && parent !== window")).toBe(true);
+		const heard: unknown[] = [];
+		dom.window.addEventListener("message", (event) => {
+			heard.push([event.data, event.origin, event.source === outer]);
+		});
+		frame.eval("setTimeout(() => parent.postMessage('ping', '*'), 0)");
+		await until(() => heard.length > 0);
+		expect(heard).toEqual([["ping", "null", true]]);
+		dom.dispose();
+	},
+);
+
 withRealms("a message for another origin does not land", async () => {
 	const {dom, frame} = setup();
 	let heard = false;
@@ -396,7 +424,7 @@ withRealms(
 			frame.postMessage("from the parent", "*");
 		});
 		frame.eval("(async () => { await null; parent.document.body.click() })()");
-		await new Promise((resolve) => setTimeout(resolve, 30));
+		await until(() => heard.length > 0);
 		expect(heard).toEqual(["top"]);
 		dom.dispose();
 	},

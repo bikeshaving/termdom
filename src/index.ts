@@ -109,6 +109,7 @@ import {
 	setDecodeWorkerURL,
 } from "./internal/images.ts";
 import {Input, resolvePendingHover} from "./internal/input.ts";
+import {findFrameIsolator} from "./internal/isolatedframes.ts";
 import {
 	compressKittyUploads,
 	forgetKittyImages,
@@ -680,6 +681,7 @@ export class TermDOM extends EventTarget {
 		const images = toGraphicsOption("images", options.images);
 		const canvas = toGraphicsOption("canvas", options.canvas);
 		const pty = toPTYSpawner(options.ptyEmbeds);
+		const isolateFrame = findFrameIsolator();
 		const slots = _(this);
 		slots.colorDepth = toColorDepth(options.colorDepth);
 		slots.graphicsProtocols = {
@@ -774,6 +776,7 @@ export class TermDOM extends EventTarget {
 			images: images.setting,
 			canvas: canvas.setting,
 			pty,
+			isolateFrame,
 			load: (request, context) =>
 				answerRequest(
 					slots.fetchTarget,

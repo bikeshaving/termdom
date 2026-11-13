@@ -35,7 +35,7 @@
   ],
   "scripts": {
     "bench": "node bench/run.ts",
-    "build": "libuild build",
+    "build": "libuild build && node scripts/build-isolate-frame.ts",
     "lint": "eslint .",
     "prepublishOnly": "echo 'ERROR: Cannot publish from root directory. Use libuild to publish or stage the package.' && exit 1",
     "smoke": "node scripts/smoke.js",
@@ -54,9 +54,13 @@
     "parse5": "8.1.0"
   },
   "peerDependencies": {
+    "isolated-vm": "^7.0.2",
     "node-pty": "^1.1.0"
   },
   "peerDependenciesMeta": {
+    "isolated-vm": {
+      "optional": true
+    },
     "node-pty": {
       "optional": true
     }
@@ -83,13 +87,17 @@
     "@webref/idl": "^3.84.0",
     "@xterm/headless": "^6",
     "codemirror": "^6.0.2",
+    "core-js-pure": "3.50.0",
+    "esbuild": "^0.28.1",
     "eslint": "^10",
     "eslint-plugin-acrocase": "^0.1.1",
     "eslint-plugin-crank": "^0.2.2",
     "eslint-plugin-esfold": "^0.1.14",
     "fast-check": "^4.10.2",
+    "fflate": "0.8.3",
     "ghostty-web": "0.4.0",
     "htm": "^3.1.1",
+    "isolated-vm": "^7.0.2",
     "katex": "^0.18.9",
     "marked": "^18.0.14",
     "marked-highlight": "^2.2.4",
@@ -102,6 +110,7 @@
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "vue": "^3.5.43",
+    "web-streams-polyfill": "4.3.0",
     "webidl2": "^24.5.0"
   },
   "module": "./dist/index.js",

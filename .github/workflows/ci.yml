@@ -56,7 +56,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
-      - run: bun install --frozen-lockfile
+      # isolated-vm asks for Node 24. Under the floor its binary does not
+      # load, and its install script fails trying to build one.
+      - run: bun install --frozen-lockfile ${{ matrix.node == '20.19' && '--ignore-scripts' || '' }}
 
       # libuild's executable is a shell script, which npx can't start on
       # Windows.
