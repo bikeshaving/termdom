@@ -64,19 +64,35 @@ test("a grid item across thousands of lines both ways is placed as one area", as
 	}
 });
 
-test("thousands of dense grid items do not each search past all those before", async () => {
-	for (const item of [
-		"grid-column:span 65",
-		"grid-column:2;grid-row:span 65",
-		"grid-row:2;grid-column:span 65",
-	]) {
-		await renderQuickly(
-			`<div style="display:grid;grid-auto-flow:row dense">${
+// Timed against the same items placed sparsely, since how long 3000
+// boxes take anyhow differs tenfold between the machines this runs on.
+test(
+	"thousands of dense grid items do not each search past all those before",
+	async () => {
+		const render = async (flow: string, item: string): Promise<number> => {
+			const dom = new TermDOM({
+				transport: new MockProcess({cols: 80, rows: 24}).transport,
+			});
+			const start = Date.now();
+			dom.document.body.innerHTML =
+			`<div style="display:grid;grid-auto-flow:${flow}">${
 				`<div style="${item}">x</div>`.repeat(3000)
-			}</div>`,
-		);
-	}
-});
+			}</div>`;
+			await nextFrame(dom);
+			dom.dispose();
+			return Date.now() - start;
+		};
+		for (const item of [
+			"grid-column:span 65",
+			"grid-column:2;grid-row:span 65",
+			"grid-row:2;grid-column:span 65",
+		]) {
+			const sparse = await render("row", item);
+			expect(await render("row dense", item)).toBeLessThan(sparse * 5 + 500);
+		}
+	},
+	120000,
+);
 
 test("a calc() nested past a hundred levels is left as written", async () => {
 	const nest = (open: string, depth: number) =>
