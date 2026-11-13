@@ -959,7 +959,7 @@ export function checkPartialFrame(
 	previousCaret: Caret | null,
 ): void {
 	const whole = new CellContext(
-		new CellGrid(ctx.rows, ctx.cols),
+		new CellGrid(ctx.rows, ctx.cols, ctx.grid.links),
 		ctx.rows,
 		ctx.cols,
 		ctx.viewportOffset,
@@ -976,7 +976,8 @@ export function checkPartialFrame(
 			a.fg[index] !== b.fg[index] ||
 			a.bg[index] !== b.bg[index] ||
 			a.attrs[index] !== b.attrs[index] ||
-			a.border[index] !== b.border[index]
+			a.border[index] !== b.border[index] ||
+			a.link[index] !== b.link[index]
 		) {
 			differences.push(
 				`row ${Math.floor(index / ctx.cols)} col ${index % ctx.cols}`,
@@ -1030,6 +1031,28 @@ const PAINT_STYLE: StyleGroup<PaintStyle> = {
 	name: "paint",
 	read: readPaintStyle,
 };
+
+// The absolute URL of the nearest enclosing link, for the terminal to
+// open (OSC 8). A fragment or a relative URL means nothing outside the
+// document, and an anchor without href is not a link.
+const LINK_SCHEMES = /^(?:https?|mailto|file|ftp):/i;
+
+function getLinkURL(element: Element): string | null {
+	for (
+		let node: Element | null = element;
+		node !== null;
+		node = flatParentElement(node)
+	) {
+		if (
+			(node.localName === "a" || node.localName === "area") &&
+			node.hasAttribute("href")
+		) {
+			const url = (node as HTMLAnchorElement).href;
+			return LINK_SCHEMES.test(url) ? url : null;
+		}
+	}
+	return null;
+}
 
 function getPaintStyle(painter: Painter, element: Element): PaintStyle {
 	const key = painter.cascade.getStyleKey(element);
@@ -2234,6 +2257,10 @@ function paintText(
 	if (!style.visible) {
 		return;
 	}
+	// Elements whose values match share one paint style, and a link is not
+	// one of those values, so it joins per text node.
+	const link = getLinkURL(parentElement);
+	const cell = link === null ? style.cell : {...style.cell, link};
 	let painted = false;
 	for (let index = 0; index < fragments.length; index++) {
 		const fragment = fragments[index];
@@ -2258,17 +2285,11 @@ function paintText(
 			applyTextTransform(text, style.textTransform),
 			Math.round(fragment.rect.left),
 			Math.round(fragment.rect.top),
-			style.cell,
+			cell,
 		);
 	}
 	if (painted) {
-		renderTextHighlights(
-			painter,
-			textNode,
-			style.cell,
-			style.textTransform,
-			ctx,
-		);
+		renderTextHighlights(painter, textNode, cell, style.textTransform, ctx);
 	}
 }
 
