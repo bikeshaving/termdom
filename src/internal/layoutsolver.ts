@@ -4725,6 +4725,45 @@ function pairGridLines(
 	return {start: null, span: Math.max(1, span)};
 }
 
+// Where a dense search put an item: the tracks it was held to on the
+// axis it did not search, its spans, and the position.
+interface DensePlacement {
+	from: number;
+	to: number;
+	majorSpan: number;
+	minorSpan: number;
+	major: number;
+	minor: number;
+}
+
+// The furthest position an earlier search of the same kind reached with
+// an item this one would cover wherever it went, or null. That search
+// was turned away from every position before it, and what turned it
+// away is still there, so this one starts where that one ended.
+function findDenseStart(
+	placements: DensePlacement[],
+	from: number,
+	to: number,
+	majorSpan: number,
+	minorSpan: number,
+): DensePlacement | null {
+	let start: DensePlacement | null = null;
+	for (const placed of placements) {
+		if (
+			from <= placed.from &&
+			to >= placed.to &&
+			majorSpan >= placed.majorSpan &&
+			minorSpan >= placed.minorSpan &&
+			(start === null ||
+				placed.major > start.major ||
+				(placed.major === start.major && placed.minor > start.minor))
+		) {
+			start = placed;
+		}
+	}
+	return start;
+}
+
 // css-grid-2 §8.5, over a major and a minor axis so that grid-auto-flow:
 // column is the same walk with the two swapped.
 function autoPlaceItems(
@@ -4836,13 +4875,22 @@ function autoPlaceItems(
 
 	// §8.5 step 2.
 	const rowCursors = new Map<number, number>();
+	// A dense search starts over at the first cell for each item, and
+	// again passes every item placed since. Where an earlier one ended
+	// spares a later one that walk: without it, thousands of items take
+	// a search for each that grows with their number squared.
+	const denseInRows: DensePlacement[] = [];
 	for (const item of items) {
 		const maj = major(item);
 		const min = minor(item);
 		if (maj.start === null || min.start !== null) {
 			continue;
 		}
-		const from = dense ? minorBase : (rowCursors.get(maj.start) ?? minorBase);
+		const to = maj.start + maj.span;
+		const from = dense
+			? findDenseStart(denseInRows, maj.start, to, maj.span, min.span)
+				?.minor ?? minorBase
+			: (rowCursors.get(maj.start) ?? minorBase);
 		let position = from;
 		for (
 			let blocker = findBlocker(maj.start, maj.span, position, min.span);
@@ -4852,7 +4900,16 @@ function autoPlaceItems(
 			position = blocker[3];
 		}
 		min.start = position;
-		if (!dense) {
+		if (dense) {
+			denseInRows.push({
+				from: maj.start,
+				to,
+				majorSpan: maj.span,
+				minorSpan: min.span,
+				major: 0,
+				minor: position,
+			});
+		} else {
 			rowCursors.set(maj.start, position + min.span);
 		}
 		occupy(item);
@@ -4862,6 +4919,8 @@ function autoPlaceItems(
 	// §8.5 step 4.
 	let cursorMajor = majorBase;
 	let cursorMinor = minorBase;
+	const denseInColumns: DensePlacement[] = [];
+	const denseAnywhere: DensePlacement[] = [];
 	for (const item of items) {
 		const maj = major(item);
 		const min = minor(item);
@@ -4869,8 +4928,17 @@ function autoPlaceItems(
 			continue;
 		}
 		if (dense) {
-			cursorMajor = majorBase;
-			cursorMinor = minorBase;
+			const start = min.start !== null
+				? findDenseStart(
+					denseInColumns,
+					min.start,
+					min.start + min.span,
+					maj.span,
+					min.span,
+				)
+				: findDenseStart(denseAnywhere, 0, 0, maj.span, min.span);
+			cursorMajor = start?.major ?? majorBase;
+			cursorMinor = start?.minor ?? minorBase;
 		}
 		if (min.start !== null) {
 			if (!dense && min.start < cursorMinor) {
@@ -4887,6 +4955,16 @@ function autoPlaceItems(
 				cursorMajor = blocker[1];
 			}
 			maj.start = cursorMajor;
+			if (dense) {
+				denseInColumns.push({
+					from: min.start,
+					to: min.start + min.span,
+					majorSpan: maj.span,
+					minorSpan: min.span,
+					major: cursorMajor,
+					minor: minorBase,
+				});
+			}
 			occupy(item);
 			continue;
 		}
@@ -4912,7 +4990,16 @@ function autoPlaceItems(
 		maj.start = cursorMajor;
 		min.start = cursorMinor;
 		occupy(item);
-		if (!dense) {
+		if (dense) {
+			denseAnywhere.push({
+				from: 0,
+				to: 0,
+				majorSpan: maj.span,
+				minorSpan: min.span,
+				major: cursorMajor,
+				minor: cursorMinor,
+			});
+		} else {
 			cursorMinor += min.span;
 		}
 	}

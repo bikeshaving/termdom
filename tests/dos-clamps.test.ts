@@ -64,6 +64,41 @@ test("a grid item across thousands of lines both ways is placed as one area", as
 	}
 });
 
+test("thousands of dense grid items do not each search past all those before", async () => {
+	for (const item of [
+		"grid-column:span 65",
+		"grid-column:2;grid-row:span 65",
+		"grid-row:2;grid-column:span 65",
+	]) {
+		await renderQuickly(
+			`<div style="display:grid;grid-auto-flow:row dense">${
+				`<div style="${item}">x</div>`.repeat(3000)
+			}</div>`,
+		);
+	}
+});
+
+test("a calc() nested past a hundred levels is left as written", async () => {
+	const nest = (open: string, depth: number) =>
+		`calc(${open.repeat(depth)}10ch${open === "(" ? ")".repeat(depth) : ""})`;
+	for (const width of [nest("(", 20000), nest("- ", 20000)]) {
+		await renderQuickly(`<p style="width:${width}">x</p>`);
+	}
+	const dom = new TermDOM({
+		transport: new MockProcess({cols: 80, rows: 24}).transport,
+	});
+	dom.document.body.innerHTML =
+		`<p style="width:${nest("(", 100)}">x</p>` +
+		`<p style="width:${nest("(", 101)}">x</p>`;
+	await nextFrame(dom);
+	const [within, past] = [...dom.document.querySelectorAll("p")].map(
+		(p) => p.getBoundingClientRect().width,
+	);
+	expect(within).toBe(10);
+	expect(past).toBe(80);
+	dom.dispose();
+});
+
 test("a table cell across thousands of rows and columns is placed as one span", async () => {
 	await renderQuickly(
 		"<table><tr><td colspan=1000 rowspan=65534>x<td>y<tr><td>z</table>",
