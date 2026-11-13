@@ -15,6 +15,7 @@ import {
 	type PTYSpawnOptions,
 	replaceSpawner,
 } from "../src/internal/pty.ts";
+import {_} from "../src/internal/slots.ts";
 import {encodeWithGhostty} from "./ghostty-oracle.ts";
 import {
 	captureRawOutput,
@@ -967,6 +968,96 @@ test("the program's cursor is the terminal's while the embed has focus", async (
 	await dom.dispose();
 });
 
+test("the program's cursor color is the terminal's while the embed has focus", async () => {
+	const {spawn, children} = fakeSpawner();
+	const {dom, terminal, document} = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="3">`,
+		spawn,
+	);
+	document.querySelector("embed")!.focus();
+	await settle(dom);
+	const output = captureRawOutput(terminal);
+	children[0].options.onData("\x1b]12;rgb:ff/80/00\x07");
+	await settle(dom);
+	expect(output()).toContain("\x1b]12;rgb:ff/80/00\x07");
+	children[0].options.onData("\x1b]112\x07");
+	await settle(dom);
+	expect(output()).toContain("\x1b]112\x07");
+	await dom.dispose();
+});
+
+test("what the program puts on the clipboard goes to the terminal's, and what it asks for comes from there", async () => {
+	const {spawn, children} = fakeSpawner();
+	replaceSpawner(spawn);
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	scriptReplies(terminal, [
+		{ask: "\x1b]52;c;?\x07", reply: "\x1b]52;c;cGFzdGVk\x07"},
+	]);
+	const output = captureRawOutput(terminal);
+	const dom = new TermDOM({transport: terminal.transport, ptyEmbeds: "auto"});
+	dom.document.body.innerHTML =
+		`<embed type="application/x-pty" src="sh" width="10" height="2">`;
+	await nextFrame(dom);
+	const long = "copied ".repeat(1000);
+	children[0].options.onData(`\x1b]52;c;${btoa(long)}\x07`);
+	children[0].options.onData(
+		"\x1b]52;c;not base64!\x07\x1b]52;p;cHJpbWFyeQ==\x07",
+	);
+	await settle(dom);
+	expect(output().split("\x1b]52;").length).toBe(2);
+	expect(output()).toContain(`\x1b]52;c;${btoa(long)}\x07`);
+	children[0].options.onData("\x1b]52;c;?\x07");
+	await until(() => children[0].written.length > 0);
+	expect(children[0].written).toEqual(["\x1b]52;c;cGFzdGVk\x1b\\"]);
+	await dom.dispose();
+});
+
+test("the embed tells a program a cell's pixels once the terminal has said, and nothing before", async () => {
+	const {spawn, children} = fakeSpawner();
+	const unmeasured = await mount(
+		`<embed type="application/x-pty" src="sh" width="10" height="2">`,
+		spawn,
+	);
+	children[0].options.onData("\x1b[16t\x1b[c");
+	await settle(unmeasured.dom);
+	expect(children[0].written).toEqual(["\x1b[?1;2c"]);
+	await unmeasured.dom.dispose();
+	const measured = await mountImages("kitty");
+	// The terminal's answer can land after the first frame.
+	await measured.dom.measureCell();
+	measured.children[0].options.onData("\x1b[16t\x1b[14t");
+	await settle(measured.dom);
+	expect(measured.children[0].written).toEqual([
+		"\x1b[6;16;8t",
+		"\x1b[4;32;32t",
+	]);
+	await measured.dom.dispose();
+});
+
+// A keycap, a Devanagari conjunct with a vowel sign, and a letter.
+const CLUSTERS = "1\ufe0f\u20e3|\u0915\u094d\u0937\u093f|x";
+
+test("a TermDOM page in an embed and the embed agree on how wide a cluster is", async () => {
+	const {spawn, pages} = pageSpawner(`<pre>${CLUSTERS}</pre>`);
+	replaceSpawner(spawn);
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({transport: terminal.transport, ptyEmbeds: "auto"});
+	dom.document.body.innerHTML =
+		`<embed type="application/x-pty" src="page" width="20" height="2">`;
+	await nextFrame(dom);
+	await until(() => rowText(terminal, 0).includes("|x"));
+	expect(rowText(terminal, 0)).toBe(CLUSTERS);
+	expect(
+		(_(pages[0] as never) as {
+			framebuffer: {exchange: {clusterWidthsNegotiated(): boolean}};
+		}).framebuffer.exchange.clusterWidthsNegotiated(),
+	).toBe(true);
+	for (const page of pages) {
+		page.dispose();
+	}
+	await dom.dispose();
+});
+
 test("a paste goes to a focused program, bracketed when it asks", async () => {
 	const {spawn, children} = fakeSpawner();
 	const {dom, terminal, document} = await mount(
@@ -1290,7 +1381,7 @@ test("nothing a program writes reaches the terminal but its screen", async () =>
 		"\x1b]0;TITLE\x07\x1b]2;TITLE\x1b\\" +
 			"\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h\x1b[?1004h" +
 			"\x1b[?2004h\x1b[?1h\x1b=\x1b[?6h\x1b[?7l\x1b[4h\x1b[?47h" +
-			"\x1b]52;c;Y2xpcA==\x07\x1b]8;;http://example.com\x1b\\link\x1b]8;;\x1b\\" +
+			"\x1b]8;;http://example.com\x1b\\link\x1b]8;;\x1b\\" +
 			"\x1bPtmux;\x1b\x1b]0;PASS\x07\x1b\\\x1b_Gf=100;AAAA\x1b\\" +
 			"\x1b[c\x1b[>c\x1b[6n\x1b[18t\x1b[2J\x1b[3J\x1bc\x1b[!p" +
 			"\x1b[8;50;200t\x1b[3;1;1t\x07\x1b#8\x1b(0lqk\x1b(B shown",
