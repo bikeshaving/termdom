@@ -785,6 +785,43 @@ test("with images off, an image loads nothing and shows its alt text", async () 
 	dom.dispose();
 });
 
+test("with images off, an image in the first markup or in a frame's loads nothing", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({
+		transport: terminal.transport,
+		images: "none",
+		html: "<img alt=\"first\" src=\"https://example.com/first.png\">",
+	});
+	const fetched: string[] = [];
+	dom.addEventListener("fetch", (event) => {
+		fetched.push(event.request.url);
+		event.respondWith(new Response(null, {status: 404}));
+	});
+	// A frame's document is parsed before the frame is drawn, and a frame
+	// in a frame after that.
+	const frame = dom.document.createElement("iframe");
+	frame.srcdoc =
+		"<img alt=\"framed\" src=\"https://example.com/framed.png\">" +
+		"<img alt=\"set\" srcset=\"https://example.com/set.png 2x\">" +
+		"<iframe srcdoc=\"<img src='https://example.com/nested.png'>\"></iframe>";
+	dom.document.body.append(frame);
+	// A decode() asked for before the request would have been made is
+	// turned down like any other with images off.
+	const decoded = dom.document.querySelector("img")!
+		.decode()
+		.then(() => "decoded", (error: Error) => error.name);
+	await nextFrame(dom);
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	await nextFrame(dom);
+	expect(await decoded).toBe("EncodingError");
+	expect(fetched).toEqual([]);
+	const framed = frame.contentDocument!.querySelector("img")!;
+	expect(framed.complete).toBe(false);
+	expect(framed.naturalWidth).toBe(0);
+	expect(rowText(terminal, 0)).toBe("first");
+	dom.dispose();
+});
+
 test("images and canvas are \"auto\", \"cells\", \"kitty\" or \"none\"", () => {
 	for (const value of ["auto", "cells", "kitty", "none"] as const) {
 		new TermDOM({

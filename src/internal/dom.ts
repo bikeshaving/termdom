@@ -20094,15 +20094,18 @@ function updateImageData(image: HTMLImageElement): void {
 	// No source, or images disabled, as HTML's "update the image data"
 	// puts it: the request ends unavailable with nothing to report, and the
 	// image shows its alt text.
-	if (
-		chosen === null ||
-		_maybe(getAttachedDocument(image))?.extra.images === "none"
-	) {
+	const endUnavailable = () => {
 		state.status = "unavailable";
 		state.url = "";
 		state.bitmap = null;
 		state.version++;
 		invalidateReplaced(image, true);
+	};
+	if (
+		chosen === null ||
+		_maybe(getAttachedDocument(image))?.extra.images === "none"
+	) {
+		endUnavailable();
 		return;
 	}
 	// A document with no window, such as a <template>'s contents or what
@@ -20186,6 +20189,19 @@ function updateImageData(image: HTMLImageElement): void {
 		const attached = getAttachedDocument(document as unknown as Node);
 		if (attached === undefined) {
 			settle("broken", null, new TypeError("This document loads nothing"));
+			return;
+		}
+		// A frame's document is parsed before it has its engine, so an image
+		// in its markup got here without the images option being asked.
+		// Nothing is requested: with images disabled an <img> must not tell
+		// a server that the page was opened.
+		if (_(attached).extra.images === "none") {
+			endUnavailable();
+			for (const waiter of state.waiters.splice(0)) {
+				waiter.reject(
+					domError("EncodingError", "There is no image data to decode"),
+				);
+			}
 			return;
 		}
 		const ended = _(attached).extra.loadSignal;

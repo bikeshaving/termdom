@@ -233,6 +233,52 @@ test("a redirect goes only to another HTTP(S) URL", async () => {
 	}
 });
 
+test("a redirect to another origin leaves the request's credentials behind", async () => {
+	const heard: string[] = [];
+	const server = createServer((request, response) => {
+		const url = new URL(request.url!, "http://localhost");
+		const {authorization = "-", cookie = "-"} = request.headers;
+		heard.push(
+			`${url.pathname} ${authorization} ${cookie} ${request.headers["x-kept"]}`,
+		);
+		const to = url.searchParams.get("to");
+		if (to === null) {
+			response.end("done");
+			return;
+		}
+		response.writeHead(302, {location: to});
+		response.end();
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const {port} = server.address() as AddressInfo;
+	const here = `http://127.0.0.1:${port}`;
+	const there = `http://localhost:${port}`;
+	const dom = create({url: `${here}/`});
+	try {
+		// Within the origin, then to another, then back.
+		const chain = [`${here}/a`, `${here}/b`, `${there}/c`, `${here}/d`]
+			.reduceRight((to, url) => `${url}?to=${encodeURIComponent(to)}`);
+		const response = await dom.window.fetch(chain, {
+			headers: {
+				authorization: "Basic c2VjcmV0",
+				cookie: "session=1",
+				"x-kept": "yes",
+			},
+		});
+		expect(await response.text()).toBe("done");
+		expect(heard).toEqual([
+			"/a Basic c2VjcmV0 session=1 yes",
+			"/b Basic c2VjcmV0 session=1 yes",
+			"/c - - yes",
+			"/d - - yes",
+		]);
+	} finally {
+		dom.dispose();
+		server.closeAllConnections?.();
+		await new Promise((resolve) => server.close(resolve));
+	}
+});
+
 test("twenty redirects are followed, and a twenty-first fails", async () => {
 	const server = await serve();
 	const dom = create({csp: `img-src ${server.origin}`});

@@ -48,6 +48,33 @@ test("huge grid lines, spans and auto-fill counts are clamped", async () => {
 	}
 });
 
+test("a grid item across thousands of lines both ways is placed as one area", async () => {
+	for (const items of [
+		"<div style=\"grid-row:1/10000;grid-column:1/10000\">x</div><div>y</div>",
+		"<div style=\"grid-row:1/10000;grid-column:1/10000\">x</div>".repeat(3),
+		"<div style=\"grid-row:span 1000;grid-column:span 1000\">x</div>".repeat(
+			40,
+		),
+	]) {
+		for (const flow of ["row", "column", "row dense"]) {
+			await renderQuickly(
+				`<div style="display:grid;grid-auto-flow:${flow}">${items}</div>`,
+			);
+		}
+	}
+});
+
+test("a table cell across thousands of rows and columns is placed as one span", async () => {
+	await renderQuickly(
+		"<table><tr><td colspan=1000 rowspan=65534>x<td>y<tr><td>z</table>",
+	);
+	await renderQuickly(
+		`<table>${
+			"<tr><td rowspan=65534 colspan=1000>a<td>b<td rowspan=3>c".repeat(40)
+		}</table>`,
+	);
+});
+
 test("a huge textarea cols or rows is clamped", async () => {
 	await renderQuickly("<textarea cols=1000000000>x</textarea>");
 	await renderQuickly("<textarea rows=1000000000>x</textarea>");

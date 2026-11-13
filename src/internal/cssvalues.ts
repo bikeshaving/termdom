@@ -3248,6 +3248,9 @@ function serializeCalc(terms: CalcTerms): string {
 	return `calc(${px}px ${percent < 0 ? "-" : "+"} ${Math.abs(percent)}%)`;
 }
 
+// css-values-4 asks for at least 20 levels of nesting in a math function.
+const MAX_CALC_DEPTH = 100;
+
 // Null for anything this cannot reduce (a nested min()/max()/clamp(),
 // an unsubstituted var()), which leaves the value as written.
 function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
@@ -3259,6 +3262,11 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 	const tokens: readonly string[] = matched;
 	let position = 0;
 	const peek = (): string | undefined => tokens[position];
+	// How many parentheses and signs are open around the term being read.
+	// A value nested past the limit is left as written, like any other
+	// this cannot reduce, instead of taking a stack frame for each "(" a
+	// page sends until the stack runs out.
+	let depth = 0;
 
 	const scale = (terms: CalcTerms, by: number): CalcTerms => ({
 		px: terms.px * by,
@@ -3272,14 +3280,22 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 			return null;
 		}
 		if (token === "(") {
+			if (++depth > MAX_CALC_DEPTH) {
+				return null;
+			}
 			const inner = sum();
 			if (inner === null || tokens[position++] !== ")") {
 				return null;
 			}
+			depth--;
 			return inner;
 		}
 		if (token === "-" || token === "+") {
+			if (++depth > MAX_CALC_DEPTH) {
+				return null;
+			}
 			const inner = primary();
+			depth--;
 			return inner === null ? null : scale(inner, token === "-" ? -1 : 1);
 		}
 		const match = /^([+-]?(?:\d+\.?\d*|\.\d+))(%|[a-zA-Z]+)?$/.exec(token);
