@@ -33,6 +33,7 @@ import {
 	clearGrid,
 	Framebuffer,
 	resize,
+	settleBorders,
 } from "./framebuffer.ts";
 import {framePainted, Layout} from "./layout.ts";
 import {paint, Painter} from "./painter.ts";
@@ -116,6 +117,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 	});
 	const painter = new Painter(document, layout, cascade, framebuffer);
 	let grid = new CellGrid(0, 0);
+	let layers = new Uint32Array(0);
 	let caret: Caret | null = null;
 	return {
 		get caret() {
@@ -152,6 +154,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		if (cols !== grid.cols || rows !== grid.rows) {
 			resizeFrame(framebuffer, layout, cascade, window, cols, rows);
 			grid = new CellGrid(rows, cols);
+			layers = new Uint32Array(rows * cols);
 			stale = true;
 		}
 		runFrameCallbacks(document as unknown as globalThis.Document);
@@ -170,7 +173,11 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		revealTextControlCaret(page);
 		clearGrid(grid);
 		const context = new CellContext(grid, rows, cols, -framebuffer.scrollTop);
+		context.layers = layers;
 		paint(painter, context);
+		// The frame's borders join here, among themselves and by their
+		// layers, which do not leave with the grid.
+		settleBorders(grid, layers);
 		framePainted(layout);
 		painted++;
 		// The painter puts the caret in document rows. The grid's rows are

@@ -6,7 +6,10 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {canCreateRealms} from "../src/internal/realms.ts";
 import {MockProcess, nextFrame} from "./test-utils";
+
+const withRealms = canCreateRealms() ? test : test.skip;
 
 function makeSections(...rows: number[]): string {
 	return rows
@@ -223,4 +226,54 @@ test("a rule joins a border under it in its own layer", async () => {
 	expect(rows[1]).toBe("┬" + "─".repeat(29));
 	expect(rows[2].trimEnd()).toBe("│ a");
 	dom.dispose();
+});
+
+withRealms(
+	"a sticky rule inside a frame does not join a border scrolled under it",
+	async () => {
+		const terminal = new MockProcess({cols: 30, rows: 8});
+		const dom = new TermDOM({transport: terminal.transport});
+		const inner =
+			"<body style='margin:0'><div style='position:sticky;top:0;background-color:Canvas;border-bottom:1px solid'>Subject</div>" +
+			"<div>gap</div>" +
+			"<blockquote style='margin:0;border-left:1px solid;padding-left:1px'>a<br>b<br>c<br>d<br>e<br>f<br>g<br>h</blockquote>";
+		dom.document.body.innerHTML =
+		`<iframe srcdoc="${inner}" style="display:block;border:0;width:20ch;height:5px"></iframe>`;
+		await nextFrame(dom);
+		await nextFrame(dom);
+		dom.document.querySelector("iframe")!.contentWindow!.scrollTo(0, 3);
+		await nextFrame(dom);
+		await nextFrame(dom);
+		const rows = terminal
+			.getVisibleText()
+			.split("\n")
+			.map((row) => row.trimEnd());
+		expect(rows.slice(0, 4)).toEqual(["Subject", "─".repeat(20), "│ c", "│ d"]);
+		dom.dispose();
+	},
+);
+
+// Under tests a frame that repaints some rows is checked against one
+// painted whole, the layer that stroked each border with the rest.
+test("a box that becomes a layer repaints the borders inside it", async () => {
+	for (const change of [
+		(box: HTMLElement) => box.style.isolation = "isolate",
+		(box: HTMLElement) => box.style.contain = "paint",
+		(box: HTMLElement) => box.style.zIndex = "1",
+		(box: HTMLElement) => box.style.position = "sticky",
+		(box: HTMLElement) => box.style.position = "static",
+	]) {
+		const terminal = new MockProcess({cols: 30, rows: 12});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML =
+			"<div id=\"a\" style=\"position:relative\">A" +
+			"<div style=\"position:absolute;top:6px;left:0;width:10px;height:3px;border:1px solid\">box</div>" +
+			"</div><div>one</div><div>two</div>";
+		await nextFrame(dom);
+		change(dom.document.getElementById("a")!);
+		// The frame throws where it differs from one painted whole.
+		await nextFrame(dom);
+		expect(terminal.getVisibleText()).toContain("one");
+		dom.dispose();
+	}
 });
