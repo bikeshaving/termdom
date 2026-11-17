@@ -1066,6 +1066,35 @@ function renderStackingContext(
 	ctx: CellContext,
 	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
 ): void {
+	const outer = ctx.layer;
+	ctx.layer = getLayerNumber(root);
+	try {
+		renderContextLayers(painter, root, ctx, layers);
+	} finally {
+		ctx.layer = outer;
+	}
+}
+
+// A number for each stacking context, the same one every frame, which a
+// frame painted over the last one compares with the cells it kept.
+const layerNumbers = new WeakMap<Element, number>();
+let lastLayerNumber = 0;
+
+function getLayerNumber(root: Element): number {
+	let number = layerNumbers.get(root);
+	if (number === undefined) {
+		number = ++lastLayerNumber >>> 0;
+		layerNumbers.set(root, number);
+	}
+	return number;
+}
+
+function renderContextLayers(
+	painter: Painter,
+	root: Element,
+	ctx: CellContext,
+	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
+): void {
 	const bucket = layers.get(root);
 	if (!bucket) {
 		paintEntry(painter, root, ctx);
@@ -1079,6 +1108,7 @@ function renderStackingContext(
 			return;
 		}
 		const previousClip = ctx.clipRect;
+		const previousLayer = ctx.layer;
 		const previousOffset = ctx.viewportOffset;
 		const previousScrolled = painter.scrolledRows;
 		ctx.clipRect = getPositionedClip(
@@ -1098,9 +1128,16 @@ function renderStackingContext(
 			if (isStackingContext(element)) {
 				renderStackingContext(painter, element, ctx, layers);
 			} else {
+				// A sticky or fixed box stays where it is while others scroll
+				// under it, so it is a layer of its own with no z-index too.
+				const position = getComputedValue(element, "position");
+				if (position === "sticky" || position === "fixed") {
+					ctx.layer = getLayerNumber(element);
+				}
 				paintEntry(painter, element, ctx);
 			}
 		} finally {
+			ctx.layer = previousLayer;
 			ctx.clipRect = previousClip;
 			ctx.viewportOffset = previousOffset;
 			painter.scrolledRows = previousScrolled;

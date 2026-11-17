@@ -773,6 +773,9 @@ export class CellGrid {
 	readonly bg: Uint32Array;
 	readonly attrs: Uint16Array;
 	readonly border: Uint32Array;
+	// Which layer stroked each border cell: the stacking context it was
+	// painted in. Read only where the cell holds a border.
+	readonly layer: Uint32Array;
 
 	constructor(rows: number, cols: number) {
 		this.rows = rows;
@@ -783,6 +786,7 @@ export class CellGrid {
 		this.bg = new Uint32Array(size);
 		this.attrs = new Uint16Array(size);
 		this.border = new Uint32Array(size);
+		this.layer = new Uint32Array(size);
 	}
 
 	setCell(
@@ -863,6 +867,7 @@ function moveRange(
 	grid.bg.copyWithin(dest, srcStart, srcEnd);
 	grid.attrs.copyWithin(dest, srcStart, srcEnd);
 	grid.border.copyWithin(dest, srcStart, srcEnd);
+	grid.layer.copyWithin(dest, srcStart, srcEnd);
 }
 
 function copyGridFrom(
@@ -875,6 +880,7 @@ function copyGridFrom(
 	grid.bg.set(source.bg.subarray(start, end), to);
 	grid.attrs.set(source.attrs.subarray(start, end), to);
 	grid.border.set(source.border.subarray(start, end), to);
+	grid.layer.set(source.layer.subarray(start, end), to);
 }
 
 export function cloneGrid(grid: CellGrid): CellGrid {
@@ -927,6 +933,7 @@ function setFrom(
 	grid.bg[index] = source.bg[sourceIndex];
 	grid.attrs[index] = source.attrs[sourceIndex];
 	grid.border[index] = source.border[sourceIndex];
+	grid.layer[index] = source.layer[sourceIndex];
 }
 
 function widthAt(grid: CellGrid, index: number): number {
@@ -1073,7 +1080,7 @@ function joinTouchingBorders(
 }
 
 function joinRow(grid: CellGrid, painted: Uint32Array, row: number): void {
-	const {rows, cols, border} = grid;
+	const {rows, cols, border, layer} = grid;
 	for (let col = 0; col < cols; col++) {
 		const index = row * cols + col;
 		const own = painted[index];
@@ -1098,7 +1105,7 @@ function joinRow(grid: CellGrid, painted: Uint32Array, row: number): void {
 			}
 			const neighbour = neighbourRow * cols + neighbourCol;
 			const edge = getBorderEdge(painted[neighbour], from);
-			if (!getEdgePresence(edge)) {
+			if (!getEdgePresence(edge) || layer[neighbour] !== layer[index]) {
 				continue;
 			}
 			joined = meetEdges(joined, setBorderEdge(0, mask, edge));
@@ -1220,6 +1227,10 @@ export class CellContext {
 	// Where images go when the terminal draws them in pixels. Null for
 	// half blocks.
 	graphics: KittyImages | null;
+	// The layer being painted, which its borders are stroked in. Borders
+	// join only within a layer: one in a layer above passes over those
+	// beneath it, as a sticky header's rule passes over what scrolls under.
+	layer: number;
 
 	constructor(
 		grid: CellGrid,
@@ -1235,6 +1246,7 @@ export class CellContext {
 		this.bandBottom = rows;
 		this.partial = false;
 		this.graphics = null;
+		this.layer = 0;
 		this.grid = grid;
 		this.rows = rows;
 		this.cols = cols;
@@ -1745,15 +1757,19 @@ function setBorderCell(
 	const grid = context.grid;
 
 	// Two boxes sharing a cell union their edges, so a shared wall becomes a
-	// tee or a cross rather than the later box's corner.
+	// tee or a cross rather than the later box's corner. A box in another
+	// layer covers the cell instead.
 	const existing = grid.border[index];
 	grid.setBorderCell(
 		index,
-		grid.cluster[index] !== 0 && existing > 0
+		grid.cluster[index] !== 0 &&
+			existing > 0 &&
+			grid.layer[index] === context.layer
 			? meetEdges(existing, borderEncoding)
 			: borderEncoding,
 		style,
 	);
+	grid.layer[index] = context.layer;
 }
 
 // A style change's escape follows from the two cells' colors and
@@ -2830,6 +2846,7 @@ export function beginFrame(
 		next.bg.set(prev.bg);
 		next.attrs.set(prev.attrs);
 		next.border.set(prevBorders);
+		next.layer.set(prev.layer);
 		context.bands = [];
 		for (const [top, end] of bands) {
 			const from = Math.max(0, top);
