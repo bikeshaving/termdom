@@ -773,9 +773,6 @@ export class CellGrid {
 	readonly bg: Uint32Array;
 	readonly attrs: Uint16Array;
 	readonly border: Uint32Array;
-	// Which layer stroked each border cell: the stacking context it was
-	// painted in. Read only where the cell holds a border.
-	readonly layer: Uint32Array;
 
 	constructor(rows: number, cols: number) {
 		this.rows = rows;
@@ -786,7 +783,6 @@ export class CellGrid {
 		this.bg = new Uint32Array(size);
 		this.attrs = new Uint16Array(size);
 		this.border = new Uint32Array(size);
-		this.layer = new Uint32Array(size);
 	}
 
 	setCell(
@@ -867,7 +863,6 @@ function moveRange(
 	grid.bg.copyWithin(dest, srcStart, srcEnd);
 	grid.attrs.copyWithin(dest, srcStart, srcEnd);
 	grid.border.copyWithin(dest, srcStart, srcEnd);
-	grid.layer.copyWithin(dest, srcStart, srcEnd);
 }
 
 function copyGridFrom(
@@ -880,7 +875,6 @@ function copyGridFrom(
 	grid.bg.set(source.bg.subarray(start, end), to);
 	grid.attrs.set(source.attrs.subarray(start, end), to);
 	grid.border.set(source.border.subarray(start, end), to);
-	grid.layer.set(source.layer.subarray(start, end), to);
 }
 
 export function cloneGrid(grid: CellGrid): CellGrid {
@@ -933,7 +927,6 @@ function setFrom(
 	grid.bg[index] = source.bg[sourceIndex];
 	grid.attrs[index] = source.attrs[sourceIndex];
 	grid.border[index] = source.border[sourceIndex];
-	grid.layer[index] = source.layer[sourceIndex];
 }
 
 function widthAt(grid: CellGrid, index: number): number {
@@ -985,8 +978,11 @@ function meetEdges(existing: number, incoming: number): number {
  * A grid's lines joined where they touch and drawn as their glyphs, so
  * the grid copies into another without joining what is there.
  */
-export function settleBorders(grid: CellGrid): void {
-	joinTouchingBorders(grid);
+export function settleBorders(
+	grid: CellGrid,
+	layers: Uint32Array | null = null,
+): void {
+	joinTouchingBorders(grid, undefined, null, null, layers);
 	const {border, cluster} = grid;
 	for (let index = 0; index < border.length; index++) {
 		if (border[index] > 0) {
@@ -1055,6 +1051,7 @@ function joinTouchingBorders(
 	ranges: Array<[number, number]> = [[0, grid.rows]],
 	joinedBefore: Uint32Array | null = null,
 	spare: Uint32Array | null = null,
+	layers: Uint32Array | null = null,
 ): Uint32Array {
 	const {cols, border} = grid;
 	let painted: Uint32Array;
@@ -1073,14 +1070,19 @@ function joinTouchingBorders(
 	}
 	for (let index = 0; index < ranges.length; index++) {
 		for (let row = ranges[index][0]; row < ranges[index][1]; row++) {
-			joinRow(grid, painted, row);
+			joinRow(grid, painted, row, layers);
 		}
 	}
 	return painted;
 }
 
-function joinRow(grid: CellGrid, painted: Uint32Array, row: number): void {
-	const {rows, cols, border, layer} = grid;
+function joinRow(
+	grid: CellGrid,
+	painted: Uint32Array,
+	row: number,
+	layers: Uint32Array | null,
+): void {
+	const {rows, cols, border} = grid;
 	for (let col = 0; col < cols; col++) {
 		const index = row * cols + col;
 		const own = painted[index];
@@ -1105,7 +1107,10 @@ function joinRow(grid: CellGrid, painted: Uint32Array, row: number): void {
 			}
 			const neighbour = neighbourRow * cols + neighbourCol;
 			const edge = getBorderEdge(painted[neighbour], from);
-			if (!getEdgePresence(edge) || layer[neighbour] !== layer[index]) {
+			if (
+				!getEdgePresence(edge) ||
+				(layers !== null && layers[neighbour] !== layers[index])
+			) {
 				continue;
 			}
 			joined = meetEdges(joined, setBorderEdge(0, mask, edge));
@@ -1231,6 +1236,11 @@ export class CellContext {
 	// join only within a layer: one in a layer above passes over those
 	// beneath it, as a sticky header's rule passes over what scrolls under.
 	layer: number;
+	// Which layer stroked the border in each cell, written as borders are
+	// painted and read when they join. Null where every border is of one
+	// layer. It is the painter's record and not what the terminal shows,
+	// so it is no part of the grid.
+	layers: Uint32Array | null;
 
 	constructor(
 		grid: CellGrid,
@@ -1247,6 +1257,7 @@ export class CellContext {
 		this.partial = false;
 		this.graphics = null;
 		this.layer = 0;
+		this.layers = null;
 		this.grid = grid;
 		this.rows = rows;
 		this.cols = cols;
@@ -1761,16 +1772,19 @@ function setBorderCell(
 	// tee or a cross rather than the later box's corner. A box in another
 	// layer covers the cell instead.
 	const existing = grid.border[index];
+	const layers = context.layers;
 	grid.setBorderCell(
 		index,
 		grid.cluster[index] !== 0 &&
 			existing > 0 &&
-			grid.layer[index] === context.layer
+			(layers === null || layers[index] === context.layer)
 			? meetEdges(existing, borderEncoding)
 			: borderEncoding,
 		style,
 	);
-	grid.layer[index] = context.layer;
+	if (layers !== null) {
+		layers[index] = context.layer;
+	}
 }
 
 // A style change's escape follows from the two cells' colors and
@@ -2365,6 +2379,10 @@ export class Framebuffer {
 	// The previous frame's borders before they were joined, and where it
 	// was painted from, so a frame that repaints some rows starts from it.
 	prevBorders: Uint32Array | null;
+	// Which layer stroked each border of the frame last painted. There is
+	// one, written in place: no frame compares it with the one before, and
+	// a frame painted over the last keeps the rows it leaves alone.
+	layers: Uint32Array | null;
 	prevFrame: {
 		offset: number;
 		cursorRow: number | undefined;
@@ -2423,6 +2441,7 @@ export class Framebuffer {
 		this.exchange = null;
 		this.prev = null;
 		this.prevBorders = null;
+		this.layers = null;
 		this.prevFrame = null;
 		this.spare = null;
 		this.unchangedRows = null;
@@ -2839,6 +2858,14 @@ export function beginFrame(
 	context.graphics = framebuffer.colorDepth === "rgb"
 		? framebuffer.graphics
 		: null;
+	// A frame painted over the last one is the last one's size, so the
+	// layers it kept are still each cell's.
+	let layers = framebuffer.layers;
+	if (layers === null || layers.length !== frameRows * cols) {
+		layers = new Uint32Array(frameRows * cols);
+		framebuffer.layers = layers;
+	}
+	context.layers = layers;
 	if (partial) {
 		context.partial = true;
 		const prev = framebuffer.prev!;
@@ -2847,7 +2874,6 @@ export function beginFrame(
 		next.bg.set(prev.bg);
 		next.attrs.set(prev.attrs);
 		next.border.set(prevBorders);
-		next.layer.set(prev.layer);
 		context.bands = [];
 		for (const [top, end] of bands) {
 			const from = Math.max(0, top);
@@ -2880,6 +2906,7 @@ export function beginFrame(
 			changedRows,
 			partial ? framebuffer.prev!.border : null,
 			framebuffer.prevBorders,
+			layers,
 		);
 		let unchangedRows: Uint8Array | null = null;
 		if (changedRows !== undefined) {
@@ -3327,8 +3354,11 @@ function shiftPrevious(
 	}
 	// The joined borders shift with the cells, for a frame that paints
 	// only what the shift exposed.
-	const borders = framebuffer.prevBorders;
-	if (borders !== null && stop <= borders.length) {
+	// The layers that stroked them shift too.
+	for (const borders of [framebuffer.prevBorders, framebuffer.layers]) {
+		if (borders === null || stop > borders.length) {
+			continue;
+		}
 		if (shift >= stop - start) {
 			borders.fill(0, start, stop);
 		} else if (delta > 0) {
