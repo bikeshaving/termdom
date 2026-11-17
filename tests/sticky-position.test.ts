@@ -181,3 +181,46 @@ test("a sticky heading an inline-block lays out holds the scroller around it", a
 	);
 	dom.dispose();
 });
+
+// A header with a rule under it, over a quote with a bar down its side.
+function makeQuoted(header: string): string {
+	return "<div id=\"pane\" style=\"height:5px;overflow:auto\">" +
+		`<div style="${header};border-bottom:1px solid">Subject</div>` +
+		"<div>gap</div>" +
+		"<blockquote style=\"margin:0;border-left:1px solid;padding-left:1px\">" +
+		"a<br>b<br>c<br>d<br>e<br>f</blockquote><p>x<p>y<p>z</div>";
+}
+
+for (const [name, header] of [
+	["with a z-index", "position:sticky;top:0;z-index:1;background-color:Canvas"],
+	["with no z-index", "position:sticky;top:0;background-color:Canvas"],
+]) {
+	test(`a sticky header's rule does not join a border scrolled under it, ${name}`, async () => {
+		const terminal = new MockProcess({cols: 30, rows: 6});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.document.body.innerHTML = makeQuoted(header);
+		await nextFrame(dom);
+		const pane = dom.document.getElementById("pane")!;
+		// The bar's top end under the rule, then its middle, each a frame
+		// painted over the last.
+		for (const [scrollTop, first] of [[1, "│ a"], [3, "│ c"], [4, "│ d"]]) {
+			pane.scrollTop = scrollTop as number;
+			await nextFrame(dom);
+			const rows = terminal.getVisibleText().split("\n");
+			expect(rows[1]).toBe("─".repeat(30));
+			expect(rows[2].trimEnd()).toBe(first);
+		}
+		dom.dispose();
+	});
+}
+
+test("a rule joins a border under it in its own layer", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = makeQuoted("").replace("<div>gap</div>", "");
+	await nextFrame(dom);
+	const rows = terminal.getVisibleText().split("\n");
+	expect(rows[1]).toBe("┬" + "─".repeat(29));
+	expect(rows[2].trimEnd()).toBe("│ a");
+	dom.dispose();
+});
