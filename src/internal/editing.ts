@@ -387,8 +387,11 @@ function getUneditableIsland(
 	return island;
 }
 
-/** The first place inside an element a caret can sit. */
-/** The first place the caret can show: the first text with something in it. */
+/**
+ * The first place the caret can show: the first text with something in
+ * it, or whatever stands on a line before that. A <br> is a line of its
+ * own, so a blank first line takes the caret rather than the text below it.
+ */
 function getFirstCaretPoint(element: globalThis.Element): EditingPoint {
 	let fallback: EditingPoint | null = null;
 	let node: globalThis.Node | null = element.firstChild;
@@ -400,7 +403,7 @@ function getFirstCaretPoint(element: globalThis.Element): EditingPoint {
 			}
 			fallback ??= {node, offset: 0};
 		} else if (isAtomic(node)) {
-			fallback ??= {node: node.parentNode!, offset: getChildIndex(node)};
+			return {node: node.parentNode!, offset: getChildIndex(node)};
 		} else if (getNodeType(node) === ELEMENT_NODE && node.firstChild === null) {
 			fallback ??= {node, offset: 0};
 		}

@@ -926,6 +926,25 @@ test("a caret between inline boxes stands at the edge of the box, whatever its p
 	fixture.dom.dispose();
 });
 
+test("focusing a host that starts with blank lines parks the caret on the first", async () => {
+	const fixture = await withHost(
+		"<input><div contenteditable>" +
+		"<div><br></div><div><br></div><div>On x wrote:</div></div>",
+	);
+	const {document, host} = fixture;
+	document.querySelector("input").focus();
+	host.focus();
+	await nextFrame(fixture.dom);
+	const point = caret(document);
+	expect(point.node).toBe(host.firstChild);
+	expect(point.offset).toBe(0);
+	expect(fixture.cursor()).toEqual({x: 0, y: 1});
+	await fixture.type("a");
+	expect(host.firstChild.textContent).toBe("a");
+	expect(host.lastChild.textContent).toBe("On x wrote:");
+	fixture.dom.dispose();
+});
+
 test("a caret after an inline box with a margin stands past the margin", async () => {
 	const fixture = await withHost(
 		"<div style=\"display: flex\"><div contenteditable>" +
