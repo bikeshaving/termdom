@@ -131,3 +131,42 @@ test("a focused inline broken across lines is outlined along each of its fragmen
 	expect(!!cellAt(1, 11).isUnderline()).toBe(false);
 	dom.dispose();
 });
+
+test("an outline passing over another box's border leaves the border", async () => {
+	const terminal = new MockProcess({cols: 12, rows: 5});
+	const dom = new TermDOM({transport: terminal.transport});
+	// A see-through layer over a panel, as a modal's host is over the
+	// page: its ring runs along the panel's top and bottom borders.
+	dom.document.body.innerHTML =
+		"<div style=\"position: relative; width: 10ch; height: 3px\">" +
+		"<div style=\"width: 6ch; height: 3px; box-sizing: border-box;" +
+		" border: 1px solid #00ff00\">x</div>" +
+		"<div id=\"layer\" tabindex=\"0\" style=\"position: absolute; top: 0;" +
+		" left: 0; width: 100%; height: 100%; outline: 1px solid #ff0000\">" +
+		"</div></div>";
+	await nextFrame(dom);
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	const rowText = (row: number): string =>
+		(terminal as any)
+			.terminal.buffer.active.getLine(row)
+			.translateToString(true)
+			.trimEnd();
+
+	expect(rowText(0)).toBe("┌────┐");
+	expect(rowText(1)).toBe("│x   │");
+	expect(rowText(2)).toBe("└────┘");
+	for (const col of [0, 3, 5]) {
+		expect(cellAt(0, col).isOverline()).toBeFalsy();
+		expect(cellAt(0, col).getFgColor()).toBe(0x00ff00);
+		expect(cellAt(2, col).isUnderline()).toBeFalsy();
+	}
+	// Past the panel there is no border to keep, and the ring shows.
+	for (const col of [6, 9]) {
+		expect(cellAt(0, col).isOverline()).toBeTruthy();
+		expect(cellAt(2, col).isUnderline()).toBeTruthy();
+		expect(cellAt(2, col).getFgColor()).toBe(0xff0000);
+	}
+	expect(cellAt(0, 10).isOverline()).toBeFalsy();
+	dom.dispose();
+});
