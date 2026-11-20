@@ -181,11 +181,7 @@ function loadNodePTY(): NodePTY | null {
 		return null;
 	}
 	const nodeModule = process.getBuiltinModule("node:module") as NodeModule;
-	// node-pty is a native addon, so resolve it from this file's own
-	// location and never from the working directory, which whoever runs
-	// the program controls. An ES module has import.meta.url. A CommonJS
-	// build has __filename, which in a single executable is the
-	// executable's path.
+	// Resolved from this file, never from the working directory.
 	const from = typeof import.meta.url === "string"
 		? import.meta.url
 		: typeof __filename === "string" ? __filename : null;
