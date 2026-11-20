@@ -171,7 +171,6 @@ interface NodeModule {
 	createRequire(from: string): (id: string) => unknown;
 }
 
-// A CommonJS module's own path. An ES module has none.
 declare const __filename: string | undefined;
 
 function loadNodePTY(): NodePTY | null {
