@@ -121,7 +121,7 @@ function getBackgroundFill(
 function getGradient(element: Element): Gradient | null {
 	const image = getComputedValue(element, "background-image");
 	const gradient = image.includes("gradient(")
-		? loadGradients().parseLinearGradient(image)
+		? loadGradients().parseGradient(image)
 		: null;
 	return gradient &&
 		loadGradients().resolveGradientLengths(gradient, (length, unit, vertical) =>
@@ -1622,7 +1622,7 @@ function paintBox(
 			);
 		}
 	}
-	// Over the flat fill, which a transparent stop composites onto.
+	// Over the flat fill, which a stop that is not opaque blends with.
 	if (style.gradient !== null) {
 		const cell = painter.framebuffer.cellPixels;
 		for (const fragment of fragments) {
@@ -1630,7 +1630,6 @@ function paintBox(
 				ctx,
 				style.gradient,
 				fragment,
-				style.bg ?? null,
 				cell.height / cell.width,
 				getCellSize(painter.document),
 			);
