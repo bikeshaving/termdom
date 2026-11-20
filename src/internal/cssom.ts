@@ -5316,6 +5316,7 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 			return CSSValues.resolveSystemColor(
 				computed,
 				getColorScheme(slots.element.ownerDocument),
+				getTerminalBackground(slots.element.ownerDocument),
 			) ?? computed;
 		}
 		return computed;
@@ -6291,6 +6292,7 @@ function resolveCascadedValue(
 			CSSValues.resolveSystemColor(
 				current || "canvastext",
 				getColorScheme(_(declaration).element.ownerDocument),
+				getTerminalBackground(_(declaration).element.ownerDocument),
 			) ?? current;
 		return value.replace(CURRENT_COLOR, mixed);
 	}
@@ -11858,6 +11860,13 @@ function getColorScheme(
 	document: globalThis.Document | null,
 ): "light" | "dark" {
 	return getDocumentExchange(document)?.colorScheme ?? "light";
+}
+
+/** The terminal's background as it reported it, or null if it has not. */
+function getTerminalBackground(
+	document: globalThis.Document | null,
+): number | null {
+	return getDocumentExchange(document)?.terminalBackground ?? null;
 }
 
 // What a range feature measures on this terminal. Its px are cells.
