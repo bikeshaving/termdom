@@ -32,17 +32,23 @@ System colors:
 
 | Color | Meaning |
 | --- | --- |
-| `Canvas` | The terminal's background. A dialog or popover uses it to cover what's behind it. |
+| `Canvas` | The terminal's background. A dialog or popover uses it to cover what's behind it. `getComputedStyle()` reads it as the color the terminal reported, and as white or black by the color scheme until it has. |
 | `CanvasText` | The terminal's foreground. |
 | `Highlight`, `HighlightText` | Inverse video, used by `::selection`. |
 | `SelectedItem`, `SelectedItemText` | Inverse video. |
 | `LinkText` | Blue, the color of `<a href>`. |
 | `GrayText` | Gray. |
 
-`linear-gradient()` paints each cell with the color at its center.
-Stop positions take any length; `ch` counts along the gradient, so
-`3ch` down a column is three rows. `radial-gradient()`, `url()`,
-`opacity`, `filter`, `box-shadow`, and `mix-blend-mode` do nothing.
+`linear-gradient()` and `radial-gradient()`, and their `repeating-`
+forms, paint each cell with the color at its center. Stop positions
+take any length; `ch` counts along the gradient, so `3ch` down a column
+is three rows. A circle is round on the screen, whatever shape the
+terminal's cells are. A stop that is not opaque blends with what is
+under it, which is the terminal's background where the page painted
+nothing and the terminal has reported one. A terminal that has not gets
+the gradient's color where that is more opaque than not and its own
+background elsewhere. `conic-gradient()`, `url()`, `opacity`, `filter`,
+`box-shadow`, and `mix-blend-mode` do nothing.
 
 ### Color depth
 
