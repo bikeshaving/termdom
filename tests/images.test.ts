@@ -160,13 +160,13 @@ test("the format is sniffed from the bytes, not named", () => {
 	expect(sniffImageType(getImageBytes("jpeg-444.jpg"))).toBe("image/jpeg");
 	expect(sniffImageType(getImageBytes("gif.gif"))).toBe("image/gif");
 	expect(sniffImageType(getImageBytes("bmp-24.bmp"))).toBe("image/bmp");
-	expect(sniffImageType(new TextEncoder().encode("<svg></svg>"))).toBeNull();
+	expect(sniffImageType(new TextEncoder().encode("<html></html>"))).toBeNull();
 });
 
 test("an unknown format or damaged data rejects", async () => {
 	let error: unknown = null;
 	try {
-		await decodeImage(new TextEncoder().encode("<svg></svg>"));
+		await decodeImage(new TextEncoder().encode("<html></html>"));
 	} catch (caught) {
 		error = caught;
 	}

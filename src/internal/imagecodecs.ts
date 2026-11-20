@@ -1,7 +1,7 @@
 /**
  * Image codecs: PNG, JPEG, GIF and BMP decoding, PNG encoding and the
  * deflate and base64 they use. Loaded the first time an image decodes or
- * a page encodes one.
+ * a page encodes one. An SVG file is known here and drawn in svg.ts.
  */
 
 import {
@@ -10,6 +10,7 @@ import {
 	createBitmap,
 	createYielder,
 } from "./images.ts";
+import {loadSVG} from "./lazy.ts";
 
 /** The decoder for what the bytes start with, or null for none known. */
 export function sniffImageType(bytes: Uint8Array): string | null {
@@ -36,7 +37,26 @@ export function sniffImageType(bytes: Uint8Array): string | null {
 	if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) {
 		return "image/bmp";
 	}
-	return null;
+	return looksLikeSVG(bytes) ? "image/svg+xml" : null;
+}
+
+// What may stand before the root element of an SVG file: a byte order
+// mark, an XML declaration, comments and a doctype.
+const SVG_START =
+	/^(?:\xef\xbb\xbf)?\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!DOCTYPE[^>[]*(?:\[[\s\S]*?\])?[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>]/i;
+
+// An SVG file has no signature, so it is known by its root element, which
+// has to open within the first bytes.
+function looksLikeSVG(bytes: Uint8Array): boolean {
+	// Every other file starts with something that is not markup.
+	if (bytes[0] !== 0x3c && bytes[0] !== 0xef && !(bytes[0] <= 0x20)) {
+		return false;
+	}
+	let start = "";
+	for (let i = 0; i < Math.min(bytes.length, 4096); i++) {
+		start += String.fromCharCode(bytes[i]);
+	}
+	return SVG_START.test(start);
 }
 
 /**
@@ -57,8 +77,12 @@ export async function decodeImage(
 			return decodeGIF(bytes);
 		case "image/bmp":
 			return decodeBMP(bytes);
+		// An SVG file is drawn, not decoded, with the canvas's rasterizer,
+		// which is loaded only for one.
+		case "image/svg+xml":
+			return await loadSVG().rasterizeSVG(bytes, deadline);
 		default:
-			throw new Error("Not a PNG, JPEG, GIF or BMP image");
+			throw new Error("Not a PNG, JPEG, GIF, BMP or SVG image");
 	}
 }
 

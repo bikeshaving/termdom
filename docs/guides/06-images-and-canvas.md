@@ -159,9 +159,18 @@ markup.
 | JPEG | Baseline and progressive, any chroma subsampling, restart markers, grayscale, CMYK, YCCK. Rotated by Exif orientation |
 | GIF | The first frame, with transparency |
 | BMP | 1, 4, 8, 16, 24, and 32 bits, RLE4 and RLE8 |
+| SVG | Shapes and paths, groups, `<use>`, transforms, `viewBox`, fills and strokes, linear and radial gradients, `clip-path`, and `<style>` sheets of type, class, and id selectors |
 
-WebP, AVIF, SVG, and arithmetic-coded or lossless JPEG are not
-supported.
+WebP, AVIF, and arithmetic-coded or lossless JPEG are not supported.
+
+An SVG file is drawn the way a browser draws one in an `<img>`: on its
+own, with nothing from the page. `currentColor` is black, scripts don't
+run, and nothing outside the file is loaded. Text, embedded images,
+patterns, filters, masks, and animation draw nothing. Its natural size
+is its `width` and `height`, or its `viewBox`, and it is drawn with
+more pixels than that so it stays sharp when shown larger. A file over
+4 MB, or one that draws more than 131,072 shapes, fails to load. An
+inline `<svg>` element in the page is not drawn.
 
 `load`, `error`, `decode()`, `complete`, `naturalWidth`,
 `naturalHeight`, `currentSrc`, and `new Image()` work. Only the `1x`

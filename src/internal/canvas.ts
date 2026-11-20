@@ -891,8 +891,39 @@ export class Path2D {
 
 declareSealedRoot(Path2D);
 
-// SVG path data (SVG 2 §9.3), the string Path2D's constructor takes.
-function parseSVGPath(data: string, path: Path2D): void {
+/**
+ * The box around a path's points, in the units it was written in. Null
+ * for a path with no points. A curve is measured by the lines it was cut
+ * into.
+ */
+export function getPathBounds(
+	path: Path2D,
+): {x: number; y: number; width: number; height: number} | null {
+	let left = Infinity;
+	let top = Infinity;
+	let right = -Infinity;
+	let bottom = -Infinity;
+	for (const {points} of _(path).builder.subpaths) {
+		for (let i = 0; i + 1 < points.length; i += 2) {
+			left = Math.min(left, points[i]);
+			right = Math.max(right, points[i]);
+			top = Math.min(top, points[i + 1]);
+			bottom = Math.max(bottom, points[i + 1]);
+		}
+	}
+	return left > right
+		? null
+		: {x: left, y: top, width: right - left, height: bottom - top};
+}
+
+/**
+ * SVG path data (SVG 2 §9.3), the string Path2D's constructor takes. On a
+ * context the segments go into its current path, under its transform.
+ */
+export function parseSVGPath(
+	data: string,
+	path: Path2D | CanvasRenderingContext2D,
+): void {
 	const tokens =
 		data.match(/[a-zA-Z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/gi) ?? [];
 	let i = 0;
@@ -1005,7 +1036,7 @@ function parseSVGPath(data: string, path: Path2D): void {
 
 // SVG's endpoint arc, converted to a center arc (SVG 2 Appendix B.2.4).
 function svgArc(
-	path: Path2D,
+	path: Path2D | CanvasRenderingContext2D,
 	x1: number,
 	y1: number,
 	rx: number,
@@ -1067,6 +1098,17 @@ const SUBSAMPLES = 4;
 
 type FillRule = "nonzero" | "evenodd";
 
+// The pixels a mask can cover: the box of the polygons it was made from.
+// Painting a small shape on a large bitmap looks no further than this.
+interface MaskBounds {
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+}
+
+const maskBounds = new WeakMap<Float32Array, MaskBounds>();
+
 function rasterize(
 	polygons: number[][],
 	width: number,
@@ -1082,6 +1124,8 @@ function rasterize(
 		dir: number;
 	}
 	const edges: Edge[] = [];
+	let minX = Infinity;
+	let maxX = -Infinity;
 	let minY = Infinity;
 	let maxY = -Infinity;
 	for (const points of polygons) {
@@ -1103,15 +1147,26 @@ function rasterize(
 					? {x0: ax, y0: ay, x1: bx, y1: by, dir: 1}
 					: {x0: bx, y0: by, x1: ax, y1: ay, dir: -1},
 			);
+			minX = Math.min(minX, ax, bx);
+			maxX = Math.max(maxX, ax, bx);
 			minY = Math.min(minY, ay, by);
 			maxY = Math.max(maxY, ay, by);
 		}
 	}
 	if (edges.length === 0) {
+		maskBounds.set(mask, {left: 0, top: 0, right: 0, bottom: 0});
 		return mask;
 	}
 	const rowStart = Math.max(0, Math.floor(minY));
 	const rowEnd = Math.min(height, Math.ceil(maxY));
+	const colStart = Math.min(width, Math.max(0, Math.floor(minX)));
+	const colEnd = Math.max(colStart, Math.min(width, Math.ceil(maxX) + 1));
+	maskBounds.set(mask, {
+		left: colStart,
+		top: rowStart,
+		right: colEnd,
+		bottom: Math.max(rowStart, rowEnd),
+	});
 	const crossings: Array<{x: number; dir: number}> = [];
 	for (let row = rowStart; row < rowEnd; row++) {
 		for (let s = 0; s < SUBSAMPLES; s++) {
@@ -1144,8 +1199,10 @@ function rasterize(
 			}
 		}
 	}
-	for (let i = 0; i < mask.length; i++) {
-		mask[i] = Math.min(1, mask[i] / SUBSAMPLES);
+	for (let row = rowStart; row < rowEnd; row++) {
+		for (let i = row * width + colStart; i < row * width + colEnd; i++) {
+			mask[i] = Math.min(1, mask[i] / SUBSAMPLES);
+		}
 	}
 	return mask;
 }
@@ -1476,6 +1533,25 @@ export class CanvasGradient {
 		}
 		slots.stops.splice(index, 0, {offset, color: parsed});
 	}
+}
+
+/**
+ * Lay the gradient out in a space of its own, `matrix` away from the one
+ * it is painted in, as an SVG gradientTransform does. False for a matrix
+ * that flattens the space to nothing, which leaves the gradient as it was.
+ */
+export function transformGradient(
+	gradient: CanvasGradient,
+	matrix: Matrix,
+): boolean {
+	const inverse = invert(matrix);
+	if (inverse === null) {
+		return false;
+	}
+	const slots = _(gradient);
+	const position = slots.position;
+	slots.position = (x, y) => position(...apply(inverse, x, y));
+	return true;
 }
 
 /** The color at a user-space point, or null where the gradient has none. */
@@ -2925,8 +3001,13 @@ function paintMask(
 	const inverse = typeof paint === "string"
 		? null
 		: invert(slots.state.transform);
-	for (let y = 0; y < height; y++) {
-		for (let x = 0; x < width; x++) {
+	// An operation that clears what the source does not cover reaches the
+	// whole bitmap. Any other reaches only where the mask can.
+	const bounds = unbounded ? undefined : maskBounds.get(mask);
+	const {left, top, right, bottom} =
+		bounds ?? {left: 0, top: 0, right: width, bottom: height};
+	for (let y = top; y < bottom; y++) {
+		for (let x = left; x < right; x++) {
 			const i = y * width + x;
 			const clipCover = clip === null ? 1 : clip[i];
 			if (clipCover <= 0) {

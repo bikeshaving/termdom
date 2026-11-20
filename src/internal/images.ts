@@ -413,7 +413,7 @@ function checkImageBytes(length: number): void {
  * server that picks a format by it picks one of these.
  */
 export const IMAGE_ACCEPT =
-	"image/png,image/jpeg,image/gif,image/bmp;q=0.9,*/*;q=0.5";
+	"image/png,image/svg+xml,image/jpeg,image/gif,image/bmp;q=0.9,*/*;q=0.5";
 
 /**
  * A response's bytes, up to MAX_IMAGE_BYTES: by its declared length when

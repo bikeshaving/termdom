@@ -66,7 +66,7 @@ setInterval(() => {
   text fields.
 - **Fullscreen**: `requestFullscreen()` uses the alternate screen and
   restores the shell on exit.
-- **Images and canvas**: PNG, JPEG, GIF, and BMP, and 2D and cell-grid
+- **Images and canvas**: PNG, JPEG, GIF, BMP, and SVG, and 2D and cell-grid
   canvases, drawn two pixels per cell. A `csp` option and `"fetch"`
   listener control what loads.
 
