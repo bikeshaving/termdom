@@ -154,3 +154,5 @@ is a full program.
 - [Images and canvas](/guides/images-and-canvas/): `<img>` and
   `<canvas>`.
 - [API](/guides/api/): everything else.
+- [Binaries](/guides/binaries/): shipping a program as one executable,
+  with Bun or Node.
