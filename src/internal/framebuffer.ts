@@ -1485,6 +1485,13 @@ export function drawDecoration(
 		if (index < 0) {
 			continue;
 		}
+		// A border already in the cell is another box's, since a box with a
+		// border of its own is ringed along that border instead. It stays:
+		// an edge that took its place would rub out a box the outline only
+		// passes over.
+		if (grid.border[index] !== 0) {
+			continue;
+		}
 		if (grid.cluster[index] !== 0) {
 			let attrs = grid.attrs[index] | edgeBit;
 			if (style.dim !== undefined) {
@@ -1498,9 +1505,6 @@ export function drawDecoration(
 			grid.attrs[index] =
 				edgeBit | (style.dim ? ATTR.Dim : 0) | (1 << ATTR.WidthShift);
 		}
-		// The edge replaces a box-drawing glyph with the space that cell
-		// measures as. An outline is a line of its own, not a junction.
-		grid.border[index] = 0;
 	}
 }
 
