@@ -33,7 +33,7 @@ import {
 	setElementStates,
 } from "./cssselectors.ts";
 import * as CSSValues from "./cssvalues.ts";
-import type {Exchange} from "./exchange.ts";
+import type {Exchange, WireKey} from "./exchange.ts";
 import {defineFlags} from "./flags.ts";
 import {
 	type Caret,
@@ -57,6 +57,7 @@ import {
 	decodeImageOffThread,
 	getNaturalHeight,
 	getNaturalWidth,
+	type GridImage,
 	IMAGE_ACCEPT,
 	loadImageCodecs,
 	MAX_IMAGE_PIXELS,
@@ -65,6 +66,7 @@ import {
 	resolveImageURL,
 	unregisterReplacedContent,
 } from "./images.ts";
+import type {FrameIsolator} from "./isolateprotocol.ts";
 import type {Layout} from "./layout.ts";
 import {PTYSession, type PTYSpawner} from "./pty.ts";
 import {rehomeClone} from "./realms.ts";
@@ -15975,7 +15977,7 @@ function getURLAttribute(element: Element, attribute: string): string {
 // document's URL. Falls back to the document's URL when there is no such
 // element or its href does not parse.
 function getDocumentBaseURL(document: Document): string {
-	const fallback = _(document).extra.documentURL;
+	const fallback = getFallbackBaseURL(document);
 	for (const node of descendants(document)) {
 		if (getNodeType(node) !== ELEMENT_NODE) {
 			continue;
@@ -15994,6 +15996,17 @@ function getDocumentBaseURL(document: Document): string {
 		return parseURL(href, fallback)?.href ?? fallback;
 	}
 	return fallback;
+}
+
+// HTML's fallback base URL: a frame's srcdoc or about:blank document
+// resolves against the base URL of the document its iframe is in.
+function getFallbackBaseURL(document: Document): string {
+	const url = _(document).extra.documentURL;
+	const window = _(document).extra.defaultView as Window | null;
+	const frame = window === null ? null : _(window).frameOwner;
+	return frame !== null && (url === "about:srcdoc" || url === "about:blank")
+		? getDocumentBaseURL(_(frame).document)
+		: url;
 }
 
 function parseInteger(value: string): number | null {
@@ -17611,10 +17624,31 @@ class HTMLEmbedElement extends HTMLElement {
 
 declareExtraSlots(HTMLEmbedElement);
 
-/** The program an embed runs, or null for an element that runs none. */
+/**
+ * What takes the input that reaches a box as a terminal's program would:
+ * an embed's program, or a frame drawn from another isolate.
+ */
+export interface ProgramInput {
+	readonly cols: number;
+	readonly rows: number;
+	sendKey(key: WireKey): boolean;
+	paste(text: string): void;
+	sendMouse(code: number, col: number, row: number, release: boolean): boolean;
+	scrollBy(lines: number): boolean;
+	sendFocus(focused: boolean): void;
+}
+
+/**
+ * The program an embed runs, or the isolated frame an iframe shows, or
+ * null for an element that has neither.
+ */
 export function getRunningProgram(
 	element: globalThis.Element | Element | null,
-): PTYSession | null {
+): ProgramInput | null {
+	if (implementsInterface(element, HTMLIFrameElement)) {
+		const window = _(element).extra.contentWindow;
+		return implementsInterface(window, Window) ? _(window).isolatedFrame : null;
+	}
 	if (element === null || !implementsInterface(element, HTMLEmbedElement)) {
 		return null;
 	}
@@ -19239,15 +19273,16 @@ interface FrameWindowLike {
 }
 
 // A frame's document and the window that shows it, built in a realm of
-// their own, or null where the runtime cannot make a realm. window.ts
-// gives the factory, since a window is built above the DOM.
+// their own where the runtime can make one, and in the engine's realm
+// where it cannot. window.ts gives the factory, since a window is built
+// above the DOM.
 type FrameWindowFactory = (
 	source: string,
 	url: string,
 	registry: CustomElementRegistry,
 	parent: Window | null,
 	frame: HTMLIFrameElement,
-) => {document: Document; window: Window} | null;
+) => {document: Document; window: Window};
 
 let frameWindowFactory: FrameWindowFactory | null = null;
 
@@ -19279,6 +19314,31 @@ type FrameEngineFactory = (
 
 let frameEngineFactory: FrameEngineFactory | null = null;
 
+/** A frame drawn from another isolate, as the iframe that shows it holds it. */
+export interface IsolatedFrameView extends BoxRenderer, ProgramInput {
+	// A message for the frame's window, from a window of `origin`.
+	postMessage(data: unknown, origin: string, targetOrigin: string): void;
+	// The images the cells the last fit returned show.
+	images(): GridImage[];
+}
+
+// Builds a frame whose document at `url` is in another isolate, standing
+// in `window` for it, given the attached document the iframe is in.
+type IsolatedFrameFactory = (
+	frame: HTMLIFrameElement,
+	window: Window,
+	url: string,
+	parent: Document,
+	isolate: FrameIsolator,
+	changed: () => void,
+) => IsolatedFrameView;
+
+let isolatedFrameFactory: IsolatedFrameFactory | null = null;
+
+export function setIsolatedFrameFactory(factory: IsolatedFrameFactory): void {
+	isolatedFrameFactory = factory;
+}
+
 export function setFrameEngineFactory(factory: FrameEngineFactory): void {
 	frameEngineFactory = factory;
 }
@@ -19294,6 +19354,438 @@ function getTopWindow(window: Window): Window {
 		current = parent;
 	}
 	return current;
+}
+
+// Whether `window` is `ancestor`, or a frame somewhere inside it.
+function isWindowWithin(window: Window, ancestor: Window): boolean {
+	for (
+		let current: Window | null = window;
+		current !== null;
+		current = _(current).parentWindow
+	) {
+		if (current === ancestor) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * An origin, as HTML has it: a tuple origin by its serialization, or an
+ * opaque origin, which is an object compared by identity.
+ */
+type Origin = string | object;
+
+// The origin of `url`, with `opaque` standing for one that is opaque.
+function getURLOrigin(url: string, opaque: object): Origin {
+	const origin = parseURL(url)?.origin ?? "null";
+	return origin === "null" ? opaque : origin;
+}
+
+// A sandbox without allow-same-origin gives a window an opaque origin of
+// its own. A frame showing srcdoc or about:blank has the origin of the
+// document its iframe is in, which created it. Otherwise the URL says.
+function getWindowOrigin(window: Window): Origin {
+	const slots = _(window);
+	if (slots.sandboxOrigin !== null) {
+		return slots.sandboxOrigin;
+	}
+	const url = _(window.document).extra.documentURL;
+	const frame = slots.frameOwner;
+	if (frame !== null && (url === "about:srcdoc" || url === "about:blank")) {
+		return getDocumentOrigin(_(frame).document);
+	}
+	return getURLOrigin(url, window);
+}
+
+function getDocumentOrigin(document: Document): Origin {
+	const window = _(document).extra.defaultView as Window | null;
+	return window !== null
+		? getWindowOrigin(window)
+		: getURLOrigin(_(document).extra.documentURL, document);
+}
+
+function serializeOrigin(origin: Origin): string {
+	return typeof origin === "string" ? origin : "null";
+}
+
+/**
+ * HTML's iframe sandboxing flag set, as the allow- tokens that lift its
+ * flags: those of the iframe's sandbox attribute that the window it is in
+ * has too. Null where no sandbox applies.
+ */
+function getFrameSandbox(
+	frame: HTMLIFrameElement,
+	parent: Window | null,
+): ReadonlySet<string> | null {
+	const attribute = getAttributeValue(frame, "sandbox");
+	const above = parent === null ? null : _(parent).sandbox;
+	if (attribute === null) {
+		return above;
+	}
+	const tokens = splitOnASCIIWhitespace(toASCIILowercase(attribute));
+	return new Set(
+		above === null ? tokens : tokens.filter((token) => above.has(token)),
+	);
+}
+
+/**
+ * HTML's "allowed by sandboxing to navigate": a sandboxed window
+ * navigates itself and the frames inside it, and its top window where
+ * allow-top-navigation lets it, or allow-top-navigation-by-user-activation
+ * and the user's action.
+ */
+function isAllowedToNavigate(source: Window, target: Window): boolean {
+	const sandbox = _(source).sandbox;
+	if (sandbox === null || isWindowWithin(target, source)) {
+		return true;
+	}
+	if (target !== getTopWindow(source)) {
+		return false;
+	}
+	return sandbox.has("allow-top-navigation") ||
+		(sandbox.has("allow-top-navigation-by-user-activation") &&
+			hasTransientActivation(source.document));
+}
+
+/**
+ * The window whose code calls a member of `window`, HTML's incumbent,
+ * where a realm tells: the frame whose realm runs, or null for the
+ * engine's own.
+ */
+function getIncumbentWindow(window: Window): Window | null {
+	const realm = _(window).realm !== null
+		? getCallerRealm()
+		: getIncumbentRealm();
+	return realm === null ? null : realm.global as unknown as Window;
+}
+
+// What code of another origin reaches on a window, HTML's
+// CrossOriginProperties, and what it reads as undefined.
+const CROSS_ORIGIN_WINDOW_KEYS = [
+	"window",
+	"self",
+	"location",
+	"close",
+	"closed",
+	"focus",
+	"blur",
+	"frames",
+	"length",
+	"top",
+	"opener",
+	"parent",
+	"postMessage",
+];
+
+const CROSS_ORIGIN_FALLBACK_KEYS: ReadonlyArray<string | symbol> = [
+	"then",
+	Symbol.toStringTag,
+	Symbol.hasInstance,
+	Symbol.isConcatSpreadable,
+];
+
+/**
+ * A window or its location as code of another origin's window, the
+ * viewer, holds it: HTML's cross-origin WindowProxy and Location. The
+ * record is the proxy's target, which the traps read and never expose.
+ */
+interface CrossOriginWindowRecord {
+	kind: "window";
+	viewer: Window;
+	target: Window;
+	proxy: Window | null;
+	location: CrossOriginLocationRecord;
+	postMessage: (...args: unknown[]) => void;
+	close: () => void;
+	focus: () => void;
+	blur: () => void;
+}
+
+interface CrossOriginLocationRecord {
+	kind: "location";
+	viewer: Window;
+	target: Window;
+	proxy: object | null;
+	replace: (...args: unknown[]) => void;
+	setHref: (...args: unknown[]) => void;
+}
+
+type CrossOriginRecord = CrossOriginWindowRecord | CrossOriginLocationRecord;
+
+function crossOriginError(
+	record: CrossOriginRecord,
+	key: string | symbol,
+): Error {
+	return domError(
+		"SecurityError",
+		`Blocked a frame with origin "${
+			serializeOrigin(getWindowOrigin(record.viewer))
+		}" from accessing '${String(key)}' on a cross-origin ${
+			record.kind === "window" ? "window" : "location"
+		}.`,
+	);
+}
+
+// The window of the frame at index `key` of `window`'s frames, or of the
+// first one `key` names whose origin is the window's.
+function getChildFrameWindow(window: Window, key: string): Window | null {
+	const frames = getDocumentFrames(window.document);
+	const frame = isArrayIndex(key)
+		? frames[Number(key)]
+		: frames.find((each) => getAttributeValue(each, "name") === key);
+	if (frame === undefined) {
+		return null;
+	}
+	ensureFrameDocument(frame);
+	const content = _(frame).extra.contentWindow;
+	return implementsInterface(content, Window) &&
+		(isArrayIndex(key) || getWindowOrigin(content) === getWindowOrigin(window))
+		? content
+		: null;
+}
+
+function describeData(value: unknown, enumerable = false): PropertyDescriptor {
+	return {value, writable: false, enumerable, configurable: true};
+}
+
+// HTML's CrossOriginGetOwnPropertyHelper, with the fallback: what code of
+// the viewer's origin may find under `key`, or a SecurityError.
+function describeCrossOrigin(
+	record: CrossOriginRecord,
+	key: string | symbol,
+): PropertyDescriptor {
+	if (CROSS_ORIGIN_FALLBACK_KEYS.includes(key)) {
+		return describeData(undefined);
+	}
+	if (record.kind === "location") {
+		if (key === "href") {
+			return {
+				get: undefined,
+				set: record.setHref,
+				enumerable: false,
+				configurable: true,
+			};
+		}
+		if (key === "replace") {
+			return describeData(record.replace);
+		}
+		throw crossOriginError(record, key);
+	}
+	const {viewer, target} = record;
+	switch (key) {
+		case "window":
+		case "self":
+		case "frames":
+			return describeData(record.proxy);
+		case "location":
+			return describeData(record.location.proxy);
+		case "closed":
+			return describeData(target.closed || _(target).discarded);
+		case "length":
+			return describeData(getDocumentFrames(target.document).length);
+		case "top":
+			return describeData(viewWindow(viewer, getTopWindow(target)));
+		case "parent":
+			return describeData(viewWindow(viewer, _(target).parentWindow ?? target));
+		case "opener":
+			return describeData(null);
+		case "postMessage":
+		case "close":
+		case "focus":
+		case "blur":
+			return describeData(record[key]);
+	}
+	const child = typeof key === "string"
+		? getChildFrameWindow(target, key)
+		: null;
+	if (child === null) {
+		throw crossOriginError(record, key);
+	}
+	return describeData(viewWindow(viewer, child), isArrayIndex(key as string));
+}
+
+const CROSS_ORIGIN_HANDLER: ProxyHandler<CrossOriginRecord> = {
+	get(record, key) {
+		const descriptor = describeCrossOrigin(record, key);
+		if ("value" in descriptor) {
+			return descriptor.value as unknown;
+		}
+		throw crossOriginError(record, key);
+	},
+	set(record, key, value) {
+		if (record.kind === "window" && key === "location") {
+			record.location.setHref(value);
+			return true;
+		}
+		const descriptor = describeCrossOrigin(record, key);
+		if (descriptor.set === undefined) {
+			throw crossOriginError(record, key);
+		}
+		descriptor.set(value);
+		return true;
+	},
+	has(record, key) {
+		describeCrossOrigin(record, key);
+		return true;
+	},
+	getOwnPropertyDescriptor(record, key) {
+		return describeCrossOrigin(record, key);
+	},
+	ownKeys(record) {
+		if (record.kind === "location") {
+			return ["href", "replace", ...CROSS_ORIGIN_FALLBACK_KEYS];
+		}
+		const length = getDocumentFrames(record.target.document).length;
+		return [
+			...Array.from({length}, (_value, index) => String(index)),
+			...CROSS_ORIGIN_WINDOW_KEYS,
+			...CROSS_ORIGIN_FALLBACK_KEYS,
+		];
+	},
+	defineProperty(record, key) {
+		throw crossOriginError(record, key);
+	},
+	deleteProperty(record, key) {
+		throw crossOriginError(record, key);
+	},
+	getPrototypeOf() {
+		return null;
+	},
+	setPrototypeOf(_record, prototype) {
+		return prototype === null;
+	},
+	isExtensible() {
+		return true;
+	},
+	preventExtensions() {
+		return false;
+	},
+};
+
+function crossOriginPostMessage(
+	record: CrossOriginWindowRecord,
+	...args: unknown[]
+): void {
+	if (args.length < 1) {
+		throw new TypeError(
+			"Failed to execute 'postMessage' on 'Window': 1 argument required, but only 0 present.",
+		);
+	}
+	postWindowMessage(record.target, record.viewer, args[0], args[1]);
+}
+
+// A cross-origin close reaches a top window the viewer may navigate.
+function crossOriginClose(record: CrossOriginWindowRecord): void {
+	const {viewer, target} = record;
+	if (_(target).parentWindow === null && isAllowedToNavigate(viewer, target)) {
+		target.close();
+	}
+}
+
+function crossOriginFocus(record: CrossOriginWindowRecord): void {
+	record.target.focus();
+}
+
+function crossOriginBlur(record: CrossOriginWindowRecord): void {
+	record.target.blur();
+}
+
+function crossOriginSetHref(
+	record: CrossOriginLocationRecord,
+	...args: unknown[]
+): void {
+	navigateWindow(record.viewer, record.target, String(args[0]), "auto");
+}
+
+function crossOriginReplace(
+	record: CrossOriginLocationRecord,
+	...args: unknown[]
+): void {
+	if (args.length < 1) {
+		throw new TypeError(
+			"Failed to execute 'replace' on 'Location': 1 argument required, but only 0 present.",
+		);
+	}
+	navigateWindow(record.viewer, record.target, String(args[0]), "replace");
+}
+
+// A cross-origin function has its own identity for each viewer, and the
+// name of the member it stands for.
+function bindCrossOrigin<T extends CrossOriginRecord>(
+	implementation: (record: T, ...args: unknown[]) => void,
+	record: T,
+	name: string,
+): (...args: unknown[]) => void {
+	const bound = implementation.bind(null, record);
+	Object.defineProperty(bound, "name", {value: name});
+	return bound;
+}
+
+function createCrossOriginWindow(viewer: Window, target: Window): Window {
+	const location = {
+		kind: "location",
+		viewer,
+		target,
+		proxy: null,
+	} as unknown as CrossOriginLocationRecord;
+	location.replace = bindCrossOrigin(crossOriginReplace, location, "replace");
+	location.setHref = bindCrossOrigin(crossOriginSetHref, location, "set href");
+	// A name HTML does not list throws, which only a proxy can do.
+	// eslint-disable-next-line no-restricted-globals
+	location.proxy = new Proxy<CrossOriginRecord>(location, CROSS_ORIGIN_HANDLER);
+	const record = {
+		kind: "window",
+		viewer,
+		target,
+		proxy: null,
+		location,
+	} as unknown as CrossOriginWindowRecord;
+	record.postMessage = bindCrossOrigin(
+		crossOriginPostMessage,
+		record,
+		"postMessage",
+	);
+	record.close = bindCrossOrigin(crossOriginClose, record, "close");
+	record.focus = bindCrossOrigin(crossOriginFocus, record, "focus");
+	record.blur = bindCrossOrigin(crossOriginBlur, record, "blur");
+	// eslint-disable-next-line no-restricted-globals
+	record.proxy = new Proxy<CrossOriginRecord>(
+		record,
+		CROSS_ORIGIN_HANDLER,
+	) as unknown as Window;
+	return record.proxy;
+}
+
+/**
+ * `target` as code of `viewer` holds it: the window itself where the two
+ * have one origin, and otherwise a cross-origin WindowProxy, the one
+ * `viewer` gets each time.
+ */
+function viewWindow(viewer: Window, target: Window): Window {
+	if (getWindowOrigin(viewer) === getWindowOrigin(target)) {
+		return target;
+	}
+	const slots = _(target);
+	const views = slots.crossOriginViews ??= new WeakMap();
+	let view = views.get(viewer);
+	if (view === undefined) {
+		view = createCrossOriginWindow(viewer, target);
+		views.set(viewer, view);
+	}
+	return view;
+}
+
+// The frame's window as code of the window its iframe is in holds it.
+function getFrameView(
+	frame: HTMLIFrameElement,
+): FrameWindowLike | Window | null {
+	ensureFrameDocument(frame);
+	const window = _(frame).extra.contentWindow;
+	const viewer = _(_(frame).document).extra.defaultView as Window | null;
+	return viewer !== null && implementsInterface(window, Window)
+		? viewWindow(viewer, window)
+		: window;
 }
 
 // The iframes of `document`'s own tree, in tree order, which are its
@@ -19331,7 +19823,10 @@ function syncFrameIndexes(document: Document): void {
 	}
 	for (let index = slots.frameIndexes; index < count; index++) {
 		Object.defineProperty(slots.namedProperties, String(index), {
-			get: () => getDocumentFrames(document)[index]?.contentWindow ?? undefined,
+			get: () => {
+				const frame = getDocumentFrames(document)[index];
+				return frame === undefined ? undefined : getFrameView(frame);
+			},
 			configurable: true,
 		});
 	}
@@ -19345,12 +19840,13 @@ export function setFrameWindowFactory(factory: FrameWindowFactory): void {
 // A nested document. On insertion the iframe gets a content document (its
 // srcdoc parsed, or about:blank) with its own registry, and fires load.
 // Removal discards it, as removal discards a browsing context. The src
-// attribute does nothing, because this engine performs no fetches, so a
-// src iframe holds about:blank, the same document a browser shows before
-// navigation. Where the runtime can make a realm, the document has a
-// window of its own in one, with its own interfaces and intrinsics.
-// Otherwise there is no second realm: the frame's constructors are this
-// realm's, and its window is a stand-in.
+// attribute loads nothing in the engine's heap, so a src iframe holds
+// about:blank, the same document a browser shows before navigation,
+// unless the TermDOM starts frames in isolates, where an http: or https:
+// src loads there. The document has a window of its own. Where the runtime can
+// make a realm, the window is in one, with its own interfaces and
+// intrinsics; otherwise its constructors are this realm's. A window
+// stands in for the frame's only where no factory builds windows.
 interface HTMLIFrameElementExtra extends NodeExtra {
 	contentDocument: Document | null;
 	contentWindow: FrameWindowLike | Window | null;
@@ -19411,18 +19907,23 @@ class HTMLIFrameElement extends HTMLElement {
 				getFocusedElement(slots.document) === this
 					? slots.extra.frameRenderer?.caret ?? null
 					: null,
+			images: () => getFrameImages(this),
 		}));
 	}
 
+	// A document of another origin is not the iframe's document's to read.
 	get contentDocument(): Document | null {
 		ensureFrameDocument(this);
-		return _(this).extra.contentDocument;
+		const slots = _(this);
+		const window = slots.extra.contentWindow;
+		return implementsInterface(window, Window) &&
+			getWindowOrigin(window) !== getDocumentOrigin(slots.document)
+			? null
+			: slots.extra.contentDocument;
 	}
 
 	get contentWindow(): globalThis.WindowProxy | null {
-		ensureFrameDocument(this);
-		return _(this).extra.contentWindow as unknown as globalThis.WindowProxy |
-			null;
+		return getFrameView(this) as unknown as globalThis.WindowProxy | null;
 	}
 
 	getSVGDocument(): Document | null {
@@ -19518,10 +20019,42 @@ function scheduleFrameLoad(frame: HTMLIFrameElement): void {
 	const slots = _(frame);
 	const run = (slots.extra.frameDocumentRun = {});
 	setTimeout(() => {
-		if (frame.isConnected && slots.extra.frameDocumentRun === run) {
+		if (
+			frame.isConnected &&
+			slots.extra.frameDocumentRun === run &&
+			getIsolatedSource(frame) === null
+		) {
 			frame.dispatchEvent(constructInternal(() => new Event("load")));
 		}
 	}, 0);
+}
+
+/**
+ * The URL of the document an iframe shows from another isolate: its src,
+ * where the TermDOM showing the iframe isolates frames and src names an
+ * http: or https: URL of another origin than the iframe's document has.
+ * Null for a frame drawn in the engine's heap, which its page can reach
+ * into. An isolated frame fires load when its document has loaded there.
+ */
+function getIsolatedSource(frame: HTMLIFrameElement): string | null {
+	const attached = getAttachedDocument(frame);
+	if (
+		attached === undefined ||
+		_(attached).extra.isolateFrame === null ||
+		isolatedFrameFactory === null ||
+		getAttributeValue(frame, "srcdoc") !== null
+	) {
+		return null;
+	}
+	const src = getAttributeValue(frame, "src");
+	const url = src === null
+		? null
+		: parseURL(src, getDocumentBaseURL(_(frame).document));
+	return url !== null &&
+		(url.protocol === "http:" || url.protocol === "https:") &&
+		url.origin !== getDocumentOrigin(_(frame).document)
+		? url.href
+		: null;
 }
 
 /**
@@ -19543,7 +20076,8 @@ export function getDrawnFrameDocument(
 	element: globalThis.Element | Element | null,
 ): Document | null {
 	return implementsInterface(element, HTMLIFrameElement) &&
-		_(element).extra.frameRenderer !== null
+		_(element).extra.frameRenderer !== null &&
+		getRunningProgram(element) === null
 		? _(element).extra.contentDocument
 		: null;
 }
@@ -19687,6 +20221,15 @@ function ensureFrameRenderer(frame: HTMLIFrameElement): void {
 	}
 }
 
+// The images an isolated frame's cells show. A frame in the engine's heap
+// paints its images into its cells.
+function getFrameImages(frame: HTMLIFrameElement): GridImage[] {
+	const window = _(frame).extra.contentWindow;
+	return implementsInterface(window, Window)
+		? _(window).isolatedFrame?.images() ?? []
+		: [];
+}
+
 // The frame's document changed: its cells are painted again with the
 // next frame of the document the iframe is in.
 function frameChanged(frame: HTMLIFrameElement): void {
@@ -19709,7 +20252,41 @@ function ensureFrameDocument(frame: HTMLIFrameElement): void {
 	const parent = _(frameSlots.document).extra.defaultView as Window | null;
 	const built =
 		frameWindowFactory?.(srcdoc ?? "", url, registry, parent, frame) ?? null;
+	const isolated = getIsolatedSource(frame);
+	const attached = getAttachedDocument(frame);
+	if (built !== null && isolated !== null && attached !== undefined) {
+		// The window here stands in for the frame's, whose document is in
+		// the other isolate. Its origin is opaque to the page, so the page
+		// reaches it as a window of another origin, through messages.
+		const windowSlots = _(built.window);
+		windowSlots.sandbox = getFrameSandbox(frame, parent);
+		windowSlots.sandboxOrigin = {};
+		windowSlots.windowName = getAttributeValue(frame, "name") ?? "";
+		frameSlots.extra.contentDocument = built.document;
+		frameSlots.extra.contentWindow = built.window;
+		const view = isolatedFrameFactory!(
+			frame,
+			built.window,
+			isolated,
+			attached,
+			_(attached).extra.isolateFrame!,
+			() => frameChanged(frame),
+		);
+		windowSlots.isolatedFrame = view;
+		frameSlots.extra.frameRenderer = view;
+		return;
+	}
 	if (built !== null) {
+		const windowSlots = _(built.window);
+		const sandbox = getFrameSandbox(frame, parent);
+		windowSlots.sandbox = sandbox;
+		windowSlots.sandboxOrigin =
+			sandbox !== null &&
+			!sandbox.has("allow-same-origin")
+				? {}
+				: null;
+		// HTML names the frame's window after the iframe as it is made.
+		windowSlots.windowName = getAttributeValue(frame, "name") ?? "";
 		frameSlots.extra.contentDocument = built.document;
 		frameSlots.extra.contentWindow = built.window;
 		ensureFrameRenderer(frame);
@@ -28697,6 +29274,9 @@ export interface DocumentExtra extends NodeExtra {
 	// none may run: the ptyEmbeds option is "none", the runtime has no
 	// pseudo-terminal, or the document is a frame's.
 	pty: PTYSpawner | "none" | "unavailable" | "framed";
+	// Starts a frame's document in an isolate of its own, or null where
+	// frames are drawn in the engine's heap.
+	isolateFrame: FrameIsolator | null;
 	load: ResourceLoader;
 	loadSignal: globalThis.AbortSignal;
 	// Whether the document's policies let an element's inline handler run.
@@ -30988,8 +31568,8 @@ function removeNameEntry(
 }
 
 // The elements whose name attribute names them on the Window, as the HTML
-// Standard lists them.
-const NAMED_BY_NAME = new Set(["embed", "form", "img", "object"]);
+// Standard lists them, and the iframe, whose name names its frame.
+const NAMED_BY_NAME = new Set(["embed", "form", "iframe", "img", "object"]);
 
 function isNamedByName(element: Element): boolean {
 	const elementSlots = _(element);
@@ -38431,6 +39011,7 @@ export interface DocumentEngine {
 	images: GraphicsSetting;
 	canvas: GraphicsSetting;
 	pty: PTYSpawner | "none" | "unavailable" | "framed";
+	isolateFrame?: FrameIsolator | null;
 	// Answers the loads the document's markup asks for.
 	load: ResourceLoader;
 	allowsInlineHandler(element: globalThis.Element): boolean;
@@ -38476,6 +39057,7 @@ export function attachDocument(
 	attachedSlots.extra.allowsPlugin = (element, violations) =>
 		engine.allowsPlugin(element, violations);
 	attachedSlots.extra.loadSignal = engine.loadSignal;
+	attachedSlots.extra.isolateFrame = engine.isolateFrame ?? null;
 	attachedSlots.extra.visible = false;
 	attachedSlots.extra.systemFocused = true;
 	attachedSlots.extra.layout = layout;
@@ -39628,22 +40210,62 @@ function getLocationURL(location: Location): URL | null {
 	return parseURL(location.href);
 }
 
-// HTML's Location-object navigate. The URL resolves against the
-// document's base URL.
 function navigateLocation(
 	location: Location,
 	value: string | URL,
 	historyHandling: globalThis.NavigationHistoryBehavior,
 ): void {
-	const document = _(location).locationWindow.document as unknown as Document;
+	const window = _(location).locationWindow;
+	navigateWindow(getIncumbentWindow(window), window, value, historyHandling);
+}
+
+/**
+ * HTML's Location-object navigate of `target`, by code of `source`, or of
+ * a window the engine cannot tell where that is null. The URL resolves
+ * against the base URL of the source's document, and the source's sandbox
+ * may forbid it.
+ */
+function navigateWindow(
+	source: Window | null,
+	target: Window,
+	value: string | URL,
+	historyHandling: globalThis.NavigationHistoryBehavior,
+): void {
+	const document = target.document as unknown as Document;
 	const url = typeof value === "string"
-		? parseURL(value, getDocumentBaseURL(document))
+		? parseURL(value, getDocumentBaseURL((source ?? target).document))
 		: value;
 	if (url === null) {
 		throw domError("SyntaxError", `"${value}" is not a URL`);
 	}
+	if (source !== null && !isAllowedToNavigate(source, target)) {
+		throw domError(
+			"SecurityError",
+			"The frame's sandbox does not allow it to navigate this window",
+		);
+	}
 	if (!navigateDocument(document, url, {historyHandling})) {
 		throw failNavigation(document);
+	}
+}
+
+/**
+ * An isolated frame's navigation of the window its iframe is in, which
+ * `window` stands in the page for, held to the frame's sandbox. What the
+ * parent or its navigate listeners refuse comes to nothing, as the frame
+ * that asked is in another isolate.
+ */
+export function navigateFrameParent(window: Window, url: string): void {
+	const parent = _(window).parentWindow;
+	if (parent === null || _(window).discarded) {
+		return;
+	}
+	try {
+		navigateWindow(window, parent, url, "auto");
+	} catch (error) {
+		if (!(error instanceof DOMException)) {
+			throw error;
+		}
 	}
 }
 
@@ -41480,15 +42102,28 @@ function syncNamedProperty(document: Document, name: string): void {
 	}
 }
 
-// The one element a name picks out, or all of them, live, when several do.
+// The window of the first frame a name names, in tree order, or else the
+// one element it picks out, or a live collection when several share it.
 function getNamedPropertyValue(
 	document: Document,
 	name: string,
-): Element | HTMLCollection | undefined {
+): Element | HTMLCollection | FrameWindowLike | Window | undefined {
 	const documentSlots = _(document);
+	const named = documentSlots.extra.nameMap.get(name) ?? [];
+	if (
+		named.some((element) => implementsInterface(element, HTMLIFrameElement))
+	) {
+		const frame = getDocumentFrames(document).find((each) =>
+			getAttributeValue(each, "name") === name);
+		const view = frame === undefined ? null : getFrameView(frame);
+		if (view !== null) {
+			return view;
+		}
+	}
 	const elements = new Set([
 		...documentSlots.extra.idMap.get(name) ?? [],
-		...documentSlots.extra.nameMap.get(name) ?? [],
+		...named.filter((element) =>
+			!implementsInterface(element, HTMLIFrameElement)),
 	]);
 	if (elements.size === 0) {
 		return undefined;
@@ -41505,7 +42140,8 @@ function getNamedPropertyValue(
 			null,
 			(element) =>
 				getAttributeValue(element, "id") === name ||
-				getExposedName(element) === name,
+				(getExposedName(element) === name &&
+					!implementsInterface(element, HTMLIFrameElement)),
 		);
 		cache.set(key, collection);
 	}
@@ -41929,6 +42565,16 @@ export interface WindowSlots extends EventTargetSlots {
 	parentWindow: Window | null;
 	frameOwner: HTMLIFrameElement | null;
 	realm: Realm | null;
+	// A sandboxed frame's: the sandbox it was made under, and the opaque
+	// origin it has where the sandbox lacks allow-same-origin.
+	sandbox: ReadonlySet<string> | null;
+	sandboxOrigin: object | null;
+	// Where a frame's document is in another isolate, the frame there,
+	// which this window stands in for.
+	isolatedFrame: IsolatedFrameView | null;
+	// The cross-origin WindowProxy each window of another origin holds this
+	// one by.
+	crossOriginViews?: WeakMap<Window, Window>;
 	// A frame's window whose iframe left the page or showed another
 	// document.
 	discarded: boolean;
@@ -42206,15 +42852,15 @@ export class Window extends EventTarget {
 	// is defined on the object, and node:vm makes a field defined on a
 	// realm's global read-only, which a frame's window is.
 	declare readonly document: Document;
-	constructor(document: Document) {
+	constructor(document: Document, frame: HTMLIFrameElement | null = null) {
 		super();
 		this.document = document;
 		// Attaching a document gives it a defaultView, and the attached
 		// document is the one bare node constructors use.
 		const documentSlots = _(document);
 		documentSlots.extra.defaultView = this;
-		// A frame's window is its realm's, and leaves the top window's be.
-		if (getActiveRealm() === null) {
+		// A frame's window leaves the top window's be.
+		if (frame === null && getActiveRealm() === null) {
 			ambientDocument = document;
 		}
 		const slots = _(this);
@@ -42223,8 +42869,11 @@ export class Window extends EventTarget {
 		) as Record<string, unknown>;
 		Object.setPrototypeOf(this, slots.namedProperties);
 		slots.parentWindow = null;
-		slots.frameOwner = null;
+		slots.frameOwner = frame;
 		slots.realm = null;
+		slots.sandbox = null;
+		slots.sandboxOrigin = null;
+		slots.isolatedFrame = null;
 		slots.discarded = false;
 		slots.frameIndexes = 0;
 		for (const name of new Set([
@@ -42398,8 +43047,13 @@ export class Window extends EventTarget {
 		return EXTERNAL;
 	}
 
+	// An iframe in a document of another origin is not the frame's to see.
 	get frameElement(): globalThis.Element | null {
-		return _(this).frameOwner;
+		const frame = _(this).frameOwner;
+		return frame !== null &&
+			getDocumentOrigin(_(frame).document) === getWindowOrigin(this)
+			? frame
+			: null;
 	}
 
 	get frames(): Window {
@@ -42472,7 +43126,8 @@ export class Window extends EventTarget {
 	}
 
 	get parent(): Window {
-		return _(this).parentWindow ?? this;
+		const parent = _(this).parentWindow;
+		return parent === null ? this : viewWindow(this, parent);
 	}
 
 	get screen(): globalThis.Screen {
@@ -42505,7 +43160,7 @@ export class Window extends EventTarget {
 	}
 
 	get top(): Window | null {
-		return getTopWindow(this);
+		return viewWindow(this, getTopWindow(this));
 	}
 
 	get visualViewport(): globalThis.VisualViewport | null {
@@ -42520,15 +43175,8 @@ export class Window extends EventTarget {
 		return true;
 	}
 
-	// A frame showing srcdoc or about:blank has the origin of the window it
-	// is in, as HTML gives such a document its creator's.
 	get origin(): string {
-		const url = this.document.URL;
-		const parent = _(this).parentWindow;
-		if (parent !== null && (url === "about:srcdoc" || url === "about:blank")) {
-			return parent.origin;
-		}
-		return parseURL(url)?.origin ?? "null";
+		return serializeOrigin(getWindowOrigin(this));
 	}
 
 	get localStorage(): Storage {
@@ -42775,11 +43423,9 @@ export class Window extends EventTarget {
 		return null;
 	}
 
-	// HTML's window post message steps: the message is a clone made in this
-	// window's realm, from the window whose code posted it, which is the
+	// The message is from the window whose code posted it, which is the
 	// realm a frame's binding was called from, or the realm running when a
-	// top window's is. It lands only if this window's origin is the one
-	// the poster named.
+	// top window's is.
 	postMessage(
 		message: any,
 		targetOrigin: string,
@@ -42787,51 +43433,12 @@ export class Window extends EventTarget {
 	): void;
 	postMessage(message: any, options?: globalThis.WindowPostMessageOptions): void;
 	postMessage(message: any, settings?: unknown): void {
-		const slots = _(this);
-		const callerRealm = slots.realm !== null
-			? getCallerRealm()
-			: getIncumbentRealm();
-		const source = callerRealm !== null
-			? callerRealm.global as unknown as Window
-			: getTopWindow(this);
-		const named = typeof settings === "object" && settings !== null
-			? (settings as {targetOrigin?: unknown}).targetOrigin
-			: settings;
-		let targetOrigin = named === undefined ? "/" : String(named);
-		if (targetOrigin === "/") {
-			targetOrigin = source.origin;
-		} else if (targetOrigin !== "*") {
-			const parsed = parseURL(targetOrigin);
-			if (parsed === null) {
-				throw domError(
-					"SyntaxError",
-					`Failed to execute 'postMessage' on 'Window': Invalid target origin '${targetOrigin}'.`,
-				);
-			}
-			targetOrigin = parsed.origin;
-		}
-		const realm = slots.realm;
-		const data = runInRealm(realm, () => {
-			const clone = cloneStructured(
-				message,
-				"execute 'postMessage' on 'Window'",
-			);
-			return realm === null ? clone : rehomeClone(clone, realm);
-		});
-		const origin = source.origin;
-		queueWindowTask(this, () => {
-			if (targetOrigin !== "*" && targetOrigin !== this.origin) {
-				return;
-			}
-			const event = runInRealm(realm, () =>
-				constructInternal(() =>
-					new MessageEvent("message", {
-						data,
-						origin,
-						source: source as unknown as globalThis.MessageEventSource,
-					})));
-			dispatch(this, event);
-		});
+		postWindowMessage(
+			this,
+			getIncumbentWindow(this) ?? getTopWindow(this),
+			message,
+			settings,
+		);
 	}
 
 	print(): void {}
@@ -43244,6 +43851,105 @@ function cloneWithPlatformObjects(
  */
 export function getProcessTimers(window: Window): Record<string, unknown> {
 	return _(window).processTimers!;
+}
+
+/**
+ * HTML's window post message steps, for a message `source` posts to
+ * `target`: a clone made in the target's realm, which lands as a task,
+ * and only where the target's origin is the one the poster named. Its
+ * source is the poster as the target's code holds it.
+ */
+function postWindowMessage(
+	target: Window,
+	source: Window,
+	message: unknown,
+	settings: unknown,
+): void {
+	const named = typeof settings === "object" && settings !== null
+		? (settings as {targetOrigin?: unknown}).targetOrigin
+		: settings;
+	const text = named === undefined ? "/" : String(named);
+	let targetOrigin: Origin | null = null;
+	if (text === "/") {
+		targetOrigin = getWindowOrigin(source);
+	} else if (text !== "*") {
+		const parsed = parseURL(text);
+		if (parsed === null) {
+			throw domError(
+				"SyntaxError",
+				`Failed to execute 'postMessage' on 'Window': Invalid target origin '${text}'.`,
+			);
+		}
+		targetOrigin = getURLOrigin(parsed.href, {});
+	}
+	const isolated = _(target).isolatedFrame;
+	if (isolated !== null) {
+		const origin = serializeOrigin(getWindowOrigin(source));
+		isolated.postMessage(
+			cloneStructured(message, "execute 'postMessage' on 'Window'"),
+			origin,
+			targetOrigin === null ? "*" : serializeOrigin(targetOrigin),
+		);
+		return;
+	}
+	const realm = _(target).realm;
+	const data = runInRealm(realm, () => {
+		const clone = cloneStructured(message, "execute 'postMessage' on 'Window'");
+		return realm === null ? clone : rehomeClone(clone, realm);
+	});
+	const origin = serializeOrigin(getWindowOrigin(source));
+	const eventSource = viewWindow(target, source);
+	queueWindowTask(target, () => {
+		if (targetOrigin !== null && targetOrigin !== getWindowOrigin(target)) {
+			return;
+		}
+		const event = runInRealm(realm, () =>
+			constructInternal(() =>
+				new MessageEvent("message", {
+					data,
+					origin,
+					source: eventSource as unknown as globalThis.MessageEventSource,
+				})));
+		dispatch(target, event);
+	});
+}
+
+/**
+ * A message the document of an isolated frame posted to its parent, which
+ * `window` stands in the page for. It lands as one from a window of
+ * `origin` would, and only where the parent's origin is `targetOrigin`.
+ */
+export function receiveFrameMessage(
+	window: Window,
+	data: unknown,
+	origin: string,
+	targetOrigin: string,
+): void {
+	const parent = _(window).parentWindow;
+	if (
+		parent === null ||
+		_(window).discarded ||
+		(targetOrigin !== "*" &&
+			targetOrigin !== serializeOrigin(getWindowOrigin(parent)))
+	) {
+		return;
+	}
+	const realm = _(parent).realm;
+	const cloned = runInRealm(realm, () => {
+		const clone = cloneStructured(data, "execute 'postMessage' on 'Window'");
+		return realm === null ? clone : rehomeClone(clone, realm);
+	});
+	const eventSource = viewWindow(parent, window);
+	queueWindowTask(parent, () => {
+		const event = runInRealm(realm, () =>
+			constructInternal(() =>
+				new MessageEvent("message", {
+					data: cloned,
+					origin,
+					source: eventSource as unknown as globalThis.MessageEventSource,
+				})));
+		dispatch(parent, event);
+	});
 }
 
 function queueWindowTask(window: Window, task: () => void): void {

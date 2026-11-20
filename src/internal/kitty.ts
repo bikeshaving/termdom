@@ -389,6 +389,63 @@ export function takeKittyOutput(
 	return images.passthrough ? wrapForTmux(out) : out;
 }
 
+/** An image a frame placed, for the page that draws the frame to send. */
+export interface FrameImage {
+	id: number;
+	width: number;
+	height: number;
+	cols: number;
+	rows: number;
+	pixels: Uint8ClampedArray;
+}
+
+/**
+ * A frame's images after a paint, where the page that draws the frame
+ * sends them on: those placed since the last paint, with their pixels,
+ * and the ids of those `screen` no longer shows, which are forgotten. A
+ * frame keeps no scrollback, so an image goes once it is off screen.
+ */
+export function takeFrameImages(
+	images: KittyImages,
+	screen: CellGrid,
+): {added: FrameImage[]; dropped: number[]} {
+	const frame = images.frame++;
+	const added: FrameImage[] = [];
+	const dropped: number[] = [];
+	const {cluster, fg} = screen;
+	for (let index = 0; index < cluster.length; index++) {
+		if (isPlaceholderChar(cluster[index])) {
+			const image = images.byId.get(fg[index] & MAX_ID);
+			if (image !== undefined) {
+				image.seen = frame;
+			}
+		}
+	}
+	for (const [key, image] of images.byKey) {
+		if (image.seen < frame) {
+			images.byKey.delete(key);
+			images.byId.delete(image.id);
+			dropped.push(image.id);
+		} else if (image.pixels !== null) {
+			const {id, width, height, cols, rows, pixels} = image;
+			added.push({id, width, height, cols, rows, pixels});
+			image.pixels = null;
+			image.encoded = null;
+		}
+	}
+	images.retired = images.retired.filter(({image, frame: retiredAt}) => {
+		if (retiredAt === frame) {
+			return true;
+		}
+		if (images.byId.get(image.id) === image) {
+			images.byId.delete(image.id);
+			dropped.push(image.id);
+		}
+		return false;
+	});
+	return {added, dropped};
+}
+
 /**
  * `escapes` as tmux passes them on to the terminal it runs in: each one
  * in a DCS of its own, with the ESCs inside doubled.
