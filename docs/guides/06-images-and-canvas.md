@@ -398,6 +398,12 @@ Under `"auto"`, Bun uses its own pseudo-terminal and Node uses
 environment and working directory, with `TERM` set to `xterm-256color`.
 It needs `/bin/sh`, so nothing runs on Windows.
 
+`node-pty` is looked for from where TermDOM is installed, as any
+dependency is. In a program bundled to CommonJS it is looked for from
+the bundle, and in a Node single executable from the executable, so a
+`node_modules/node-pty` folder shipped beside either is found. It is
+never loaded from the directory the program was started in.
+
 Only the page runs programs. An embed in an iframe fires `error`, and
 so does one in a document whose Content-Security-Policy has
 `object-src 'none'`, or `default-src 'none'` and no `object-src`.

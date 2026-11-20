@@ -171,6 +171,9 @@ interface NodeModule {
 	createRequire(from: string): (id: string) => unknown;
 }
 
+// A CommonJS module's own path. An ES module has none.
+declare const __filename: string | undefined;
+
 function loadNodePTY(): NodePTY | null {
 	const {process} =
 		globalThis as {process?: {getBuiltinModule?: (id: string) => unknown}};
@@ -178,9 +181,17 @@ function loadNodePTY(): NodePTY | null {
 		return null;
 	}
 	const nodeModule = process.getBuiltinModule("node:module") as NodeModule;
+	// node-pty is native code, so it is looked for from where this code
+	// is and nowhere else: the module, or in a CommonJS build the file,
+	// which in a single executable is the executable. Never from the
+	// directory the program was started in, which the program does not
+	// choose.
 	const from = typeof import.meta.url === "string"
 		? import.meta.url
-		: `${globalThis.process.cwd()}/`;
+		: typeof __filename === "string" ? __filename : null;
+	if (from === null) {
+		return null;
+	}
 	try {
 		return nodeModule.createRequire(from)("node-pty") as NodePTY;
 	} catch (err) {
