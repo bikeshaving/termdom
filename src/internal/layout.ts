@@ -270,7 +270,9 @@ function isFlexContainer(element: Element): boolean {
 // Each child gets a box of its own, blockified. No inline run gathers
 // across them (css-display-3 §2.7).
 function hasItemChildren(display: Display): boolean {
-	return display === "flex" || isGridDisplay(display);
+	return display === "flex" ||
+		display === "inline-flex" ||
+		isGridDisplay(display);
 }
 
 function isGridDisplay(display: Display): boolean {
@@ -2947,8 +2949,9 @@ function flowChildren(
 // for, which places the root's rows on a line of its own frame.
 const contextHosts = new WeakMap<LayoutNode, Element>();
 
-// An inline-grid or inline-table always lays its own content out,
-// because a line cannot contain a grid or a table piecemeal. An
+// An inline-grid, inline-flex or inline-table always lays its own content
+// out, because a line cannot contain a grid, a flex container or a table
+// piecemeal: what is in one is its items, not text on the line. An
 // inline-block does so only once it holds a block-level box. Never a
 // plain inline: it is broken instead, and taking its content here would
 // steal back the container's boxes. Only a run's measure lays the root
@@ -2960,6 +2963,7 @@ function needsContextRoot(element: Element): boolean {
 		establishesIndependentFormattingContext(element) &&
 		isMeasuredAsRun(element) &&
 		(display === "inline-grid" ||
+			display === "inline-flex" ||
 			display === "inline-table" ||
 			hasBlockLevelBox(element))
 	);

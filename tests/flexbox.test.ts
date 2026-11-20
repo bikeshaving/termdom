@@ -997,6 +997,50 @@ test("an inline-flex box sits on its line and lays its children out in a row", (
 	).toContain("[Search]");
 });
 
+test("an inline-flex box's inline children are flex items", () => {
+	const rows = (body: string): string[] => {
+		const dom =
+			new TermDOM({html: `<!DOCTYPE html><html><body>${body}</body></html>`});
+		return dom.renderANSI()
+			.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")
+			.split("\n")
+			.map((line) => line.trimEnd())
+			.filter((line) => line.length > 0);
+	};
+	// One that grows takes the room, and pushes the next to the far edge.
+	expect(
+		rows(
+			"<span style=\"display:inline-flex;width:20ch\">" +
+			"<span style=\"flex:1\">a</span><span>b</span></span>|",
+		),
+	).toEqual(["a                  b|"]);
+	// One that may shrink is cut to the room it is given, and does not
+	// paint over what follows it. This is a truncated commit title beside
+	// its hash.
+	const title =
+		"ci: stage releases on npm instead of publishing directly from CI";
+	const truncated =
+		"min-width:1ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+	expect(
+		rows(
+			"<div style=\"display:flex;width:40ch\">" +
+			"<div style=\"display:inline-flex;min-width:0;max-width:100%\">" +
+			`<span style="${truncated}">${title}</span></div>` +
+			"<span style=\"flex-shrink:0\">a26f854</span></div>",
+		),
+	).toEqual(["ci: stage releases on npm instea\u2026a26f854"]);
+	expect(
+		rows(
+			"<span style=\"display:inline-flex;width:20ch\">" +
+			`<span style="${truncated}">${title}</span><span>END</span></span>`,
+		),
+	).toEqual(["ci: stage releas\u2026END"]);
+	// Text between the items is an item of its own, without the spaces at
+	// its ends.
+	expect(rows("x <span style=\"display:inline-flex\">a <b>b</b> c</span> y"))
+		.toEqual(["x abc y"]);
+});
+
 test("a fit-content flex container takes its growing items' content, not their zero bases", () => {
 	// flex: 1 is a basis of 0, so a container fitting the bases came out
 	// as wide as its padding and squeezed every label to nothing. It fits
