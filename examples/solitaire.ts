@@ -1245,12 +1245,17 @@ function *App(this: Context) {
     }
     if (menu) {
       // While the seed field has focus, letters and digits belong to it;
-      // Enter still deals. Tab and Escape leave it, and Tab goes no
-      // further: the board behind the menu is not for walking.
+      // Enter still deals. Tab goes to the field and Tab or Escape leave
+      // it, and Tab goes no further: the board behind the menu is not
+      // for walking.
       const typing = (event.target as Element | null)?.tagName === "INPUT";
       if (key === "Tab" || key === "Escape") {
         event.preventDefault();
-        unfocus();
+        if (key === "Tab" && !typing) {
+          document.getElementById("seed")?.focus();
+        } else {
+          unfocus();
+        }
         return;
       }
       if (typing && key !== "Enter") {
