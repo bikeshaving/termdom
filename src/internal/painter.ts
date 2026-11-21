@@ -174,6 +174,7 @@ interface BorderPaint {
 const PAINTED_ELSEWHERE = [
 	"z-index",
 	"position",
+	"isolation",
 	"text-overflow",
 	"list-style-type",
 	"list-style-position",
@@ -966,6 +967,9 @@ export function checkPartialFrame(
 	);
 	whole.backdrop = ctx.backdrop;
 	whole.graphics = ctx.graphics;
+	whole.layers = ctx.layers === null
+		? null
+		: new Uint32Array(ctx.layers.length);
 	paint(painter, whole);
 	const differences: string[] = [];
 	const a = ctx.grid;
@@ -976,7 +980,10 @@ export function checkPartialFrame(
 			a.fg[index] !== b.fg[index] ||
 			a.bg[index] !== b.bg[index] ||
 			a.attrs[index] !== b.attrs[index] ||
-			a.border[index] !== b.border[index]
+			a.border[index] !== b.border[index] ||
+			(a.border[index] !== 0 &&
+				ctx.layers !== null &&
+				ctx.layers[index] !== whole.layers![index])
 		) {
 			differences.push(
 				`row ${Math.floor(index / ctx.cols)} col ${index % ctx.cols}`,
@@ -1066,6 +1073,34 @@ function renderStackingContext(
 	ctx: CellContext,
 	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
 ): void {
+	const outer = ctx.layer;
+	ctx.layer = getLayerNumber(root);
+	try {
+		renderContextLayers(painter, root, ctx, layers);
+	} finally {
+		ctx.layer = outer;
+	}
+}
+
+// A number for each stacking context, the same one every frame.
+const layerNumbers = new WeakMap<Element, number>();
+let lastLayerNumber = 0;
+
+function getLayerNumber(root: Element): number {
+	let number = layerNumbers.get(root);
+	if (number === undefined) {
+		number = ++lastLayerNumber >>> 0;
+		layerNumbers.set(root, number);
+	}
+	return number;
+}
+
+function renderContextLayers(
+	painter: Painter,
+	root: Element,
+	ctx: CellContext,
+	layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
+): void {
 	const bucket = layers.get(root);
 	if (!bucket) {
 		paintEntry(painter, root, ctx);
@@ -1079,6 +1114,7 @@ function renderStackingContext(
 			return;
 		}
 		const previousClip = ctx.clipRect;
+		const previousLayer = ctx.layer;
 		const previousOffset = ctx.viewportOffset;
 		const previousScrolled = painter.scrolledRows;
 		ctx.clipRect = getPositionedClip(
@@ -1098,9 +1134,15 @@ function renderStackingContext(
 			if (isStackingContext(element)) {
 				renderStackingContext(painter, element, ctx, layers);
 			} else {
+				// A sticky or fixed box is a layer of its own with no z-index too.
+				const position = getComputedValue(element, "position");
+				if (position === "sticky" || position === "fixed") {
+					ctx.layer = getLayerNumber(element);
+				}
 				paintEntry(painter, element, ctx);
 			}
 		} finally {
+			ctx.layer = previousLayer;
 			ctx.clipRect = previousClip;
 			ctx.viewportOffset = previousOffset;
 			painter.scrolledRows = previousScrolled;
