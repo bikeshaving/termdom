@@ -59,8 +59,6 @@ document.body.innerHTML = `
       background-image: linear-gradient(to right, transparent, #e94560);
     }
 
-    /* A glow: a circle of light that fades into the terminal's own
-       background, which the page never has to name. */
     .glow {
       height: 5px;
       background-image: radial-gradient(circle closest-side, #ffd75f, transparent);

@@ -26,8 +26,7 @@ type StopPosition =
 /**
  * One `<color-stop>`. The position is what the author wrote. The color
  * is packed RGB, with alpha kept apart for the cell to blend by. A
- * `canvas` stop is the terminal's own background, which only the painter
- * can know.
+ * `canvas` stop is the terminal's own background.
  */
 interface GradientStop {
 	color: number;
@@ -36,17 +35,12 @@ interface GradientStop {
 	canvas?: boolean;
 }
 
-/** A length a shape is written in: everything a stop's position can be. */
 type ShapeLength = Exclude<StopPosition, null>;
 
 type Extent =
 	"closest-side" | "farthest-side" | "closest-corner" | "farthest-corner";
 
-/**
- * The ending shape of a `radial-gradient()`, css-images-3 §3.2. The size
- * is a keyword, a circle's radius, or an ellipse's two; the center is
- * measured from the box's top left.
- */
+/** The ending shape of a `radial-gradient()`, css-images-3 §3.2. */
 export interface RadialShape {
 	circle: boolean;
 	size: Extent | ShapeLength[];
@@ -125,8 +119,7 @@ function readGradientColor(
 		if (system.cell !== 0) {
 			return {color: system.cell & 0xffffff, alpha: 1};
 		}
-		// Canvas and its kin are the terminal's background, a color once
-		// the terminal has said what it is and no paint at all until then.
+		// The terminal's background, which the painter fills in.
 		return system.background ? {color: 0, alpha: 0, canvas: true} : null;
 	}
 	return parseColor(text);
@@ -167,8 +160,7 @@ const POSITION_KEYWORDS: Record<string, {x?: number; y?: number}> = {
 	center: {},
 };
 
-// css-values-4 §9.1, in its one- and two-value forms: a side or a length
-// across, then one down, with keywords in either order.
+// css-values-4 §9.1, in its one- and two-value forms.
 function readPosition(
 	nodes: CSSTree.ValueNode[],
 ): [ShapeLength, ShapeLength] | null {
@@ -201,7 +193,6 @@ function readPosition(
 		if (length == null) {
 			return null;
 		}
-		// A length is across when it comes first and down when second.
 		if (i === 0 && x === null) {
 			x = length;
 		} else if (i === 1 && y === null) {
@@ -255,14 +246,12 @@ function readRadialShape(
 				? undefined
 				: readStopPosition(node);
 			if (length == null) {
-				// Nothing read yet means this is a color, not a shape.
 				return i === 0 ? undefined : null;
 			}
 			lengths.push(length);
 		}
 	}
-	// A circle takes one radius and no percentage, which has no one side
-	// to be a share of; an ellipse takes two.
+	// A circle takes one radius and no percentage; an ellipse takes two.
 	if (
 		(extent !== null && lengths.length > 0) ||
 		lengths.length > 2 ||
@@ -427,9 +416,9 @@ export function resolveGradientLengths(
 	return {
 		...gradient,
 		radial:
-			radial && {
+			radial &&
+			{
 				...radial,
-				// An ellipse's second radius is its one down the screen.
 				size: typeof radial.size === "string"
 					? radial.size
 					: radial.size.map((length, index) => resolve(length, index === 1)),
@@ -467,9 +456,7 @@ function resolveStops(
 		length > 0 ? (px * perPx) / length : 0;
 	// NaN marks a position still to be filled in, so the sweeps below can
 	// tell "not yet known" from a real zero.
-	// A canvas stop is the terminal's background where that is known. Where
-	// it is not, it is a transparent stop, which leaves the cell to the
-	// terminal all the same.
+	// A canvas stop is transparent where the backdrop is not known.
 	const resolved = stops.map((stop) => ({
 		color: stop.canvas && backdrop !== null ? backdrop & 0xffffff : stop.color,
 		alpha: stop.canvas && backdrop !== null ? 1 : stop.alpha,
@@ -548,8 +535,7 @@ function mixColors(before: number, after: number, ratio: number): number {
 }
 
 // Null where the gradient paints nothing. A color that is not opaque
-// carries its alpha, for the cell it lands on to blend with what it
-// already shows.
+// carries its alpha.
 function getStopColor(
 	stops: ResolvedStop[],
 	position: number,
@@ -580,7 +566,6 @@ function getStopColor(
 	return transparency >= 127 ? null : transparency * TRANSPARENCY_UNIT + color;
 }
 
-/** How far a length reaches along one axis of a box, in that axis's units. */
 function measureAlong(length: ShapeLength, perPx: number, box: number): number {
 	return typeof length === "number"
 		? length * perPx
@@ -589,11 +574,7 @@ function measureAlong(length: ShapeLength, perPx: number, box: number): number {
 			: length.length * perPx;
 }
 
-/**
- * css-images-3 §3.2: the ending shape's two radii, in cell widths. An
- * ellipse to a corner keeps the proportions of the one to the sides and
- * grows until it passes through the corner, which is √2 of the way.
- */
+/** css-images-3 §3.2: the ending shape's two radii, in cell widths. */
 function getRadii(
 	shape: RadialShape,
 	center: {x: number; y: number},
@@ -621,8 +602,7 @@ function getRadii(
 
 /**
  * A cell takes the color at its own center's distance from the
- * gradient's, as a share of the ending shape there. Stop lengths run
- * along the ray to the right.
+ * gradient's, as a share of the ending shape there.
  */
 function renderRadialGradient(
 	ctx: CellContext,
@@ -632,8 +612,6 @@ function renderRadialGradient(
 	aspect: number,
 	cell: {width: number; height: number},
 ): void {
-	// As for a linear gradient, a row counts `aspect` times over, so a
-	// circle is one on the screen.
 	const box = {width: rect.cols, height: rect.rows * aspect};
 	const perPx = {x: 1 / cell.width, y: aspect / cell.height};
 	const center = {
@@ -641,8 +619,7 @@ function renderRadialGradient(
 		y: measureAlong(shape.at[1], perPx.y, box.height),
 	};
 	const radii = getRadii(shape, center, box, perPx);
-	// A shape with no size is css-images-3's degenerate case: every cell
-	// is past its edge, and takes the last stop.
+	// With no size, every cell is past the edge and takes the last stop.
 	const radiusX = Math.max(radii.x, 1e-6);
 	const radiusY = Math.max(radii.y, 1e-6);
 	const stops = resolveStops(gradient.stops, radiusX, perPx.x, ctx.backdrop);

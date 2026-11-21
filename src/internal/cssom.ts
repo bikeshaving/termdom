@@ -11862,7 +11862,6 @@ function getColorScheme(
 	return getDocumentExchange(document)?.colorScheme ?? "light";
 }
 
-/** The terminal's background as it reported it, or null if it has not. */
 function getTerminalBackground(
 	document: globalThis.Document | null,
 ): number | null {
