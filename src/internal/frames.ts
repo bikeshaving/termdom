@@ -175,8 +175,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		const context = new CellContext(grid, rows, cols, -framebuffer.scrollTop);
 		context.layers = layers;
 		paint(painter, context);
-		// The frame's borders join here, among themselves and by their
-		// layers, which do not leave with the grid.
+		// Joined here, since the layers do not leave with the grid.
 		settleBorders(grid, layers);
 		framePainted(layout);
 		painted++;

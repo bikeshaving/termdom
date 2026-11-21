@@ -981,7 +981,6 @@ export function checkPartialFrame(
 			a.bg[index] !== b.bg[index] ||
 			a.attrs[index] !== b.attrs[index] ||
 			a.border[index] !== b.border[index] ||
-			// The layer that stroked a border is painted too.
 			(a.border[index] !== 0 &&
 				ctx.layers !== null &&
 				ctx.layers[index] !== whole.layers![index])
@@ -1083,8 +1082,7 @@ function renderStackingContext(
 	}
 }
 
-// A number for each stacking context, the same one every frame, which a
-// frame painted over the last one compares with the cells it kept.
+// A number for each stacking context, the same one every frame.
 const layerNumbers = new WeakMap<Element, number>();
 let lastLayerNumber = 0;
 
@@ -1136,8 +1134,7 @@ function renderContextLayers(
 			if (isStackingContext(element)) {
 				renderStackingContext(painter, element, ctx, layers);
 			} else {
-				// A sticky or fixed box stays where it is while others scroll
-				// under it, so it is a layer of its own with no z-index too.
+				// A sticky or fixed box is a layer of its own with no z-index too.
 				const position = getComputedValue(element, "position");
 				if (position === "sticky" || position === "fixed") {
 					ctx.layer = getLayerNumber(element);
