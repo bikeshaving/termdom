@@ -59,6 +59,18 @@ document.body.innerHTML = `
       background-image: linear-gradient(to right, transparent, #e94560);
     }
 
+    .glow {
+      height: 5px;
+      background-image: radial-gradient(circle closest-side, #ffd75f, transparent);
+    }
+    .rings {
+      background-image: repeating-radial-gradient(
+        circle at left,
+        #16213e 0, #16213e 2ch,
+        #0f3460 2ch, #0f3460 4ch
+      );
+    }
+
     .caption { color: white; padding: 0 1ch; }
   </style>
   <div class="app">
@@ -93,5 +105,12 @@ document.body.innerHTML = `
 
     <div class="label">a transparent stop, over background-color</div>
     <div class="bar fade"><div class="caption">text keeps the gradient</div></div>
+
+    <h2>radial-gradient()</h2>
+    <div class="label">circle closest-side, fading to transparent</div>
+    <div class="bar glow"></div>
+
+    <div class="label">repeating-radial-gradient()</div>
+    <div class="bar rings"></div>
   </div>
 `;

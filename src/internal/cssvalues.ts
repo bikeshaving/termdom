@@ -1019,12 +1019,14 @@ export function getSystemColor(
 
 /**
  * A system color as a page reads it back: rgb(), as a browser gives it.
- * One the terminal fills in reads as black or white, whichever the
+ * One the terminal fills in reads as the background it reported, where
+ * it stands for that, and otherwise as black or white, whichever the
  * terminal's scheme puts there. Null for anything else.
  */
 export function resolveSystemColor(
 	value: string,
 	scheme: "light" | "dark",
+	background: number | null = null,
 ): string | null {
 	const keyword = toASCIILowercase(value.trim());
 	const cell = SYSTEM_COLORS[keyword];
@@ -1034,7 +1036,11 @@ export function resolveSystemColor(
 	if (cell !== 0) {
 		return `rgb(${(cell >> 16) & 0xff}, ${(cell >> 8) & 0xff}, ${cell & 0xff})`;
 	}
-	const light = BACKGROUND_SYSTEM_COLORS.has(keyword) === (scheme === "light");
+	const isBackground = BACKGROUND_SYSTEM_COLORS.has(keyword);
+	if (isBackground && background !== null) {
+		return `rgb(${(background >> 16) & 0xff}, ${(background >> 8) & 0xff}, ${background & 0xff})`;
+	}
+	const light = isBackground === (scheme === "light");
 	return light ? "rgb(255, 255, 255)" : "rgb(0, 0, 0)";
 }
 

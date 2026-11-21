@@ -1,15 +1,17 @@
 /**
- * CSS Images' linear gradients: `linear-gradient()` and
- * `repeating-linear-gradient()` read from a `background-image`, and drawn
- * one background color per cell.
+ * CSS Images' gradients: `linear-gradient()`, `radial-gradient()` and
+ * their repeating forms read from a `background-image`, and drawn one
+ * background color per cell.
  */
 import * as CSSTree from "./csstree.ts";
 import {
 	getCSSValueChildren,
+	getSystemColor,
 	isLengthUnit,
 	parseColor,
 	readAngle,
 	toCellColor,
+	TRANSPARENCY_UNIT,
 } from "./cssvalues.ts";
 import {type CellContext, drawRect} from "./framebuffer.ts";
 
@@ -23,24 +25,39 @@ type StopPosition =
 
 /**
  * One `<color-stop>`. The position is what the author wrote. The color
- * is packed RGB, with alpha kept apart because a cell either takes a
- * color or keeps what is under it.
+ * is packed RGB, with alpha kept apart for the cell to blend by. A
+ * `canvas` stop is the terminal's own background.
  */
 interface GradientStop {
 	color: number;
 	alpha: number;
 	position: StopPosition;
+	canvas?: boolean;
+}
+
+type ShapeLength = Exclude<StopPosition, null>;
+
+type Extent =
+	"closest-side" | "farthest-side" | "closest-corner" | "farthest-corner";
+
+/** The ending shape of a `radial-gradient()`, css-images-3 §3.2. */
+export interface RadialShape {
+	circle: boolean;
+	size: Extent | ShapeLength[];
+	at: [ShapeLength, ShapeLength];
 }
 
 /**
- * A parsed `linear-gradient()`. The angle is the gradient line's, in
- * degrees clockwise from straight up. Stop positions stay as authored
- * because css-images-3 §3.4.3 resolves them against the line's length,
- * which the painter knows and the parser does not.
+ * A parsed gradient. The angle is a linear gradient's line, in degrees
+ * clockwise from straight up; a radial one has a shape instead. Stop
+ * positions stay as authored because css-images-3 §3.4.3 resolves them
+ * against the line's length, which the painter knows and the parser does
+ * not.
  */
 export interface Gradient {
 	repeating: boolean;
 	angle: number;
+	radial: RadialShape | null;
 	stops: GradientStop[];
 }
 
@@ -90,12 +107,20 @@ function readGradientDirection(nodes: CSSTree.ValueNode[]): number | null {
 
 function readGradientColor(
 	node: CSSTree.ValueNode,
-): {color: number; alpha: number} | null {
+): {color: number; alpha: number; canvas?: boolean} | null {
 	const text = CSSTree.generate(node as never).trim().toLowerCase();
 	// A transparent stop still names a place on the line; the painter
 	// borrows its neighbour's channels so the fade does not run to black.
 	if (text === "transparent") {
 		return {color: 0, alpha: 0};
+	}
+	const system = getSystemColor(text);
+	if (system !== null) {
+		if (system.cell !== 0) {
+			return {color: system.cell & 0xffffff, alpha: 1};
+		}
+		// The terminal's background, which the painter fills in.
+		return system.background ? {color: 0, alpha: 0, canvas: true} : null;
 	}
 	return parseColor(text);
 }
@@ -120,7 +145,140 @@ function readStopPosition(node: CSSTree.ValueNode): StopPosition | undefined {
 	return node.type === "Number" && number === 0 ? 0 : undefined;
 }
 
-function readLinearGradient(value: string): Gradient | null {
+const EXTENTS = new Set([
+	"closest-side",
+	"farthest-side",
+	"closest-corner",
+	"farthest-corner",
+]);
+
+const POSITION_KEYWORDS: Record<string, {x?: number; y?: number}> = {
+	left: {x: 0},
+	right: {x: 100},
+	top: {y: 0},
+	bottom: {y: 100},
+	center: {},
+};
+
+// css-values-4 §9.1, in its one- and two-value forms.
+function readPosition(
+	nodes: CSSTree.ValueNode[],
+): [ShapeLength, ShapeLength] | null {
+	if (nodes.length < 1 || nodes.length > 2) {
+		return null;
+	}
+	let x: ShapeLength | null = null;
+	let y: ShapeLength | null = null;
+	for (let i = 0; i < nodes.length; i++) {
+		const node = nodes[i];
+		if (node.type === "Identifier") {
+			const keyword = POSITION_KEYWORDS[(node.name ?? "").toLowerCase()];
+			if (keyword === undefined) {
+				return null;
+			}
+			if (keyword.x !== undefined) {
+				if (x !== null) {
+					return null;
+				}
+				x = {percentage: keyword.x};
+			} else if (keyword.y !== undefined) {
+				if (y !== null) {
+					return null;
+				}
+				y = {percentage: keyword.y};
+			}
+			continue;
+		}
+		const length = readStopPosition(node);
+		if (length == null) {
+			return null;
+		}
+		if (i === 0 && x === null) {
+			x = length;
+		} else if (i === 1 && y === null) {
+			y = length;
+		} else {
+			return null;
+		}
+	}
+	return [x ?? {percentage: 50}, y ?? {percentage: 50}];
+}
+
+function isNegative(length: ShapeLength): boolean {
+	return typeof length === "number"
+		? length < 0
+		: "length" in length ? length.length < 0 : length.percentage < 0;
+}
+
+// Undefined when the group is no shape at all, in which case it is the
+// first color stop; null when it starts as one and the grammar rejects it.
+function readRadialShape(
+	nodes: CSSTree.ValueNode[],
+): RadialShape | null | undefined {
+	let shape: string | null = null;
+	let extent: Extent | null = null;
+	const lengths: ShapeLength[] = [];
+	let at: [ShapeLength, ShapeLength] | null = null;
+	for (let i = 0; i < nodes.length; i++) {
+		const node = nodes[i];
+		const name = node.type === "Identifier"
+			? (node.name ?? "").toLowerCase()
+			: "";
+		if (name === "at") {
+			at = readPosition(nodes.slice(i + 1));
+			if (at === null) {
+				return null;
+			}
+			break;
+		}
+		if (name === "circle" || name === "ellipse") {
+			if (shape !== null) {
+				return null;
+			}
+			shape = name;
+		} else if (EXTENTS.has(name)) {
+			if (extent !== null) {
+				return null;
+			}
+			extent = name as Extent;
+		} else {
+			const length = node.type === "Identifier"
+				? undefined
+				: readStopPosition(node);
+			if (length == null) {
+				return i === 0 ? undefined : null;
+			}
+			lengths.push(length);
+		}
+	}
+	// A circle takes one radius and no percentage; an ellipse takes two.
+	if (
+		(extent !== null && lengths.length > 0) ||
+		lengths.length > 2 ||
+		lengths.some(isNegative) ||
+		(shape === "circle" && lengths.length === 2) ||
+		(shape === "ellipse" && lengths.length === 1) ||
+		(lengths.length === 1 &&
+			typeof lengths[0] === "object" &&
+			"percentage" in lengths[0])
+	) {
+		return null;
+	}
+	return {
+		circle: shape === "circle" || lengths.length === 1,
+		size: lengths.length > 0 ? lengths : extent ?? "farthest-corner",
+		at: at ?? [{percentage: 50}, {percentage: 50}],
+	};
+}
+
+const GRADIENT_FUNCTIONS = new Set([
+	"linear-gradient",
+	"repeating-linear-gradient",
+	"radial-gradient",
+	"repeating-radial-gradient",
+]);
+
+function readGradient(value: string): Gradient | null {
 	// Only the first layer of a `background-image` list is read: a cell
 	// holds one background, so nothing under the topmost image shows.
 	const node = getCSSValueChildren(value.trim())?.[0];
@@ -128,7 +286,7 @@ function readLinearGradient(value: string): Gradient | null {
 		return null;
 	}
 	const name = (node.name ?? "").toLowerCase();
-	if (name !== "linear-gradient" && name !== "repeating-linear-gradient") {
+	if (!GRADIENT_FUNCTIONS.has(name)) {
 		return null;
 	}
 	const args: CSSTree.ValueNode[][] = [[]];
@@ -139,9 +297,18 @@ function readLinearGradient(value: string): Gradient | null {
 			args[args.length - 1].push(child);
 		}
 	}
-	const direction = readGradientDirection(args[0]);
+	const isRadial = name.endsWith("radial-gradient");
+	const direction = isRadial ? null : readGradientDirection(args[0]);
+	const shape = isRadial ? readRadialShape(args[0]) : undefined;
+	if (shape === null) {
+		return null;
+	}
 	const stops: GradientStop[] = [];
-	for (let i = direction === null ? 0 : 1; i < args.length; i++) {
+	for (
+		let i = direction === null && shape === undefined ? 0 : 1;
+		i < args.length;
+		i++
+	) {
 		const group = args[i];
 		if (group.length === 0 || group.length > 3) {
 			return null;
@@ -166,15 +333,23 @@ function readLinearGradient(value: string): Gradient | null {
 			}
 			// Two positions on one stop are two stops of the same color, so
 			// the run between them takes no gradient at all.
-			stops.push({color: color.color, alpha: color.alpha, position: resolved});
+			stops.push({...color, position: resolved});
 		}
 	}
 	if (stops.length < 2) {
 		return null;
 	}
 	return {
-		repeating: name === "repeating-linear-gradient",
+		repeating: name.startsWith("repeating-"),
 		angle: direction ?? 180,
+		radial: isRadial
+			? shape ??
+				{
+					circle: false,
+					size: "farthest-corner",
+					at: [{percentage: 50}, {percentage: 50}],
+				}
+			: null,
 		stops,
 	};
 }
@@ -182,13 +357,13 @@ function readLinearGradient(value: string): Gradient | null {
 const gradients = new Map<string, Gradient | null>();
 
 /**
- * The first image of a `background-image`, when it is a linear gradient.
- * Null for every other image, which a terminal paints as nothing.
+ * The first image of a `background-image`, when it is a gradient. Null
+ * for every other image, which a terminal paints as nothing.
  */
-export function parseLinearGradient(value: string): Gradient | null {
+export function parseGradient(value: string): Gradient | null {
 	let gradient = gradients.get(value);
 	if (gradient === undefined) {
-		gradient = readLinearGradient(value);
+		gradient = readGradient(value);
 		if (gradients.size > 1024) {
 			gradients.clear();
 		}
@@ -212,27 +387,46 @@ function runsDown(angle: number): boolean {
 }
 
 /**
- * The gradient with every stop length in CSS pixels, measured as the
- * element measures its own lengths and along the gradient line, so a
- * `ch` down a column is a row.
+ * The gradient with every length in CSS pixels, measured as the element
+ * measures its own lengths and along the gradient line, so a `ch` down a
+ * column is a row. A radial gradient's line is its ray to the right.
  */
 export function resolveGradientLengths(
 	gradient: Gradient,
 	measure: (length: number, unit: string, vertical: boolean) => number | null,
 ): Gradient {
-	if (!gradient.stops.some((stop) => isMeasured(stop.position))) {
+	const radial = gradient.radial;
+	const shaped = radial === null
+		? []
+		: [...radial.at, ...(typeof radial.size === "string" ? [] : radial.size)];
+	if (
+		!gradient.stops.some((stop) => isMeasured(stop.position)) &&
+		!shaped.some(isMeasured)
+	) {
 		return gradient;
 	}
-	const vertical = runsDown(gradient.angle);
+	const resolve = <T extends StopPosition>(
+		position: T,
+		vertical: boolean,
+	): T | number =>
+		isMeasured(position)
+			? measure(position.length, position.unit, vertical) ?? 0
+			: position;
+	const vertical = radial === null && runsDown(gradient.angle);
 	return {
 		...gradient,
+		radial:
+			radial &&
+			{
+				...radial,
+				size: typeof radial.size === "string"
+					? radial.size
+					: radial.size.map((length, index) => resolve(length, index === 1)),
+				at: [resolve(radial.at[0], false), resolve(radial.at[1], true)],
+			},
 		stops: gradient.stops.map((stop) =>
 			isMeasured(stop.position)
-				? {
-					...stop,
-					position:
-						measure(stop.position.length, stop.position.unit, vertical) ?? 0,
-				}
+				? {...stop, position: resolve(stop.position, vertical)}
 				: stop,
 		),
 	};
@@ -256,14 +450,16 @@ function resolveStops(
 	stops: readonly GradientStop[],
 	length: number,
 	perPx: number,
+	backdrop: number | null,
 ): ResolvedStop[] {
 	const fraction = (px: number): number =>
 		length > 0 ? (px * perPx) / length : 0;
 	// NaN marks a position still to be filled in, so the sweeps below can
 	// tell "not yet known" from a real zero.
+	// A canvas stop is transparent where the backdrop is not known.
 	const resolved = stops.map((stop) => ({
-		color: stop.color,
-		alpha: stop.alpha,
+		color: stop.canvas && backdrop !== null ? backdrop & 0xffffff : stop.color,
+		alpha: stop.canvas && backdrop !== null ? 1 : stop.alpha,
 		position: stop.position === null
 			? NaN
 			: typeof stop.position === "number"
@@ -338,13 +534,12 @@ function mixColors(before: number, after: number, ratio: number): number {
 	return toCellColor(channel(16) | channel(8) | channel(0));
 }
 
-// Null where the gradient is more transparent than it is opaque, which
-// leaves the cell to the flat background-color under it.
+// Null where the gradient paints nothing. A color that is not opaque
+// carries its alpha.
 function getStopColor(
 	stops: ResolvedStop[],
 	position: number,
 	repeating: boolean,
-	under: number | null,
 ): number | null {
 	const first = stops[0].position;
 	const last = stops[stops.length - 1].position;
@@ -367,13 +562,84 @@ function getStopColor(
 		: t < before.position ? 0 : 1;
 	const alpha = before.alpha + (after.alpha - before.alpha) * ratio;
 	const color = mixColors(before.color, after.color, ratio);
-	// Over a flat color the gradient composites onto it. Over nothing there
-	// is no color to composite with, so the cell is the gradient's where
-	// it is more opaque than not, and the terminal's otherwise.
-	if (under !== null) {
-		return alpha >= 1 ? color : mixColors(under, color, alpha);
+	const transparency = Math.round((1 - alpha) * 127);
+	return transparency >= 127 ? null : transparency * TRANSPARENCY_UNIT + color;
+}
+
+function measureAlong(length: ShapeLength, perPx: number, box: number): number {
+	return typeof length === "number"
+		? length * perPx
+		: "percentage" in length
+			? (length.percentage / 100) * box
+			: length.length * perPx;
+}
+
+/** css-images-3 §3.2: the ending shape's two radii, in cell widths. */
+function getRadii(
+	shape: RadialShape,
+	center: {x: number; y: number},
+	box: {width: number; height: number},
+	perPx: {x: number; y: number},
+): {x: number; y: number} {
+	if (typeof shape.size !== "string") {
+		const x = measureAlong(shape.size[0], perPx.x, box.width);
+		return {
+			x,
+			y: shape.circle ? x : measureAlong(shape.size[1], perPx.y, box.height),
+		};
 	}
-	return alpha < 0.5 ? null : color;
+	const pick = shape.size.startsWith("closest") ? Math.min : Math.max;
+	const x = pick(Math.abs(center.x), Math.abs(box.width - center.x));
+	const y = pick(Math.abs(center.y), Math.abs(box.height - center.y));
+	if (shape.size.endsWith("corner")) {
+		const radius = Math.hypot(x, y);
+		return shape.circle
+			? {x: radius, y: radius}
+			: {x: x * Math.SQRT2, y: y * Math.SQRT2};
+	}
+	return shape.circle ? {x: pick(x, y), y: pick(x, y)} : {x, y};
+}
+
+/**
+ * A cell takes the color at its own center's distance from the
+ * gradient's, as a share of the ending shape there.
+ */
+function renderRadialGradient(
+	ctx: CellContext,
+	gradient: Gradient,
+	shape: RadialShape,
+	rect: {left: number; top: number; cols: number; rows: number},
+	aspect: number,
+	cell: {width: number; height: number},
+): void {
+	const box = {width: rect.cols, height: rect.rows * aspect};
+	const perPx = {x: 1 / cell.width, y: aspect / cell.height};
+	const center = {
+		x: measureAlong(shape.at[0], perPx.x, box.width),
+		y: measureAlong(shape.at[1], perPx.y, box.height),
+	};
+	const radii = getRadii(shape, center, box, perPx);
+	// With no size, every cell is past the edge and takes the last stop.
+	const radiusX = Math.max(radii.x, 1e-6);
+	const radiusY = Math.max(radii.y, 1e-6);
+	const stops = resolveStops(gradient.stops, radiusX, perPx.x, ctx.backdrop);
+	const firstRow = Math.max(0, ctx.bandTop - ctx.viewportOffset - rect.top);
+	const lastRow = Math.min(
+		rect.rows,
+		ctx.bandBottom - ctx.viewportOffset - rect.top,
+	);
+	const firstCol = Math.max(0, -rect.left);
+	const lastCol = Math.min(rect.cols, ctx.cols - rect.left);
+	for (let row = firstRow; row < lastRow; row++) {
+		const y = ((row + 0.5) * aspect - center.y) / radiusY;
+		for (let col = firstCol; col < lastCol; col++) {
+			const x = (col + 0.5 - center.x) / radiusX;
+			const color = getStopColor(stops, Math.hypot(x, y), gradient.repeating);
+			if (color !== null) {
+				drawRect(ctx, rect.left + col, rect.top + row, 1, 1, color);
+			}
+		}
+	}
 }
 
 /**
@@ -387,13 +653,23 @@ export function renderGradient(
 	ctx: CellContext,
 	gradient: Gradient,
 	rect: {left: number; top: number; width: number; height: number},
-	under: number | null,
 	aspect: number,
 	cell: {width: number; height: number},
 ): void {
 	const cols = Math.round(rect.width);
 	const rows = Math.round(rect.height);
 	if (cols <= 0 || rows <= 0) {
+		return;
+	}
+	if (gradient.radial !== null) {
+		renderRadialGradient(
+			ctx,
+			gradient,
+			gradient.radial,
+			{left: Math.round(rect.left), top: Math.round(rect.top), cols, rows},
+			aspect,
+			cell,
+		);
 		return;
 	}
 	const radians = (gradient.angle * Math.PI) / 180;
@@ -414,7 +690,7 @@ export function renderGradient(
 	// A pixel across is a column's share of a cell, and a pixel down a row's,
 	// which the line counts `aspect` times over.
 	const perPx = (dx * dx) / cell.width + (dy * dy * aspect) / cell.height;
-	const stops = resolveStops(gradient.stops, length, perPx);
+	const stops = resolveStops(gradient.stops, length, perPx, ctx.backdrop);
 	const left = Math.round(rect.left);
 	const top = Math.round(rect.top);
 	const colorAt = (x: number, y: number): number | null =>
@@ -422,7 +698,6 @@ export function renderGradient(
 			stops,
 			length > 0 ? (x * dx + y * dy) / length : 0,
 			gradient.repeating,
-			under,
 		);
 	// Only the cells the band can show are worth a color, however far the
 	// box runs past them.
