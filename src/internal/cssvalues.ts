@@ -1019,10 +1019,9 @@ export function getSystemColor(
 
 /**
  * A system color as a page reads it back: rgb(), as a browser gives it.
- * One that stands for the terminal's background reads as the color the
- * terminal has reported. Any other the terminal fills in reads as black
- * or white, whichever the terminal's scheme puts there. Null for anything
- * that is not a system color.
+ * One the terminal fills in reads as the background it reported, where
+ * it stands for that, and otherwise as black or white, whichever the
+ * terminal's scheme puts there. Null for anything else.
  */
 export function resolveSystemColor(
 	value: string,
