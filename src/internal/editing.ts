@@ -389,8 +389,7 @@ function getUneditableIsland(
 
 /**
  * The first place the caret can show: the first text with something in
- * it, or whatever stands on a line before that. A <br> is a line of its
- * own, so a blank first line takes the caret rather than the text below it.
+ * it, or a <br> before that.
  */
 function getFirstCaretPoint(element: globalThis.Element): EditingPoint {
 	let fallback: EditingPoint | null = null;
