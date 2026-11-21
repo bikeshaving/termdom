@@ -1485,10 +1485,7 @@ export function drawDecoration(
 		if (index < 0) {
 			continue;
 		}
-		// A border already in the cell is another box's, since a box with a
-		// border of its own is ringed along that border instead. It stays:
-		// an edge that took its place would rub out a box the outline only
-		// passes over.
+		// Another box's border stays.
 		if (grid.border[index] !== 0) {
 			continue;
 		}
