@@ -1232,14 +1232,10 @@ export class CellContext {
 	// Where images go when the terminal draws them in pixels. Null for
 	// half blocks.
 	graphics: KittyImages | null;
-	// The layer being painted, which its borders are stroked in. Borders
-	// join only within a layer: one in a layer above passes over those
-	// beneath it, as a sticky header's rule passes over what scrolls under.
+	// The layer being painted. Borders join only within a layer.
 	layer: number;
-	// Which layer stroked the border in each cell, written as borders are
-	// painted and read when they join. Null where every border is of one
-	// layer. It is the painter's record and not what the terminal shows,
-	// so it is no part of the grid.
+	// Which layer stroked the border in each cell. Null where every border
+	// is of one layer.
 	layers: Uint32Array | null;
 
 	constructor(
@@ -2378,9 +2374,7 @@ export class Framebuffer {
 	// The previous frame's borders before they were joined, and where it
 	// was painted from, so a frame that repaints some rows starts from it.
 	prevBorders: Uint32Array | null;
-	// Which layer stroked each border of the frame last painted. There is
-	// one, written in place: no frame compares it with the one before, and
-	// a frame painted over the last keeps the rows it leaves alone.
+	// Which layer stroked each border of the frame last painted.
 	layers: Uint32Array | null;
 	prevFrame: {
 		offset: number;
@@ -2857,8 +2851,6 @@ export function beginFrame(
 	context.graphics = framebuffer.colorDepth === "rgb"
 		? framebuffer.graphics
 		: null;
-	// A frame painted over the last one is the last one's size, so the
-	// layers it kept are still each cell's.
 	let layers = framebuffer.layers;
 	if (layers === null || layers.length !== frameRows * cols) {
 		layers = new Uint32Array(frameRows * cols);
@@ -3351,9 +3343,8 @@ function shiftPrevious(
 		moveRange(prev, start + shift, start, stop - shift);
 		clearRange(prev, start, start + shift);
 	}
-	// The joined borders shift with the cells, for a frame that paints
-	// only what the shift exposed.
-	// The layers that stroked them shift too.
+	// The joined borders and their layers shift with the cells, for a
+	// frame that paints only what the shift exposed.
 	for (const borders of [framebuffer.prevBorders, framebuffer.layers]) {
 		if (borders === null || stop > borders.length) {
 			continue;
