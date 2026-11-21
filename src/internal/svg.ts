@@ -1,17 +1,12 @@
 /**
  * SVG images, drawn into an RGBA bitmap with the 2d canvas's rasterizer.
+ * currentColor is black, and nothing outside the file is loaded.
  *
- * An SVG file is an image like any other: bytes in, pixels out, with
- * nothing of the page that shows it. So currentColor is black, as it is
- * for an <img> in a browser, and nothing outside the file is loaded.
- *
- * What is read: the shape elements (path, rect, circle, ellipse, line,
- * polyline, polygon), groups, <use> of an element in the same file,
- * viewBox and preserveAspectRatio, transform, the fill, stroke and
- * opacity properties as attributes, in a style attribute or in a <style>
- * sheet of simple selectors, linear and radial gradients, and clip-path.
- * What is not: text, images, patterns, filters, masks, markers and
- * animation, which draw nothing.
+ * Read: the shape elements, groups, <use> within the file, viewBox and
+ * preserveAspectRatio, transform, the fill, stroke and opacity properties
+ * as attributes, style attributes or a <style> sheet of simple selectors,
+ * linear and radial gradients, and clip-path. Not read: text, images,
+ * patterns, filters, masks, markers and animation.
  */
 import * as Parse5 from "parse5";
 
@@ -51,7 +46,6 @@ interface Box {
 	height: number;
 }
 
-// The properties a shape inherits from the elements around it.
 interface Paint {
 	fill: string;
 	stroke: string;
@@ -114,12 +108,8 @@ const SHAPES = new Set([
 	"polygon",
 ]);
 
-/**
- * A file is text a stranger wrote, and drawing it runs for as long as it
- * has shapes. These hold a file to what an image is worth: its bytes,
- * the shapes it draws once every <use> is followed, how deep its
- * elements nest, and how far one <use> may reach into another.
- */
+// The most a file may be: in bytes, in shapes with every <use> followed,
+// in nesting, and in <use> within <use>.
 export const MAX_SVG_BYTES = 1 << 22;
 const MAX_SHAPES = 1 << 17;
 const MAX_DEPTH = 64;
@@ -128,9 +118,7 @@ const MAX_USE_DEPTH = 8;
 // ---------------------------------------------------------------------------
 // The <style> sheet.
 
-// A selector of a type, an id and classes, which is all a drawing program
-// writes. Anything with a combinator, an attribute or a pseudo-class is
-// not read, and its rule sets nothing.
+// A selector of a type, an id and classes. No other selector is read.
 interface Rule {
 	tag: string | null;
 	id: string | null;
@@ -219,7 +207,7 @@ interface Drawing {
 }
 
 // Presentation attributes, then the sheet's rules, then the style
-// attribute: each wins over the one before it.
+// attribute.
 function getAttributes(node: SVGNode, rules: Rule[]): Attributes {
 	const attributes: Attributes = new Map();
 	for (const {name, value} of node.attrs ?? []) {
@@ -249,8 +237,7 @@ function getAttributes(node: SVGNode, rules: Rule[]): Attributes {
 	return attributes;
 }
 
-// CSS's absolute units in pixels, and the font-relative ones against the
-// 16 pixel font an image with no page around it has.
+// In pixels, against a 16 pixel font.
 const UNITS: Record<string, number> = {
 	"": 1,
 	px: 1,
@@ -384,14 +371,11 @@ function readPaint(attributes: Attributes, parent: Paint): Paint {
 			? undefined
 			: value.trim();
 	};
-	// A color of currentColor is the color around it, which is the one
-	// already here.
 	const color = inherited("color");
 	if (color !== undefined && color.toLowerCase() !== "currentcolor") {
 		paint.color = color;
 	}
-	// A paint that does not parse is no declaration at all, so the shape
-	// keeps the one it inherits: black, for a fill nothing else has set.
+	// A paint that does not parse is no declaration at all.
 	const paintOf = (name: string): string | undefined => {
 		const value = inherited(name);
 		return value !== undefined && isPaint(value) ? value : undefined;
@@ -452,8 +436,7 @@ function isGradient(node: SVGNode | undefined): node is SVGNode {
 		(node.tagName === "linearGradient" || node.tagName === "radialGradient");
 }
 
-// A gradient that names another takes what it does not say from it: its
-// attributes, and its stops when it has none of its own.
+// A gradient that names another takes what it does not say from it.
 function resolveGradient(
 	drawing: Drawing,
 	node: SVGNode,
@@ -480,9 +463,8 @@ function resolveGradient(
 }
 
 /**
- * The gradient an element is painted with (SVG 2 §14.2), in the user
- * space of the shape it paints. Null where it paints nothing, and a
- * color where it has one stop.
+ * The gradient an element is painted with (SVG 2 §14.2). Null where it
+ * paints nothing, and a color where it has one stop.
  */
 function readGradient(
 	drawing: Drawing,
@@ -515,8 +497,7 @@ function readGradient(
 	}
 	const boxed = attributes.get("gradientUnits") !== "userSpaceOnUse";
 	let matrix = readTransform(attributes.get("gradientTransform"));
-	// In the units of the bounding box, the gradient is drawn on a unit
-	// square that is then stretched over the shape's box.
+	// objectBoundingBox: a unit square stretched over the shape's box.
 	let whole = drawing.viewport;
 	if (boxed) {
 		const box = bounds();
@@ -587,7 +568,6 @@ function resolvePaint(
 // ---------------------------------------------------------------------------
 // Shapes.
 
-// A shape as path segments, on the context or on a Path2D to measure.
 // False for a shape with nothing to draw.
 function shapePath(
 	path: CanvasRenderingContext2D | Path2D,
@@ -684,8 +664,6 @@ function shapePath(
 	return false;
 }
 
-// The shapes of a <clipPath>, as one path on the context, each under its
-// own transform.
 function clipTo(drawing: Drawing, clip: SVGNode): void {
 	const {context} = drawing;
 	const attributes = getAttributes(clip, drawing.rules);
@@ -709,8 +687,7 @@ function clipTo(drawing: Drawing, clip: SVGNode): void {
 		shapePath(context, child.tagName, shape, drawing.viewport);
 		context.restore();
 	}
-	// The path is held as it was drawn, so the clip outlives the
-	// transforms it was drawn under.
+	// The path keeps its shape, so the clip outlives these transforms.
 	context.restore();
 	context.clip(rule);
 }
@@ -875,17 +852,13 @@ function collectIds(node: SVGNode, ids: Map<string, SVGNode>, depth = 0): void {
 	}
 }
 
-// The most a small drawing is enlarged, and the pixels one is drawn to
-// when it can be. An icon is a dozen units across and shown larger than
-// that, so its pixels are drawn finer than its units.
+// The most a small drawing is enlarged, and the pixels it is drawn to.
 const MAX_SCALE = 16;
 const DRAWN_PIXELS = 1 << 18;
 
 /**
- * How many pixels to draw for each of the image's own. An image has no
- * resolution to lose, and the box it is shown in is not known here, so
- * a small one is drawn larger than it measures, and one too large to
- * keep is drawn smaller.
+ * How many pixels to draw for each of the image's own: more for a small
+ * image, fewer for one too large to keep.
  */
 function getScale(width: number, height: number): number {
 	const area = width * height;
@@ -895,10 +868,7 @@ function getScale(width: number, height: number): number {
 		: Math.min(1, Math.sqrt(MAX_KEPT_PIXELS / area));
 }
 
-/**
- * The matrix that fits the viewBox into the image (SVG 2 §8.2). A `slice`
- * fills the image and overflows it, which the bitmap's edge clips.
- */
+/** The matrix that fits the viewBox into the image (SVG 2 §8.2). */
 function fitViewBox(
 	box: number[],
 	width: number,
@@ -932,11 +902,8 @@ function fitViewBox(
 const ENTITY = /<!ENTITY\s+([\w.-]+)\s+(?:"([^"]*)"|'([^']*)')\s*>/g;
 
 /**
- * The file from its root element on, with the entities its doctype
- * declares written out, which is how one drawing program abbreviates its
- * styles. The HTML parser knows none of them. An entity's text is not
- * read for entities again, so a file cannot grow without end, and one
- * that grows past what a file may be is refused.
+ * The file from its root element on, with its doctype's entities written
+ * out, since the HTML parser knows none of them. Each is expanded once.
  */
 function expandEntities(source: string): string {
 	const start = Math.max(0, source.search(/<svg[\s>]/i));
@@ -963,8 +930,7 @@ function expandEntities(source: string): string {
 	});
 }
 
-// A percentage is a share of a page the image does not have, so it is as
-// good as no size.
+// A percentage has no page to be a share of, so it is no size.
 function readSide(value: string | undefined): number | null {
 	const length = value === undefined || value.includes("%")
 		? NaN
@@ -974,8 +940,7 @@ function readSide(value: string | undefined): number | null {
 
 /**
  * Draw an SVG file. The bitmap's natural size is the image's size in CSS
- * pixels, and it holds more or fewer pixels than that. Past `deadline`,
- * a time from Date.now(), the drawing stops.
+ * pixels. Past `deadline`, a time from Date.now(), the drawing stops.
  */
 export async function rasterizeSVG(
 	bytes: Uint8Array,
@@ -985,8 +950,7 @@ export async function rasterizeSVG(
 		throw new Error(`The SVG file is more than ${MAX_SVG_BYTES} bytes`);
 	}
 	// The HTML parser reads <svg> as foreign content, which fixes the case
-	// of viewBox and the like, and reads <path/> as closed. What comes
-	// before the element, an XML declaration or a doctype, is not HTML's.
+	// of viewBox and the like, and reads <path/> as closed.
 	const fragment = Parse5.parseFragment(
 		expandEntities(new TextDecoder().decode(bytes)),
 	) as unknown as SVGNode;

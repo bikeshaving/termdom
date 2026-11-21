@@ -45,10 +45,8 @@ export function sniffImageType(bytes: Uint8Array): string | null {
 const SVG_START =
 	/^(?:\xef\xbb\xbf)?\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!DOCTYPE[^>[]*(?:\[[\s\S]*?\])?[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>]/i;
 
-// An SVG file has no signature, so it is known by its root element, which
-// has to open within the first bytes.
+// An SVG file has no signature, so it is known by its root element.
 function looksLikeSVG(bytes: Uint8Array): boolean {
-	// Every other file starts with something that is not markup.
 	if (bytes[0] !== 0x3c && bytes[0] !== 0xef && !(bytes[0] <= 0x20)) {
 		return false;
 	}
@@ -77,8 +75,6 @@ export async function decodeImage(
 			return decodeGIF(bytes);
 		case "image/bmp":
 			return decodeBMP(bytes);
-		// An SVG file is drawn, not decoded, with the canvas's rasterizer,
-		// which is loaded only for one.
 		case "image/svg+xml":
 			return await loadSVG().rasterizeSVG(bytes, deadline);
 		default:

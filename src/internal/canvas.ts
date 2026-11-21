@@ -891,11 +891,7 @@ export class Path2D {
 
 declareSealedRoot(Path2D);
 
-/**
- * The box around a path's points, in the units it was written in. Null
- * for a path with no points. A curve is measured by the lines it was cut
- * into.
- */
+/** The box around a path's points. Null for a path with none. */
 export function getPathBounds(
 	path: Path2D,
 ): {x: number; y: number; width: number; height: number} | null {
@@ -916,10 +912,7 @@ export function getPathBounds(
 		: {x: left, y: top, width: right - left, height: bottom - top};
 }
 
-/**
- * SVG path data (SVG 2 §9.3), the string Path2D's constructor takes. On a
- * context the segments go into its current path, under its transform.
- */
+// SVG path data (SVG 2 §9.3), the string Path2D's constructor takes.
 export function parseSVGPath(
 	data: string,
 	path: Path2D | CanvasRenderingContext2D,
@@ -1098,8 +1091,7 @@ const SUBSAMPLES = 4;
 
 type FillRule = "nonzero" | "evenodd";
 
-// The pixels a mask can cover: the box of the polygons it was made from.
-// Painting a small shape on a large bitmap looks no further than this.
+// The box of the polygons a mask was made from.
 interface MaskBounds {
 	left: number;
 	top: number;
@@ -1536,9 +1528,8 @@ export class CanvasGradient {
 }
 
 /**
- * Lay the gradient out in a space of its own, `matrix` away from the one
- * it is painted in, as an SVG gradientTransform does. False for a matrix
- * that flattens the space to nothing, which leaves the gradient as it was.
+ * Lay the gradient out in a space `matrix` away from the one it is
+ * painted in. False for a matrix with no inverse.
  */
 export function transformGradient(
 	gradient: CanvasGradient,
@@ -3001,8 +2992,8 @@ function paintMask(
 	const inverse = typeof paint === "string"
 		? null
 		: invert(slots.state.transform);
-	// An operation that clears what the source does not cover reaches the
-	// whole bitmap. Any other reaches only where the mask can.
+	// Only an operation that clears outside the source reaches past the
+	// mask's box.
 	const bounds = unbounded ? undefined : maskBounds.get(mask);
 	const {left, top, right, bottom} =
 		bounds ?? {left: 0, top: 0, right: width, bottom: height};
