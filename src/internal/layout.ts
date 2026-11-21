@@ -2950,13 +2950,12 @@ function flowChildren(
 const contextHosts = new WeakMap<LayoutNode, Element>();
 
 // An inline-grid, inline-flex or inline-table always lays its own content
-// out, because a line cannot contain a grid, a flex container or a table
-// piecemeal: what is in one is its items, not text on the line. An
-// inline-block does so only once it holds a block-level box. Never a
-// plain inline: it is broken instead, and taking its content here would
-// steal back the container's boxes. Only a run's measure lays the root
-// out, so a box no run measures, as an out-of-flow one, lays its content
-// out on its own node.
+// out, because a line cannot contain one piecemeal. An inline-block does
+// so only once it holds a block-level box. Never a plain inline: it is
+// broken instead, and taking its content here would steal back the
+// container's boxes. Only a run's measure lays the root out, so a box no
+// run measures, as an out-of-flow one, lays its content out on its own
+// node.
 function needsContextRoot(element: Element): boolean {
 	const display = getLayoutDisplay(element);
 	return (
