@@ -795,22 +795,46 @@ function getBorderChar(borderEncoding: number): string {
 // its life, so a link that repaints keeps its id and a terminal treats
 // its pieces as one link.
 class LinkTable {
-	readonly urls: string[];
+	readonly urls: Map<number, string>;
 	readonly ids: Map<string, number>;
+	last: number;
 
 	constructor() {
-		this.urls = [""];
+		this.urls = new Map();
 		this.ids = new Map();
+		this.last = 0;
 	}
 
 	intern(url: string): number {
 		let id = this.ids.get(url);
 		if (id === undefined) {
-			id = this.urls.length;
-			this.urls.push(url);
+			id = ++this.last;
+			this.urls.set(id, url);
 			this.ids.set(url, id);
 		}
 		return id;
+	}
+}
+
+const KEPT_LINKS = 1024;
+
+/** Forget the URLs no cell of the grid links to, once there are many. */
+export function sweepLinks(grid: CellGrid): void {
+	const {urls, ids} = grid.links;
+	if (ids.size <= KEPT_LINKS) {
+		return;
+	}
+	const used = new Set<number>();
+	for (let index = 0; index < grid.link.length; index++) {
+		if (grid.link[index] !== 0) {
+			used.add(grid.link[index]);
+		}
+	}
+	for (const [id, url] of urls) {
+		if (!used.has(id)) {
+			urls.delete(id);
+			ids.delete(url);
+		}
 	}
 }
 
@@ -997,9 +1021,12 @@ function setFrom(
 	grid.attrs[index] = source.attrs[sourceIndex];
 	grid.border[index] = source.border[sourceIndex];
 	const link = source.link[sourceIndex];
-	grid.link[index] = link === 0 || source.links === grid.links
-		? link
-		: grid.links.intern(source.links.urls[link]);
+	if (link === 0 || source.links === grid.links) {
+		grid.link[index] = link;
+	} else {
+		const url = source.links.urls.get(link);
+		grid.link[index] = url === undefined ? 0 : grid.links.intern(url);
+	}
 }
 
 function widthAt(grid: CellGrid, index: number): number {
@@ -1880,10 +1907,11 @@ function getStyleDiff(
 ): void {
 	writeStyleDiff(grid, index, prev, writer);
 	const link = grid.link[index];
-	if (link === 0) {
+	const url = link === 0 ? undefined : grid.links.urls.get(link);
+	if (url === undefined) {
 		writer.endHyperlink();
 	} else {
-		writer.hyperlink(link, grid.links.urls[link]);
+		writer.hyperlink(link, url);
 	}
 }
 
@@ -3485,6 +3513,9 @@ export function endFrame(framebuffer: Framebuffer): string {
 	framebuffer.frameScroll = 0;
 	framebuffer.dirty = false;
 	framebuffer.wholeDamage = false;
+	if (framebuffer.prev !== null) {
+		sweepLinks(framebuffer.prev);
+	}
 	return ansi;
 }
 

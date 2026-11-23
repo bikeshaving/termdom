@@ -1041,8 +1041,12 @@ const PAINT_STYLE: StyleGroup<PaintStyle> = {
 
 // The absolute URL of the nearest enclosing link, for the terminal to
 // open (OSC 8). A fragment or a relative URL means nothing outside the
-// document, and an anchor without href is not a link.
-const LINK_SCHEMES = /^(?:https?|mailto|file|ftp):/i;
+// document, and an anchor without href is not a link. No file: URLs:
+// the page may not be from the machine the terminal is on.
+const LINK_SCHEMES = /^(?:https?|mailto):/i;
+const MAX_LINK_LENGTH = 2083;
+// Bytes that would end the escape the URL is written in.
+const LINK_UNSAFE = /[\x00-\x20\x7f-\x9f]/;
 
 function getLinkURL(element: Element): string | null {
 	for (
@@ -1055,7 +1059,11 @@ function getLinkURL(element: Element): string | null {
 			node.hasAttribute("href")
 		) {
 			const url = (node as HTMLAnchorElement).href;
-			return LINK_SCHEMES.test(url) ? url : null;
+			return LINK_SCHEMES.test(url) &&
+				url.length <= MAX_LINK_LENGTH &&
+				!LINK_UNSAFE.test(url)
+				? url
+				: null;
 		}
 	}
 	return null;

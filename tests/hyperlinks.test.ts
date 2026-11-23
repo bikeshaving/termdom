@@ -1,6 +1,7 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
+import {CellGrid, sweepLinks} from "../src/internal/framebuffer.ts";
 import {captureRawOutput, MockProcess, nextFrame} from "./test-utils.js";
 
 const OPEN = (id: number, url: string) => `\x1b]8;id=${id};${url}\x1b\\`;
@@ -51,6 +52,33 @@ test("a placeholder anchor, a fragment and a relative URL link nothing", async (
 	await nextFrame(dom);
 	expect(written()).not.toContain("\x1b]8;");
 	dom.dispose();
+});
+
+test("a file, a script and an overlong URL link nothing", async () => {
+	const long = `https://example.com/${"a".repeat(2100)}`;
+	const {written, dom} = makeApp(
+		"<a href=\"file:///etc/passwd\">file</a> " +
+			"<a href=\"ftp://example.com/\">ftp</a> " +
+			"<a href=\"javascript:void 0\">js</a> " +
+			`<a href="${long}">long</a>`,
+	);
+	await nextFrame(dom);
+	expect(written()).not.toContain("\x1b]8;");
+	dom.dispose();
+});
+
+test("URLs no cell links to are forgotten once there are many", () => {
+	const grid = new CellGrid(1, 2);
+	for (let index = 0; index < 2000; index++) {
+		grid.setCell(0, "x", {link: `https://example.com/${index}`});
+	}
+	grid.setCell(1, "y", {link: "https://example.com/0"});
+	sweepLinks(grid);
+	expect([...grid.links.urls.values()].sort()).toEqual([
+		"https://example.com/0",
+		"https://example.com/1999",
+	]);
+	expect(grid.links.urls.get(grid.link[0])).toBe("https://example.com/1999");
 });
 
 test("a relative URL resolves against the document URL", async () => {
