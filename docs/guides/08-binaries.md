@@ -15,7 +15,7 @@ Node's single-file builds take it as it is.
 | Builds for other platforms | Yes, with `--target` | With that platform's `node` binary |
 | Size of a small program | About 90 MB | About 150 MB |
 | Images decode | On a worker, if you include it | On the main thread |
-| `<embed type="application/x-pty">` | Works | Fires `error` |
+| `<embed type="application/x-pty">` | Works | With `node-pty` beside the executable |
 
 The sizes are the runtime's, measured on macOS for Apple silicon with
 Bun 1.4 and Node 26. TermDOM and a small program add 2 to 4 MB.
@@ -211,8 +211,9 @@ from source needs another way to read the file there.
 - Images decode on the main thread. A CommonJS bundle has no worker to
   start.
 - An [`<embed type="application/x-pty">`](/guides/images-and-canvas/)
-  fires `error`. On Node it runs programs through `node-pty`, a native
-  addon, which a bundler cannot put in the script.
+  runs programs through `node-pty`, a native addon, which a bundler
+  cannot put in the script. Ship a `node_modules` directory holding
+  `node-pty` beside the executable, or the embed fires `error`.
 
 ## Checking a build
 
