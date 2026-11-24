@@ -13,7 +13,7 @@ import {TermDOM} from "../src/index.ts";
 import {sniffImageType} from "../src/internal/imagecodecs.ts";
 import {type Bitmap, MAX_KEPT_PIXELS} from "../src/internal/images.ts";
 import {MAX_SVG_BYTES, rasterizeSVG} from "../src/internal/svg.ts";
-import {MockProcess, nextFrame} from "./test-utils.ts";
+import {MockProcess, nextFrame, until} from "./test-utils.ts";
 
 // The engine parses a file only once a window has had a document.
 new TermDOM({
@@ -471,6 +471,79 @@ test("a canvas draws an SVG image from the pixels drawn for it", async () => {
 	expect(read(9, 5)).toEqual(CLEAR);
 	expect(read(13, 5)).toEqual(CLEAR);
 	expect(read(2, 5)).toEqual(CLEAR);
+	dom.dispose();
+});
+
+/** The glyph, foreground and background of the cell at `col`, `row`. */
+function readCell(terminal: MockProcess, col: number, row: number): unknown[] {
+	const at = (terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	return [at.getChars(), at.getFgColor(), at.getBgColor()];
+}
+
+test("an <svg> in the page is drawn, with the page's sheet and color", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<style>.chart { color: #00f } .chart > .top { fill: #f00 }</style>" +
+		`<svg class="chart" width="16" height="32"><rect class="top" width="16" height="16"/><rect y="16" width="16" height="16" fill="currentColor"/></svg>`;
+	await nextFrame(dom);
+	await until(() => readCell(terminal, 0, 0).includes(0xff0000));
+	for (const col of [0, 1]) {
+		expect(readCell(terminal, col, 0).slice(1)).toContain(0xff0000);
+		expect(readCell(terminal, col, 1).slice(1)).toContain(0x0000ff);
+	}
+	expect(readCell(terminal, 2, 0)[0]).toBe("");
+	dom.dispose();
+});
+
+test("var() in an <svg> takes the page's custom property, or its fallback", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<style>:root { --ink: #f00 }</style>" +
+		`<svg width="16" height="32"><rect width="16" height="16" fill="var(--ink)"/><rect y="16" width="16" height="16" style="fill: var(--none, #00f)"/></svg>`;
+	await nextFrame(dom);
+	await until(() => readCell(terminal, 0, 0).includes(0xff0000));
+	expect(readCell(terminal, 0, 0).slice(1)).toContain(0xff0000);
+	expect(readCell(terminal, 0, 1).slice(1)).toContain(0x0000ff);
+	dom.dispose();
+});
+
+test("an <svg> made a block is drawn in the box its rule gives it", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		"<style>svg { display: block; width: 4ch; height: 2px }</style>" +
+		`<svg viewBox="0 0 8 8"><rect width="8" height="8" fill="#f00"/></svg>`;
+	await nextFrame(dom);
+	await until(() => readCell(terminal, 3, 1).includes(0xff0000));
+	expect(readCell(terminal, 3, 1)).toContain(0xff0000);
+	expect(readCell(terminal, 4, 1)).not.toContain(0xff0000);
+	expect(readCell(terminal, 0, 2)).not.toContain(0xff0000);
+	dom.dispose();
+});
+
+test("an <svg> in the page is drawn again when what is in it changes", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		`<svg width="16" height="16"><rect width="16" height="16" fill="#f00"/></svg>`;
+	await nextFrame(dom);
+	await until(() => readCell(terminal, 0, 0).includes(0xff0000));
+	expect(readCell(terminal, 0, 0)).toContain(0xff0000);
+	dom.document.querySelector("rect")!.setAttribute("fill", "#0f0");
+	await until(() => readCell(terminal, 0, 0).includes(0x00ff00));
+	expect(readCell(terminal, 0, 0)).toContain(0x00ff00);
+	const circle = dom.document.createElementNS(
+		"http://www.w3.org/2000/svg",
+		"rect",
+	);
+	circle.setAttribute("width", "16");
+	circle.setAttribute("height", "16");
+	circle.setAttribute("fill", "#00f");
+	dom.document.querySelector("svg")!.append(circle);
+	await until(() => readCell(terminal, 0, 0).includes(0x0000ff));
+	expect(readCell(terminal, 0, 0)).toContain(0x0000ff);
 	dom.dispose();
 });
 

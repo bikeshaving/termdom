@@ -171,6 +171,10 @@ is its `width` and `height`, or its `viewBox`, and it is drawn with
 more pixels than that so it stays sharp when shown larger. A file over
 4 MB, or one that draws more than 131,072 shapes, fails to load.
 
+An `<svg>` element in the page is drawn as one image too, and again
+when what is in it changes. It takes `currentColor` from the page, and
+rules from the page's `<style>` elements.
+
 `load`, `error`, `decode()`, `complete`, `naturalWidth`,
 `naturalHeight`, `currentSrc`, and `new Image()` work. Only the `1x`
 `srcset` candidate is used.

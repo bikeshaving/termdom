@@ -1547,7 +1547,9 @@ function paintNodes(
 			paintRun(painter, run, childOrigin, ctx);
 		} else if (
 			getNodeType(owner) === owner.ELEMENT_NODE &&
-			(implementsInterface(owner, HTMLElement) || isMathRoot(owner)) &&
+			(implementsInterface(owner, HTMLElement) ||
+				isMathRoot(owner) ||
+				isReplacedBox(owner as Element)) &&
 			!hoistedToLayer(layout, owner as Element)
 		) {
 			paintBlock(painter, owner as Element, child, childOrigin, ctx);

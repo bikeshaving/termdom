@@ -2264,9 +2264,9 @@ exports[`email fixture: notes-digest-row.html 1`] = `
                  ╭────────────────────────────────────────────────────────────────╮
                  │                                                                │
                  │                                                                │
-                 │                      ╭────────────╮                            │
-                 │            xxxxxxxx  │ You follow │                            │  7d
-                 │                      ╰────────────╯                            │
+                 │                        ╭────────────╮                          │
+                 │            xxxxxxxx    │ You follow │                          │  7d
+                 │                        ╰────────────╯                          │
                  │            xxxxxxx xxxxxx xxxxx x xxxxxx xxxxxxx xxxxx xxx xxxxxxx
                  │            xx x xxx xxxx xx xxxxxxxxxx xxxxxxxxxx xxx xxxxxxxxxxx
                  │                                                                │
@@ -2314,7 +2314,7 @@ exports[`email fixture: notes-digest-row.html 1`] = `
                  │                                                                │
                  ╰────────────────────────────────────────────────────────────────╯
 
-                                      xxx xxxx xxxxx xx xxx xxxxxxxx xxx
+                                        xxx xxxx xxxxx xx xxx xxxxxxxx xxx
 
 
 
@@ -2332,15 +2332,15 @@ exports[`email fixture: notes-digest-row.html 1`] = `
 5: 0-100 #ffffff
 6: 0-100 #ffffff
 7: 0-100 #ffffff
-8: 0-40 #ffffff
-8: 40-54 #eeeeee
-8: 54-100 #ffffff
-9: 0-40 #ffffff
-9: 40-54 #eeeeee
-9: 54-100 #ffffff
-10: 0-40 #ffffff
-10: 40-54 #eeeeee
-10: 54-100 #ffffff
+8: 0-42 #ffffff
+8: 42-56 #eeeeee
+8: 56-100 #ffffff
+9: 0-42 #ffffff
+9: 42-56 #eeeeee
+9: 56-100 #ffffff
+10: 0-42 #ffffff
+10: 42-56 #eeeeee
+10: 56-100 #ffffff
 11: 0-100 #ffffff
 12: 0-100 #ffffff
 13: 0-100 #ffffff

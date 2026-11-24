@@ -14177,7 +14177,105 @@ function buildElement(
 	_(element).upperName = null;
 	_(element).localName = localName;
 	_(element).isValue = is;
+	if (namespace === SVG_NAMESPACE && localName === "svg") {
+		registerSVGContent(element);
+	}
 	return element;
+}
+
+interface SVGState {
+	bitmap: Bitmap | null;
+	version: number;
+	stale: boolean;
+	drawing: boolean;
+}
+
+const svgStates = new WeakMap<Element, SVGState>();
+
+// An <svg> in a page is drawn as an image is, from the elements in it.
+function registerSVGContent(svg: Element): void {
+	const state: SVGState = {
+		bitmap: null,
+		version: 0,
+		stale: true,
+		drawing: false,
+	};
+	svgStates.set(svg, state);
+	registerReplacedContent(svg, () => {
+		if (svg.ownerDocument?.defaultView == null) {
+			return null;
+		}
+		if (state.stale && !state.drawing && svg.isConnected) {
+			drawSVGContent(svg, state);
+		}
+		return state.bitmap === null
+			? {kind: "blank", ...loadSVG().getSVGSize(svg)}
+			: {
+				kind: "bitmap",
+				bitmap: state.bitmap,
+				version: state.version,
+				smooth: true,
+			};
+	});
+}
+
+const SVG_READ_MS = 10_000;
+
+// An SVG file is read here, where the elements are, and drawn where
+// other images decode.
+function decodeImageBytes(
+	bytes: Uint8Array,
+	signal?: AbortSignal,
+): Promise<Bitmap> {
+	if (loadImageCodecs().sniffImageType(bytes) !== "image/svg+xml") {
+		return decodeImageOffThread(bytes, signal);
+	}
+	return loadSVG()
+		.recordSVG(bytes, Date.now() + SVG_READ_MS)
+		.then((drawing) => decodeImageOffThread(drawing, signal));
+}
+
+function drawSVGContent(svg: Element, state: SVGState): void {
+	state.stale = false;
+	state.drawing = true;
+	loadSVG()
+		.recordElement(
+			svg,
+			cssom.getComputedValue(svg, "color"),
+			Date.now() + SVG_READ_MS,
+		)
+		.then((drawing) => decodeImageOffThread(drawing))
+		.then((bitmap: Bitmap) => {
+			state.bitmap = bitmap;
+		}, () => {
+			state.bitmap = null;
+		})
+		.finally(() => {
+			state.drawing = false;
+			state.version++;
+			invalidateReplaced(svg, true);
+		});
+}
+
+// A change in an <svg> redraws the outermost one it is in.
+function noteSVGChange(node: Node | null): void {
+	let root: Element | null = null;
+	for (
+		let current = node;
+		current !== null &&
+		getNodeType(current) === ELEMENT_NODE &&
+		_(current as Element).namespace === SVG_NAMESPACE;
+		current = current.parentNode as Node | null
+	) {
+		if (_(current as Element).localName === "svg") {
+			root = current as Element;
+		}
+	}
+	const state = root === null ? undefined : svgStates.get(root);
+	if (state !== undefined && !state.stale) {
+		state.stale = true;
+		invalidateReplaced(root!, false);
+	}
 }
 
 // With the synchronous flag (createElement and its kin), the author's
@@ -16588,22 +16686,6 @@ class HTMLButtonElement extends HTMLElement {
 // A change to what a replaced element shows. A new size reflows the
 // element; new pixels only repaint it. Neither is a DOM mutation, so the
 // engine is asked here, once a microtask, however many draw calls came.
-const SVG_READ_MS = 10_000;
-
-// An SVG file is read here, where the elements are, and drawn where
-// other images decode.
-function decodeImageBytes(
-	bytes: Uint8Array,
-	signal?: AbortSignal,
-): Promise<Bitmap> {
-	if (loadImageCodecs().sniffImageType(bytes) !== "image/svg+xml") {
-		return decodeImageOffThread(bytes, signal);
-	}
-	return loadSVG()
-		.recordSVG(bytes, Date.now() + SVG_READ_MS)
-		.then((drawing) => decodeImageOffThread(drawing, signal));
-}
-
 function invalidateReplaced(element: Element, reflow: boolean): void {
 	const attached = getAttachedDocument(element);
 	// A canvas drawn on only as a buffer, or an image not in the document,
@@ -16967,8 +17049,10 @@ export function relayoutReplacedElements(
 export function getCanvasTextRuns(
 	element: globalThis.Element,
 ): ReturnType<typeof getCanvasText> {
-	const context =
-		_((element as unknown as HTMLCanvasElement)).extra.canvasContext;
+	if (!implementsInterface(element, HTMLCanvasElement)) {
+		return [];
+	}
+	const context = _(element).extra.canvasContext;
 	return implementsInterface(context, CanvasRenderingContext2D)
 		? getCanvasText(context)
 		: [];
@@ -38840,6 +38924,13 @@ function handleMutationRecords(
 		) {
 			syncUAShadowTree(textarea);
 		}
+	}
+	for (const record of relevant) {
+		noteSVGChange(
+			(record.type === "characterData"
+				? record.target.parentNode
+				: record.target) as Node | null,
+		);
 	}
 	cssom.handleMutations(_(attached).extra.cascade, relevant);
 	_(attached).extra.layout.handleMutations(relevant);
