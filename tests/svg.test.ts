@@ -607,6 +607,21 @@ test("an <svg> in the page takes rules from any sheet, over its attributes", asy
 	dom.dispose();
 });
 
+test("a <style> inside an <svg> in the page styles it", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		`<svg width="16" height="16"><style>.inner { fill: #f00 }</style><rect class="inner" width="16" height="16"/></svg>`;
+	await nextFrame(dom);
+	await until(() => readCell(terminal, 0, 0).includes(0xff0000));
+	expect(readCell(terminal, 0, 0)).toContain(0xff0000);
+	dom.document.querySelector("svg style")!.textContent =
+		".inner { fill: #0f0 }";
+	await until(() => readCell(terminal, 0, 0).includes(0x00ff00));
+	expect(readCell(terminal, 0, 0)).toContain(0x00ff00);
+	dom.dispose();
+});
+
 test("an SVG file asks for nothing outside it", async () => {
 	const terminal = new MockProcess({cols: 20, rows: 6});
 	const dom = new TermDOM({

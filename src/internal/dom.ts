@@ -13919,6 +13919,23 @@ export class SVGElement extends Element {
 	): void {
 		super.removeEventListener(type, listener, options);
 	}
+
+	// An SVG <style> holds a stylesheet, as HTML's does.
+	override _insertionSteps(this: Slots<SVGElement>): void {
+		superStep(SVGElement, "_insertionSteps").call(this);
+		if (this.localName === "style" && this.connected) {
+			_(this.document).extra.styleTrees.add(this.treeRoot);
+		}
+	}
+
+	override _removingSteps(this: Slots<SVGElement>, oldParent: Node): void {
+		superStep(SVGElement, "_removingSteps").call(this, oldParent);
+		if (this.localName === "style" && _(oldParent).connected) {
+			_(this.document).extra.styleTrees.add(
+				isShadowRoot(this.treeRoot) ? this.treeRoot : getRoot(oldParent),
+			);
+		}
+	}
 }
 
 Object.defineProperty(SVGElement.prototype, Symbol.toStringTag, {
