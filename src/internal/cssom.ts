@@ -55,6 +55,7 @@ import {
 	isDocumentElement,
 	isShadowRoot,
 	isUAShadowTree,
+	noteSVGRestyle,
 	pseudoElement,
 	pseudoElementCount,
 	releaseRemovedNodes,
@@ -10938,6 +10939,7 @@ function recordRestyle(
 	hadPseudoStyles: boolean,
 ): void {
 	cascade.layout.restyledSinceLayout.add(element);
+	noteSVGRestyle(element);
 	// Past this many, the next frame repaints whole rather than compare
 	// them, and a document that never paints keeps no more.
 	if (cascade.layout.restyledForPaint.size >= 256) {

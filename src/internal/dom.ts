@@ -14188,9 +14188,15 @@ interface SVGState {
 	version: number;
 	stale: boolean;
 	drawing: boolean;
+	// What was last drawn, to tell a change that draws the same.
+	drawn: string;
 }
 
 const svgStates = new WeakMap<Element, SVGState>();
+
+// The <svg> elements a document has drawn, which a change of style
+// outside them may draw differently.
+const drawnSVGs = new WeakMap<Document, Set<Element>>();
 
 // An <svg> in a page is drawn as an image is, from the elements in it.
 function registerSVGContent(svg: Element): void {
@@ -14199,6 +14205,7 @@ function registerSVGContent(svg: Element): void {
 		version: 0,
 		stale: true,
 		drawing: false,
+		drawn: "",
 	};
 	svgStates.set(svg, state);
 	registerReplacedContent(svg, () => {
@@ -14238,23 +14245,51 @@ function decodeImageBytes(
 function drawSVGContent(svg: Element, state: SVGState): void {
 	state.stale = false;
 	state.drawing = true;
+	const document = svg.ownerDocument;
+	let drawn = drawnSVGs.get(document);
+	if (drawn === undefined) {
+		drawn = new Set();
+		drawnSVGs.set(document, drawn);
+	}
+	drawn.add(svg);
+	const before = state.bitmap;
 	loadSVG()
 		.recordElement(
 			svg,
 			cssom.getComputedValue(svg, "color"),
 			Date.now() + SVG_READ_MS,
 		)
-		.then((drawing) => decodeImageOffThread(drawing))
+		.then((drawing) => {
+			const key = JSON.stringify(drawing);
+			if (key === state.drawn && before !== null) {
+				return before;
+			}
+			state.drawn = key;
+			return decodeImageOffThread(drawing);
+		})
 		.then((bitmap: Bitmap) => {
 			state.bitmap = bitmap;
 		}, () => {
 			state.bitmap = null;
+			state.drawn = "";
 		})
 		.finally(() => {
 			state.drawing = false;
-			state.version++;
-			invalidateReplaced(svg, true);
+			if (state.bitmap !== before) {
+				state.version++;
+				invalidateReplaced(svg, true);
+			} else if (state.stale) {
+				invalidateReplaced(svg, false);
+			}
 		});
+}
+
+function markSVGStale(svg: Element): void {
+	const state = svgStates.get(svg);
+	if (state !== undefined && !state.stale) {
+		state.stale = true;
+		invalidateReplaced(svg, false);
+	}
 }
 
 // A change in an <svg> redraws the outermost one it is in.
@@ -14271,10 +14306,62 @@ function noteSVGChange(node: Node | null): void {
 			root = current as Element;
 		}
 	}
-	const state = root === null ? undefined : svgStates.get(root);
-	if (state !== undefined && !state.stale) {
-		state.stale = true;
-		invalidateReplaced(root!, false);
+	if (root !== null) {
+		markSVGStale(root);
+	}
+}
+
+/** An element restyled: an <svg> it is in may draw differently. */
+export function noteSVGRestyle(element: globalThis.Element): void {
+	if (_(element as Element).namespace === SVG_NAMESPACE) {
+		noteSVGChange(element as Element);
+	}
+}
+
+// A change outside an <svg> that the styles of the ones in `within`, or
+// of every one for null, may hang on.
+function noteSVGStyleChange(document: Document, within: Node | null): void {
+	const drawn = drawnSVGs.get(document);
+	if (drawn === undefined) {
+		return;
+	}
+	for (const svg of drawn) {
+		if (!svg.isConnected) {
+			drawn.delete(svg);
+		} else if (within === null || within.contains(svg)) {
+			markSVGStale(svg);
+		}
+	}
+}
+
+function holdsStyleSheet(node: globalThis.Node): boolean {
+	if (getNodeType(node) !== ELEMENT_NODE) {
+		return false;
+	}
+	const element = node as Element;
+	return element.localName === "style" ||
+		element.localName === "link" ||
+		element.querySelector("style, link") !== null;
+}
+
+function noteSVGMutation(document: Document, record: MutationRecord): void {
+	const target = (record.type === "characterData"
+		? record.target.parentNode
+		: record.target) as Node | null;
+	if (target === null || getNodeType(target) !== ELEMENT_NODE) {
+		return;
+	}
+	if (_(target as Element).namespace === SVG_NAMESPACE) {
+		noteSVGChange(target);
+	} else if (!drawnSVGs.has(document)) {
+		return;
+	} else if (record.type === "attributes") {
+		noteSVGStyleChange(document, target);
+	} else if (
+		(target as Element).localName === "style" ||
+		[...getAddedNodes(record), ...record.removedNodes].some(holdsStyleSheet)
+	) {
+		noteSVGStyleChange(document, null);
 	}
 }
 
@@ -38926,11 +39013,7 @@ function handleMutationRecords(
 		}
 	}
 	for (const record of relevant) {
-		noteSVGChange(
-			(record.type === "characterData"
-				? record.target.parentNode
-				: record.target) as Node | null,
-		);
+		noteSVGMutation(document as Document, record);
 	}
 	cssom.handleMutations(_(attached).extra.cascade, relevant);
 	_(attached).extra.layout.handleMutations(relevant);

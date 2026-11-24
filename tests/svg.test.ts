@@ -547,6 +547,43 @@ test("an <svg> in the page is drawn again when what is in it changes", async () 
 	dom.dispose();
 });
 
+test("an <svg> in the page is drawn again when the page's styles change", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<style>:root { --ink: #f00 } .dark rect { fill: #0f0 } .blue { color: #00f }</style>" +
+		`<div><svg width="16" height="32"><rect width="16" height="16" fill="var(--ink)"/><rect y="16" width="16" height="16" fill="currentColor"/></svg></div>`;
+	const top = () => readCell(terminal, 0, 0).slice(1);
+	const bottom = () => readCell(terminal, 0, 1).slice(1);
+	await nextFrame(dom);
+	await until(() => top().includes(0xff0000));
+	expect(top()).toContain(0xff0000);
+	// A custom property.
+	document.documentElement.style.setProperty("--ink", "#ff0");
+	await until(() => top().includes(0xffff00));
+	expect(top()).toContain(0xffff00);
+	// The color around it.
+	document.querySelector("div")!.className = "blue";
+	await until(() => bottom().includes(0x0000ff));
+	expect(bottom()).toContain(0x0000ff);
+	// A class on an ancestor that a rule for a shape hangs on.
+	document.body.className = "dark";
+	await until(() => top().includes(0x00ff00));
+	expect(top()).toContain(0x00ff00);
+	// A sheet added.
+	const sheet = document.createElement("style");
+	sheet.textContent = ".dark rect { fill: #f0f }";
+	document.body.append(sheet);
+	await until(() => top().includes(0xff00ff));
+	expect(top()).toContain(0xff00ff);
+	// A sheet's text.
+	sheet.textContent = ".dark rect { fill: #0ff }";
+	await until(() => top().includes(0x00ffff));
+	expect(top()).toContain(0x00ffff);
+	dom.dispose();
+});
+
 test("an SVG file asks for nothing outside it", async () => {
 	const terminal = new MockProcess({cols: 20, rows: 6});
 	const dom = new TermDOM({
