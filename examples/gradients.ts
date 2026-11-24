@@ -10,6 +10,7 @@ document.body.innerHTML = `
   <style>
     .app { padding: 1px 2ch; }
     h2 { color: #5fafff; font-weight: bold; }
+    .bar + h2 { padding-top: 1px; }
     .label { color: #888; padding: 1px 0 0 0; }
     .bar { height: 3px; width: 48ch; }
     .row { display: flex; flex-direction: row; gap: 2ch; }
@@ -59,13 +60,13 @@ document.body.innerHTML = `
       background-image: linear-gradient(to right, transparent, #e94560);
     }
 
+    .glow, .rings { height: 9px; }
     .glow {
-      height: 5px;
       background-image: radial-gradient(circle closest-side, #ffd75f, transparent);
     }
     .rings {
       background-image: repeating-radial-gradient(
-        circle at left,
+        circle,
         #16213e 0, #16213e 2ch,
         #0f3460 2ch, #0f3460 4ch
       );
