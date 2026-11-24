@@ -56,6 +56,7 @@ import {
 	isShadowRoot,
 	isUAShadowTree,
 	noteSVGRestyle,
+	noteSVGRestyleAll,
 	pseudoElement,
 	pseudoElementCount,
 	releaseRemovedNodes,
@@ -9164,6 +9165,7 @@ interface DroppedStyles {
 }
 
 function dropCache(cascade: Cascade): void {
+	noteSVGRestyleAll(cascade.document);
 	// Every computed style ever handed out re-resolves on its next read.
 	cascade.siblingIndexesForMatching = null;
 	cascade.filteredSiblingsForMatching = null;

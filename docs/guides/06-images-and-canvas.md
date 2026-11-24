@@ -172,8 +172,8 @@ more pixels than that so it stays sharp when shown larger. A file over
 4 MB, or one that draws more than 131,072 shapes, fails to load.
 
 An `<svg>` element in the page is drawn as one image too, and again
-when what is in it or the page's styles change. It takes `currentColor`
-and `var()` from the page, and rules from the page's `<style>` elements.
+when what is in it or the page's styles change. It is styled by the
+page's stylesheets, with `currentColor` and `var()`.
 
 `load`, `error`, `decode()`, `complete`, `naturalWidth`,
 `naturalHeight`, `currentSrc`, and `new Image()` work. Only the `1x`

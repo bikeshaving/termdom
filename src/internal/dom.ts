@@ -14194,9 +14194,8 @@ interface SVGState {
 
 const svgStates = new WeakMap<Element, SVGState>();
 
-// The <svg> elements a document has drawn, which a change of style
-// outside them may draw differently.
-const drawnSVGs = new WeakMap<Document, Set<Element>>();
+// The <svg> elements a document has drawn, for when every style drops.
+const drawnSVGs = new WeakMap<globalThis.Document, Set<Element>>();
 
 // An <svg> in a page is drawn as an image is, from the elements in it.
 function registerSVGContent(svg: Element): void {
@@ -14245,11 +14244,10 @@ function decodeImageBytes(
 function drawSVGContent(svg: Element, state: SVGState): void {
 	state.stale = false;
 	state.drawing = true;
-	const document = svg.ownerDocument;
-	let drawn = drawnSVGs.get(document);
+	let drawn = drawnSVGs.get(svg.ownerDocument);
 	if (drawn === undefined) {
 		drawn = new Set();
-		drawnSVGs.set(document, drawn);
+		drawnSVGs.set(svg.ownerDocument, drawn);
 	}
 	drawn.add(svg);
 	const before = state.bitmap;
@@ -14311,57 +14309,25 @@ function noteSVGChange(node: Node | null): void {
 	}
 }
 
-/** An element restyled: an <svg> it is in may draw differently. */
-export function noteSVGRestyle(element: globalThis.Element): void {
-	if (_(element as Element).namespace === SVG_NAMESPACE) {
-		noteSVGChange(element as Element);
-	}
-}
-
-// A change outside an <svg> that the styles of the ones in `within`, or
-// of every one for null, may hang on.
-function noteSVGStyleChange(document: Document, within: Node | null): void {
+/** Every style of the document dropped, as when a stylesheet changes. */
+export function noteSVGRestyleAll(document: globalThis.Document): void {
 	const drawn = drawnSVGs.get(document);
 	if (drawn === undefined) {
 		return;
 	}
 	for (const svg of drawn) {
-		if (!svg.isConnected) {
-			drawn.delete(svg);
-		} else if (within === null || within.contains(svg)) {
+		if (svg.isConnected) {
 			markSVGStale(svg);
+		} else {
+			drawn.delete(svg);
 		}
 	}
 }
 
-function holdsStyleSheet(node: globalThis.Node): boolean {
-	if (getNodeType(node) !== ELEMENT_NODE) {
-		return false;
-	}
-	const element = node as Element;
-	return element.localName === "style" ||
-		element.localName === "link" ||
-		element.querySelector("style, link") !== null;
-}
-
-function noteSVGMutation(document: Document, record: MutationRecord): void {
-	const target = (record.type === "characterData"
-		? record.target.parentNode
-		: record.target) as Node | null;
-	if (target === null || getNodeType(target) !== ELEMENT_NODE) {
-		return;
-	}
-	if (_(target as Element).namespace === SVG_NAMESPACE) {
-		noteSVGChange(target);
-	} else if (!drawnSVGs.has(document)) {
-		return;
-	} else if (record.type === "attributes") {
-		noteSVGStyleChange(document, target);
-	} else if (
-		(target as Element).localName === "style" ||
-		[...getAddedNodes(record), ...record.removedNodes].some(holdsStyleSheet)
-	) {
-		noteSVGStyleChange(document, null);
+/** An element restyled: an <svg> it is in may draw differently. */
+export function noteSVGRestyle(element: globalThis.Element): void {
+	if (_(element as Element).namespace === SVG_NAMESPACE) {
+		noteSVGChange(element as Element);
 	}
 }
 
@@ -39013,7 +38979,11 @@ function handleMutationRecords(
 		}
 	}
 	for (const record of relevant) {
-		noteSVGMutation(document as Document, record);
+		noteSVGChange(
+			(record.type === "characterData"
+				? record.target.parentNode
+				: record.target) as Node | null,
+		);
 	}
 	cssom.handleMutations(_(attached).extra.cascade, relevant);
 	_(attached).extra.layout.handleMutations(relevant);

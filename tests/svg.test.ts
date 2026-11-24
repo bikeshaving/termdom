@@ -584,6 +584,29 @@ test("an <svg> in the page is drawn again when the page's styles change", async 
 	dom.dispose();
 });
 
+test("an <svg> in the page takes rules from any sheet, over its attributes", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		"<style>.styled { fill: #f00 }</style>" +
+		`<svg width="16" height="48"><rect class="styled" width="16" height="16" fill="#00f"/><rect class="ruled" y="16" width="16" height="16" fill="#00f"/><rect class="adopted" y="32" width="16" height="16" fill="#00f"/></svg>`;
+	const row = (index: number) => readCell(terminal, 0, index).slice(1);
+	await nextFrame(dom);
+	await until(() => row(0).includes(0xff0000));
+	expect(row(0)).toContain(0xff0000);
+	expect(row(1)).toContain(0x0000ff);
+	document.querySelector("style")!.sheet!.insertRule(".ruled { fill: #0f0 }");
+	await until(() => row(1).includes(0x00ff00));
+	expect(row(1)).toContain(0x00ff00);
+	const adopted = new dom.window.CSSStyleSheet();
+	adopted.replaceSync(".adopted { fill: #ff0 }");
+	document.adoptedStyleSheets = [adopted];
+	await until(() => row(2).includes(0xffff00));
+	expect(row(2)).toContain(0xffff00);
+	dom.dispose();
+});
+
 test("an SVG file asks for nothing outside it", async () => {
 	const terminal = new MockProcess({cols: 20, rows: 6});
 	const dom = new TermDOM({

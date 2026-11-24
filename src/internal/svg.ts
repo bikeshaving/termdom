@@ -30,6 +30,7 @@ import {
 	parseDeclarationText,
 } from "./cssvalues.ts";
 import {type Element, parseHTMLDocument} from "./dom.ts";
+import {SVG_PRESENTATION_ATTRIBUTES} from "./hints.ts";
 import {type Bitmap, createYielder, MAX_KEPT_PIXELS} from "./images.ts";
 import {
 	rasterizeDrawing,
@@ -166,8 +167,6 @@ function readSheet(text: string): Rule[] {
 	return rules.sort((a, b) => a.specificity - b.specificity);
 }
 
-// Every <style> of the document: a file's own, and for an <svg> in a
-// page, the page's too.
 function collectSheet(root: Element): string {
 	let text = "";
 	for (const style of root.ownerDocument.querySelectorAll("style")) {
@@ -181,7 +180,8 @@ function collectSheet(root: Element): string {
 
 interface Drawing {
 	context: CanvasRenderingContext2D;
-	rules: Rule[];
+	// Null in a page, where the cascade has them.
+	rules: Rule[] | null;
 	ids: Map<string, Element>;
 	// The viewport a percentage is a share of, in user units.
 	viewport: {width: number; height: number};
@@ -189,12 +189,25 @@ interface Drawing {
 	pause: () => Promise<void> | undefined;
 }
 
-// Presentation attributes, then the sheet's rules, then the style
+// The element's attributes, with its properties as they compute. In a
+// page that is the engine's cascade. A file's document has none, so there
+// it is presentation attributes, then the sheet's rules, then the style
 // attribute.
-function getAttributes(node: Element, rules: Rule[]): Attributes {
+function getAttributes(node: Element, rules: Rule[] | null): Attributes {
 	const attributes: Attributes = new Map();
 	for (const attribute of node.attributes) {
 		attributes.set(attribute.localName, attribute.value);
+	}
+	if (rules === null) {
+		for (const name of SVG_PRESENTATION_ATTRIBUTES) {
+			const value = getComputedValue(node, name);
+			if (value === "") {
+				attributes.delete(name);
+			} else {
+				attributes.set(name, value);
+			}
+		}
+		return attributes;
 	}
 	for (const rule of rules) {
 		if (matchesCompiled(node, rule.selector)) {
@@ -209,31 +222,7 @@ function getAttributes(node: Element, rules: Rule[]): Attributes {
 			attributes.set(name, value);
 		}
 	}
-	for (const [name, value] of attributes) {
-		if (value.includes("var(")) {
-			attributes.set(name, resolveVariables(node, value));
-		}
-	}
 	return attributes;
-}
-
-const VARIABLE = /var\(\s*(--[\w-]+)\s*(?:,([^()]*(?:\([^()]*\)[^()]*)*))?\)/g;
-
-// var() takes the custom property the element computes to, or what
-// follows the comma.
-function resolveVariables(node: Element, value: string): string {
-	for (let depth = 0; depth < 8 && value.includes("var("); depth++) {
-		const next = value.replace(
-			VARIABLE,
-			(_match, name: string, fallback: string | undefined) =>
-				getComputedValue(node, name).trim() || (fallback ?? "").trim(),
-		);
-		if (next === value) {
-			break;
-		}
-		value = next;
-	}
-	return value;
 }
 
 // In pixels, against a 16 pixel font.
@@ -998,7 +987,9 @@ export async function recordElement(
 	color: string,
 	deadline = Infinity,
 ): Promise<SVGDrawing> {
-	const rules = readSheet(collectSheet(root));
+	const rules = root.ownerDocument.defaultView == null
+		? readSheet(collectSheet(root))
+		: null;
 	const attributes = getAttributes(root, rules);
 	// The size is the attributes': a rule's width is the box's, not the
 	// drawing's.
