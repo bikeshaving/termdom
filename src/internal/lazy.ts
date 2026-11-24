@@ -6,6 +6,7 @@
 import type * as Gradients from "./gradients.ts";
 import type * as MathML from "./mathml.ts";
 import {requireFromSource} from "./require.ts";
+import type * as SVG from "./svg.ts";
 
 declare const require: (id: string) => unknown;
 
@@ -34,4 +35,17 @@ export function loadGradients(): typeof Gradients {
 		}
 	}
 	return gradients;
+}
+
+let svg: typeof SVG | null = null;
+
+export function loadSVG(): typeof SVG {
+	if (svg === null) {
+		try {
+			svg = require("./svg.ts") as typeof SVG;
+		} catch (error) {
+			svg = requireFromSource("./svg.ts", error) as typeof SVG;
+		}
+	}
+	return svg;
 }

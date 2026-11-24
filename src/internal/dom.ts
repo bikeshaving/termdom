@@ -66,6 +66,7 @@ import {
 	unregisterReplacedContent,
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
+import {loadSVG} from "./lazy.ts";
 import {PTYSession, type PTYSpawner} from "./pty.ts";
 import {rehomeClone} from "./realms.ts";
 import type {ResourceLoader} from "./resources.ts";
@@ -16587,6 +16588,22 @@ class HTMLButtonElement extends HTMLElement {
 // A change to what a replaced element shows. A new size reflows the
 // element; new pixels only repaint it. Neither is a DOM mutation, so the
 // engine is asked here, once a microtask, however many draw calls came.
+const SVG_READ_MS = 10_000;
+
+// An SVG file is read here, where the elements are, and drawn where
+// other images decode.
+function decodeImageBytes(
+	bytes: Uint8Array,
+	signal?: AbortSignal,
+): Promise<Bitmap> {
+	if (loadImageCodecs().sniffImageType(bytes) !== "image/svg+xml") {
+		return decodeImageOffThread(bytes, signal);
+	}
+	return loadSVG()
+		.recordSVG(bytes, Date.now() + SVG_READ_MS)
+		.then((drawing) => decodeImageOffThread(drawing, signal));
+}
+
 function invalidateReplaced(element: Element, reflow: boolean): void {
 	const attached = getAttachedDocument(element);
 	// A canvas drawn on only as a buffer, or an image not in the document,
@@ -20210,7 +20227,7 @@ function updateImageData(image: HTMLImageElement): void {
 		_(attached)
 			.extra.load(request, {initiator: image as unknown as globalThis.Element})
 			.then((response) => readImageResponse(response))
-			.then((bytes) => decodeImageOffThread(bytes, abort.signal))
+			.then((bytes) => decodeImageBytes(bytes, abort.signal))
 			.finally(() => ended.removeEventListener("abort", onEnded))
 			.then(
 				(bitmap) => settle("complete", bitmap),
@@ -42748,7 +42765,7 @@ export class Window extends EventTarget {
 		// A Blob is decoded first; an image still loading is waited for.
 		if (image instanceof Blob) {
 			return image.arrayBuffer()
-				.then((buffer) => decodeImageOffThread(new Uint8Array(buffer)))
+				.then((buffer) => decodeImageBytes(new Uint8Array(buffer)))
 				.then((bitmap) => settle(new ImageBitmap(bitmap)));
 		}
 		if (implementsInterface(image, HTMLImageElement) && !image.complete) {
