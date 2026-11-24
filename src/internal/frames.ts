@@ -34,6 +34,7 @@ import {
 	Framebuffer,
 	resize,
 	settleBorders,
+	sweepLinks,
 } from "./framebuffer.ts";
 import {framePainted, Layout} from "./layout.ts";
 import {paint, Painter} from "./painter.ts";
@@ -177,6 +178,7 @@ setFrameEngineFactory((document, window, parent, changed) => {
 		paint(painter, context);
 		// Joined here, since the layers do not leave with the grid.
 		settleBorders(grid, layers);
+		sweepLinks(grid);
 		framePainted(layout);
 		painted++;
 		// The painter puts the caret in document rows. The grid's rows are
