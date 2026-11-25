@@ -1137,6 +1137,20 @@ test("a bare Text belongs to the document that made it", () => {
 
 /* ------------------------------------------------------------ shadow trees */
 
+test("a query can select shadow children relative to their host", () => {
+	const document = make();
+	const host = document.createElement("section");
+	document.body.append(host);
+	const shadow = host.attachShadow({mode: "open"});
+	const article = shadow.appendChild(document.createElement("article"));
+	host.appendChild(document.createElement("article"));
+
+	expect(shadow.querySelector(":host > article")).toBe(article);
+	expect([...shadow.querySelectorAll(":host > article")]).toEqual([article]);
+	expect(shadow.querySelector("section > article")).toBe(null);
+	expect(document.querySelector(":host > article")).toBe(null);
+});
+
 test("a slot is assigned the host children whose name it carries", () => {
 	const document = make();
 	const host = document.createElement("div");

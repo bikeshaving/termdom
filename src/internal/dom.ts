@@ -31182,6 +31182,11 @@ function convertNodesIntoNode(nodes: Insertable[], document: Document): Node {
 	return fragment;
 }
 
+function queryScope(node: Node): {scope: Node; shadow: ShadowRoot | null} {
+	const root = getRoot(node);
+	return {scope: node, shadow: isShadowRoot(root) ? root : null};
+}
+
 const parentNodeMembers = {
 	children: {
 		get(this: Node): HTMLCollection {
@@ -31292,7 +31297,7 @@ const parentNodeMembers = {
 				throw new TypeError("querySelector needs a selector");
 			}
 			try {
-				return selectFirst(this, String(selectors), {scope: this});
+				return selectFirst(this, String(selectors), queryScope(this));
 			} catch (error) {
 				throw asSyntaxError(error);
 			}
@@ -31308,7 +31313,7 @@ const parentNodeMembers = {
 			}
 			try {
 				return createStaticNodeList(
-					selectAll(this, String(selectors), {scope: this}),
+					selectAll(this, String(selectors), queryScope(this)),
 				);
 			} catch (error) {
 				throw asSyntaxError(error);
