@@ -40,15 +40,55 @@ test("an unsolicited clipboard reply is dropped, and the next key arrives", asyn
 	dom.dispose();
 });
 
-test("an unterminated unsolicited clipboard opener does not swallow keys", async () => {
+test("an unterminated unsolicited clipboard opener swallows only what a reply holds, and not for long", async () => {
 	const {proc, dom, keys} = await mount();
 	await send(proc, "\x1b]52;c;");
+	await send(proc, "\r");
+	expect(keys).toEqual(["Enter"]);
+	await send(proc, "\x1b]52;c;");
+	await new Promise((resolve) => setTimeout(resolve, 600));
 	await send(proc, "x");
-	await until(() => keys.at(-1) === "x");
-	expect(keys.at(-1)).toBe("x");
-	for (const key of keys) {
-		expect(key.includes("\x1b")).toBe(false);
+	expect(keys).toEqual(["Enter", "x"]);
+	dom.dispose();
+});
+
+test("a clipboard reply nobody is waiting for, cut across reads, is not typed", async () => {
+	const {proc, dom, keys} = await mount();
+	const reply = btoa("rm -rf ~ ;".repeat(40));
+	await send(proc, "\x1b]52;c;" + reply.slice(0, 100));
+	await send(proc, reply.slice(100, 300));
+	await send(proc, reply.slice(300) + "\x07x");
+	expect(keys).toEqual(["x"]);
+	await send(proc, "\x1b]52;");
+	await send(proc, "c;" + reply + "\x1b");
+	await send(proc, "\\y");
+	expect(keys).toEqual(["x", "y"]);
+	await send(proc, "\x1b]52;c;" + reply.slice(0, 100));
+	await send(proc, reply.slice(100) + "\x1b[Az");
+	expect(keys).toEqual(["x", "y", "ArrowUp", "z"]);
+	dom.dispose();
+});
+
+test("a clipboard reply too large to keep is not typed past where it was given up", async () => {
+	const {proc, dom, keys} = await mount();
+	let reading: Promise<Error | null> | null = null;
+	dom.document.addEventListener("keydown", (event) => {
+		if ((event as KeyboardEvent).key === "v") {
+			reading = dom
+				.window.navigator.clipboard.readText()
+				.then(() => null, (err: Error) => err);
+		}
+	});
+	await send(proc, "v");
+	const chunk = "QUJD".repeat(4096);
+	await send(proc, "\x1b]52;c;" + chunk);
+	for (let i = 0; i < 6; i++) {
+		await send(proc, chunk);
 	}
+	await send(proc, "\x07x");
+	const error = await (reading as unknown as Promise<Error | null>);
+	expect(error?.name).toBe("NotAllowedError");
+	expect(keys).toEqual(["v", "x"]);
 	dom.dispose();
 });
 
@@ -110,9 +150,9 @@ test("a clipboard reply that never closes is released when the query gives up", 
 		(err: Error) => err,
 	);
 	expect(error?.name).toBe("NotAllowedError");
-	await send(proc, "x");
-	await until(() => keys.at(-1) === "x");
-	expect(keys.at(-1)).toBe("x");
+	// The rest of it comes after the query gave up.
+	await send(proc, "bG8=\x07x");
+	expect(keys).toEqual(["v", "x"]);
 	dom.dispose();
 });
 
