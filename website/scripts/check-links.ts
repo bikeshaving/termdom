@@ -57,7 +57,11 @@ const broken: Array<{file: string; href: string}> = [];
 let checked = 0;
 
 for (const file of files) {
-	const html = readFileSync(file, "utf8");
+	// A code sample's markup is text, not a link.
+	const html = readFileSync(file, "utf8").replace(
+		/<(pre|code)\b[^>]*>.*?<\/\1>/gs,
+		"",
+	);
 	for (const match of html.matchAll(/(?:href|src)="([^"]+)"/g)) {
 		const href = match[1];
 		if (
