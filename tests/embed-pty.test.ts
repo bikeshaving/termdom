@@ -1035,6 +1035,8 @@ test("what the program puts on the clipboard goes to the terminal's, and what it
 	children[0].options.onData(
 		"\x1b]52;c;not base64!\x07\x1b]52;p;cHJpbWFyeQ==\x07",
 	);
+	// The write queues behind the frame's.
+	await until(() => output().includes("\x1b]52;"));
 	await settle(dom);
 	expect(output().split("\x1b]52;").length).toBe(2);
 	expect(output()).toContain(`\x1b]52;c;${btoa(long)}\x07`);
