@@ -554,6 +554,12 @@ const HOLD_LIMIT = 4096;
 
 const STRING_OPENERS = "]P_^X";
 
+// What a clipboard reply is made of past its opener: the selection and
+// base64.
+const CLIPBOARD_BODY = /[^A-Za-z0-9+/=;]/g;
+// A discarded reply that stops arriving for this long has ended.
+const DISCARD_QUIET_MS = 500;
+
 // OSC 11 answered: the default background, each channel one to four hex
 // digits.
 const BACKGROUND_REPLY =
@@ -618,13 +624,18 @@ const PLACEHOLDER_TERMINALS = /^(?:kitty|ghostty|termdom)\b/i;
  * Escape key), an open paste body, and a clipboard reply while a query is
  * waiting for it. Nothing here may hold the keystrokes that follow it for
  * long: a paste that grows past a size is delivered in parts, and a
- * sequence that never finishes is dropped at a size.
+ * sequence that never finishes is dropped at a size. A clipboard reply
+ * that is not kept is discarded to its end, never typed.
  */
 class WireReader implements ParserHandlers {
 	tail: string;
 	pasteBody: string | null;
 	pasteOverflowed: boolean;
 	expectingReply: boolean;
+	// Inside a clipboard reply that is being discarded, and when the last
+	// of it came.
+	discarding: boolean;
+	discardedAt: number;
 	parser: Parser;
 	// What the sequence the parser read last meant, when it was a reply or
 	// a key.
@@ -635,6 +646,8 @@ class WireReader implements ParserHandlers {
 		this.pasteBody = null;
 		this.pasteOverflowed = false;
 		this.expectingReply = false;
+		this.discarding = false;
+		this.discardedAt = 0;
 		this.parser = new Parser(this);
 		this.item = null;
 	}
@@ -657,7 +670,36 @@ class WireReader implements ParserHandlers {
 		this.expectingReply = expecting;
 		if (!expecting && this.tail.startsWith(CLIPBOARD_START)) {
 			this.tail = "";
+			this.discard();
 		}
+	}
+
+	discard(): void {
+		this.discarding = true;
+		this.discardedAt = Date.now();
+	}
+
+	// The rest of a discarded clipboard reply from `i`, and the index past
+	// it. It ends at its terminator, or at what no reply holds.
+	skipReply(data: string, i: number, released: boolean): number {
+		CLIPBOARD_BODY.lastIndex = i;
+		const end = CLIPBOARD_BODY.exec(data)?.index ?? data.length;
+		if (end === data.length) {
+			this.discardedAt = Date.now();
+			return end;
+		}
+		if (data[end] === "\x1b" && end + 1 === data.length && !released) {
+			this.tail = "\x1b";
+			return data.length;
+		}
+		this.discarding = false;
+		if (data[end] === "\x07") {
+			return end + 1;
+		}
+		if (data[end] === "\x1b" && end + 1 === data.length) {
+			return data.length;
+		}
+		return data.startsWith("\x1b\\", end) ? end + 2 : end;
 	}
 
 	/**
@@ -670,8 +712,12 @@ class WireReader implements ParserHandlers {
 		let data = this.tail + chunk;
 		// A held ESC that the next read does not continue as a reply or a
 		// key sequence was the Escape key, pressed in a read of its own.
+		if (this.discarding && Date.now() - this.discardedAt > DISCARD_QUIET_MS) {
+			this.discarding = false;
+		}
 		if (
 			this.pasteBody === null &&
+			!this.discarding &&
 			this.tail === "\x1b" &&
 			chunk !== "" &&
 			!("[O" + STRING_OPENERS).includes(chunk[0])
@@ -682,6 +728,10 @@ class WireReader implements ParserHandlers {
 		this.tail = "";
 		let i = 0;
 		while (i < data.length) {
+			if (this.discarding) {
+				i = this.skipReply(data, i, chunk === "");
+				continue;
+			}
 			// Inside a paste only the end fence means anything.
 			if (this.pasteBody !== null) {
 				const end = data.indexOf(PASTE_END, i);
@@ -760,13 +810,16 @@ class WireReader implements ParserHandlers {
 				}
 				return data.length;
 			}
-			if (this.expectingReply && opened.startsWith(CLIPBOARD_START)) {
-				if (opened.length < OSC_LIMIT.input) {
+			if (opened.startsWith(CLIPBOARD_START)) {
+				if (this.expectingReply && opened.length < OSC_LIMIT.input) {
 					this.tail = opened;
-				} else {
+					return data.length;
+				}
+				if (this.expectingReply) {
 					items.push({kind: "clipboard", text: null});
 				}
-				return data.length;
+				this.discard();
+				return i + CLIPBOARD_START.length;
 			}
 			if (isHeldString(opened, replyDue)) {
 				this.tail = opened;
