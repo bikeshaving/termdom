@@ -17794,6 +17794,24 @@ function startProgram(embed: HTMLEmbedElement): void {
 				),
 			bell: () => fire("bell"),
 			colors: () => getProgramColors(embed, attachedSlots.extra.exchange),
+			// A cell the terminal has not measured is a guess, which the
+			// program makes as well by itself.
+			cellPixels: () => {
+				const framebuffer = attachedSlots.extra.framebuffer;
+				return framebuffer.pixelRatio === null ? null : framebuffer.cellPixels;
+			},
+			writeClipboard: (text) => {
+				const exchange = attachedSlots.extra.exchange;
+				if (attachedSlots.extra.visible && exchange?.interactive) {
+					void exchange.writeClipboard(text);
+				}
+			},
+			readClipboard: async () => {
+				const exchange = attachedSlots.extra.exchange;
+				return attachedSlots.extra.visible && exchange?.interactive
+					? await exchange.queryClipboard()
+					: null;
+			},
 		},
 	);
 	program.setScrollback(getScrollbackLimit(embed));

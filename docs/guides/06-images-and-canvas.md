@@ -460,7 +460,8 @@ embed.postMessage({type: "keydown", key: "c", ctrlKey: true});
 ### Limits
 
 - The 16 basic colors are xterm's, not the outer terminal's.
-- Images the program draws don't show.
+- Images show only when sent with the kitty graphics protocol and
+  placed with Unicode placeholders.
 - Links (OSC 8) show underlined, but can't be followed.
 
 ## Pixels as text

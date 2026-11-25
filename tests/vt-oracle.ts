@@ -219,6 +219,10 @@ const SGR_REPORT = /\x1bP1\$r[\d;:]*m\x1b\\/g;
 // leaves the queries for the protocol's flags and its name unanswered.
 const UNANSWERED_REPORTS = /\x1b\[\?\d+u|\x1bP>\|[^\x1b]*\x1b\\/g;
 
+// xterm.js does not know mode 2027, grapheme clusters, and says so. The
+// emulator has it, so its answer to a DECRQM for it is left out of both.
+const CLUSTER_REPORT = /\x1b\[\?2027;\d\$y/g;
+
 /**
  * The ways the emulator's state after `data` differs from xterm.js's,
  * one line each, or none when they agree. With `sgrReports: "ignore"`,
@@ -235,7 +239,10 @@ export async function compareWithXterm(
 ): Promise<string[]> {
 	const ours = snapshotOurs(data, cols, rows, scrollback);
 	const theirs = await snapshotXterm(data, cols, rows, scrollback);
-	ours.replies = ours.replies.replace(UNANSWERED_REPORTS, "");
+	ours.replies = ours.replies
+		.replace(UNANSWERED_REPORTS, "")
+		.replace(CLUSTER_REPORT, "");
+	theirs.replies = theirs.replies.replace(CLUSTER_REPORT, "");
 	if (sgrReports === "ignore") {
 		ours.replies = ours.replies.replace(SGR_REPORT, "");
 		theirs.replies = theirs.replies.replace(SGR_REPORT, "");
