@@ -1156,6 +1156,29 @@ test("a query can select shadow children relative to their host", () => {
 	expect(inner.closest("section")).toBe(null);
 });
 
+test(":host is the host of the tree a query or a match is made in, and of no other", () => {
+	const document = make();
+	const host = document.createElement("section");
+	document.body.append(host);
+	const shadow = host.attachShadow({mode: "closed"});
+	const outer = shadow.appendChild(document.createElement("div"));
+	const nested = outer.attachShadow({mode: "open"});
+	const inner = nested.appendChild(document.createElement("div"));
+
+	// css/css-shadow/host-dom-001.html
+	expect(host.matches(":host")).toBe(false);
+	expect(outer.matches(":host div")).toBe(true);
+	expect(shadow.querySelector(":host div")).toBe(outer);
+
+	expect(outer.closest(":host")).toBe(null);
+	expect(outer.matches("section div")).toBe(false);
+	expect(inner.matches(":host > div")).toBe(true);
+	expect(inner.matches(":host(div) > div")).toBe(true);
+	expect(inner.matches(":host(section) div")).toBe(false);
+	expect(nested.querySelectorAll(":host div").length).toBe(1);
+	expect(shadow.querySelectorAll(":host div").length).toBe(1);
+});
+
 test("a slot is assigned the host children whose name it carries", () => {
 	const document = make();
 	const host = document.createElement("div");
