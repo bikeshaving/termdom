@@ -1149,6 +1149,11 @@ test("a query can select shadow children relative to their host", () => {
 	expect([...shadow.querySelectorAll(":host > article")]).toEqual([article]);
 	expect(shadow.querySelector("section > article")).toBe(null);
 	expect(document.querySelector(":host > article")).toBe(null);
+	expect(article.matches(":host > article")).toBe(true);
+	expect(article.matches("section > article")).toBe(false);
+	const inner = article.appendChild(document.createElement("p"));
+	expect(inner.closest(":host > article")).toBe(article);
+	expect(inner.closest("section")).toBe(null);
 });
 
 test("a slot is assigned the host children whose name it carries", () => {

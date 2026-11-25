@@ -27,6 +27,7 @@ import {
 	closestSelector,
 	getDirectionality,
 	matchesSelector,
+	type MatchOptions,
 	selectAll,
 	selectFirst,
 	SelectorError,
@@ -12175,12 +12176,19 @@ Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+// A query's `:scope` is the node, and its `:host` the host of the shadow
+// tree the node is in.
+function getQueryOptions(node: Node): MatchOptions {
+	const root = getRoot(node);
+	return {scope: node, shadow: isShadowRoot(root) ? root : null};
+}
+
 function elementMatches(this: Element, selectors: string): boolean {
 	if (arguments.length < 1) {
 		throw new TypeError("matches needs a selector");
 	}
 	try {
-		return matchesSelector(this, String(selectors), {scope: this});
+		return matchesSelector(this, String(selectors), getQueryOptions(this));
 	} catch (error) {
 		throw asSyntaxError(error);
 	}
@@ -12207,7 +12215,7 @@ Object.defineProperties(Element.prototype, {
 			try {
 				// `:scope` refers to the element closest() was called on, for
 				// every ancestor it tries.
-				return closestSelector(this, String(selectors), {scope: this});
+				return closestSelector(this, String(selectors), getQueryOptions(this));
 			} catch (error) {
 				throw asSyntaxError(error);
 			}
@@ -31182,11 +31190,6 @@ function convertNodesIntoNode(nodes: Insertable[], document: Document): Node {
 	return fragment;
 }
 
-function queryScope(node: Node): {scope: Node; shadow: ShadowRoot | null} {
-	const root = getRoot(node);
-	return {scope: node, shadow: isShadowRoot(root) ? root : null};
-}
-
 const parentNodeMembers = {
 	children: {
 		get(this: Node): HTMLCollection {
@@ -31297,7 +31300,7 @@ const parentNodeMembers = {
 				throw new TypeError("querySelector needs a selector");
 			}
 			try {
-				return selectFirst(this, String(selectors), queryScope(this));
+				return selectFirst(this, String(selectors), getQueryOptions(this));
 			} catch (error) {
 				throw asSyntaxError(error);
 			}
@@ -31313,7 +31316,7 @@ const parentNodeMembers = {
 			}
 			try {
 				return createStaticNodeList(
-					selectAll(this, String(selectors), queryScope(this)),
+					selectAll(this, String(selectors), getQueryOptions(this)),
 				);
 			} catch (error) {
 				throw asSyntaxError(error);

@@ -2503,7 +2503,7 @@ export function compileSelector(
 	return entry;
 }
 
-interface MatchOptions {
+export interface MatchOptions {
 
 	// The node `:scope` refers to.
 	scope?: Node | null;
