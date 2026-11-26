@@ -16,6 +16,8 @@
 import type {Caret, CellGrid} from "./framebuffer.ts";
 import type * as ImageCodecs from "./imagecodecs.ts";
 import {requireFromSource} from "./require.ts";
+import type * as SVGRaster from "./svgraster.ts";
+import type {SVGDrawing} from "./svgraster.ts";
 import {clearTimeout, setTimeout} from "./timers.ts";
 
 /** Straight (not premultiplied) RGBA, four bytes a pixel, rows top down. */
@@ -170,6 +172,24 @@ export async function decodeImageForPage(
 	deadline = Infinity,
 ): Promise<Bitmap> {
 	return keepAtMost(await loadImageCodecs().decodeImage(bytes, deadline));
+}
+
+let svgRaster: typeof SVGRaster | null = null;
+
+/** Draw a recorded SVG, and keep at most MAX_KEPT_PIXELS. */
+export async function rasterizeDrawingForPage(
+	drawing: SVGDrawing,
+	deadline = Infinity,
+): Promise<Bitmap> {
+	if (svgRaster === null) {
+		try {
+			svgRaster = require("./svgraster.ts") as typeof SVGRaster;
+		} catch (error) {
+			svgRaster =
+				requireFromSource("./svgraster.ts", error) as typeof SVGRaster;
+		}
+	}
+	return keepAtMost(await svgRaster.rasterizeDrawing(drawing, deadline));
 }
 
 export function createBitmap(width: number, height: number): Bitmap {
@@ -413,7 +433,7 @@ function checkImageBytes(length: number): void {
  * server that picks a format by it picks one of these.
  */
 export const IMAGE_ACCEPT =
-	"image/png,image/jpeg,image/gif,image/bmp;q=0.9,*/*;q=0.5";
+	"image/png,image/svg+xml,image/jpeg,image/gif,image/bmp;q=0.9,*/*;q=0.5";
 
 /**
  * A response's bytes, up to MAX_IMAGE_BYTES: by its declared length when
@@ -483,7 +503,8 @@ interface DecodeWorker {
 }
 
 interface Job {
-	bytes: Uint8Array;
+	// An image file's bytes, or an SVG the page has read.
+	source: Uint8Array | SVGDrawing;
 	resolve(bitmap: Bitmap): void;
 	reject(error: unknown): void;
 	// Called when the job leaves the line to decode.
@@ -534,7 +555,7 @@ export function setDecodeWorkerURL(url: URL | null): void {
  * a slice at a time. Either way it stops past decodeTimeout.
  */
 export function decodeImageOffThread(
-	bytes: Uint8Array,
+	source: Uint8Array | SVGDrawing,
 	signal?: AbortSignal,
 ): Promise<Bitmap> {
 	return new Promise<Bitmap>((resolve, reject) => {
@@ -542,7 +563,7 @@ export function decodeImageOffThread(
 			reject(signal.reason);
 			return;
 		}
-		const job: Job = {bytes, resolve, reject, started: () => {}};
+		const job: Job = {source, resolve, reject, started: () => {}};
 		// A decode that has not started is dropped, with its bytes. One
 		// that has runs to its end or its time limit.
 		if (signal !== undefined) {
@@ -578,7 +599,10 @@ function startNextDecode(): void {
 	const state = workersWork ? getWorker() : null;
 	if (state === null) {
 		running = {job, id, timer: null};
-		decodeImageForPage(job.bytes, Date.now() + decodeTimeout)
+		const deadline = Date.now() + decodeTimeout;
+		(job.source instanceof Uint8Array
+			? decodeImageForPage(job.source, deadline)
+			: rasterizeDrawingForPage(job.source, deadline))
 			.then(job.resolve, job.reject)
 			.finally(() => {
 				running = null;
@@ -593,7 +617,11 @@ function startNextDecode(): void {
 	running = {job, id, timer: startDecodeTimer(id, state)};
 	// A copy the worker can take, whatever buffer the bytes sit in. The
 	// job keeps its own, in case the worker never starts.
-	const copy = job.bytes.slice();
+	if (!(job.source instanceof Uint8Array)) {
+		state.worker.post({id, drawing: job.source}, []);
+		return;
+	}
+	const copy = job.source.slice();
 	state.worker.post({id, bytes: copy.buffer}, [copy.buffer]);
 }
 

@@ -197,14 +197,13 @@ test("a timer's or a microtask's exception is reported, and the page goes on", a
 	window.queueMicrotask(() => {
 		throw new Error("microtask");
 	});
-	await new Promise((resolve) => setTimeout(resolve, 60));
+	await until(() => ticks === 3 && seen.length === 4);
 	expect(seen.sort()).toEqual([
 		"interval 1",
 		"interval 2",
 		"microtask",
 		"timeout",
 	]);
-	expect(ticks).toBe(3);
 	// A cleared timer still clears.
 	let fired = false;
 	const timer = window.setTimeout(() => {
@@ -213,6 +212,7 @@ test("a timer's or a microtask's exception is reported, and the page goes on", a
 	window.clearTimeout(timer);
 	await new Promise((resolve) => setTimeout(resolve, 20));
 	expect(fired).toBe(false);
+	expect(ticks).toBe(3);
 	await dom.dispose();
 });
 

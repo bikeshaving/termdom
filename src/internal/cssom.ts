@@ -55,6 +55,8 @@ import {
 	isDocumentElement,
 	isShadowRoot,
 	isUAShadowTree,
+	noteSVGRestyle,
+	noteSVGRestyleAll,
 	pseudoElement,
 	pseudoElementCount,
 	releaseRemovedNodes,
@@ -107,6 +109,7 @@ import {
 	MATHML_NAMESPACE,
 	nextInTree,
 	nodeContains,
+	SVG_NAMESPACE,
 } from "./tree.ts";
 import {cellsFromPx, getCellSize, pxFromCells, UNIT_CELL} from "./units.ts";
 import {
@@ -3596,7 +3599,7 @@ class CSSStyleSheet {
 	_sync?(this: Slots<CSSStyleSheet>): void {
 		const slots = this;
 		const node = slots.ownerNode;
-		if (!node || getHTMLLocalName(node as Element) !== "style") {
+		if (!node || !holdsSheetText(node as Element)) {
 			return;
 		}
 		const text = node.textContent ?? "";
@@ -7342,9 +7345,16 @@ function isListElement(element: Element): boolean {
 	return name === "ul" || name === "ol";
 }
 
+// A <style> of HTML or of SVG: its text is a stylesheet.
+function holdsSheetText(element: Element): boolean {
+	const namespace = getNamespace(element);
+	return (namespace === HTML_NAMESPACE || namespace === SVG_NAMESPACE) &&
+		element.localName === "style";
+}
+
 function isStyleElement(element: Element): boolean {
 	return (
-		getHTMLLocalName(element) === "style" ||
+		holdsSheetText(element) ||
 		(getHTMLLocalName(element) === "link" &&
 			getAttributeValue(element, "rel") === "stylesheet")
 	);
@@ -7902,7 +7912,7 @@ function noteStyleText(batch: MutationBatch, style: Element): void {
 // be a shadow tree. A <style> whose text changed while it was out of
 // the document, where no record follows it, is parsed again.
 function noteSheetMoved(batch: MutationBatch, style: Element | null): void {
-	if (style !== null && getHTMLLocalName(style) === "style") {
+	if (style !== null && holdsSheetText(style)) {
 		const parsed = _(getSheet(style)).text;
 		if (parsed !== null && parsed !== (style.textContent ?? "")) {
 			noteStyleText(batch, style);
@@ -7956,7 +7966,7 @@ export function handleMutations(
 			handleAttributeMutation(cascade, batch, mutation);
 		} else if (mutation.type === "characterData") {
 			const owner = mutation.target.parentElement;
-			if (owner !== null && getHTMLLocalName(owner) === "style") {
+			if (owner !== null && holdsSheetText(owner)) {
 				noteStyleText(batch, owner);
 			}
 		}
@@ -8085,7 +8095,7 @@ function handleChildListMutation(
 	mutation: MutationRecord,
 ): void {
 	// A <style>'s children ARE its stylesheet text.
-	if (getHTMLLocalName(mutation.target as Element) === "style") {
+	if (holdsSheetText(mutation.target as Element)) {
 		noteStyleText(batch, mutation.target as Element);
 	}
 	// A list's gutter is derived from its items' markers, so a
@@ -8100,10 +8110,7 @@ function handleChildListMutation(
 		if (getNodeType(node) === ELEMENT_NODE) {
 			const element = node as Element;
 			if (isStyleElement(element)) {
-				noteSheetMoved(
-					batch,
-					getHTMLLocalName(element) === "style" ? element : null,
-				);
+				noteSheetMoved(batch, holdsSheetText(element) ? element : null);
 			} else {
 				// A detached tree's pseudo-elements and shadow roots wait
 				// for the record that brings it into the document. Its
@@ -9163,6 +9170,7 @@ interface DroppedStyles {
 }
 
 function dropCache(cascade: Cascade): void {
+	noteSVGRestyleAll(cascade.document);
 	// Every computed style ever handed out re-resolves on its next read.
 	cascade.siblingIndexesForMatching = null;
 	cascade.filteredSiblingsForMatching = null;
@@ -10938,6 +10946,7 @@ function recordRestyle(
 	hadPseudoStyles: boolean,
 ): void {
 	cascade.layout.restyledSinceLayout.add(element);
+	noteSVGRestyle(element);
 	// Past this many, the next frame repaints whole rather than compare
 	// them, and a document that never paints keeps no more.
 	if (cascade.layout.restyledForPaint.size >= 256) {

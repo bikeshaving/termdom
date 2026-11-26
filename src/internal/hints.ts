@@ -7,6 +7,7 @@ import {CSS_NAMED_COLORS} from "../generated/cssproperties.ts";
 import {trimASCIIWhitespace} from "./text.ts";
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
 type Hints = Record<string, string>;
 
@@ -221,7 +222,46 @@ export function isScriptedDocument(document: Document): boolean {
 const scratchHints: Hints = Object.create(null);
 let gathering = false;
 
+// SVG's presentation attributes (SVG 2 §6.6) that are drawn here.
+export const SVG_PRESENTATION_ATTRIBUTES: ReadonlySet<string> = new Set([
+	"clip-path",
+	"clip-rule",
+	"color",
+	"display",
+	"fill",
+	"fill-opacity",
+	"fill-rule",
+	"opacity",
+	"stop-color",
+	"stop-opacity",
+	"stroke",
+	"stroke-dasharray",
+	"stroke-dashoffset",
+	"stroke-linecap",
+	"stroke-linejoin",
+	"stroke-miterlimit",
+	"stroke-opacity",
+	"stroke-width",
+	"visibility",
+]);
+
+function getSVGHints(element: Element): Hints | null {
+	let hints: Hints | null = null;
+	for (const attribute of element.attributes) {
+		if (SVG_PRESENTATION_ATTRIBUTES.has(attribute.localName)) {
+			const value = attribute.value.trim();
+			if (value !== "") {
+				(hints ??= Object.create(null) as Hints)[attribute.localName] = value;
+			}
+		}
+	}
+	return hints;
+}
+
 export function getPresentationalHints(element: Element): Hints | null {
+	if (element.namespaceURI === SVG_NAMESPACE) {
+		return getSVGHints(element);
+	}
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return null;
 	}
@@ -449,6 +489,9 @@ const PAINT_HINT_ATTRIBUTES = new Set([
 ]);
 
 export function isHintAttribute(element: Element, name: string): boolean {
+	if (element.namespaceURI === SVG_NAMESPACE) {
+		return SVG_PRESENTATION_ATTRIBUTES.has(name);
+	}
 	if (element.namespaceURI !== HTML_NAMESPACE) {
 		return false;
 	}

@@ -1,13 +1,18 @@
 /**
  * The thread images decode on, started as a web Worker. It takes
- * `{id, bytes}` and answers `{id, width, height, naturalWidth,
+ * `{id, bytes}`, or `{id, drawing}` for an SVG the page has read, and
+ * answers `{id, width, height, naturalWidth,
  * naturalHeight, data, full}` with the pixels' buffers transferred: those
  * kept to draw cells from, at most MAX_KEPT_PIXELS, and the full ones
  * when those are fewer. Or it answers `{id, error}`. It answers
  * `{ready: true}` first, so the page can tell a worker that never started
  * from one that failed on an image.
  */
-import {decodeImageForPage} from "./internal/images.ts";
+import {
+	decodeImageForPage,
+	rasterizeDrawingForPage,
+} from "./internal/images.ts";
+import type {SVGDrawing} from "./internal/svgraster.ts";
 
 interface WorkerScope {
 	postMessage(message: unknown, transfer?: Transferable[]): void;
@@ -20,9 +25,15 @@ interface WorkerScope {
 const scope = globalThis as unknown as WorkerScope;
 
 async function answer(data: unknown): Promise<void> {
-	const {id, bytes} = data as {id: number; bytes: ArrayBuffer};
+	const {id, bytes, drawing} = data as {
+		id: number;
+		bytes?: ArrayBuffer;
+		drawing?: SVGDrawing;
+	};
 	try {
-		const bitmap = await decodeImageForPage(new Uint8Array(bytes));
+		const bitmap = drawing === undefined
+			? await decodeImageForPage(new Uint8Array(bytes!))
+			: await rasterizeDrawingForPage(drawing);
 		const pixels = bitmap.data.buffer as ArrayBuffer;
 		const full = bitmap.full?.buffer as ArrayBuffer | undefined;
 		scope.postMessage({

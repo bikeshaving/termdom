@@ -67,6 +67,7 @@ import {
 	unregisterReplacedContent,
 } from "./images.ts";
 import type {Layout} from "./layout.ts";
+import {loadSVG} from "./lazy.ts";
 import {PTYSession, type PTYSpawner} from "./pty.ts";
 import {rehomeClone} from "./realms.ts";
 import type {ResourceLoader} from "./resources.ts";
@@ -13926,6 +13927,23 @@ export class SVGElement extends Element {
 	): void {
 		super.removeEventListener(type, listener, options);
 	}
+
+	// An SVG <style> holds a stylesheet, as HTML's does.
+	override _insertionSteps(this: Slots<SVGElement>): void {
+		superStep(SVGElement, "_insertionSteps").call(this);
+		if (this.localName === "style" && this.connected) {
+			_(this.document).extra.styleTrees.add(this.treeRoot);
+		}
+	}
+
+	override _removingSteps(this: Slots<SVGElement>, oldParent: Node): void {
+		superStep(SVGElement, "_removingSteps").call(this, oldParent);
+		if (this.localName === "style" && _(oldParent).connected) {
+			_(this.document).extra.styleTrees.add(
+				isShadowRoot(this.treeRoot) ? this.treeRoot : getRoot(oldParent),
+			);
+		}
+	}
 }
 
 Object.defineProperty(SVGElement.prototype, Symbol.toStringTag, {
@@ -14184,7 +14202,158 @@ function buildElement(
 	_(element).upperName = null;
 	_(element).localName = localName;
 	_(element).isValue = is;
+	if (namespace === SVG_NAMESPACE && localName === "svg") {
+		registerSVGContent(element);
+	}
 	return element;
+}
+
+interface SVGState {
+	bitmap: Bitmap | null;
+	version: number;
+	stale: boolean;
+	drawing: boolean;
+	// What was last drawn, to tell a change that draws the same.
+	drawn: string;
+}
+
+const svgStates = new WeakMap<Element, SVGState>();
+
+// The <svg> elements a document has drawn, for when every style drops.
+const drawnSVGs = new WeakMap<globalThis.Document, Set<Element>>();
+
+// An <svg> in a page is drawn as an image is, from the elements in it.
+function registerSVGContent(svg: Element): void {
+	const state: SVGState = {
+		bitmap: null,
+		version: 0,
+		stale: true,
+		drawing: false,
+		drawn: "",
+	};
+	svgStates.set(svg, state);
+	registerReplacedContent(svg, () => {
+		if (svg.ownerDocument?.defaultView == null) {
+			return null;
+		}
+		if (state.stale && !state.drawing && svg.isConnected) {
+			drawSVGContent(svg, state);
+		}
+		return state.bitmap === null
+			? {kind: "blank", ...loadSVG().getSVGSize(svg)}
+			: {
+				kind: "bitmap",
+				bitmap: state.bitmap,
+				version: state.version,
+				smooth: true,
+			};
+	});
+}
+
+const SVG_READ_MS = 10_000;
+
+// An SVG file is read here, where the elements are, and drawn where
+// other images decode.
+function decodeImageBytes(
+	bytes: Uint8Array,
+	signal?: AbortSignal,
+): Promise<Bitmap> {
+	if (loadImageCodecs().sniffImageType(bytes) !== "image/svg+xml") {
+		return decodeImageOffThread(bytes, signal);
+	}
+	return loadSVG()
+		.recordSVG(bytes, Date.now() + SVG_READ_MS)
+		.then((drawing) => decodeImageOffThread(drawing, signal));
+}
+
+function drawSVGContent(svg: Element, state: SVGState): void {
+	state.stale = false;
+	state.drawing = true;
+	let drawn = drawnSVGs.get(svg.ownerDocument);
+	if (drawn === undefined) {
+		drawn = new Set();
+		drawnSVGs.set(svg.ownerDocument, drawn);
+	}
+	drawn.add(svg);
+	const before = state.bitmap;
+	loadSVG()
+		.recordElement(
+			svg,
+			cssom.getComputedValue(svg, "color"),
+			Date.now() + SVG_READ_MS,
+		)
+		.then((drawing) => {
+			const key = JSON.stringify(drawing);
+			if (key === state.drawn && before !== null) {
+				return before;
+			}
+			state.drawn = key;
+			return decodeImageOffThread(drawing);
+		})
+		.then((bitmap: Bitmap) => {
+			state.bitmap = bitmap;
+		}, () => {
+			state.bitmap = null;
+			state.drawn = "";
+		})
+		.finally(() => {
+			state.drawing = false;
+			if (state.bitmap !== before) {
+				state.version++;
+				invalidateReplaced(svg, true);
+			} else if (state.stale) {
+				invalidateReplaced(svg, false);
+			}
+		});
+}
+
+function markSVGStale(svg: Element): void {
+	const state = svgStates.get(svg);
+	if (state !== undefined && !state.stale) {
+		state.stale = true;
+		invalidateReplaced(svg, false);
+	}
+}
+
+// A change in an <svg> redraws the outermost one it is in.
+function noteSVGChange(node: Node | null): void {
+	let root: Element | null = null;
+	for (
+		let current = node;
+		current !== null &&
+		getNodeType(current) === ELEMENT_NODE &&
+		_(current as Element).namespace === SVG_NAMESPACE;
+		current = current.parentNode as Node | null
+	) {
+		if (_(current as Element).localName === "svg") {
+			root = current as Element;
+		}
+	}
+	if (root !== null) {
+		markSVGStale(root);
+	}
+}
+
+/** Every style of the document dropped, as when a stylesheet changes. */
+export function noteSVGRestyleAll(document: globalThis.Document): void {
+	const drawn = drawnSVGs.get(document);
+	if (drawn === undefined) {
+		return;
+	}
+	for (const svg of drawn) {
+		if (svg.isConnected) {
+			markSVGStale(svg);
+		} else {
+			drawn.delete(svg);
+		}
+	}
+}
+
+/** An element restyled: an <svg> it is in may draw differently. */
+export function noteSVGRestyle(element: globalThis.Element): void {
+	if (_(element as Element).namespace === SVG_NAMESPACE) {
+		noteSVGChange(element as Element);
+	}
 }
 
 // With the synchronous flag (createElement and its kin), the author's
@@ -16958,8 +17127,10 @@ export function relayoutReplacedElements(
 export function getCanvasTextRuns(
 	element: globalThis.Element,
 ): ReturnType<typeof getCanvasText> {
-	const context =
-		_((element as unknown as HTMLCanvasElement)).extra.canvasContext;
+	if (!implementsInterface(element, HTMLCanvasElement)) {
+		return [];
+	}
+	const context = _(element).extra.canvasContext;
 	return implementsInterface(context, CanvasRenderingContext2D)
 		? getCanvasText(context)
 		: [];
@@ -20218,7 +20389,7 @@ function updateImageData(image: HTMLImageElement): void {
 		_(attached)
 			.extra.load(request, {initiator: image as unknown as globalThis.Element})
 			.then((response) => readImageResponse(response))
-			.then((bytes) => decodeImageOffThread(bytes, abort.signal))
+			.then((bytes) => decodeImageBytes(bytes, abort.signal))
 			.finally(() => ended.removeEventListener("abort", onEnded))
 			.then(
 				(bitmap) => settle("complete", bitmap),
@@ -38832,6 +39003,13 @@ function handleMutationRecords(
 			syncUAShadowTree(textarea);
 		}
 	}
+	for (const record of relevant) {
+		noteSVGChange(
+			(record.type === "characterData"
+				? record.target.parentNode
+				: record.target) as Node | null,
+		);
+	}
 	cssom.handleMutations(_(attached).extra.cascade, relevant);
 	_(attached).extra.layout.handleMutations(relevant);
 	focusAutofocusedNodes(relevant);
@@ -42756,7 +42934,7 @@ export class Window extends EventTarget {
 		// A Blob is decoded first; an image still loading is waited for.
 		if (image instanceof Blob) {
 			return image.arrayBuffer()
-				.then((buffer) => decodeImageOffThread(new Uint8Array(buffer)))
+				.then((buffer) => decodeImageBytes(new Uint8Array(buffer)))
 				.then((bitmap) => settle(new ImageBitmap(bitmap)));
 		}
 		if (implementsInterface(image, HTMLImageElement) && !image.complete) {
