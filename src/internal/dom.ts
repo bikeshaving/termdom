@@ -36707,12 +36707,18 @@ let parseRegistry: CustomElementRegistry | null | undefined = undefined;
 const MAX_PARSE_DEPTH = 512;
 
 // The node a parsed child may go into: the parent, or the nearest
-// ancestor if the parent is already at the depth limit.
+// ancestor if the parent is already at the depth limit. A template's
+// contents count from the template, or each declarative shadow tree
+// would start over.
 function capParseDepth(parentNode: Node): Node {
 	let depth = 0;
 	let probe: Node | null = parentNode;
 	while (probe !== null && depth < MAX_PARSE_DEPTH) {
-		probe = getObject(_(probe).parent);
+		probe =
+			getObject(_(probe).parent) ??
+			(getNodeType(probe) === DOCUMENT_FRAGMENT_NODE
+				? _((probe as DocumentFragment)).extra.host
+				: null);
 		depth++;
 	}
 	if (probe === null) {

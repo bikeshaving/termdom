@@ -5374,7 +5374,9 @@ class ComputedStyleDeclaration extends CSSStyleProperties {
 		let value = values.get(property);
 		if (value === undefined) {
 			value = resolveBaseValue(this, property);
-			values.set(property, value);
+			if (isWholeSubstitution()) {
+				values.set(property, value);
+			}
 		}
 		return value;
 	}
@@ -6029,6 +6031,8 @@ function resolveFromParent(
 // of time or memory. Each custom property keeps its own copy, so the cap
 // sits well under what browsers allow, and still fits an inline image.
 const MAX_SUBSTITUTED_LENGTH = 64 * 1024;
+// The longest chain of custom properties each naming the next.
+const MAX_SUBSTITUTION_DEPTH = 256;
 
 // The custom properties being substituted, innermost last. One that comes
 // back to a property on this stack closes a cycle, and every property from
@@ -6039,14 +6043,33 @@ const substitutingProperties: Array<{
 	cyclic: boolean;
 }> = [];
 
+// Whether the substitution under way was cut at the longest chain.
+let substitutionCut = false;
+
+// Whether a value just resolved is one to keep. One resolved under a cut
+// substitution is not: read by itself, its own chain may be short enough.
+function isWholeSubstitution(): boolean {
+	if (!substitutionCut) {
+		return true;
+	}
+	if (substitutingProperties.length === 0) {
+		substitutionCut = false;
+	}
+	return false;
+}
+
 // A custom property's value with its own var() substituted. A property in
-// a cycle, or one whose value would be too long, is the guaranteed-invalid
-// value, as an empty string.
+// a cycle, past the longest chain, or whose value would be too long is the
+// guaranteed-invalid value, as an empty string.
 function substituteCustomProperty(
 	declaration: ComputedStyleDeclaration,
 	name: string,
 	value: string,
 ): string {
+	if (substitutingProperties.length >= MAX_SUBSTITUTION_DEPTH) {
+		substitutionCut = true;
+		return "";
+	}
 	const entry = {declaration, name, cyclic: false};
 	substitutingProperties.push(entry);
 	let substituted: string | null;
@@ -6751,7 +6774,9 @@ class PseudoStyleDeclaration extends CSSStyleProperties {
 		let value = this.resolved.get(property);
 		if (value === undefined) {
 			value = resolvePseudoBaseValue(this, property);
-			this.resolved.set(property, value);
+			if (isWholeSubstitution()) {
+				this.resolved.set(property, value);
+			}
 		}
 		return value;
 	}

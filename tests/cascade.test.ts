@@ -1432,6 +1432,22 @@ describe("a shorthand that holds var()", () => {
 });
 
 describe("custom property substitution", () => {
+	test("a chain of properties longer than any sheet's goes invalid and does not overflow", () => {
+		let rules = "--a0: 1px;";
+		for (let n = 1; n <= 5000; n++) {
+			rules += `--a${n}: var(--a${n - 1});`;
+		}
+		const dom =
+			domFor(`<p id=a style="${rules} width: var(--a5000, 7px)">a</p>`);
+		const {document, window} = dom;
+		const a = window.getComputedStyle(document.getElementById("a")!);
+		expect(a.getPropertyValue("--a5000")).toBe("");
+		// Whichever is read first, a property is as long as its own chain.
+		expect(a.getPropertyValue("--a300")).toBe("");
+		expect(a.getPropertyValue("--a200")).toBe("1px");
+		dom.dispose();
+	});
+
 	test("a chain that doubles its value each step goes invalid instead of growing", () => {
 		let rules = "--v0: 1px;";
 		for (let n = 1; n <= 30; n++) {

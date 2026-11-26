@@ -1048,3 +1048,23 @@ test("a shadow root out of the document has no style sheets", () => {
 
 	dom.dispose();
 });
+
+test("declarative shadow trees do not start the parser's depth limit over", async () => {
+	const proc = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({
+		transport: proc.transport,
+		html:
+			("<div><template shadowrootmode=open>" + "<div>".repeat(500)).repeat(12) +
+			"<p>end</p>",
+	});
+	await nextFrame(dom);
+	let depth = 0;
+	let node: Node | null = dom.document.body;
+	while (node !== null) {
+		const element = node as Element;
+		node = element.shadowRoot?.firstChild ?? element.firstElementChild;
+		depth++;
+	}
+	expect(depth).toBeLessThan(600);
+	await dom.dispose();
+});
