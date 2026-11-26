@@ -555,3 +555,37 @@ test("parseSelectorList reads shape and leaves prefixes to their sheet", () => {
 	expect(parseSelectorList("")).toBe(null);
 	expect(parseSelectorList("a, b")).not.toBe(null);
 });
+
+test("a selector that cannot match does not try every pairing of ancestors or siblings", () => {
+	const deep = tree(`${"<div>".repeat(30)}<p id=p>x</p>`);
+	expect(deep.querySelector(`${"div ".repeat(31)}p`)).toBe(null);
+	expect(deep.querySelector(`${"div ".repeat(30)}p`)?.id).toBe("p");
+	expect(deep.querySelector(`span ${"div ".repeat(29)}p`)).toBe(null);
+	const wide = tree(`${"<p></p>".repeat(200)}<i id=i></i>`);
+	expect(wide.querySelector(`${"p ~ ".repeat(201)}i`)).toBe(null);
+	expect(wide.querySelector(`${"p ~ ".repeat(200)}i`)?.id).toBe("i");
+	expect(wide.querySelector(`b ~ ${"p ~ ".repeat(40)}i`)).toBe(null);
+});
+
+test("a failure that ends one walk does not end another", () => {
+	const html =
+		"<main><i></i><section><i></i><b></b><div><u></u><p id=a></p></div></section>" +
+		"<section><b></b><div><p id=b></p></div></section></main>";
+	expect(ids(html, "i ~ b ~ div p")).toEqual(["a"]);
+	expect(ids(html, "i ~ section p")).toEqual(["a", "b"]);
+	expect(ids(html, "i + b ~ div > p")).toEqual(["a"]);
+	expect(ids(html, "main > i ~ section b + div p")).toEqual(["a", "b"]);
+	expect(ids(html, "section > i ~ div > u + p")).toEqual(["a"]);
+	expect(ids(html, "article section p, u ~ p")).toEqual(["a"]);
+});
+
+test("functional pseudo-classes nest only so deep", () => {
+	const document = tree("<div><p><b></b></p></div>");
+	const nested = (levels: number) =>
+		`div${":has(p".repeat(levels)}${")".repeat(levels)}`;
+	expect(document.querySelector("div:has(p:has(b))")).not.toBe(null);
+	expect(() => document.querySelector(nested(8))).not.toThrow();
+	expect(() => document.querySelector(nested(400))).toThrow();
+	expect(document.querySelector(`div${":is(".repeat(400)}p${")".repeat(400)}`))
+		.toBe(null);
+});

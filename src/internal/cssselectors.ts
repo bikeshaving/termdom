@@ -566,6 +566,8 @@ interface Compiling {
 	pseudoElements: boolean;
 	nesting: boolean;
 	nested?: boolean;
+	// How many functional pseudo-classes the selector is inside.
+	depth?: number;
 }
 
 // Checks shape only. A prefix means whatever the sheet declares, which
@@ -1526,12 +1528,25 @@ function getIntegerArguments(
 	return items.map(Number);
 }
 
+// How deep functional pseudo-classes nest, which is deeper than rules do.
+const MAX_SELECTOR_DEPTH = 64;
+
+// What the arguments of a functional pseudo-class compile under.
+function nest(compiling: Compiling): Compiling {
+	const depth = (compiling.depth ?? 0) + 1;
+	if (depth > MAX_SELECTOR_DEPTH) {
+		throw new SelectorError("a selector nests only so deep");
+	}
+	return {...compiling, nested: true, depth};
+}
+
 /** Drops the branches that do not parse. */
 function compileForgiving(
 	args: CSSTree.SelectorNode[],
 	compiling: Compiling,
 ): CompiledComplex[] {
 	const compiled: CompiledComplex[] = [];
+	const inside = nest(compiling);
 	for (const argument of args) {
 		const selectors = argument.type === "SelectorList"
 			? getChildren(argument)
@@ -1541,9 +1556,7 @@ function compileForgiving(
 				continue;
 			}
 			try {
-				compiled.push(
-					compileComplex(selector, {...compiling, nested: true}, false),
-				);
+				compiled.push(compileComplex(selector, inside, false));
 			} catch (_err) {
 				// A forgiving selector list keeps the branches it can parse.
 			}
@@ -1560,6 +1573,7 @@ function compileArgumentList(
 	anchored = false,
 ): CompiledComplex[] {
 	const compiled: CompiledComplex[] = [];
+	const inside = nest(compiling);
 	for (const argument of args) {
 		const selectors = argument.type === "SelectorList"
 			? getChildren(argument)
@@ -1568,14 +1582,7 @@ function compileArgumentList(
 			if (selector.type !== "Selector") {
 				throw new SelectorError("a selector list holds selectors");
 			}
-			compiled.push(
-				compileComplex(
-					selector,
-					{...compiling, nested: true},
-					relative,
-					anchored,
-				),
-			);
+			compiled.push(compileComplex(selector, inside, relative, anchored));
 		}
 	}
 	if (compiled.length === 0) {
@@ -2125,6 +2132,19 @@ function getTextUnder(element: Element, all: boolean): string {
 	return text;
 }
 
+// How matching leftwards from a compound came out. A failure may rule
+// out every earlier sibling or every ancestor, which ends the walk over
+// them.
+const MATCHES = 0;
+const FAILS_HERE = 1;
+const FAILS_ALL_SIBLINGS = 2;
+const FAILS_ALL_ANCESTORS = 3;
+type MatchResult =
+	typeof MATCHES |
+	typeof FAILS_HERE |
+	typeof FAILS_ALL_SIBLINGS |
+	typeof FAILS_ALL_ANCESTORS;
+
 // Matches right to left.
 function matchComplex(
 	complex: CompiledComplex,
@@ -2132,12 +2152,14 @@ function matchComplex(
 	state: MatchState,
 	featureless: boolean,
 ): boolean {
-	return matchFrom(
-		complex,
-		complex.compounds.length - 1,
-		element,
-		state,
-		featureless,
+	return (
+		matchFrom(
+			complex,
+			complex.compounds.length - 1,
+			element,
+			state,
+			featureless,
+		) === MATCHES
 	);
 }
 
@@ -2183,7 +2205,7 @@ function matchFrom(
 	element: Element,
 	state: MatchState,
 	featureless: boolean,
-): boolean {
+): MatchResult {
 	const subject = matchCompound(
 		complex.compounds[index],
 		element,
@@ -2191,25 +2213,34 @@ function matchFrom(
 		featureless,
 	);
 	if (subject === null) {
-		return false;
+		return FAILS_HERE;
 	}
 	if (index === 0) {
-		return true;
+		return MATCHES;
 	}
 	const combinator = complex.combinators[index - 1];
 	switch (combinator) {
 		case ">": {
 			const step = getParentStep(subject, state);
-			return (
-				step !== null &&
-				matchFrom(complex, index - 1, step.element, state, step.featureless)
+			if (step === null) {
+				return FAILS_ALL_ANCESTORS;
+			}
+			const result = matchFrom(
+				complex,
+				index - 1,
+				step.element,
+				state,
+				step.featureless,
 			);
+			return result === MATCHES || result === FAILS_ALL_ANCESTORS
+				? result
+				: FAILS_ALL_SIBLINGS;
 		}
 		case "+": {
 			const sibling = getPreviousElement(subject);
-			return (
-				sibling !== null && matchFrom(complex, index - 1, sibling, state, false)
-			);
+			return sibling === null
+				? FAILS_ALL_SIBLINGS
+				: matchFrom(complex, index - 1, sibling, state, false);
 		}
 		case "~": {
 			for (
@@ -2217,11 +2248,12 @@ function matchFrom(
 				sibling !== null;
 				sibling = getPreviousElement(sibling)
 			) {
-				if (matchFrom(complex, index - 1, sibling, state, false)) {
-					return true;
+				const result = matchFrom(complex, index - 1, sibling, state, false);
+				if (result !== FAILS_HERE) {
+					return result;
 				}
 			}
-			return false;
+			return FAILS_ALL_SIBLINGS;
 		}
 		default: {
 			for (
@@ -2229,13 +2261,18 @@ function matchFrom(
 				step !== null;
 				step = getParentStep(step.element, state)
 			) {
-				if (
-					matchFrom(complex, index - 1, step.element, state, step.featureless)
-				) {
-					return true;
+				const result = matchFrom(
+					complex,
+					index - 1,
+					step.element,
+					state,
+					step.featureless,
+				);
+				if (result === MATCHES || result === FAILS_ALL_ANCESTORS) {
+					return result;
 				}
 			}
-			return false;
+			return FAILS_ALL_ANCESTORS;
 		}
 	}
 }
