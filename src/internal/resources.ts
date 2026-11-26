@@ -242,14 +242,14 @@ function checkRequest(
 	context: RequestContext,
 	policy: RequestPolicy,
 ): void {
-	const self = new URL(document.URL);
-	if (url.protocol === "file:" && self.protocol !== "file:") {
+	const documentURL = new URL(document.URL);
+	if (url.protocol === "file:" && documentURL.protocol !== "file:") {
 		throw new TypeError("A document that is not a file cannot load a file");
 	}
 	const blocked = getBlockingDirective([
 		...policy.policies,
 		...getDocumentPolicies(document),
-	], url, request.destination, self, redirects);
+	], url, request.destination, getPolicyURL(document), redirects);
 	if (blocked === null) {
 		return;
 	}
@@ -438,10 +438,37 @@ function whileNotAborted<T>(
 const META_POLICY_LIMIT = 256;
 const metaPolicies = new Map<string, ContentSecurityPolicy>();
 
-// The policies a page stated for itself with <meta> in its head. A meta
-// policy cannot report, frame or sandbox, so those directives are dropped.
-function getDocumentPolicies(document: object): ContentSecurityPolicy[] {
-	return getMetaPolicyTexts(document).map((content) => {
+// The document a frame's document is shown in, or null.
+function getEmbedder(document: Document): Document | null {
+	const window = document.defaultView;
+	return window === null ? null : window.frameElement?.ownerDocument ?? null;
+}
+
+// What 'self' is for a document: its URL, or for a frame's about:srcdoc
+// or about:blank, that of the document it is in.
+function getPolicyURL(document: Document): URL {
+	let at = document;
+	while (at.URL.startsWith("about:")) {
+		const embedder = getEmbedder(at);
+		if (embedder === null) {
+			break;
+		}
+		at = embedder;
+	}
+	return new URL(at.URL);
+}
+
+// The <meta> policies of a document and of each document it is framed
+// in. A meta policy cannot report, frame or sandbox, so those directives
+// are dropped.
+function getDocumentPolicies(document: Document): ContentSecurityPolicy[] {
+	const texts: string[] = [];
+	for (
+		let at: Document | null = document; at !== null; at = getEmbedder(at)
+	) {
+		texts.push(...getMetaPolicyTexts(at));
+	}
+	return texts.map((content) => {
 		let policy = metaPolicies.get(content);
 		if (policy === undefined) {
 			policy = parseContentSecurityPolicy(content);

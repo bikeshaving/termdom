@@ -378,6 +378,39 @@ test("a page's own meta policy narrows the program's, and never widens it", asyn
 	dom.dispose();
 });
 
+test("a frame's document is held to the meta policy of the page it is in, and 'self' there is the page's", async () => {
+	const dom = create({url: "https://app.example/", csp: "img-src https:"});
+	const asked: string[] = [];
+	dom.addEventListener("fetch", (event) => {
+		asked.push(event.request.url);
+		event.respondWith(new Response(PNG));
+	});
+	dom.document.head.innerHTML =
+		"<meta http-equiv=\"Content-Security-Policy\" content=\"img-src 'self' https://cdn.example\">";
+	const frame = dom.document.createElement("iframe");
+	frame.srcdoc =
+		"<img id=a src=\"https://cdn.example/a.png\">" +
+		"<img id=b src=\"https://other.example/b.png\">" +
+		"<img id=c src=\"https://app.example/c.png\">" +
+		"<iframe srcdoc=\"<img id=d src='https://other.example/d.png'>\"></iframe>";
+	dom.document.body.append(frame);
+	const inner = frame.contentDocument!;
+	const nested = inner.querySelector("iframe")!.contentDocument!;
+	const images = [
+		inner.getElementById("a"),
+		inner.getElementById("b"),
+		inner.getElementById("c"),
+		nested.getElementById("d"),
+	] as HTMLImageElement[];
+	expect(await Promise.all(images.map(settled)))
+		.toEqual(["loaded", "broken", "loaded", "broken"]);
+	expect(asked.sort()).toEqual([
+		"https://app.example/c.png",
+		"https://cdn.example/a.png",
+	]);
+	dom.dispose();
+});
+
 test("a meta policy holds from its insertion into the head, whatever becomes of the element", async () => {
 	const dom = create({csp: "img-src https:"});
 	dom.addEventListener("fetch", (event) => {
