@@ -393,6 +393,9 @@ Nothing runs unless the `ptyEmbeds` option allows it:
 new TermDOM({ptyEmbeds: "auto"});
 ```
 
+Leave it off for untrusted markup: any embed in the document runs its
+command, however it got there.
+
 Under `"auto"`, Bun uses its own pseudo-terminal and Node uses
 `node-pty` if it is installed. The program gets the process's
 environment and working directory, with `TERM` set to `xterm-256color`.

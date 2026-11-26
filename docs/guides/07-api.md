@@ -84,8 +84,8 @@ Options:
   `"termdom-cellgrid"` context always works, but its `drawImage()`
   draws nothing under `"none"`.
 - `ptyEmbeds?: "none" | "auto"`: whether `<embed type="application/x-pty">`
-  runs its command. `"none"` (default) runs nothing. Experimental; see
-  the images and canvas guide.
+  runs its command. `"none"` (default) runs nothing. Enable it only for
+  trusted markup. Experimental; see the images and canvas guide.
 - `colorDepth?: "auto" | ColorDepth`: `24`, `8`, or `4` bits, or
   `"rgb"`, `"256"`, or `"ansi"`. `"auto"` (default) asks the terminal.
   See "Color depth" in the styling guide.

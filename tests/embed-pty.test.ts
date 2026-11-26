@@ -156,18 +156,25 @@ test("without the ptyEmbeds option, an embed runs nothing and fires an error tha
 	await dom.dispose();
 });
 
-test("a policy whose object-src is 'none' keeps an embed's program from running", async () => {
-	const {spawn, children} = fakeSpawner();
-	replaceSpawner(spawn);
-	const {dom, messages} = await errorMessages(
-		`<head><meta http-equiv="Content-Security-Policy" content="object-src 'none'"></head>` +
-			`<body><embed type="application/x-pty" src="top"></body>`,
-		"auto",
-	);
-	expect(messages).toEqual(["The Content-Security-Policy forbids it"]);
-	expect(children).toEqual([]);
-	await dom.dispose();
-});
+for (const policy of [
+	"object-src 'none'",
+	"object-src",
+	"object-src 'none' 'NONE'",
+	"default-src; img-src data:",
+]) {
+	test(`the policy "${policy}" keeps an embed's program from running`, async () => {
+		const {spawn, children} = fakeSpawner();
+		replaceSpawner(spawn);
+		const {dom, messages} = await errorMessages(
+			`<head><meta http-equiv="Content-Security-Policy" content="${policy}"></head>` +
+				`<body><embed type="application/x-pty" src="top"></body>`,
+			"auto",
+		);
+		expect(messages).toEqual(["The Content-Security-Policy forbids it"]);
+		expect(children).toEqual([]);
+		await dom.dispose();
+	});
+}
 
 test("an embed a policy forbids has no program to post to, and reports the violation once", async () => {
 	const {spawn, children} = fakeSpawner();

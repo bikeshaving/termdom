@@ -316,10 +316,10 @@ export function checkInlineHandler(
 
 /**
  * Whether the policies let an <embed> run its program. An object-src, or
- * a default-src without one, of 'none' forbids it, as it forbids plugins
- * in a browser. A program is not loaded from a URL, so no other source
- * list says anything about it. With "report", a forbidding policy also
- * reports the violation.
+ * a default-src without one, that matches nothing forbids it, as it
+ * forbids plugins in a browser: 'none', or no source at all. A program
+ * is not loaded from a URL, so no other source list says anything about
+ * it. With "report", a forbidding policy also reports the violation.
  */
 export function checkPlugin(
 	element: Element,
@@ -333,8 +333,7 @@ export function checkPlugin(
 			stated.directives.get("default-src");
 		if (
 			sources === undefined ||
-			sources.length !== 1 ||
-			sources[0].toLowerCase() !== "'none'"
+			sources.some((source) => source.toLowerCase() !== "'none'")
 		) {
 			continue;
 		}
