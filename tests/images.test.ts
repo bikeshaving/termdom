@@ -712,3 +712,12 @@ test("an image past MAX_KEPT_PIXELS is kept averaged down, with its natural size
 	const small = {width: 10, height: 10, data: new Uint8ClampedArray(400)};
 	expect(keepAtMost(small)).toBe(small);
 });
+
+test("a GIF whose codes name entries the table does not hold yet ends", async () => {
+	// Codes 7, 6, 7, 6 after a code size of 2: each names an entry made
+	// from the other.
+	const bytes = Uint8Array.from("4749463839610a000a00800000000000ffffff2c000000000a000a00000202f70d003b"
+		.match(/../g)!, (byte) => parseInt(byte, 16));
+	const bitmap = await decodeImage(bytes);
+	expect([bitmap.width, bitmap.height]).toEqual([10, 10]);
+});

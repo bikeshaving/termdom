@@ -1720,6 +1720,10 @@ function decodeLZW(
 		if (code === end) {
 			break;
 		}
+		// A code the table does not hold yet would chain to itself.
+		if (code > next || (previous === -1 && code >= clear)) {
+			break;
+		}
 		let top = 0;
 		let current = code;
 		if (previous === -1) {
