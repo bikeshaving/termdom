@@ -19,6 +19,7 @@ import {
 	type Bitmap,
 	decodeImageForPage,
 	decodeImageOffThread,
+	getFullBitmap,
 	keepAtMost,
 	MAX_IMAGE_BYTES,
 	MAX_KEPT_PIXELS,
@@ -720,4 +721,20 @@ test("a GIF whose codes name entries the table does not hold yet ends", async ()
 		.match(/../g)!, (byte) => parseInt(byte, 16));
 	const bitmap = await decodeImage(bytes);
 	expect([bitmap.width, bitmap.height]).toEqual([10, 10]);
+});
+
+test("an image without its full pixels draws at its natural size from those kept", () => {
+	const spread = getFullBitmap({
+		width: 2,
+		height: 2,
+		data: new Uint8ClampedArray(16).fill(200),
+		naturalWidth: 5,
+		naturalHeight: 5,
+	});
+	expect([
+		spread.width,
+		spread.height,
+		spread.data.length,
+	]).toEqual([5, 5, 100]);
+	expect(spread.data[0]).toBe(200);
 });

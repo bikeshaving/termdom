@@ -40,15 +40,52 @@ export function getNaturalHeight(bitmap: Bitmap): number {
 	return bitmap.naturalHeight ?? bitmap.height;
 }
 
-/** The image at its natural size, pixel for pixel. */
+/**
+ * The image at its natural size: its full pixels, or the kept ones
+ * scaled back up.
+ */
 export function getFullBitmap(bitmap: Bitmap): Bitmap {
-	return bitmap.full === undefined
-		? bitmap
-		: {
-			width: getNaturalWidth(bitmap),
-			height: getNaturalHeight(bitmap),
-			data: bitmap.full,
-		};
+	const width = getNaturalWidth(bitmap);
+	const height = getNaturalHeight(bitmap);
+	if (width === bitmap.width && height === bitmap.height) {
+		return bitmap;
+	}
+	return {
+		width,
+		height,
+		data: bitmap.full ?? sampleBitmap(bitmap, width, height),
+	};
+}
+
+// The most bytes of full-size pixels all images hold together. Past it
+// the oldest let theirs go.
+const MAX_FULL_BYTES = 1 << 30;
+
+// The images holding full pixels, oldest first.
+const fullBitmaps = new Set<{image: WeakRef<Bitmap>; bytes: number}>();
+let fullBytes = 0;
+
+// Counts `bitmap`'s full pixels against what images may hold.
+function keepFull(bitmap: Bitmap): Bitmap {
+	if (bitmap.full === undefined) {
+		return bitmap;
+	}
+	// eslint-disable-next-line no-restricted-globals
+	const image = new WeakRef(bitmap);
+	fullBitmaps.add({image, bytes: bitmap.full.length});
+	fullBytes += bitmap.full.length;
+	for (const entry of fullBitmaps) {
+		if (fullBytes <= MAX_FULL_BYTES) {
+			break;
+		}
+		const image = entry.image.deref();
+		if (image !== undefined) {
+			delete image.full;
+		}
+		fullBitmaps.delete(entry);
+		fullBytes -= entry.bytes;
+	}
+	return bitmap;
 }
 
 /**
@@ -131,14 +168,14 @@ export function keepAtMost(bitmap: Bitmap): Bitmap {
 	const scale = Math.sqrt(MAX_KEPT_PIXELS / (width * height));
 	const keptWidth = Math.max(1, Math.floor(width * scale));
 	const keptHeight = Math.max(1, Math.floor(height * scale));
-	return {
+	return keepFull({
 		width: keptWidth,
 		height: keptHeight,
 		data: sampleBitmap(bitmap, keptWidth, keptHeight),
 		naturalWidth: width,
 		naturalHeight: height,
 		full: bitmap.data,
-	};
+	});
 }
 
 declare const require: (id: string) => unknown;
@@ -667,14 +704,16 @@ function getWorker(): WorkerState | null {
 			if (message.error !== undefined) {
 				job.reject(new Error(message.error));
 			} else {
-				job.resolve({
-					width: message.width!,
-					height: message.height!,
-					data: new Uint8ClampedArray(message.data!),
-					naturalWidth: message.naturalWidth,
-					naturalHeight: message.naturalHeight,
-					full: message.full && new Uint8ClampedArray(message.full),
-				});
+				job.resolve(
+					keepFull({
+						width: message.width!,
+						height: message.height!,
+						data: new Uint8ClampedArray(message.data!),
+						naturalWidth: message.naturalWidth,
+						naturalHeight: message.naturalHeight,
+						full: message.full && new Uint8ClampedArray(message.full),
+					}),
+				);
 			}
 		});
 	};
