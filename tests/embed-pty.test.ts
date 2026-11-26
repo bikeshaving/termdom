@@ -593,6 +593,15 @@ test("a program's kitty image draws in half blocks on a terminal without kitty g
 	await dom.dispose();
 });
 
+test("a placement of more cells than placeholders can name is held to what they can", async () => {
+	const {dom, terminal, children} = await mountImages("cells");
+	children[0].options.onData(
+		TWO_PIXELS.replace("c=2,r=1", "c=100000,r=100000"),
+	);
+	await until(() => cellColors(terminal, 0, 0).bg === 0xff0000);
+	await dom.dispose();
+});
+
 test("a program's kitty image goes to a terminal with kitty graphics as one of the page's own", async () => {
 	const {dom, terminal, output, children} = await mountImages("kitty");
 	children[0].options.onData(TWO_PIXELS);

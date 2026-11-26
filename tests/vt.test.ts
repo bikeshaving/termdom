@@ -314,3 +314,44 @@ test("a resize forgets the character REP and joining marks would use", () => {
 	expect(() => term.write("\x1b[b́")).not.toThrow();
 	expect(term.lines[0].chars.length).toBe(4);
 });
+
+test("a cell holds only so many marks, and REP of it ends", () => {
+	const {term} = create(10, 4);
+	term.write(`a${"́".repeat(1000)}\x1b[65535b`);
+	expect(term.lines[0].chars[0].length).toBe(32);
+	expect(screen(term)[3].startsWith("a\u0301")).toBe(true);
+});
+
+test("REP on a screen smaller than a cluster grows the cluster to its limit", () => {
+	const {term} = create(2, 1);
+	term.write("a\u200d\x1b[7b");
+	expect(term.lines[0].chars[0]).toBe("a\u200d".repeat(8));
+});
+
+test("a run of intermediates keeps only the first eight", () => {
+	const {term} = create();
+	term.write(`\x1b[${" ".repeat(10000)}`);
+	expect(term.parser.intermediates.length).toBe(8);
+	term.write(`q\x1b${"#".repeat(10000)}`);
+	expect(term.parser.intermediates.length).toBe(8);
+	term.write("8a");
+	expect(screen(term)[0]).toBe("a");
+});
+
+test("DECRQSS answers only the settings it knows", () => {
+	const {term, replies} = create();
+	term.write("\x1bP$qconstructor\x1b\\\x1bP$q__proto__\x1b\\\x1bP$q q\x1b\\");
+	expect(replies).toEqual([
+		"\x1bP0$r\x1b\\",
+		"\x1bP0$r\x1b\\",
+		"\x1bP1$r2 q\x1b\\",
+	]);
+});
+
+test("scrolling a region by more lines than it has blanks it", () => {
+	const {term} = create(4, 4);
+	term.write("1\r\n2\r\n3\r\n4\x1b[2;3r\x1b[99S");
+	expect(screen(term)).toEqual(["1", "", "", "4"]);
+	term.write("\x1b[2;1Ha\r\nb\x1b[1T");
+	expect(screen(term)).toEqual(["1", "", "a", "4"]);
+});

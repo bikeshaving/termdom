@@ -470,7 +470,7 @@ export async function readImageResponse(
  * which ends the decode with it, or the decode here stops at its next
  * yield, and the image fails.
  */
-const decodeTimeout = 10_000;
+export const DECODE_TIMEOUT_MS = 10_000;
 // A worker with nothing to do is ended, so it keeps the runtime alive for
 // a second at most.
 const WORKER_IDLE_MS = 1_000;
@@ -531,7 +531,7 @@ export function setDecodeWorkerURL(url: URL | null): void {
 /**
  * Decode on a worker thread, where the runtime has one, so a large image
  * does not stall the page. Where no worker starts, the decode runs here,
- * a slice at a time. Either way it stops past decodeTimeout.
+ * a slice at a time. Either way it stops past DECODE_TIMEOUT_MS.
  */
 export function decodeImageOffThread(
 	bytes: Uint8Array,
@@ -578,7 +578,7 @@ function startNextDecode(): void {
 	const state = workersWork ? getWorker() : null;
 	if (state === null) {
 		running = {job, id, timer: null};
-		decodeImageForPage(job.bytes, Date.now() + decodeTimeout)
+		decodeImageForPage(job.bytes, Date.now() + DECODE_TIMEOUT_MS)
 			.then(job.resolve, job.reject)
 			.finally(() => {
 				running = null;
@@ -610,12 +610,12 @@ function startDecodeTimer(
 		const {job} = running;
 		running = null;
 		job.reject(
-			new Error(`The image took more than ${decodeTimeout} ms to decode`),
+			new Error(`The image took more than ${DECODE_TIMEOUT_MS} ms to decode`),
 		);
 		// Ending the worker ends the decode. A new one takes the next image.
 		endWorker(state);
 		startNextDecode();
-	}, decodeTimeout);
+	}, DECODE_TIMEOUT_MS);
 }
 
 function finishDecode(id: number, settle: (job: Job) => void): void {

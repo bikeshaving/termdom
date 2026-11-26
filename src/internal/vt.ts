@@ -46,6 +46,10 @@ export const OSC_LIMIT = {output: 4096, input: 1 << 16};
 // An APC, where the kitty graphics protocol sends an image in chunks of
 // 4096 bytes. A program that sends one whole has a megabyte.
 const APC_LIMIT = 1 << 20;
+// No sequence this reads has more intermediates.
+const MAX_INTERMEDIATES = 8;
+// The UTF-16 units one cell's cluster holds. Marks past it are dropped.
+const MAX_CLUSTER_LENGTH = 32;
 
 // Printable characters, ending before a high surrogate whose pair the
 // text may cut, and a CSI with no control inside it.
@@ -238,6 +242,12 @@ export class Parser {
 		this.highSurrogate = 0;
 	}
 
+	collect(code: number): void {
+		if (this.intermediates.length < MAX_INTERMEDIATES) {
+			this.intermediates += String.fromCharCode(code);
+		}
+	}
+
 	/**
 	 * Returns the index just past the sequence an "input" read ends at, or
 	 * -1 when the text ends first. An "input" read cut by the end of the
@@ -402,7 +412,7 @@ export class Parser {
 				if (code < 0x20) {
 					this.handlers.execute(code);
 				} else if (code < 0x30) {
-					this.intermediates += String.fromCharCode(code);
+					this.collect(code);
 					this.state = ESCAPE_INTERMEDIATE;
 				} else if (code === 0x5b) {
 					this.params = [[0]];
@@ -429,7 +439,7 @@ export class Parser {
 				if (code < 0x20) {
 					this.handlers.execute(code);
 				} else if (code < 0x30) {
-					this.intermediates += String.fromCharCode(code);
+					this.collect(code);
 				} else if (code < 0x7f) {
 					this.state = GROUND;
 					this.handlers.esc(String.fromCharCode(code));
@@ -466,7 +476,7 @@ export class Parser {
 						this.state = CSI_IGNORE;
 					}
 				} else if (code >= 0x20 && code < 0x30) {
-					this.intermediates += String.fromCharCode(code);
+					this.collect(code);
 					this.state = CSI_INTERMEDIATE;
 				} else if (code >= 0x40 && code < 0x7f) {
 					this.state = GROUND;
@@ -477,7 +487,7 @@ export class Parser {
 				if (code < 0x20) {
 					this.handlers.execute(code);
 				} else if (code < 0x30) {
-					this.intermediates += String.fromCharCode(code);
+					this.collect(code);
 				} else if (code < 0x40) {
 					this.state = CSI_IGNORE;
 				} else if (code < 0x7f) {
@@ -960,6 +970,9 @@ export class Terminal {
 		const preceding = this.preceding!;
 		let line = this.lines[this.y];
 		let col = preceding.col;
+		if (line.chars[col].length >= MAX_CLUSTER_LENGTH) {
+			return;
+		}
 		const grow = width - preceding.width;
 		if (grow > 0 && col + width > this.cols) {
 			if (!this.autowrap || this.cols < 2) {
@@ -1010,7 +1023,11 @@ export class Terminal {
 		if (col >= 0 && line.widths[col] === 0) {
 			col--;
 		}
-		if (col < 0 || line.chars[col] === "") {
+		if (
+			col < 0 ||
+			line.chars[col] === "" ||
+			line.chars[col].length >= MAX_CLUSTER_LENGTH
+		) {
 			return;
 		}
 		line.chars[col] += char;
@@ -1044,9 +1061,7 @@ export class Terminal {
 		const bottom = this.scrollBottom;
 		count = Math.min(count, bottom - top + 1);
 		lines.splice(top, count);
-		for (let index = 0; index < count; index++) {
-			lines.splice(bottom - count + 1 + index, 0, new Line(this.cols, this.bg));
-		}
+		lines.splice(bottom - count + 1, 0, ...this.blankLines(count));
 	}
 
 	scrollDown(count: number, top = this.scrollTop): void {
@@ -1054,9 +1069,11 @@ export class Terminal {
 		const bottom = this.scrollBottom;
 		count = Math.min(count, bottom - top + 1);
 		lines.splice(bottom - count + 1, count);
-		for (let index = 0; index < count; index++) {
-			lines.splice(top, 0, new Line(this.cols, this.bg));
-		}
+		lines.splice(top, 0, ...this.blankLines(count));
+	}
+
+	blankLines(count: number): Line[] {
+		return Array.from({length: count}, () => new Line(this.cols, this.bg));
 	}
 
 	tab(count: number): void {
@@ -1662,7 +1679,15 @@ export class Terminal {
 			return;
 		}
 		this.preceding = preceding;
-		for (let index = 0; index < Math.min(count, 0xffff); index++) {
+		// Past a full screen and a full cluster, only the lines scrolled
+		// into history differ.
+		const cells = Math.max(this.cols * this.rows, MAX_CLUSTER_LENGTH);
+		// The copies after which a line repeats, one cell wide or two.
+		const period = this.cols * Math.max(1, this.cols >> 1);
+		if (count > cells) {
+			count = cells + (count - cells) % period;
+		}
+		for (let index = 0; index < count; index++) {
 			for (const char of cluster) {
 				this.print(char.codePointAt(0)!);
 			}
@@ -1816,9 +1841,10 @@ export class Terminal {
 			"\"q": "0\"q",
 			"\"p": "61;1\"p",
 		};
-		const answer = answers[request];
 		this.reply(
-			answer === undefined ? "\x1bP0$r\x1b\\" : `\x1bP1$r${answer}\x1b\\`,
+			Object.hasOwn(answers, request)
+				? `\x1bP1$r${answers[request]}\x1b\\`
+				: "\x1bP0$r\x1b\\",
 		);
 	}
 

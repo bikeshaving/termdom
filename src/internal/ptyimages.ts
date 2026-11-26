@@ -5,8 +5,13 @@
  * (t=d) and placed virtually (U=1) are drawn. A placement at the cursor
  * names no cells, so nothing could follow it as the screen scrolls.
  */
-import {type Bitmap, decodeImageForPage, loadImageCodecs} from "./images.ts";
-import {MAX_KITTY_PIXELS} from "./kitty.ts";
+import {
+	type Bitmap,
+	DECODE_TIMEOUT_MS,
+	keepAtMost,
+	loadImageCodecs,
+} from "./images.ts";
+import {MAX_KITTY_PIXELS, MAX_PLACEHOLDER_CELLS} from "./kitty.ts";
 
 /** An image the program sent, and the cells its placement covers. */
 export interface ProgramImage {
@@ -18,8 +23,14 @@ export interface ProgramImage {
 	version: number;
 }
 
-// The images a program keeps before the oldest is dropped.
+// The images a program keeps before the oldest is dropped, and the pixel
+// bytes they may hold.
 const MAX_IMAGES = 64;
+const MAX_HELD_BYTES = 2 * MAX_KITTY_PIXELS * 4;
+
+function getByteLength(bitmap: Bitmap): number {
+	return bitmap.data.length + (bitmap.full?.length ?? 0);
+}
 
 // The most base64 a transmission holds: an image of the most pixels, as
 // RGBA, with no compression.
@@ -42,6 +53,11 @@ function parseControl(text: string): Map<string, string> {
 function readNumber(control: Map<string, string>, key: string): number {
 	const value = Number(control.get(key) ?? 0);
 	return Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+// A placement's columns or rows: no more than placeholder cells can name.
+function readCells(control: Map<string, string>, key: string): number {
+	return Math.min(readNumber(control, key), MAX_PLACEHOLDER_CELLS);
 }
 
 // The error a transmission's format earns, or null for one this reads.
@@ -102,11 +118,19 @@ async function decodeTransmission(
 		}
 	}
 	if (format === "100") {
+		let decoded: Bitmap;
 		try {
-			return await decodeImageForPage(bytes);
+			decoded = await loadImageCodecs().decodeImage(
+				bytes,
+				Date.now() + DECODE_TIMEOUT_MS,
+			);
 		} catch (error) {
 			return describeFailure("EBADPNG", error);
 		}
+		if (decoded.width * decoded.height > MAX_KITTY_PIXELS) {
+			return "EINVAL:bad size";
+		}
+		return keepAtMost(decoded);
 	}
 	if (bytes.length < size) {
 		return "ENODATA:too few pixels";
@@ -224,8 +248,8 @@ export class ProgramImages {
 			const placed = action === "T" && control.get("U") === "1";
 			this.store(id, {
 				bitmap: decoded,
-				cols: placed ? readNumber(control, "c") : 0,
-				rows: placed ? readNumber(control, "r") : 0,
+				cols: placed ? readCells(control, "c") : 0,
+				rows: placed ? readCells(control, "r") : 0,
 				version: ++this.version,
 			});
 			this.respond(control, id, "OK");
@@ -234,8 +258,8 @@ export class ProgramImages {
 			if (image === undefined) {
 				this.respond(control, id, "ENOENT:no such image");
 			} else if (control.get("U") === "1") {
-				image.cols = readNumber(control, "c");
-				image.rows = readNumber(control, "r");
+				image.cols = readCells(control, "c");
+				image.rows = readCells(control, "r");
 				image.version = ++this.version;
 				this.changed();
 				this.respond(control, id, "OK");
@@ -254,8 +278,17 @@ export class ProgramImages {
 	store(id: number, image: ProgramImage): void {
 		this.images.delete(id);
 		this.images.set(id, image);
-		if (this.images.size > MAX_IMAGES) {
-			this.images.delete(this.images.keys().next().value!);
+		let bytes = 0;
+		for (const kept of this.images.values()) {
+			bytes += getByteLength(kept.bitmap);
+		}
+		while (
+			this.images.size > MAX_IMAGES ||
+			(bytes > MAX_HELD_BYTES && this.images.size > 1)
+		) {
+			const oldest = this.images.keys().next().value!;
+			bytes -= getByteLength(this.images.get(oldest)!.bitmap);
+			this.images.delete(oldest);
 		}
 		this.changed();
 	}
