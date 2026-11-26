@@ -226,3 +226,13 @@ test("a background reply split across reads is no keystrokes", async () => {
 		dom.dispose();
 	}
 });
+
+test("a coded key past the last code point is no key, and the keys around it arrive", async () => {
+	const {proc, dom, keys} = await mount();
+	await send(
+		proc,
+		"a\x1b[1114112u\x1b[97:1114112;2u\x1b[27;1;1114112~\x1b[99999999999ub",
+	);
+	expect(keys).toEqual(["a", "b"]);
+	dom.dispose();
+});

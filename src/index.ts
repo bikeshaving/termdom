@@ -67,6 +67,7 @@ import {
 	flushExchange,
 	hasDisplayType,
 	initializeCursorDetection,
+	MAX_CELL_LENGTH,
 	negotiateBidi,
 	negotiateCellPixels,
 	negotiateColorDepth,
@@ -500,7 +501,6 @@ function isSameCell(a: Readonly<CellSize>, b: Readonly<CellSize>): boolean {
 // A cell's side in CSS pixels. Past these, the viewport or the document
 // in cells is too large to lay out.
 const MIN_CELL_LENGTH = 0.01;
-const MAX_CELL_LENGTH = 1000;
 
 function isCellLength(length: unknown): length is number {
 	return typeof length === "number" &&

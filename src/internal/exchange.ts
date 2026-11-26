@@ -391,7 +391,14 @@ function decodeNamedKey(key: string | undefined, mod: number): WireKey | null {
 
 // `shifted` is the key Shift makes, which the kitty protocol's flag 4
 // reports as a subparameter. Without it, the key is upper-cased.
-function decodeCodedKey(codepoint: number, mod: number, shifted = 0): WireKey {
+function decodeCodedKey(
+	codepoint: number,
+	mod: number,
+	shifted = 0,
+): WireKey | null {
+	if (codepoint > 0x10ffff || shifted > 0x10ffff) {
+		return null;
+	}
 	const modifiers = decodeModifiers(mod);
 	const named =
 		KEY_BY_CODE[codepoint] ??
@@ -559,6 +566,9 @@ const STRING_OPENERS = "]P_^X";
 const CLIPBOARD_BODY = /[^A-Za-z0-9+/=;]/g;
 // A discarded reply that stops arriving for this long has ended.
 const DISCARD_QUIET_MS = 500;
+
+/** The longest a cell's side is, in CSS pixels. */
+export const MAX_CELL_LENGTH = 1000;
 
 // OSC 11 answered: the default background, each channel one to four hex
 // digits.
@@ -1712,7 +1722,12 @@ function askCellPixels(
 			until,
 			// A terminal with no window reports zeroes. That is not a cell.
 			read: ({width, height}) =>
-				width > 0 && height > 0 ? {width, height} : null,
+				width > 0 &&
+					height > 0 &&
+					width <= MAX_CELL_LENGTH &&
+					height <= MAX_CELL_LENGTH
+					? {width, height}
+					: null,
 		},
 	);
 	void queryDeviceAttributes(exchange).then(answered);
@@ -2067,7 +2082,8 @@ export function detectAnchor(
 		sequence: slots.dsrSequence++,
 		// The 1-based row the command started on becomes the 0-based
 		// anchor.
-		read: ({row}) => {
+		read: (report) => {
+			const row = Math.max(1, Math.min(report.row, slots.framebuffer.rows));
 			slots.framebuffer.documentTop = row - 1;
 			slots.hasDetectedAnchor = true;
 			return row;

@@ -373,6 +373,16 @@ test("auto without a terminal to ask is 8 by 16", () => {
 	dom.dispose();
 });
 
+test("auto with a report of a cell no screen has is 8 by 16", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	scriptReplies(terminal, [{ask: "\x1b[16t", reply: "\x1b[6;100000;100000t"}]);
+	const dom = new TermDOM({transport: terminal.transport, cellSize: "auto"});
+	await dom.attach();
+	await nextFrame(dom);
+	expect(dom.window.innerWidth).toBe(320);
+	dom.dispose();
+});
+
 test("a size that is not one throws", () => {
 	for (const cellSize of [
 		{width: 0, height: 16},

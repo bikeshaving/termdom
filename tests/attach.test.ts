@@ -7,7 +7,13 @@
 import {expect, test} from "@b9g/libuild/test";
 
 import {TermDOM} from "../src/index.ts";
-import {captureRawOutput, MockProcess, nextFrame, until} from "./test-utils";
+import {
+	captureRawOutput,
+	MockProcess,
+	nextFrame,
+	scriptReplies,
+	until,
+} from "./test-utils";
 
 function countWrites(terminal: MockProcess): {count(): number} {
 	let writes = 0;
@@ -924,5 +930,17 @@ test("a program that blocks while the terminal answers stays under the prompt", 
 	const rows = [0, 1, 2].map((row) =>
 		buffer.normal.getLine(row).translateToString(true));
 	expect(rows).toEqual(["$ one", "$ two", "page"]);
+	dom.dispose();
+});
+
+test("a cursor report from past the last row scrolls no more than the screen", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	scriptReplies(terminal, [{ask: "\x1b[6n", reply: "\x1b[1000000;1R"}]);
+	const output = captureRawOutput(terminal);
+	const dom = new TermDOM({transport: terminal.sharedTransport});
+	dom.document.body.innerHTML = "<p>one</p><p>two</p>";
+	await dom.attach();
+	await nextFrame(dom);
+	expect(output().split("\x1bD").length - 1).toBeLessThanOrEqual(12);
 	dom.dispose();
 });
