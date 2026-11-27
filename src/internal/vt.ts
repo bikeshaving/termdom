@@ -283,6 +283,10 @@ export class Parser {
 				this.endString();
 				this.state = GROUND;
 				return index + (code === 0x07 ? 1 : 2);
+			} else if (code === 0x1b && index + 1 < text.length) {
+				// An ESC inside an unterminated string starts another sequence.
+				this.state = GROUND;
+				return -1;
 			}
 		}
 		if (mode === "input") {

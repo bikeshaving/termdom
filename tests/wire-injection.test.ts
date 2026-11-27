@@ -236,3 +236,10 @@ test("a coded key past the last code point is no key, and the keys around it arr
 	expect(keys).toEqual(["a", "b"]);
 	dom.dispose();
 });
+
+test("string openers one after another are read once, not once each", async () => {
+	const {proc, dom, keys} = await mount();
+	await send(proc, `${"\x1bP".repeat(30000)}\x1b[Ax`);
+	expect(keys.slice(-2)).toEqual(["ArrowUp", "x"]);
+	dom.dispose();
+});
